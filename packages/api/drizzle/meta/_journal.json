@@ -1177,6 +1177,13 @@
       "when": 1792952785137,
       "tag": "0167_campaign_tracking_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1792952785138,
+      "tag": "0168_ad_platform_conversions",
+      "breakpoints": true
     }
   ]
 }

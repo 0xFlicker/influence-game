@@ -2,6 +2,13 @@ import { createHash } from "node:crypto";
 import { asc, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { deliverTikTok, deliverX, googleAuthenticated, googleDestination, xAuthenticated,
+  retryableDelivery, PLATFORM_EVENT_MAP,
+  type AdConversionEnv, type ConversionRow, type ConversionFetch, type FunnelEvent,
+} from "./campaign-ad-delivery.js";
+import { deliverGoogle, googleTokenProvider } from "./campaign-google-delivery.js";
+export { PLATFORM_EVENT_MAP } from "./campaign-ad-delivery.js";
+export type { ConversionFetch } from "./campaign-ad-delivery.js";
 
 /**
  * Paid-campaign attribution and authoritative conversion events.
@@ -40,7 +47,7 @@ export interface CampaignTouchInput {
 
 const LABEL_VALUE = /^[a-zA-Z0-9_. -]{1,100}$/;
 const CLICK_ID_VALUE = /^[a-zA-Z0-9_.-]{1,512}$/;
-const CLICK_ID_PARAMS = new Set(["gclid", "fbclid", "msclkid", "ttclid", "dclid", "gbraid", "wbraid"]);
+const CLICK_ID_PARAMS = new Set(["gclid", "fbclid", "msclkid", "ttclid", "twclid", "dclid", "gbraid", "wbraid"]);
 
 /** 90-day attribution window for acquisition reporting. */
 export const ATTRIBUTION_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
@@ -109,18 +116,24 @@ export async function accountAnalyticsAllowed(db: DbOrTx, userId: string): Promi
 
 /** Existing denials survive automatic sync; only a fresh explicit choice can re-enable. */
 export async function syncAnalyticsPreference(
-  db: DbOrTx, userId: string, analytics: boolean, explicitChoice = false, expectedVersion?: string,
+  db: DbOrTx, userId: string, analytics: boolean, explicitChoice = false, expectedVersion?: string, analyticsExplicit = false,
 ): Promise<boolean> {
   await lockAccount(db, userId);
   const [previous] = await db.select().from(schema.userAnalyticsPreferences)
     .where(eq(schema.userAnalyticsPreferences.userId, userId));
   const allowed = analytics && (previous?.analytics !== false || (explicitChoice && expectedVersion === previous.updatedAt));
-  // updatedAt is also the opaque preference version. Advance it even when two
-  // changes share a clock millisecond, including a repeated explicit rejection.
-  if (!previous || previous.analytics !== allowed || (!analytics && explicitChoice)) {
-    await db.insert(schema.userAnalyticsPreferences).values({ userId, analytics: allowed })
+  // A regional default is permission to deliver, not an affirmative consent signal.
+  // Stale browser requests cannot upgrade the stored explicit choice.
+  const confirmedChoice = analyticsExplicit && (!previous || expectedVersion === previous.updatedAt);
+  const affirmative = allowed && (previous?.analyticsExplicit === true || confirmedChoice);
+  // Version permission changes, including repeated explicit rejection. Recording
+  // affirmative metadata while already allowed preserves that version so the
+  // same validated browser sync can retain its current campaign touch.
+  const permissionChanged = !previous || previous.analytics !== allowed || (!analytics && explicitChoice);
+  if (permissionChanged || previous.analyticsExplicit !== affirmative) {
+    await db.insert(schema.userAnalyticsPreferences).values({ userId, analytics: allowed, analyticsExplicit: affirmative })
       .onConflictDoUpdate({ target: schema.userAnalyticsPreferences.userId,
-        set: { analytics: allowed, updatedAt: new Date(Math.max(Date.now(), Date.parse(previous?.updatedAt ?? "") + 1 || 0)).toISOString() } });
+        set: { analytics: allowed, analyticsExplicit: affirmative, updatedAt: permissionChanged ? new Date(Math.max(Date.now(), Date.parse(previous?.updatedAt ?? "") + 1 || 0)).toISOString() : previous.updatedAt } });
   }
   if (!allowed) {
     await db.delete(schema.userCampaignAttribution).where(eq(schema.userCampaignAttribution.userId, userId));
@@ -128,6 +141,10 @@ export async function syncAnalyticsPreference(
       attribution: null,
       posthogStatus: sql`CASE WHEN posthog_status = 'delivered' THEN posthog_status ELSE 'suppressed' END`,
       platformStatus: sql`CASE WHEN platform_status = 'delivered' THEN platform_status ELSE 'suppressed' END`,
+      googleStatus: sql`CASE WHEN google_status = 'delivered' THEN google_status ELSE 'suppressed' END`,
+      tiktokStatus: sql`CASE WHEN tiktok_status = 'delivered' THEN tiktok_status ELSE 'suppressed' END`,
+      googleNextPollAt: null,
+      xStatus: sql`CASE WHEN x_status = 'delivered' THEN x_status ELSE 'suppressed' END`,
     }).where(eq(schema.campaignConversionEvents.userId, userId));
   }
   return allowed;
@@ -204,6 +221,8 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
   return db.transaction(async tx => {
     await lockAccount(tx, input.userId);
     const allowed = !input.suppressDelivery && await accountAnalyticsAllowed(tx, input.userId);
+    const [preference] = await tx.select().from(schema.userAnalyticsPreferences)
+      .where(eq(schema.userAnalyticsPreferences.userId, input.userId));
     const inserted = await tx
       .insert(schema.campaignConversionEvents)
       .values({
@@ -219,6 +238,10 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
         occurredAt: input.occurredAt,
         posthogStatus: allowed ? "pending" : "suppressed",
         platformStatus: allowed ? "pending" : "suppressed",
+        googleStatus: allowed ? "pending" : "suppressed",
+        tiktokStatus: allowed ? "pending" : "suppressed",
+        xStatus: allowed ? "pending" : "suppressed",
+        googleAdUserDataGranted: allowed && preference?.analyticsExplicit === true,
       })
       .onConflictDoNothing()
       .returning({ id: schema.campaignConversionEvents.id });
@@ -270,13 +293,13 @@ export async function recordSignupCompleted(
 /** Optional tracking must not turn a committed signup into a failed login. */
 export async function recordAuthenticationTracking(
   db: DrizzleDB,
-  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; attribution?: unknown },
+  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; analyticsExplicit?: unknown; attribution?: unknown },
 ): Promise<void> {
   try {
     await db.transaction(async tx => {
       await tx.execute(sql`SET LOCAL statement_timeout = '2000ms'`);
       if (typeof input.analytics === "boolean") {
-        await syncAnalyticsPreference(tx, input.userId, input.analytics === true);
+        await syncAnalyticsPreference(tx, input.userId, input.analytics === true, false, undefined, input.analyticsExplicit === true);
       }
       if (input.created) {
         await recordSignupCompleted(tx, { userId: input.userId, channel: "web", attribution: input.attribution });
@@ -382,7 +405,7 @@ export async function recordSeasonEntry(
 // product mutation.
 // ---------------------------------------------------------------------------
 
-export interface ConversionDeliveryEnv {
+export interface ConversionDeliveryEnv extends AdConversionEnv {
   posthogProjectToken?: string;
   posthogHost?: string;
   metaPixelId?: string;
@@ -395,25 +418,41 @@ export function conversionDeliveryEnvFromProcess(env: NodeJS.ProcessEnv = proces
     posthogHost: env.POSTHOG_HOST || "https://us.i.posthog.com",
     metaPixelId: env.META_PIXEL_ID || undefined,
     metaAccessToken: env.META_CAPI_ACCESS_TOKEN || undefined,
+    googleClientId: env.GOOGLE_ADS_CLIENT_ID || undefined,
+    googleClientSecret: env.GOOGLE_ADS_CLIENT_SECRET || undefined,
+    googleRefreshToken: env.GOOGLE_ADS_REFRESH_TOKEN || undefined,
+    googleCustomerId: env.GOOGLE_ADS_CUSTOMER_ID || undefined,
+    googleLoginCustomerId: env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || undefined,
+    googleConversionActions: {
+      signup_completed: env.GOOGLE_ADS_SIGNUP_ACTION_ID || undefined,
+      agent_ready: env.GOOGLE_ADS_AGENT_READY_ACTION_ID || undefined,
+      season_entry: env.GOOGLE_ADS_SEASON_ENTRY_ACTION_ID || undefined,
+    },
+    tiktokPixelId: env.TIKTOK_PIXEL_ID || undefined,
+    tiktokAccessToken: env.TIKTOK_EVENTS_ACCESS_TOKEN || undefined,
+    xPixelId: env.X_ADS_PIXEL_ID || undefined,
+    xConsumerKey: env.X_ADS_CONSUMER_KEY || undefined,
+    xConsumerSecret: env.X_ADS_CONSUMER_SECRET || undefined,
+    xAccessToken: env.X_ADS_ACCESS_TOKEN || undefined,
+    xAccessTokenSecret: env.X_ADS_ACCESS_TOKEN_SECRET || undefined,
+    xEventIds: {
+      signup_completed: env.X_ADS_SIGNUP_EVENT_ID || undefined,
+      agent_ready: env.X_ADS_AGENT_READY_EVENT_ID || undefined,
+      season_entry: env.X_ADS_SEASON_ENTRY_EVENT_ID || undefined,
+    },
   };
 }
-
-/** Business events are never labelled purchases and carry no revenue value. */
-export const PLATFORM_EVENT_MAP: Record<string, string> = {
-  signup_completed: "CompleteRegistration",
-  agent_ready: "AgentReady",
-  season_entry: "SeasonEntry",
-};
 
 export interface DeliverySummary {
   claimed: number;
   posthogDelivered: number;
   platformDelivered: number;
   platformUnconfigured: number;
+  googleDelivered: number;
+  tiktokDelivered: number;
+  xDelivered: number;
   failed: number;
 }
-
-type ConversionRow = typeof schema.campaignConversionEvents.$inferSelect;
 
 function eventProperties(row: ConversionRow): Record<string, unknown> {
   return {
@@ -427,8 +466,6 @@ function eventProperties(row: ConversionRow): Record<string, unknown> {
   };
 }
 
-export type ConversionFetch = (url: string, init?: RequestInit) => Promise<Response>;
-
 export async function deliverPendingConversions(
   db: DrizzleDB,
   env: ConversionDeliveryEnv,
@@ -440,18 +477,60 @@ export async function deliverPendingConversions(
     posthogDelivered: 0,
     platformDelivered: 0,
     platformUnconfigured: 0,
+    googleDelivered: 0,
+    tiktokDelivered: 0,
+    xDelivered: 0,
     failed: 0,
   };
   // Each destination has its own retry budget. Missing configuration spends no attempts.
-  const retryable = (status: string, attempts: number) =>
-    ["pending", "failed", "unconfigured"].includes(status) && attempts < 5;
+  const retryable = retryableDelivery;
+  const getGoogleToken = googleTokenProvider(env, fetchFn);
   const pending = await db.select({ id: schema.campaignConversionEvents.id, userId: schema.campaignConversionEvents.userId })
     .from(schema.campaignConversionEvents).where(sql`
-      (posthog_status IN ('pending', 'failed', 'unconfigured') AND posthog_attempts < 5 AND (${Boolean(env.posthogProjectToken)} OR posthog_status = 'pending'))
-      OR (platform_status IN ('pending', 'failed', 'unconfigured') AND platform_attempts < 5 AND (${Boolean(env.metaPixelId && env.metaAccessToken)} OR platform_status = 'pending'))
+      (posthog_status IN ('pending', 'failed', 'unconfigured') AND posthog_attempts < 5
+        AND (${Boolean(env.posthogProjectToken)} OR posthog_status = 'pending'))
+      OR (platform_status IN ('pending', 'failed', 'unconfigured') AND platform_attempts < 5
+        AND (${Boolean(env.metaPixelId && env.metaAccessToken)} OR platform_status = 'pending'))
+      OR (google_status IN ('pending', 'failed', 'unconfigured') AND google_attempts < 5
+        AND (google_status = 'pending' OR (${googleAuthenticated(env)} AND (
+          google_destination IS NOT NULL OR (${Boolean(env.googleCustomerId)} AND event_name IN (
+            ${env.googleConversionActions?.signup_completed ? 'signup_completed' : ''},
+            ${env.googleConversionActions?.agent_ready ? 'agent_ready' : ''},
+            ${env.googleConversionActions?.season_entry ? 'season_entry' : ''}
+          ))
+        ))))
+      OR (google_status = 'processing' AND ${googleAuthenticated(env)}
+        AND (google_next_poll_at IS NULL OR google_next_poll_at::timestamptz <= now()))
+      OR (tiktok_status IN ('pending', 'failed', 'unconfigured') AND tiktok_attempts < 5
+        AND (tiktok_status = 'pending' OR (${Boolean(env.tiktokAccessToken)}
+          AND (tiktok_pixel_id IS NOT NULL OR ${Boolean(env.tiktokPixelId)}))))
+      OR (x_status IN ('pending', 'failed', 'unconfigured') AND x_attempts < 5
+        AND (x_status = 'pending' OR (${xAuthenticated(env)} AND (
+          (x_pixel_id IS NOT NULL AND x_event_id IS NOT NULL) OR (${Boolean(env.xPixelId)} AND event_name IN (
+            ${env.xEventIds?.signup_completed ? 'signup_completed' : ''},
+            ${env.xEventIds?.agent_ready ? 'agent_ready' : ''},
+            ${env.xEventIds?.season_entry ? 'season_entry' : ''}
+          ))
+        ))))
     `).orderBy(asc(schema.campaignConversionEvents.occurredAt)).limit(limit);
   summary.claimed = pending.length;
   for (const candidate of pending) {
+    // Commit non-secret destination identities before any network request. A retry
+    // after a crash or config change must use the same deduplication namespace.
+    await db.transaction(async tx => {
+      await lockAccount(tx, candidate.userId);
+      const [row] = await tx.select().from(schema.campaignConversionEvents)
+        .where(eq(schema.campaignConversionEvents.id, candidate.id));
+      if (!row || !await accountAnalyticsAllowed(tx, row.userId)) return;
+      const destination = googleDestination(env, row.eventName);
+      const xEventId = env.xEventIds?.[row.eventName as FunnelEvent];
+      await tx.update(schema.campaignConversionEvents).set({
+        googleDestination: row.googleDestination ?? (googleAuthenticated(env) && retryable(row.googleStatus, row.googleAttempts) ? destination : null),
+        tiktokPixelId: row.tiktokPixelId ?? (env.tiktokAccessToken && retryable(row.tiktokStatus, row.tiktokAttempts) ? env.tiktokPixelId : undefined),
+        xPixelId: row.xPixelId ?? (xAuthenticated(env) && retryable(row.xStatus, row.xAttempts) && xEventId ? env.xPixelId : undefined),
+        xEventId: row.xEventId ?? (xAuthenticated(env) && retryable(row.xStatus, row.xAttempts) && env.xPixelId ? xEventId : undefined),
+      }).where(eq(schema.campaignConversionEvents.id, row.id));
+    });
     // Re-read after locking: multiple workers cannot send the same pending row.
     // Withdrawal uses this lock too, so no delivery starts after it is acknowledged.
     await db.transaction(async tx => {
@@ -463,6 +542,14 @@ export async function deliverPendingConversions(
         await syncAnalyticsPreference(tx, row.userId, false);
         return;
       }
+      // Independent destinations start under the same consent lock. Their HTTP
+      // timeouts overlap so added providers do not extend the account lock by
+      // the sum of every provider's timeout.
+      const adDelivery = Promise.all([
+        deliverGoogle(row, env, fetchFn, getGoogleToken),
+        deliverTikTok(row, env, fetchFn),
+        deliverX(row, env, fetchFn),
+      ]);
       let posthogStatus = row.posthogStatus;
       let platformStatus = row.platformStatus;
       let posthogAttempts = row.posthogAttempts;
@@ -522,9 +609,17 @@ export async function deliverPendingConversions(
           }
         }
       }
-      await tx.update(schema.campaignConversionEvents).set({ posthogStatus, platformStatus,
+      const [google, tiktok, x] = await adDelivery;
+      if (google.googleStatus === "delivered") summary.googleDelivered++;
+      if (tiktok.tiktokStatus === "delivered") summary.tiktokDelivered++;
+      if (x.xStatus === "delivered") summary.xDelivered++;
+      summary.failed += [google.googleStatus, tiktok.tiktokStatus, x.xStatus].filter(status => status === "failed" || status === "review_required").length;
+      const allAdsDone = [platformStatus, google.googleStatus ?? row.googleStatus,
+        tiktok.tiktokStatus ?? row.tiktokStatus, x.xStatus ?? row.xStatus]
+        .every(status => ["delivered", "not_applicable", "suppressed"].includes(status));
+      await tx.update(schema.campaignConversionEvents).set({ ...google, ...tiktok, ...x, posthogStatus, platformStatus,
         posthogAttempts, platformAttempts, lastError,
-        deliveredAt: posthogStatus === "delivered" && ["delivered", "not_applicable"].includes(platformStatus)
+        deliveredAt: posthogStatus === "delivered" && allAdsDone
           ? new Date().toISOString() : null,
       }).where(eq(schema.campaignConversionEvents.id, row.id));
     });

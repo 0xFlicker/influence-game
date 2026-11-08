@@ -4,7 +4,7 @@
  * Supported fields (query parameter -> stored field):
  * - utm_source -> source, utm_medium -> medium, utm_campaign -> campaign
  * - utm_content -> creative (creative/ad identity), utm_term -> audience
- * - gclid, fbclid, msclkid, ttclid, dclid, gbraid, wbraid -> clickId (+ platform key name in clickIdParam)
+ * - gclid, fbclid, msclkid, ttclid, twclid, dclid, gbraid, wbraid -> clickId (+ platform key name in clickIdParam)
  * - landing_variant, onboarding_variant -> landing/onboarding experiment variant
  *   (kept separate from acquisition: experiment assignment is not a campaign touch)
  * - starter_prompt, starter_skill -> starter prompt/skill *identities* only.
@@ -41,7 +41,7 @@ export interface StoredCampaignAttribution {
 const STORAGE_KEY = "house:campaign-attribution";
 const LABEL_VALUE = /^[a-zA-Z0-9_. -]{1,100}$/;
 const CLICK_ID_VALUE = /^[a-zA-Z0-9_.-]{1,512}$/;
-const CLICK_ID_PARAMS = ["gclid", "fbclid", "msclkid", "ttclid", "dclid", "gbraid", "wbraid"] as const;
+const CLICK_ID_PARAMS = ["gclid", "fbclid", "msclkid", "ttclid", "twclid", "dclid", "gbraid", "wbraid"] as const;
 
 /** Attribution window used for acquisition reporting: 90 days before signup. */
 export const ATTRIBUTION_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;

@@ -32,11 +32,11 @@ export function createCampaignAttributionRoutes(db: DrizzleDB) {
   app.post("/api/attribution/retain", requireAuth(db), async (c) => {
     const user = c.get("user");
     const body = await parseJsonBody(c, "POST /api/attribution/retain");
-    if (typeof body?.analytics !== "boolean" || (body.explicitChoice !== undefined && typeof body.explicitChoice !== "boolean") || (body.expectedVersion !== undefined && typeof body.expectedVersion !== "string")) {
+    if (typeof body?.analytics !== "boolean" || (body.analyticsExplicit !== undefined && typeof body.analyticsExplicit !== "boolean") || (body.explicitChoice !== undefined && typeof body.explicitChoice !== "boolean") || (body.expectedVersion !== undefined && typeof body.expectedVersion !== "string")) {
       return c.json({ error: "analytics must be a boolean" }, 400);
     }
     const preference = await db.transaction(async tx => {
-      const allowed = await syncAnalyticsPreference(tx, user.id, body.analytics === true && c.req.header("Sec-GPC") !== "1" && c.req.header("DNT") !== "1", body.explicitChoice === true, typeof body.expectedVersion === "string" ? body.expectedVersion : undefined);
+      const allowed = await syncAnalyticsPreference(tx, user.id, body.analytics === true && c.req.header("Sec-GPC") !== "1" && c.req.header("DNT") !== "1", body.explicitChoice === true, typeof body.expectedVersion === "string" ? body.expectedVersion : undefined, body.analyticsExplicit === true);
       const [saved] = await tx.select().from(schema.userAnalyticsPreferences).where(eq(schema.userAnalyticsPreferences.userId, user.id));
       // A delayed touch from before withdrawal cannot reappear after re-enabling.
       // Initial sync returns the version; the next browser write supplies it.

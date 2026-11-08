@@ -135,12 +135,13 @@ measured by identified `watch_*` events on days after signup together with
 Delivery checks the account preference immediately before sending. The account
 row lock serializes withdrawal, event capture, and delivery across workers; no
 new send starts after withdrawal is acknowledged. Requests already sent cannot
-be recalled. PostHog and Meta each have independent five-attempt budgets and
+be recalled. PostHog, Meta, Google, TikTok, and X each have independent five-attempt upload budgets and
 five-second HTTP timeouts. Missing configuration consumes no attempts. A
-delivered destination is not resent when the other retries. PostHog receives a
+delivered destination is not resent when another retries. PostHog receives a
 stable event UUID through the [US ingestion API](https://posthog.com/docs/api/capture);
-Meta receives the deterministic event ID. Unsupported Meta
-events are `not_applicable`, not delivered. The worker drains on shutdown.
+Ad platforms receive a deterministic conversion ID. Unsupported funnel events
+are `not_applicable`, not delivered. Google processing has a separate polling
+schedule described below. The worker drains on shutdown.
 
 Signup tracking runs in a separate bounded transaction after account creation.
 Failure logs a payload-free warning and does not prevent session issuance. The
@@ -152,25 +153,97 @@ Historical account recovery is not a new paid conversion.
 
 ## Advertising-platform feedback
 
-No advertising platform is configured today: there is no pixel, tag or CAPI
-credential in the repository or Doppler inventory, and no platform SDK is
-installed. The prepared Meta Conversions API adapter in
-`campaign-conversions.ts` activates only when `META_PIXEL_ID` and
-`META_CAPI_ACCESS_TOKEN` are set; rows then record `platform_status =
-delivered`, otherwise `unconfigured` — unconfigured delivery is never
-reported as operational. Mapping: `signup_completed` → `CompleteRegistration`,
-`agent_ready` → `AgentReady`, `season_entry` → `SeasonEntry`, deduplicated by
-`event_id` = the deterministic conversion ID, with the retained `fbclid`
-sent as `fbc` using its captured touch timestamp. The public account ID is
-SHA-256 hashed for Meta; no raw identity or credential appears in the URL. Intermediate steps are observed
-internally and are not sent as equal-value platform conversions. Free season
-enrollment is never labelled a purchase and no revenue value is invented;
-the bidding objective stays a business choice separate from these success
-metrics. Google/TikTok delivery is not implemented and needs a platform
-decision plus credentials before any launch. Required setup: choose the
-launch platform(s), create the pixel/dataset, set the two env vars in
-Doppler, and complete the privacy reassessment below. Do not launch
-advertisements or spend without separate authorization.
+The server outbox supports Meta, Google Ads Data Manager, TikTok Events API,
+and X Conversion API. Configuration is per destination; this implementation
+has not activated credentials, deployed tracking, or sent live test events.
+No browser ad pixel is added. The signup flow stays unchanged.
+
+Only three authoritative outcomes are sent: `signup_completed`, `agent_ready`,
+and `season_entry`. Agent readiness and free season enrollment are never
+labelled purchases, and payloads contain no invented revenue. The bidding
+objective remains a campaign setup decision.
+
+| Destination | Mapping and matching | Configuration |
+| --- | --- | --- |
+| Meta | `CompleteRegistration`, `AgentReady`, `SeasonEntry`; SHA-256 public account ID and retained `fbclid` as timestamped `fbc` | `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN` |
+| Google Ads | A distinct `UPLOAD_CLICKS` conversion action for each outcome; retained `gclid`, `gbraid`, or `wbraid` | OAuth client ID/secret/refresh token, customer ID, three action IDs; see operations guide |
+| TikTok | `CompleteRegistration`, custom `AgentReady` and `SeasonEntry`; SHA-256 public account ID and retained `ttclid` | `TIKTOK_PIXEL_ID`, `TIKTOK_EVENTS_ACCESS_TOKEN` |
+| X | A distinct Events Manager event ID for each outcome; retained `twclid` | Pixel ID, three event IDs, Ads API consumer key/secret and user access token/secret |
+
+Google and X events without their matching click identifier are
+`not_applicable`; we do not substitute email, phone, IP, or fingerprinting.
+The event's frozen first acquisition touch supplies identifiers, including
+when later outcomes happen over MCP/API. This does not add cross-device or
+view-through attribution. TikTok/Meta can receive the hashed public account ID
+without a click ID. No payload includes wallet addresses, private strategy,
+prompts, or credentials in URLs.
+
+[TikTok custom web events](https://ads.tiktok.com/resources/help/article/custom-events?lang=en)
+currently support reporting but not campaign optimization. Optimize toward
+standard `CompleteRegistration` until an appropriate supported objective is
+chosen; do not rename free enrollment to a purchase. X requires a developer
+app with Ads API access and an authorized Ads Manager account. Set up events
+in [X Events Manager](https://docs.x.com/x-ads-api/measurement/web-conversions)
+using Lead/Custom types appropriate to these free outcomes.
+
+Google uses the current [Data Manager offline conversion API](https://developers.google.com/data-manager/api/devguides/events/google-ads/offline/send-events),
+not the legacy Google Ads click-upload endpoint. Enable Data Manager in the
+OAuth project; authorize `https://www.googleapis.com/auth/datamanager` with
+offline access. Use Website (Import from clicks), type `UPLOAD_CLICKS`, actions
+owned by the configured customer. Customer IDs have ten digits without
+hyphens; action IDs are numeric. For braided click IDs, do not configure
+one-per-click counting, which Google rejects. Complete Google's applicable
+account/measurement terms in the Ads UI before activation.
+
+Google receives the affirmative analytics choice as `adUserData =
+CONSENT_GRANTED` only when explicitly recorded at event capture. Regional
+default permission is `CONSENT_STATUS_UNSPECIFIED`, not a fabricated grant;
+Google may reject it according to account defaults and consent requirements.
+`adPersonalization` is always `CONSENT_DENIED`. The saved explicit-choice
+metadata does not change the regional policy or re-enable a denied account.
+Later acceptance never changes an older event's consent snapshot.
+
+All destinations obey the same account-wide permission and withdrawal lock,
+including DNT/GPC and MCP/API outcomes. Migration `0168_ad_platform_conversions`
+defaults Google/TikTok/X statuses to `suppressed` on existing rows; only newly
+captured permitted events become `pending`. Re-enabling tracking never
+backfills suppressed events. Missing configuration consumes no attempts; adding
+credentials can deliver eligible new rows that were waiting as `unconfigured`.
+
+Google destination identity, TikTok pixel ID, and X pixel/event IDs are
+committed before sending. Credential rotation does not redirect pending retries
+to new conversion actions. Correct a misconfigured frozen destination only
+after confirming whether that event was already accepted by the provider.
+
+### Delivery acknowledgements and retries
+
+- PostHog and Meta retain their existing HTTP acknowledgement behavior.
+- TikTok requires HTTP success and response `code = 0`; HTTP 200 with an error
+  code is a failed attempt. X requires HTTP success and exactly one
+  `data.conversions_processed`, with no errors.
+- Google ingestion returns a `requestId`, which is persisted as `processing`,
+  not delivered. Its separate diagnostics check starts after 30 minutes,
+  backs off by 1.3 to hourly, and stops after 25 checks or the 24-hour window.
+  See [Google diagnostics](https://developers.google.com/data-manager/api/devguides/diagnostics).
+- Only Google's matching-destination `SUCCESS` marks delivery. `FAILED` means
+  every record failed and can retry under the five-upload budget. A failed
+  status read retains the accepted request and never starts another upload.
+  `PARTIAL_SUCCESS` or unresolved processing becomes `review_required`;
+  inspect diagnostics for the saved request ID before any manual replay.
+- Each attempt preserves the original conversion ID and mutation timestamp.
+  These provide the platforms' deduplication keys; provider acceptance and
+  attribution are distinct, and network ambiguity cannot establish an
+  end-to-end exactly-once guarantee.
+- Existing `platform_status` and `platform_attempts` remain Meta-specific.
+  Google, TikTok, and X each have their own status, attempt, and error columns.
+- Google/TikTok/X errors have separate payload-free columns. Retries never
+  expose provider response bodies, access tokens, or refresh tokens in logs.
+  `delivered_at` is populated only after PostHog and every applicable ad
+  destination has completed (historically suppressed destinations are skipped).
+
+Configure worker credentials only for environments authorized to send real
+conversions. Verify each configured platform's event diagnostics with an
+explicitly authorized test journey before launching advertisements or spend.
 
 ## Campaign reporting
 
@@ -403,7 +476,7 @@ backoff (up to 30 seconds), and navigation also resynchronizes it.
 
 Operational account/agent/enrollment records and internal outcome counts remain
 available when analytics is off. They do not authorize optional browser histories
-or ad attribution. The privacy page discloses this distinction and Meta sharing.
+or ad attribution. The privacy page discloses this distinction and Meta, Google, TikTok, and X sharing.
 Migration 0167 suppresses pre-existing events without recorded permission and
 clears their attribution; it preserves all product records and outcome counts.
 

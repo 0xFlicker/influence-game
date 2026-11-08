@@ -308,11 +308,18 @@ Configuration (Doppler `social-strategy-agent`, API/worker env):
 | `POSTHOG_PROJECT_TOKEN` | For PostHog delivery | Project ingestion token for the same PostHog project as the browser; never a personal API key. Without it rows are `unconfigured` and no retry attempts are consumed. |
 | `POSTHOG_HOST` | No | Defaults to `https://us.i.posthog.com` (ingestion host). |
 | `META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN` | No | Activates the prepared Meta Conversions API adapter. Until both are set, platform delivery reports `unconfigured`, never delivered. |
+| `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN` | For Google | OAuth credentials authorized for `https://www.googleapis.com/auth/datamanager`; enable Data Manager API in the project. Short-lived tokens are refreshed in memory. |
+| `GOOGLE_ADS_CUSTOMER_ID` | For Google | Ten digits, no hyphens; owns the `UPLOAD_CLICKS` conversion actions. |
+| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | No | Manager/access customer, ten digits; defaults to the operating customer. |
+| `GOOGLE_ADS_SIGNUP_ACTION_ID`, `GOOGLE_ADS_AGENT_READY_ACTION_ID`, `GOOGLE_ADS_SEASON_ENTRY_ACTION_ID` | Per Google outcome | Numeric action IDs, one per outcome. An absent action leaves that outcome unconfigured. |
+| `TIKTOK_PIXEL_ID`, `TIKTOK_EVENTS_ACCESS_TOKEN` | For TikTok | Events API dataset/pixel and authorized access token. Custom readiness/enrollment events are reporting-only, not optimization goals. |
+| `X_ADS_PIXEL_ID`, `X_ADS_CONSUMER_KEY`, `X_ADS_CONSUMER_SECRET`, `X_ADS_ACCESS_TOKEN`, `X_ADS_ACCESS_TOKEN_SECRET` | For X | Ads API-approved app and user OAuth 1.0a credentials with Ads Manager access. Uses the `oauth-1.0a` signing dependency. |
+| `X_ADS_SIGNUP_EVENT_ID`, `X_ADS_AGENT_READY_EVENT_ID`, `X_ADS_SEASON_ENTRY_EVENT_ID` | Per X outcome | Events Manager event IDs for signup, readiness and enrollment. Missing IDs consume no attempts. |
 
 Internal reporting: `GET /api/admin/campaign-report` (admin permission),
 optionally with caller-supplied spend (`?spend={"campaign":amount}`).
 Deployment: apply migrations `0166_campaign_attribution_conversions` and
-`0167_campaign_tracking_preferences`, deploy
+`0167_campaign_tracking_preferences`, and `0168_ad_platform_conversions`, deploy
 API/worker and web through the normal gates, then verify one tagged journey
 on production per [the analytics release verification](product-analytics.md).
 Do not launch advertisements or spend without separate authorization.
@@ -732,10 +739,29 @@ Local public uploads default to a directory relative to the API working director
 
 Campaign delivery and withdrawal: pending rows require the account's effective
 analytics preference. Missing/denied preferences suppress delivery. Monitor
-PostHog and Meta independently; exhausted failures need an explicit operational
+PostHog, Meta, Google, TikTok, and X independently; exhausted failures need an explicit operational
 retry decision, and unconfigured destinations spend no attempts. Migration 0167
 removes unconsented retained attribution and suppresses old events while keeping
 operational counts. Verify withdrawal with a non-staff account before enabling
-Meta credentials. Signup recovery adds only suppressed historical outcomes.
+ad-platform credentials. Signup recovery adds only suppressed historical outcomes.
 See [product analytics](product-analytics.md#account-preference-and-operational-reporting)
 for reporting levels, privacy semantics, and regression coverage.
+
+
+Campaign adapter operations: Google rows in `processing` retain their request ID
+and poll independently of the five-upload retry budget. A status-check failure
+must never be reset to a fresh upload. `review_required` rows need inspection in
+Google diagnostics; provider acceptance does not prove ad attribution. Retain
+frozen destination IDs across configuration changes. Check `google_last_error`,
+`tiktok_last_error`, and `x_last_error` independently of the existing PostHog/Meta
+`last_error`. Withdrawal suppresses uploads and pending Google polls. Migration
+0168 does not share historical conversions with new platforms. See
+[platform setup and acknowledgement semantics](product-analytics.md#advertising-platform-feedback).
+
+A useful aggregate inspection (no click identifiers or account IDs):
+
+```sql
+SELECT google_status, tiktok_status, x_status, count(*)
+FROM campaign_conversion_events
+GROUP BY google_status, tiktok_status, x_status;
+```

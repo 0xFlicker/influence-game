@@ -85,3 +85,14 @@ test("withdrawal clears the optional account marker as well as campaign touches"
   bindCampaignAccount("account-b", false);
   expect(store.has("house:campaign-account")).toBe(false);
 });
+
+
+test("X click attribution survives the browser-to-account payload and is cleared on withdrawal", () => {
+  const touch = parseCampaignTouch("?utm_source=x&twclid=x-click-123");
+  expect(touch).toMatchObject({ source: "x", clickId: "x-click-123", clickIdParam: "twclid" });
+  retainCampaignTouch("?twclid=x-click-123");
+  expect(campaignAttributionProperties()).toMatchObject({ twclid: "x-click-123", first_twclid: "x-click-123" });
+  clearCampaignAttribution();
+  expect(campaignAttributionProperties()).toEqual({});
+  expect(parseCampaignTouch("?twclid=bad%20id")).toBeNull();
+});

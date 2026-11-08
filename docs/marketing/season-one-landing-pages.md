@@ -70,3 +70,37 @@ The initial combined run exposed a tracking lock-upgrade deadlock during paralle
 agent creation; changing the tracking lock to `FOR NO KEY UPDATE` fixed it.
 All 21 tracking/season-read regressions and the final sharded season tests passed.
 No render-fixture or player-presentation code was changed to bypass the timeout.
+
+## Google, TikTok, and X reporting follow-up — 2026-11-08
+
+The landing-page branch now includes server conversion adapters for Google Ads
+Data Manager, TikTok Events API, and X Conversion API. They report signup,
+agent readiness, and season entry with the existing account-wide tracking
+permission, withdrawal rules, stable conversion identities, and independent
+five-attempt upload budgets. Google acceptance is followed by persisted,
+separately scheduled processing diagnostics. No historical events are backfilled
+to the new destinations. Partial configuration waits without consuming attempts
+or freezing an incomplete destination.
+
+The browser retains X `twclid` under the same attribution controls. Explicit
+analytics choice is distinguished from regional default permission for Google's
+consent signal. The signup sequence is unchanged. Privacy copy and the
+[platform setup guide](../product-analytics.md#advertising-platform-feedback)
+now cover all destinations. No live credentials, external conversion submission,
+spend, deployment, or main-branch merge is part of this change.
+
+Final local checks: 31 focused PostgreSQL tracking/migration tests, 49 browser,
+attribution, privacy and authentication tests, and repository typecheck/lint
+passed. The final provider-free baseline passed 3,391 tests with 5 skipped.
+The new provider tests use mocked transports; production configuration,
+provider acknowledgement, campaign attribution, and optimization eligibility
+still require platform-side verification.
+
+The four isolated PostgreSQL baseline shards finished with 2,559 passing tests
+and two failures. One was a new consent-test fixture that omitted the event it
+asserted against; the fixture is corrected and passes in the final 31-test
+tracking run (which also covers the five additional adapter/migration cases
+added after the baseline started). The remaining failure is the pre-existing
+`staging-render-proof.test.ts` cleanup timeout: all nine render assertions
+passed before its 30-second cleanup hook timed out. The aggregate PostgreSQL
+baseline is therefore not claimed green. Main remains unchanged.

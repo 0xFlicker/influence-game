@@ -1798,6 +1798,7 @@ export async function loginWithPrivyToken(
       token: privyToken,
       intent: request.intent,
       analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+      analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
       ...(request.intent === "create_account"
         ? {
           ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
@@ -1858,6 +1859,7 @@ export async function createManagedAuthentication(
       ...(inviteCode ? { inviteCode } : {}),
       ...PRESENTED_LEGAL_ACCEPTANCE,
       analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+      analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
       ...(permittedCampaignAttribution().firstTouch
         ? { attribution: permittedCampaignAttribution().firstTouch }
         : {}),
@@ -1877,7 +1879,7 @@ export async function retainCampaignAttribution(explicitChoice = false, expected
   return apiFetch("/api/attribution/retain", {
     method: "POST",
     signal: AbortSignal.timeout(5000),
-    body: JSON.stringify({ analytics: consent.ready && consent.analytics, explicitChoice, expectedVersion,
+    body: JSON.stringify({ analytics: consent.ready && consent.analytics, analyticsExplicit: consent.choice?.analytics === true, explicitChoice, expectedVersion,
       firstTouch: stored.firstTouch, lastTouch: stored.lastNonDirectTouch }),
   });
 }

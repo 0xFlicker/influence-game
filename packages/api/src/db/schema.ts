@@ -270,6 +270,7 @@ export const users = pgTable("users", {
 export const userAnalyticsPreferences = pgTable("user_analytics_preferences", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   analytics: boolean("analytics").notNull().default(false),
+  analyticsExplicit: boolean("analytics_explicit").notNull().default(false),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 });
 
@@ -309,6 +310,28 @@ export const campaignConversionEvents = pgTable("campaign_conversion_events", {
   posthogAttempts: integer("posthog_attempts").notNull().default(0),
   platformStatus: text("platform_status").notNull().default("pending"),
   platformAttempts: integer("platform_attempts").notNull().default(0),
+  googleStatus: text("google_status").notNull().default("suppressed"),
+  googleAttempts: integer("google_attempts").notNull().default(0),
+  googleLastError: text("google_last_error"),
+  googleAdUserDataGranted: boolean("google_ad_user_data_granted").notNull().default(false),
+  googleDestination: jsonb("google_destination").$type<{
+    operatingAccount: { accountType: "GOOGLE_ADS"; accountId: string };
+    loginAccount: { accountType: "GOOGLE_ADS"; accountId: string };
+    productDestinationId: string;
+  }>(),
+  googleRequestId: text("google_request_id"),
+  googleAcceptedAt: text("google_accepted_at"),
+  googlePollCount: integer("google_poll_count").notNull().default(0),
+  googleNextPollAt: text("google_next_poll_at"),
+  tiktokStatus: text("tiktok_status").notNull().default("suppressed"),
+  tiktokAttempts: integer("tiktok_attempts").notNull().default(0),
+  tiktokPixelId: text("tiktok_pixel_id"),
+  tiktokLastError: text("tiktok_last_error"),
+  xStatus: text("x_status").notNull().default("suppressed"),
+  xAttempts: integer("x_attempts").notNull().default(0),
+  xPixelId: text("x_pixel_id"),
+  xEventId: text("x_event_id"),
+  xLastError: text("x_last_error"),
   lastError: text("last_error"),
   deliveredAt: text("delivered_at"),
 }, (table) => [

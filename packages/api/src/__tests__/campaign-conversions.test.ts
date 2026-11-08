@@ -302,6 +302,7 @@ test("signup issues a session despite conversion write failure, then recovers an
 
 test("authenticated preference endpoint persists rejection and lets GPC override explicit acceptance", async () => {
   const { db, user } = await conversionFixture();
+  await recordSignupCompleted(db, { userId: user.id, channel: "web" });
   const { createCampaignAttributionRoutes } = await import("../routes/campaign-attribution.js");
   const app = new Hono().route("/", createCampaignAttributionRoutes(db));
   process.env.JWT_SECRET = "campaign-preference-regression";
@@ -315,16 +316,20 @@ test("authenticated preference endpoint persists rejection and lets GPC override
   expect(denial.analytics).toBe(false);
   expect(await db.select().from(schema.userCampaignAttribution)).toHaveLength(0);
   expect(await (await post({ analytics: true })).json()).toMatchObject({ analytics: false });
-  const enabledResponse = await post({ analytics: true, explicitChoice: true, expectedVersion: denial.version });
+  const enabledResponse = await post({ analytics: true, analyticsExplicit: true, explicitChoice: true, expectedVersion: denial.version });
   const enabled = await enabledResponse.json() as { analytics: boolean; version: string };
   expect(enabled.analytics).toBe(true);
+  expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.analyticsExplicit).toBe(true);
   await post({ analytics: true, expectedVersion: denial.version, firstTouch: { campaign: "stale" } });
   expect(await db.select().from(schema.userCampaignAttribution)).toHaveLength(0);
   await post({ analytics: true, expectedVersion: enabled.version, firstTouch: { campaign: "current" } });
   const [retained] = await db.select().from(schema.userCampaignAttribution);
   expect(retained?.firstTouch?.utm_campaign).toBe("current");
-  expect(await (await post({ analytics: true, explicitChoice: true }, { "Sec-GPC": "1" })).json()).toMatchObject({ analytics: false });
-  expect(await (await post({ analytics: true, explicitChoice: true }, { DNT: "1" })).json()).toMatchObject({ analytics: false });
+  expect(await (await post({ analytics: true, analyticsExplicit: true, explicitChoice: true }, { "Sec-GPC": "1" })).json()).toMatchObject({ analytics: false });
+  expect(await (await post({ analytics: true, analyticsExplicit: true, explicitChoice: true }, { DNT: "1" })).json()).toMatchObject({ analytics: false });
+  expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.analyticsExplicit).toBe(false);
+  const [suppressed] = await db.select().from(schema.campaignConversionEvents);
+  expect(suppressed).toMatchObject({ googleStatus: "suppressed", tiktokStatus: "suppressed", xStatus: "suppressed" });
 });
 
 test("concurrent delivery workers serialize the account and do not resend a committed success", async () => {

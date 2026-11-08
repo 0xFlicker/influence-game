@@ -37,7 +37,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: October 18, 2026
+            Last Updated: November 8, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -417,10 +417,12 @@ export default function PrivacyPage() {
           </P>
           <P>
             When optional tracking is allowed, we may send account signup,
-            agent readiness, and season-entry events to Meta to measure our
+            agent readiness, and season-entry events to Meta, Google, TikTok,
+            and X to measure our
             advertisements. These events may include an advertising click
             identifier and a hashed public account identifier. They do not
-            include your email, wallet address, prompts, or private strategy.
+            include your email, phone number, IP address, wallet address,
+            prompts, or private strategy.
           </P>
           <P>
             Your effective tracking preference is saved with your account and

@@ -43,6 +43,7 @@
     "drizzle-orm": "^0.45.1",
     "hono": "^4.7.0",
     "jose": "^6.2.1",
+    "oauth-1.0a": "2.2.6",
     "openai": "^4.77.0",
     "openskill": "5.0.1",
     "postgres": "^3.4.8",

@@ -129,6 +129,7 @@ export function createAuthRoutes(
       "deploymentSha",
       "attribution",
       "analytics",
+      "analyticsExplicit",
     ]);
     if (!request.ok) return request.response;
     const { body } = request;
@@ -233,7 +234,7 @@ export function createAuthRoutes(
     }
     await recordAuthenticationTracking(db, {
       userId: authentication.user.id, publicId: authentication.user.publicId,
-      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), attribution: body.attribution,
+      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, attribution: body.attribution,
     });
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -357,6 +358,7 @@ export function createAuthRoutes(
         "deploymentSha",
         "attribution",
         "analytics",
+        "analyticsExplicit",
       ],
       "acceptTerms",
     );
@@ -398,7 +400,7 @@ export function createAuthRoutes(
     if (outcome.status === "authenticated" && outcome.created) {
       await recordAuthenticationTracking(db, {
         userId: outcome.user.id, publicId: outcome.user.publicId, created: true,
-        analytics: requestedAnalytics(c, request.body.analytics), attribution: request.body.attribution,
+        analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, attribution: request.body.attribution,
       });
     }
     if (outcome.status === "invite_required") {
@@ -657,6 +659,7 @@ type StrictAuthBody = {
   deploymentSha?: string;
   attribution?: unknown;
   analytics?: unknown;
+  analyticsExplicit?: unknown;
 };
 
 async function readStrictTokenRequest(
