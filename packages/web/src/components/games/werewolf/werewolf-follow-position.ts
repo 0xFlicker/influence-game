@@ -24,13 +24,21 @@ export function werewolfFollowPosition(cue:WerewolfPlaybackCue|null|undefined,au
   return {kind:'werewolf',audience,cursor:cue.moment.cursor,part};
 }
 
+/** Scrubbing includes visual entrances; following must wait for their content reveal. */
+export function werewolfFollowRevealAtMs(cue:WerewolfPlaybackCue|null|undefined):number {
+  if(!cue)return 0;
+  if(!isOpeningCue(cue)&&cue.transformation)
+    return Math.max(cue.transformation.durationMs,werewolfPlaybackPolicy.speech(cue)?.readAtMs??0);
+  return werewolfPlaybackPolicy.scrubAtMs?.(cue)??0;
+}
+
 /** A quiet gap inside the night -> day announcement is not a commentary break.
  * Use canonical cue kinds and the recorded director clock, never caption text. */
 export function werewolfCommentaryReady(director:Pick<PresentationDirector<WerewolfPlaybackCue>,'getActiveCue'|'getSnapshot'|'getElapsedBaseMs'>):boolean {
   const cue=director.getActiveCue();
   if(!cue||isOpeningCue(cue)||cue.reprise)return true;
   if(cue.moment.entry.kind==='night'&&!cue.nightAction)return false;
-  if(!werewolfCueMoment(cue).house)return true;
+  if(!werewolfCueMoment(cue).house&&!cue.transformation)return true;
   const speech=werewolfPlaybackPolicy.speech(cue);
   return !speech||director.getSnapshot().waitingAtTail||director.getElapsedBaseMs()>=speech.hideAtMs;
 }
