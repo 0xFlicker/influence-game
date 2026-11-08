@@ -414,7 +414,7 @@ export interface ConversionDeliveryEnv extends AdConversionEnv {
 
 export function conversionDeliveryEnvFromProcess(env: NodeJS.ProcessEnv = process.env): ConversionDeliveryEnv {
   return {
-    posthogProjectToken: env.POSTHOG_PROJECT_TOKEN || undefined,
+    posthogProjectToken: env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN || undefined,
     posthogHost: env.POSTHOG_HOST || "https://us.i.posthog.com",
     metaPixelId: env.META_PIXEL_ID || undefined,
     metaAccessToken: env.META_CAPI_ACCESS_TOKEN || undefined,

@@ -305,7 +305,7 @@ Configuration (Doppler `social-strategy-agent`, API/worker env):
 
 | Variable | Required | Effect |
 | --- | --- | --- |
-| `POSTHOG_PROJECT_TOKEN` | For PostHog delivery | Project ingestion token for the same PostHog project as the browser; never a personal API key. Without it rows are `unconfigured` and no retry attempts are consumed. |
+| `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` | For PostHog delivery | Shared web and API/worker project ingestion token; never a personal API key. Without it rows are `unconfigured` and no retry attempts are consumed. |
 | `POSTHOG_HOST` | No | Defaults to `https://us.i.posthog.com` (ingestion host). |
 | `META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN` | No | Activates the prepared Meta Conversions API adapter. Until both are set, platform delivery reports `unconfigured`, never delivered. |
 | `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN` | For Google | OAuth credentials authorized for `https://www.googleapis.com/auth/datamanager`; enable Data Manager API in the project. Short-lived tokens are refreshed in memory. |

@@ -6,6 +6,8 @@ https://us.posthog.com/project/671431/dashboard/2224772
 ## Configuration
 
 The web runtime reads `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` into `/runtime-config`.
+Server conversion delivery reads that same environment variable; provide it to
+both web and API/worker processes. No separate server token variable is needed.
 This is a public ingestion token, not a personal API credential. It is configured
 in production Doppler (`social-strategy-agent/prd`) and the local ignored web
 `.env.local`. The production release already allows `NEXT_PUBLIC_*` through its
