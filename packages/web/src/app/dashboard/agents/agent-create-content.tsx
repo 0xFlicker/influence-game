@@ -63,7 +63,9 @@ export function AgentCreateContent({
   seasonSlug,
   draftScope,
   imageRequest,
+  ideaRequest,
 }: {
+  ideaRequest?: string;
   imageRequest?: string;
   draftScope?: string;
   flow?: AgentCreateFlow;
@@ -280,6 +282,7 @@ export function AgentCreateContent({
       )}
       <AgentForm
         publicPreview
+        ideaRequest={ideaRequest}
         imageRequest={imageRequest}
         guided={mode === "assistant"}
         onAdvanced={() => setMode("advanced")}

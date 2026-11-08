@@ -6,7 +6,7 @@ import { AgentForm } from "../app/dashboard/agents/agent-form";
 import { InfluenceAuthContext, type InfluenceAuthState } from "../hooks/use-auth";
 
 const originalFetch = globalThis.fetch;
-const globalKeys = ["window", "document", "navigator", "HTMLElement", "Element", "Node", "Event", "InputEvent", "localStorage"] as const;
+const globalKeys = ["window", "document", "navigator", "HTMLElement", "Element", "Node", "Event", "InputEvent", "localStorage", "sessionStorage"] as const;
 const saved = new Map(globalKeys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: Window;
 let signupCalls: number;
@@ -29,17 +29,18 @@ beforeEach(() => {
     throw new Error(`Unexpected request ${path}`);
   }, { preconnect: originalFetch.preconnect });
 });
-afterEach(() => {
-  cleanup(); dom.close(); globalThis.fetch = originalFetch;
+afterEach(async () => {
+  await act(async () => { cleanup(); await new Promise(resolve => setTimeout(resolve, 0)); });
+  dom.close(); globalThis.fetch = originalFetch;
   for (const key of globalKeys) { const descriptor = saved.get(key); if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
 });
-function mount() {
+function mount(ideaRequest?: string) {
   function Harness() {
     const [authenticated, setAuthenticated] = useState(false);
     signIn = () => { dom.localStorage.setItem("influence_session", "test-session"); setAuthenticated(true); };
     const auth = { ready: true, authenticated, account: authenticated ? { id: "new-account" } : null,
       openCreateAccount: () => { signupCalls++; } } as InfluenceAuthState;
-    return <InfluenceAuthContext.Provider value={auth}><AgentForm publicPreview guided draftScope="create:manage:none" onCancel={() => {}} onSubmit={async () => {}} /></InfluenceAuthContext.Provider>;
+    return <InfluenceAuthContext.Provider value={auth}><AgentForm publicPreview guided ideaRequest={ideaRequest} draftScope="create:manage:none" onCancel={() => {}} onSubmit={async () => {}} /></InfluenceAuthContext.Provider>;
   }
   return render(<Harness />);
 }
@@ -101,4 +102,22 @@ test("a used message opens signup and restores the question without a character 
   await waitFor(() => expect(signupCalls).toBe(1));
   expect(view.getByText("Your character starts here.")).toBeTruthy();
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("What is a sealed ballot?");
+});
+
+
+test("campaign handoff prefills the real creator without spending its first message or moving signup", async () => {
+  dom.sessionStorage.setItem("influence:campaign-idea:campaign-test", "An exiled diplomat who keeps receipts");
+  const view = mount("campaign-test");
+  await waitFor(() => expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("An exiled diplomat who keeps receipts"));
+  expect(paths.filter(path => path.startsWith("POST"))).toEqual([]);
+  expect(signupCalls).toBe(0);
+  await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
+  await waitFor(() => expect(view.getByRole("button", { name: "Revise Name" }).textContent).toContain("Mira Vale"));
+  expect(paths.filter(path => path.startsWith("POST"))).toEqual(["POST /api/agent-profiles/anonymous"]);
+  expect(signupCalls).toBe(0);
+  fireEvent.click(view.getByRole("button", { name: "Continue" }));
+  fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A blue coat and gold rings" } });
+  fireEvent.click(view.getByRole("button", { name: "Send" }));
+  expect(signupCalls).toBe(1);
+  expect(paths.filter(path => path.startsWith("POST"))).toEqual(["POST /api/agent-profiles/anonymous"]);
 });
