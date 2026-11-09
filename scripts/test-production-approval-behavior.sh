@@ -27,6 +27,10 @@ cat > "$tmp/mock-bin/gh" <<'MOCK_GH'
 #!/usr/bin/env bash
 endpoint="${@: -1}"
 case "$endpoint" in
+  */environments/production/secrets) printf '%s\n' '{"total_count":0,"secrets":[]}' ;;
+  */environments/production) cat "$GH_ENVIRONMENT" ;;
+  */rulesets/*) cat "$GH_RULESET" ;;
+  */actions/runs/*/approvals) cat "$GH_APPROVAL_HISTORY" ;;
   */actions/runs/*/artifacts\?*) cat "$GH_ARTIFACTS" ;;
   */actions/runs/*) cat "$GH_RUN" ;;
   */actions/artifacts/*/zip) cat "$GH_ARCHIVE" ;;
@@ -120,6 +124,20 @@ jq '.enforcement = "disabled"' "$tmp/ruleset.json" > "$tmp/disabled-ruleset.json
 expect_failure "disabled main ruleset" bash "$CONTROLLER" validate-main-ruleset-fixture "$tmp/disabled-ruleset.json"
 jq '.conditions.ref_name.include = ["refs/heads/dev"]' "$tmp/ruleset.json" > "$tmp/wrong-target-ruleset.json"
 expect_failure "ruleset missing main" bash "$CONTROLLER" validate-main-ruleset-fixture "$tmp/wrong-target-ruleset.json"
+
+# Exercise both real policy entry points without a current-main endpoint. An
+# unrelated merge after dispatch must not invalidate the pinned approval run.
+jq -n '{sender:{login:"flick-ai-dev[bot]",id:270169057}}' > "$tmp/event.json"
+jq -n '[{state:"approved",user:{login:"0xFlicker",id:97764360},environments:[{name:"production"}]}]' > "$tmp/approval-history.json"
+policy_env=(PATH="$tmp/mock-bin:$PATH" GH_ENVIRONMENT="$tmp/environment.json" GH_RULESET="$tmp/ruleset.json"
+  GH_APPROVAL_HISTORY="$tmp/approval-history.json" GH_TOKEN=test POLICY_TOKEN=test
+  GITHUB_REPOSITORY=0xFlicker/influence-game GITHUB_RUN_ID=456 GITHUB_RUN_ATTEMPT=1
+  GITHUB_ACTOR='flick-ai-dev[bot]' GITHUB_EVENT_PATH="$tmp/event.json" GITHUB_SHA="$(git rev-parse HEAD)")
+env "${policy_env[@]}" bash "$CONTROLLER" verify-preapproval-policy "$tmp/preapproval-policy"
+env "${policy_env[@]}" bash "$CONTROLLER" verify-policy "$tmp/approved-policy"
+jq '.[0].state = "rejected"' "$tmp/approval-history.json" > "$tmp/rejected-history.json"
+expect_failure "rejected approval history" env "${policy_env[@]}" GH_APPROVAL_HISTORY="$tmp/rejected-history.json" \
+  bash "$CONTROLLER" verify-policy "$tmp/rejected-policy"
 
 candidate_dir="$tmp/candidate"
 candidate_content_digest="sha256:$(sha256sum "$candidate_dir/archive/production-approval-request.json" | awk '{print $1}')"
