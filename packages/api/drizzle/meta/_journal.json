@@ -1170,6 +1170,27 @@
       "when": 1794096000000,
       "tag": "0166_discord_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1794096000001,
+      "tag": "0167_campaign_attribution_conversions",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1794096000002,
+      "tag": "0168_campaign_tracking_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1794096000003,
+      "tag": "0169_ad_platform_conversions",
+      "breakpoints": true
     }
   ]
 }

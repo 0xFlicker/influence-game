@@ -466,3 +466,22 @@ For local and deployed verification:
 Consent, code exchange, refresh, introspection, and writes check current DB permission `manage_game_assets`, seeded for producer and sysop. Public-game image reads require no token or management role. `public`/`spoiler` are presentation labels, never access filters. Existing scope `producer` alone cannot manage assets; `assets:manage` alone does not grant producer trace access. Sysop asset consent does not require an additional producer role or broaden the existing producer trace consent policy. The [asset CLI](game-assets.md) reuses this login flow with explicit asset scope and origin-bound token files; no separate issuer or long-lived token minting path is added.
 
 The similarly named local simulation `read_game_retrospective` is a separate trusted stdio adapter: its inputs are `sessionId`, `gameNumber`, optional `afterOrdinal` and bounded `limit`. A fresh `session.json` identifies the owning game; `read_werewolf_history` requires explicit audience and bounded cursor range. Local artifacts are never routed through the deployed OAuth server or treated as production evidence.
+
+## Conversion attribution
+
+MCP creation and enrollment complete outside the browser, so they carry no
+landing-page touch. The shared services record the same authoritative
+conversion events as the web (`agent_created`, `agent_ready`, `season_entry`)
+with `channel = mcp` and the OAuth `clientId` taken from the validated MCP
+auth context — never from tool arguments. An account's retained first-touch
+campaign attribution (from its browser visits) is joined server-side;
+accounts that only ever use MCP report campaign `unknown`, which is explicit
+and never inferred. Tracking identifiers are never placed in model-visible
+prompts or OAuth credentials. See [the analytics contract](product-analytics.md).
+
+MCP conversion delivery uses the owner's account-wide analytics preference.
+Tool calls cannot supply a tracking override. A missing/denied preference leaves
+operational outcomes internal, without campaign attribution or external delivery;
+re-enabling never backfills suppressed events. Change the preference through the
+website's privacy controls (the authenticated attribution endpoint synchronizes
+the effective choice).

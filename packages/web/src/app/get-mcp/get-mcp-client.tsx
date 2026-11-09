@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import {
   buildMcpSetupClients,
@@ -21,6 +22,17 @@ export function GetMcpSetupContent({
   clients = buildMcpSetupClients(mcpUrl),
   returnHref = "/dashboard",
 }: GetMcpSetupContentProps) {
+  useEffect(() => {
+    function openLinkedClient() {
+      const id = window.location.hash.slice(1);
+      if (!clients.some((client) => id === `setup-${client.id}`)) return;
+      const section = document.getElementById(id);
+      if (section instanceof HTMLDetailsElement) section.open = true;
+    }
+    openLinkedClient();
+    window.addEventListener("hashchange", openLinkedClient);
+    return () => window.removeEventListener("hashchange", openLinkedClient);
+  }, [clients]);
   return (
     <main className="relative flex-1 overflow-x-hidden bg-[rgb(var(--void))] px-4 py-8 text-[rgb(var(--text-primary))] sm:px-6 sm:py-10 lg:px-8">
       <div className="influence-phase-atmosphere" />

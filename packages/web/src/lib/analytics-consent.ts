@@ -1,12 +1,13 @@
 "use client";
 
+import { clearCampaignAttribution } from "./campaign-attribution";
 import { useSyncExternalStore } from "react";
 import { analyticsPermission, parseAnalyticsChoice, visitAnalyticsNotice, type AnalyticsChoice, type AnalyticsNotice } from "./analytics-policy";
 
 const key = "house:analytics-consent";
 const noticeKey = "house:analytics-us-notice-shown";
 const listeners = new Set<() => void>();
-const initial = { ready: false, country: null as string | null, choice: null as AnalyticsChoice | null, blocked: false, analytics: false, recordings: false, notice: { seen: false, path: null } as AnalyticsNotice };
+const initial = { accountAllowed: null as boolean | null, choiceRevision: 0, ready: false, country: null as string | null, choice: null as AnalyticsChoice | null, blocked: false, analytics: false, recordings: false, notice: { seen: false, path: null } as AnalyticsNotice };
 let state = initial;
 let loading: Promise<void> | null = null;
 
@@ -19,7 +20,8 @@ function refresh() {
     seen = localStorage.getItem(noticeKey) === "true";
   }
   catch { blocked = true; }
-  state = { ...state, choice, blocked, notice: { ...state.notice, seen }, ...analyticsPermission(state.country, choice, blocked) };
+  state = { ...state, choice, blocked, notice: { ...state.notice, seen }, ...analyticsPermission(state.country, choice, blocked || state.accountAllowed === false) };
+  if (!state.analytics) clearCampaignAttribution();
   listeners.forEach(listener => listener());
 }
 
@@ -64,7 +66,18 @@ export function saveAnalyticsChoice(choice: AnalyticsChoice): boolean {
   let saved = true;
   try { localStorage.setItem(key, JSON.stringify({ version: 1, ...choice })); }
   catch { saved = false; }
-  state = { ...state, choice, ...analyticsPermission(state.country, choice, state.blocked) };
+  state = { ...state, choice, accountAllowed: null, choiceRevision: state.choiceRevision + 1,
+    ...analyticsPermission(state.country, choice, state.blocked) };
+  if (!state.analytics) clearCampaignAttribution();
   listeners.forEach(listener => listener());
   return saved;
+}
+
+/** Apply the signed-in account preference without rewriting the browser's explicit choice. */
+export function setAccountAnalyticsAllowed(allowed: boolean | null): void {
+  if (state.accountAllowed === allowed) return;
+  state = { ...state, accountAllowed: allowed,
+    ...analyticsPermission(state.country, state.choice, state.blocked || allowed === false) };
+  if (!state.analytics) clearCampaignAttribution();
+  listeners.forEach(listener => listener());
 }

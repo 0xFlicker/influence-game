@@ -266,6 +266,84 @@ export const users = pgTable("users", {
   ),
 ]);
 
+/** Account-wide effective preference, also used by MCP/API conversions. Missing means denied. */
+export const userAnalyticsPreferences = pgTable("user_analytics_preferences", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  analytics: boolean("analytics").notNull().default(false),
+  analyticsExplicit: boolean("analytics_explicit").notNull().default(false),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+});
+
+export const userCampaignAttribution = pgTable("user_campaign_attribution", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "restrict" }),
+  channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
+  // Validated campaign touches only (services/campaign-conversions.ts).
+  // Click IDs are retained here under the same access controls as the account
+  // record; they are never copied into model-visible prompts or credentials.
+  firstTouch: jsonb("first_touch").$type<Record<string, string>>(),
+  lastTouch: jsonb("last_touch").$type<Record<string, string>>(),
+  firstTouchAt: text("first_touch_at"),
+  lastTouchAt: text("last_touch_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  check("user_campaign_attribution_channel_check", sql`${table.channel} IN ('web', 'mcp', 'api')`),
+]);
+
+export const campaignConversionEvents = pgTable("campaign_conversion_events", {
+  // Deterministic ID (e.g. signup:{userId}) makes retries idempotent.
+  id: text("id").primaryKey(),
+  eventName: text("event_name").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  publicId: text("public_id").notNull(),
+  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id),
+  seasonId: text("season_id").references(() => seasons.id),
+  channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
+  mcpClientId: text("mcp_client_id"),
+  attribution: jsonb("attribution").$type<Record<string, string>>(),
+  occurredAt: text("occurred_at").notNull().default(sql`now()::text`),
+  posthogStatus: text("posthog_status").notNull().default("pending"),
+  posthogAttempts: integer("posthog_attempts").notNull().default(0),
+  platformStatus: text("platform_status").notNull().default("pending"),
+  platformAttempts: integer("platform_attempts").notNull().default(0),
+  googleStatus: text("google_status").notNull().default("suppressed"),
+  googleAttempts: integer("google_attempts").notNull().default(0),
+  googleLastError: text("google_last_error"),
+  googleAdUserDataGranted: boolean("google_ad_user_data_granted").notNull().default(false),
+  googleDestination: jsonb("google_destination").$type<{
+    operatingAccount: { accountType: "GOOGLE_ADS"; accountId: string };
+    loginAccount: { accountType: "GOOGLE_ADS"; accountId: string };
+    productDestinationId: string;
+  }>(),
+  googleRequestId: text("google_request_id"),
+  googleAcceptedAt: text("google_accepted_at"),
+  googlePollCount: integer("google_poll_count").notNull().default(0),
+  googleNextPollAt: text("google_next_poll_at"),
+  tiktokStatus: text("tiktok_status").notNull().default("suppressed"),
+  tiktokAttempts: integer("tiktok_attempts").notNull().default(0),
+  tiktokPixelId: text("tiktok_pixel_id"),
+  tiktokLastError: text("tiktok_last_error"),
+  xStatus: text("x_status").notNull().default("suppressed"),
+  xAttempts: integer("x_attempts").notNull().default(0),
+  xPixelId: text("x_pixel_id"),
+  xEventId: text("x_event_id"),
+  xLastError: text("x_last_error"),
+  lastError: text("last_error"),
+  deliveredAt: text("delivered_at"),
+}, (table) => [
+  index("campaign_conversion_events_name_time_idx").on(table.eventName, table.occurredAt),
+  index("campaign_conversion_events_delivery_idx").on(table.posthogStatus, table.platformStatus),
+  check("campaign_conversion_events_channel_check", sql`${table.channel} IN ('web', 'mcp', 'api')`),
+  check(
+    "campaign_conversion_events_name_check",
+    sql`${table.eventName} IN ('signup_completed', 'agent_creation_started', 'agent_created', 'agent_ready', 'season_entry', 'game_placed', 'mcp_linked', 'owner_returned')`,
+  ),
+]);
+
 export const legalAcceptances = pgTable("legal_acceptances", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id")

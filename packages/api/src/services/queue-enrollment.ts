@@ -1,3 +1,4 @@
+import { recordSeasonEntry } from "./campaign-conversions.js";
 import { getNextDailyFreeDrawAt } from "./free-game-schedule.js";
 import { randomUUID } from "crypto";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
@@ -401,6 +402,15 @@ async function joinDailyFreeQueue(
         .where(eq(schema.freeGameQueue.id, existing.id)).returning())[0]!;
       await tx.delete(schema.freeQueuePromptSuppressions)
         .where(eq(schema.freeQueuePromptSuppressions.userId, context.userId));
+      // A switch is a new entry for reporting deduplication purposes only
+      // once per user+season; the deterministic ID prevents switch inflation.
+      await recordSeasonEntry(tx, {
+        userId: context.userId,
+        agentProfileId: agentId,
+        seasonId: season.id,
+        channel: context.channel ?? "web",
+        mcpClientId: context.mcpClientId ?? null,
+      });
       return { status: "switched" as const, entry: updated };
     }
     const inserted = (await tx.insert(schema.freeGameQueue).values({
@@ -410,6 +420,13 @@ async function joinDailyFreeQueue(
     }).returning())[0]!;
     await tx.delete(schema.freeQueuePromptSuppressions)
       .where(eq(schema.freeQueuePromptSuppressions.userId, context.userId));
+    await recordSeasonEntry(tx, {
+      userId: context.userId,
+      agentProfileId: agentId,
+      seasonId: season.id,
+      channel: context.channel ?? "web",
+      mcpClientId: context.mcpClientId ?? null,
+    });
     return { status: "queued" as const, entry: inserted };
   });
   const message = result.status === "already-queued"
