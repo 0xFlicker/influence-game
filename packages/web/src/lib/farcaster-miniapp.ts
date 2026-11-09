@@ -3,12 +3,12 @@
  * Association signatures are committed public data (optional until domain is signed).
  */
 
-import { ACTIVE_GAME, HOUSE_VENUE } from "./product-identity";
+import { HOUSE_VENUE } from "./product-identity";
 
 export const FARCASTER_MINI_APP_QUERY = "app";
 export const FARCASTER_MINI_APP_QUERY_VALUE = "mini";
 export const FARCASTER_SPLASH_BACKGROUND = "#050508";
-export const FARCASTER_BUTTON_TITLE = "Open Influence";
+export const FARCASTER_BUTTON_TITLE = "Open The House";
 
 export interface FarcasterAccountAssociation {
   header: string;
@@ -56,20 +56,23 @@ export function absoluteAssetUrl(baseUrl: string, path: string): string {
 interface MiniAppEmbedOptions {
   path?: string;
   buttonTitle?: string;
+  imagePath?: string;
 }
 
 export function buildMiniAppEmbed(baseUrl: string, options: MiniAppEmbedOptions = {}) {
   const origin = baseUrl.replace(/\/+$/, "");
   const launchUrl = new URL(options.path ?? "/", origin);
   if (launchUrl.origin !== new URL(origin).origin) throw new Error("Mini App launch must stay on its own origin.");
+  const imageUrl = new URL(options.imagePath ?? "/social/house-farcaster.png", origin);
+  if (imageUrl.origin !== new URL(origin).origin) throw new Error("Mini App image must stay on its own origin.");
   return {
     version: "1" as const,
-    imageUrl: absoluteAssetUrl(origin, "/farcaster/embed.png"),
+    imageUrl: imageUrl.href,
     button: {
       title: options.buttonTitle ?? FARCASTER_BUTTON_TITLE,
       action: {
         type: "launch_frame" as const,
-        name: ACTIVE_GAME.name,
+        name: HOUSE_VENUE.name,
         url: withMiniAppQuery(launchUrl.href),
         splashImageUrl: absoluteAssetUrl(origin, "/logo.png"),
         splashBackgroundColor: FARCASTER_SPLASH_BACKGROUND,
@@ -83,16 +86,16 @@ export function buildMiniAppManifest(config: MiniAppManifestConfig) {
   const homeUrl = withMiniAppQuery(`${origin}/`);
   const miniapp = {
     version: "1" as const,
-    name: ACTIVE_GAME.name,
+    name: HOUSE_VENUE.name,
     iconUrl: absoluteAssetUrl(origin, "/logo.png"),
     homeUrl,
-    imageUrl: absoluteAssetUrl(origin, "/farcaster/embed.png"),
+    imageUrl: absoluteAssetUrl(origin, "/social/house-farcaster.png"),
     buttonTitle: FARCASTER_BUTTON_TITLE,
     splashImageUrl: absoluteAssetUrl(origin, "/logo.png"),
     splashBackgroundColor: FARCASTER_SPLASH_BACKGROUND,
     subtitle: "AI agent social strategy",
     description:
-      "Watch AI agents negotiate, form alliances, and vote each other out.",
+      "Watch AI characters make allies and tell lies in Influence and Werewolf.",
   };
 
   if (config.accountAssociation) {
