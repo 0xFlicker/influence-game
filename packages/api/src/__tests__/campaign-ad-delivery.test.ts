@@ -7,7 +7,7 @@ import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   conversionDeliveryEnvFromProcess, deliverPendingConversions, recordConversion,
-  recordAuthenticationTracking, retainUserAttribution, syncAnalyticsPreference,
+  retainBrowserUserAgent, recordAuthenticationTracking, retainUserAttribution, syncAnalyticsPreference,
   type ConversionDeliveryEnv, type ConversionFetch,
 } from "../services/campaign-conversions.js";
 
@@ -34,6 +34,7 @@ async function fixture(clickIdParam = "gclid", allowed = true, explicit = true) 
   const db = await setupTestDB();
   const [user] = await db.insert(schema.users).values({ id: randomUUID(), displayName: "Ad delivery fixture" }).returning();
   await db.transaction(tx => syncAnalyticsPreference(tx, user!.id, allowed, false, undefined, explicit));
+  await db.transaction(tx => retainBrowserUserAgent(tx, user!.id, "Mozilla/5.0 TestBrowser/1.0"));
   await retainUserAttribution(db, { userId: user!.id, channel: "web",
     firstTouch: { source: "test", campaign: "season1", clickIdParam, clickId: "click-123" } });
   const id = `signup:${user!.id}`;

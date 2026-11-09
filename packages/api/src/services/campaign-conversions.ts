@@ -136,9 +136,12 @@ export async function syncAnalyticsPreference(
         set: { analytics: allowed, analyticsExplicit: affirmative, updatedAt: permissionChanged ? new Date(Math.max(Date.now(), Date.parse(previous?.updatedAt ?? "") + 1 || 0)).toISOString() : previous.updatedAt } });
   }
   if (!allowed) {
+    await db.update(schema.userAnalyticsPreferences).set({ webUserAgent: null })
+      .where(eq(schema.userAnalyticsPreferences.userId, userId));
     await db.delete(schema.userCampaignAttribution).where(eq(schema.userCampaignAttribution.userId, userId));
     await db.update(schema.campaignConversionEvents).set({
       attribution: null,
+      clientUserAgent: null,
       posthogStatus: sql`CASE WHEN posthog_status = 'delivered' THEN posthog_status ELSE 'suppressed' END`,
       platformStatus: sql`CASE WHEN platform_status = 'delivered' THEN platform_status ELSE 'suppressed' END`,
       googleStatus: sql`CASE WHEN google_status = 'delivered' THEN google_status ELSE 'suppressed' END`,
@@ -148,6 +151,16 @@ export async function syncAnalyticsPreference(
     }).where(eq(schema.campaignConversionEvents.userId, userId));
   }
   return allowed;
+}
+
+/** Keep request metadata separate from attribution and other analytics destinations. */
+export async function retainBrowserUserAgent(db: DbOrTx, userId: string, userAgent: unknown): Promise<void> {
+  await lockAccount(db, userId);
+  if (!await accountAnalyticsAllowed(db, userId)) return;
+  const value = typeof userAgent === "string" && userAgent.length > 0 && userAgent.length <= 1024
+    && !/[\x00-\x1f\x7f]/.test(userAgent) ? userAgent : null;
+  await db.update(schema.userAnalyticsPreferences).set({ webUserAgent: value })
+    .where(eq(schema.userAnalyticsPreferences.userId, userId));
 }
 
 /**
@@ -235,6 +248,7 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
         channel: input.channel,
         mcpClientId: input.mcpClientId ?? null,
         attribution: allowed ? await retainedAttribution(tx, input.userId) : null,
+        clientUserAgent: allowed && input.channel === "web" ? preference?.webUserAgent ?? null : null,
         occurredAt: input.occurredAt,
         posthogStatus: allowed ? "pending" : "suppressed",
         platformStatus: allowed ? "pending" : "suppressed",
@@ -293,7 +307,7 @@ export async function recordSignupCompleted(
 /** Optional tracking must not turn a committed signup into a failed login. */
 export async function recordAuthenticationTracking(
   db: DrizzleDB,
-  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; analyticsExplicit?: unknown; attribution?: unknown },
+  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; analyticsExplicit?: unknown; attribution?: unknown; userAgent?: string },
 ): Promise<void> {
   try {
     await db.transaction(async tx => {
@@ -301,6 +315,7 @@ export async function recordAuthenticationTracking(
       if (typeof input.analytics === "boolean") {
         await syncAnalyticsPreference(tx, input.userId, input.analytics === true, false, undefined, input.analyticsExplicit === true);
       }
+      if (input.analytics === true) await retainBrowserUserAgent(tx, input.userId, input.userAgent);
       if (input.created) {
         await recordSignupCompleted(tx, { userId: input.userId, channel: "web", attribution: input.attribution });
       } else {
@@ -580,6 +595,7 @@ export async function deliverPendingConversions(
       if (retryable(platformStatus, platformAttempts)) {
         const platformEvent = PLATFORM_EVENT_MAP[row.eventName];
         if (!platformEvent) platformStatus = "not_applicable";
+        else if (row.channel === "web" && !row.clientUserAgent) platformStatus = "suppressed";
         else if (!env.metaPixelId || !env.metaAccessToken) {
           platformStatus = "unconfigured";
           summary.platformUnconfigured++;
@@ -595,7 +611,7 @@ export async function deliverPendingConversions(
                 event_time: Math.floor(Date.parse(row.occurredAt) / 1000), event_id: row.id,
                 action_source: row.channel === "web" ? "website" : "system_generated",
                 ...(row.channel === "web" ? { event_source_url: "https://thehouse.game" } : {}),
-                user_data: { external_id: [createHash("sha256").update(row.publicId).digest("hex")],
+                user_data: { ...(row.channel === "web" ? { client_user_agent: row.clientUserAgent } : {}), external_id: [createHash("sha256").update(row.publicId).digest("hex")],
                   ...(clickId && Number.isFinite(clickedAt) ? { fbc: `fb.1.${clickedAt}.${clickId}` } : {}) },
               }] }),
             });

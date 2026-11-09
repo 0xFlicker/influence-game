@@ -1191,6 +1191,13 @@
       "when": 1794096000003,
       "tag": "0169_ad_platform_conversions",
       "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1794096000004,
+      "tag": "0170_campaign_browser_user_agent",
+      "breakpoints": true
     }
   ]
 }

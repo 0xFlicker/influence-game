@@ -234,7 +234,7 @@ export function createAuthRoutes(
     }
     await recordAuthenticationTracking(db, {
       userId: authentication.user.id, publicId: authentication.user.publicId,
-      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, attribution: body.attribution,
+      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, attribution: body.attribution, userAgent: c.req.header("User-Agent"),
     });
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -400,7 +400,7 @@ export function createAuthRoutes(
     if (outcome.status === "authenticated" && outcome.created) {
       await recordAuthenticationTracking(db, {
         userId: outcome.user.id, publicId: outcome.user.publicId, created: true,
-        analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, attribution: request.body.attribution,
+        analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, attribution: request.body.attribution, userAgent: c.req.header("User-Agent"),
       });
     }
     if (outcome.status === "invite_required") {

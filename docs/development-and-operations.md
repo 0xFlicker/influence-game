@@ -307,7 +307,7 @@ Configuration (Doppler `social-strategy-agent`, API/worker env):
 | --- | --- | --- |
 | `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` | For PostHog delivery | Shared web and API/worker project ingestion token; never a personal API key. Without it rows are `unconfigured` and no retry attempts are consumed. |
 | `POSTHOG_HOST` | No | Defaults to `https://us.i.posthog.com` (ingestion host). |
-| `META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN` | No | Activates the prepared Meta Conversions API adapter. Until both are set, platform delivery reports `unconfigured`, never delivered. |
+| `META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN` | No | Activates the Meta Conversions API adapter when the runtime reloads these values. Apply `0170_campaign_browser_user_agent` for captured browser metadata; older web events without it are suppressed for Meta. Until both are set, platform delivery reports `unconfigured`, never delivered. |
 | `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN` | For Google | OAuth credentials authorized for `https://www.googleapis.com/auth/datamanager`; enable Data Manager API in the project. Short-lived tokens are refreshed in memory. |
 | `GOOGLE_ADS_CUSTOMER_ID` | For Google | Ten digits, no hyphens; owns the `UPLOAD_CLICKS` conversion actions. |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | No | Manager/access customer, ten digits; defaults to the operating customer. |

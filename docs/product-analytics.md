@@ -156,8 +156,8 @@ Historical account recovery is not a new paid conversion.
 ## Advertising-platform feedback
 
 The server outbox supports Meta, Google Ads Data Manager, TikTok Events API,
-and X Conversion API. Configuration is per destination; this implementation
-has not activated credentials, deployed tracking, or sent live test events.
+and X Conversion API. Configuration is per destination. The adapters are deployed; live provider
+acceptance must be verified separately after credentials are configured.
 No browser ad pixel is added. The signup flow stays unchanged.
 
 Only three authoritative outcomes are sent: `signup_completed`, `agent_ready`,
@@ -167,7 +167,7 @@ objective remains a campaign setup decision.
 
 | Destination | Mapping and matching | Configuration |
 | --- | --- | --- |
-| Meta | `CompleteRegistration`, `AgentReady`, `SeasonEntry`; SHA-256 public account ID and retained `fbclid` as timestamped `fbc` | `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN` |
+| Meta | `CompleteRegistration`, `AgentReady`, `SeasonEntry`; SHA-256 public account ID, retained `fbclid` as timestamped `fbc`, and captured browser user agent for web events | `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN` |
 | Google Ads | A distinct `UPLOAD_CLICKS` conversion action for each outcome; retained `gclid`, `gbraid`, or `wbraid` | OAuth client ID/secret/refresh token, customer ID, three action IDs; see operations guide |
 | TikTok | `CompleteRegistration`, custom `AgentReady` and `SeasonEntry`; SHA-256 public account ID and retained `ttclid` | `TIKTOK_PIXEL_ID`, `TIKTOK_EVENTS_ACCESS_TOKEN` |
 | X | A distinct Events Manager event ID for each outcome; retained `twclid` | Pixel ID, three event IDs, Ads API consumer key/secret and user access token/secret |
@@ -497,3 +497,33 @@ retries, signup write failure/recovery, and campaign/creative totals.
 transport responses, withdrawal during an allow request, and account switching.
 `analytics-consent.test.ts` covers regional policy, GPC, cross-tab withdrawal and
 browser attribution clearing. No live provider delivery is required for tests.
+
+
+### Meta browser request metadata
+
+Migration `0170_campaign_browser_user_agent` adds private browser metadata to
+account tracking preferences and conversion events. Authentication and fresh,
+version-matched attribution sync read the actual HTTP `User-Agent` header only
+when effective analytics permission allows retention. Empty, over-1024-character,
+and control-character values are rejected. No IP address is retained.
+
+Each new web conversion snapshots the latest consented browser user agent;
+asynchronous agent readiness can use that retained browser context. Retries use
+the event snapshot, never the delivery worker's user agent or a later login.
+Only Meta receives `user_data.client_user_agent`; it is not a campaign dimension
+or a PostHog/custom-event property. API/MCP conversions remain system-generated
+and never inherit this browser metadata. Withdrawal clears both the retained
+value and event snapshots, including already-delivered records locally.
+
+Historical web events without a captured user agent are suppressed for Meta
+without consuming attempts or backfilling metadata. Other destinations retain
+their independent behavior. Re-enabling permission does not revive suppressed
+rows. Dataset Quality API and browser pixel JavaScript are not required by this
+server adapter.
+
+After production credentials are loaded by the API/game worker, delivery can
+start automatically. Before spending on ads, verify a consented signup in Meta,
+then agent readiness and season entry; confirm denial sends nothing. The worker
+does not currently expose a `test_event_code` configuration. A separate Meta
+Test Events request must use that code explicitly and must not be confused with
+proof that the application's real outbox delivered successfully.
