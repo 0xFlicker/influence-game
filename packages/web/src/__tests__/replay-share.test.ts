@@ -1,6 +1,6 @@
 import {expect,test} from "bun:test";
 import {parseReplayShare,replayShareHref} from "../lib/replay-share";
-import {playerCardMetadata,playerSearch,type PlayerCardGame} from "../lib/player-card";
+import {playerCardMetadata,resultsCardMetadata,playerSearch,type PlayerCardGame} from "../lib/player-card";
 const preferences = {thinking:true,musicMuted:false,musicVolume:0.67};
 test("shares exact cue-local time and playback settings without changing the canonical route", () => {
  const href = replayShareHref("/games/village/replay?audience=omniscient&cursor=73","game:omniscient:73:ballot:2",1234.56,2,preferences);
@@ -12,15 +12,16 @@ test("a bare replay has no position and invalid settings fail visibly", () => {
  expect(parseReplayShare(new URLSearchParams())).toBeUndefined();
  for (const query of ["t=-1","t=NaN","speed=3","thinking=yes","volume=1.01","muted=0&muted=1","cue=","t=1e100"]) expect(() => parseReplayShare(new URLSearchParams(query))).toThrow();
 });
-const game:PlayerCardGame = {id:"id",slug:"village",gameKind:"werewolf",status:"completed",visibility:"public",title:"A night in the village",description:"Meet the village.",coverUrl:null};
+const game:PlayerCardGame = {id:"id",slug:"village",gameKind:"werewolf",status:"completed",visibility:"public",title:"A night in the village",description:"Meet the village.",coverUrl:null,cast:[]};
 test("completed player cards preserve settings and audiences and use publicly addressable art", () => {
  const metadata=playerCardMetadata(game,"https://thehouse.game",{audience:"omniscient",cursor:"73",cue:"id:omniscient:73",t:"1.25",speed:"2",thinking:"1",muted:"0",volume:"0.6"});
  expect((metadata.twitter && "card" in metadata.twitter ? metadata.twitter.card : undefined)).toBe("player");
  if (!metadata.twitter || !("card" in metadata.twitter) || metadata.twitter.card !== "player") throw Error("Missing player card");
  expect(metadata.twitter.players).toEqual([{playerUrl:"https://thehouse.game/embed/games/village?cue=id%3Aomniscient%3A73&t=1.25&speed=2&thinking=1&muted=0&volume=0.6&audience=omniscient&cursor=73",streamUrl:"",width:640,height:640}]);
- expect(metadata.openGraph?.images).toEqual(["https://thehouse.game/visual/werewolf/lantern-village.webp"]);
+ expect(metadata.openGraph?.images).toEqual([{url:"https://thehouse.game/games/village/card-image",width:1200,height:630,alt:"A night in the village — Werewolf at The House"}]);
  const miniapp = JSON.parse(String(metadata.other?.["fc:miniapp"]));
  expect(miniapp.button.title).toBe("Watch replay");
+ expect(miniapp.imageUrl).toBe("https://thehouse.game/games/village/card-image?format=farcaster");
  expect(miniapp.button.action.url).toBe("https://thehouse.game/games/village/replay?cue=id%3Aomniscient%3A73&t=1.25&speed=2&thinking=1&muted=0&volume=0.6&audience=omniscient&cursor=73&app=mini");
  expect(playerCardMetadata({...game,visibility:"unlisted"},"https://thehouse.game").robots).toEqual({index:false,follow:false});
 });
@@ -37,4 +38,27 @@ test("ineligible and invalid cards do not advertise a player; irrelevant queries
  expect(JSON.stringify(playerCardMetadata(game,"https://thehouse.game",{cursor:"4"}).twitter)).toContain("summary_large_image");
  expect(playerSearch({token:"secret",redirect:"https://example.com"},"werewolf")).toBe("?audience=mystery");
  expect(() => playerSearch({audience:"omniscient"},"influence")).toThrow();
+ const live = JSON.parse(String(playerCardMetadata({...game,status:"in_progress"},"https://thehouse.game").other?.["fc:miniapp"]));
+ expect(live.imageUrl).toBe("https://thehouse.game/games/village/card-image?format=farcaster");
+ expect(live.button.action.url).toBe("https://thehouse.game/games/village?app=mini");
+});
+test("game shares use the saved episode title without using editorial artwork or description", () => {
+ const metadata = playerCardMetadata({...game,title:"Lanterns and Lies",description:"Secret role revealed",coverUrl:"/winner.png"},"https://thehouse.game");
+ expect(metadata.title).toBe("Lanterns and Lies — Werewolf · The House");
+ expect(JSON.stringify(metadata)).not.toContain("Secret role revealed");
+ expect(JSON.stringify(metadata)).not.toContain("winner.png");
+});
+test("results cards identify the game and destination without revealing outcomes or advertising a player", () => {
+ const metadata = resultsCardMetadata({...game,visibility:"unlisted",title:"Lanterns and Lies",description:"Hidden role revealed",coverUrl:"/winner.png"},"https://thehouse.game");
+ expect(metadata.title).toBe("Results · Lanterns and Lies — Werewolf · The House");
+ expect(metadata.alternates?.canonical).toBe("/games/village/results");
+ expect(metadata.robots).toEqual({index:false,follow:false});
+ expect(metadata.twitter && "card" in metadata.twitter && metadata.twitter.card).toBe("summary_large_image");
+ expect(JSON.stringify(metadata)).toContain("Lanterns and Lies");
+ expect(JSON.stringify(metadata)).not.toContain("Hidden role revealed");
+ expect(JSON.stringify(metadata)).not.toContain("winner.png");
+ const mini = JSON.parse(String(metadata.other?.["fc:miniapp"]));
+ expect(mini.button.title).toBe("View results");
+ expect(mini.button.action.url).toBe("https://thehouse.game/games/village/results?app=mini");
+ expect(mini.imageUrl).toBe("https://thehouse.game/games/village/card-image?format=farcaster");
 });

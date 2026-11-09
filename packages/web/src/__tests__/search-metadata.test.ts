@@ -6,7 +6,8 @@ import { generateMetadata as gameLayoutMetadata } from "../app/(site)/games/[slu
 import { getHighlightsShareMetadata } from "../lib/server-share-metadata";
 
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+const originalWebBase = process.env.WEB_BASE_URL;
+afterEach(() => { globalThis.fetch = originalFetch; if(originalWebBase === undefined) delete process.env.WEB_BASE_URL; else process.env.WEB_BASE_URL=originalWebBase; });
 
 function respond(value: unknown, status = 200) {
   globalThis.fetch = Object.assign(async () => Response.json(value, { status }), { preconnect: originalFetch.preconnect }) as typeof fetch;
@@ -22,6 +23,7 @@ describe("search metadata", () => {
   });
 
   test("uses the authoritative slug for results and preserves unlisted exclusion", async () => {
+    process.env.WEB_BASE_URL = "https://thehouse.game";
     respond({ id: "game-id", slug: "actual-slug", visibility: "public", gameKind: "influence" });
     expect((await resultsMetadata({ params })).alternates?.canonical).toBe("/games/actual-slug/results");
     respond({ id: "game-id", slug: "actual-slug", visibility: "unlisted", gameKind: "influence" });

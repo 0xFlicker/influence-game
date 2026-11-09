@@ -31,11 +31,12 @@ describe("farcaster mini app builders", () => {
     const embed = buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN);
     expect(embed.version).toBe("1");
     expect(embed.imageUrl).toBe(
-      "https://thehouse.game/farcaster/embed.png",
+      "https://thehouse.game/social/house-farcaster.png",
     );
     expect(embed.button.title).toBe(FARCASTER_BUTTON_TITLE);
     expect(embed.button.title.length).toBeLessThanOrEqual(32);
     expect(embed.button.action.type).toBe("launch_frame");
+    expect(embed.button.action.name).toBe("The House");
     expect(embed.button.action.url).toContain("app=mini");
     expect(embed.button.action.splashBackgroundColor).toBe(
       FARCASTER_SPLASH_BACKGROUND,
@@ -46,6 +47,7 @@ describe("farcaster mini app builders", () => {
     const embed = buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN, {
       path: "/games/village/replay?audience=omniscient&cursor=73&cue=game%3A73&t=1.25&speed=2&thinking=1&muted=0&volume=0.6",
       buttonTitle: "Watch replay",
+      imagePath: "/games/village/card-image?format=farcaster",
     });
     const url = new URL(embed.button.action.url);
     expect(url.pathname).toBe("/games/village/replay");
@@ -53,8 +55,10 @@ describe("farcaster mini app builders", () => {
     expect(url.searchParams.get("cue")).toBe("game:73");
     expect(url.searchParams.get("t")).toBe("1.25");
     expect(embed.button.title).toBe("Watch replay");
+    expect(embed.imageUrl).toBe("https://thehouse.game/games/village/card-image?format=farcaster");
     expect(() => buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN, {path:"https://example.com/"})).toThrow();
     expect(() => buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN, {path:"//example.com/"})).toThrow();
+    expect(() => buildMiniAppEmbed(FARCASTER_PRODUCTION_ORIGIN, {imagePath:"https://example.com/image.png"})).toThrow();
   });
 
   test("manifest omits accountAssociation until committed", () => {
@@ -63,7 +67,7 @@ describe("farcaster mini app builders", () => {
       accountAssociation: null,
     });
     expect("accountAssociation" in unsigned).toBe(false);
-    expect(unsigned.miniapp.name).toBe("Influence");
+    expect(unsigned.miniapp.name).toBe("The House");
     expect(unsigned.miniapp.homeUrl).toContain("app=mini");
   });
 

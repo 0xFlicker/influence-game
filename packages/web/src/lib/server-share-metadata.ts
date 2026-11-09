@@ -1,6 +1,7 @@
 import { cutHref } from "./house-cut-presentation";
 import type { Metadata } from "next";
 import { getServerHouseCuts, getServerPublicPlayerProfile } from "./server-api";
+import { playerProfileHref } from "./player-profile-links";
 
 export async function getHighlightsShareMetadata(slug: string, scene?: string, audience?: string): Promise<Metadata> {
   try {
@@ -29,5 +30,7 @@ export async function getProfileShareMetadata(identifier: string, game?: string)
   if (result.status !== "found") return { title: "Profile unavailable — The House", robots: { index: false } };
   const title = `${result.profile.identity.displayName} — The House`;
   const description = `View ${result.profile.identity.displayName}'s current season standing, career record, House game history, and agent roster.`;
-  return { title, description, openGraph: {title, description, type: "website"}, twitter: {card: "summary", title, description} };
+  const canonical = playerProfileHref(result.profile.identity);
+  const images = [{ url: `${canonical}/card-image`, width: 1200, height: 630, alt: `${result.profile.identity.displayName} — player profile at The House` }];
+  return { title, description, openGraph: {title, description, type: "website", url: canonical, images}, twitter: {card: "summary_large_image", title, description, images} };
 }
