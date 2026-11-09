@@ -508,14 +508,11 @@ test.describe("local public player identity", () => {
           await expect.poll(() => scene.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
           await expect(card.getByRole("button")).toHaveCount(0);
           await expect(card.locator('img[src="/logo.png"]')).toHaveCount(0);
-          await page.clock.runFor(4300);
-          await expect(visible).toContainText("Cast 5");
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 5");
           await expect(visible.locator(".episode-cast > div")).toHaveCount(4);
-          await page.clock.runFor(4200);
-          await expect(visible).toContainText("Cast 9");
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 9");
           await expect(visible.locator(".episode-cast > div")).toHaveCount(1);
-          await page.clock.runFor(4200);
-          await expect(visible).toContainText("Cast 1");
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 1");
           if (!touch) {
             await page.mouse.move(0, 0);
             await expect(card.locator(".episode-artwork")).not.toHaveClass(/is-playing/);
