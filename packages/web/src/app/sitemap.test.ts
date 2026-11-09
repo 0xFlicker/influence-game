@@ -14,6 +14,7 @@ describe("sitemap", () => {
     const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls).toContain("https://thehouse.game");
     expect(urls).toContain("https://thehouse.game/games");
+    expect(urls).toContain("https://thehouse.game/rules?game=werewolf");
     expect(urls).toContain("https://thehouse.game/seasons?season=season-0");
     expect(urls).toContain("https://thehouse.game/games/season/season-0");
     expect(urls).toContain("https://thehouse.game/seasons?season=a%20season");
