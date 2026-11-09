@@ -23,7 +23,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     return encodeURIComponent(season.slug);
   });
   const paths = [
-    "", "/games", "/games/public", "/games/free", "/seasons", "/rules",
+    "", "/games", "/games/public", "/games/free", "/seasons", "/rules", "/rules?game=werewolf",
     "/about", "/get-mcp", "/updates", "/terms", "/privacy",
     ...enabledGameKinds().map((kind) => `/games/type/${kind}`),
     ...getAllPosts().map((post) => `/updates/${encodeURIComponent(post.slug)}`),

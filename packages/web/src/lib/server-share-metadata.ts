@@ -10,7 +10,14 @@ export async function getHighlightsShareMetadata(slug: string, scene?: string, a
     const description = cut?.context ?? `Selected moments from ${slug}.`;
     const images = cut ? [{ url: `/games/${encodeURIComponent(slug)}/highlights/card-image/${encodeURIComponent(cut.id)}?audience=${response.audience}`, width: 1200, height: 630, alt: cut.title }] : [];
     const url = cut ? cutHref(slug, cut.id, response.audience) : `/games/${encodeURIComponent(slug)}/highlights?audience=${response.audience}`;
-    return { title: { absolute: title }, description, alternates: { canonical: url }, openGraph: { type: "website", url, title, description, images }, twitter: { card: "summary_large_image", title, description, images } };
+    // A cut is its own page; only remove the default audience from canonical URLs.
+    const defaultAudience = response.game.kind === "werewolf" ? "mystery" : "public";
+    const canonicalBase = `/games/${encodeURIComponent(response.game.slug)}/highlights`;
+    const canonicalQuery = new URLSearchParams();
+    if (cut) canonicalQuery.set("scene", cut.id);
+    if (response.audience !== defaultAudience) canonicalQuery.set("audience", response.audience);
+    const canonical = `${canonicalBase}${canonicalQuery.size ? `?${canonicalQuery}` : ""}`;
+    return { title: { absolute: title }, description, alternates: { canonical }, openGraph: { type: "website", url, title, description, images }, twitter: { card: "summary_large_image", title, description, images } };
   } catch {
     return { title: "House Cuts — The House", description: "Selected moments from the House." };
   }
