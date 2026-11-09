@@ -3,7 +3,7 @@ export const HOUSE_VENUE = {
   domain: "thehouse.game",
 } as const;
 
-export const HOUSE_DISCORD_URL = "https://discord.gg/XfsmWr26xW";
+export const HOUSE_DISCORD_URL = "https://discord.gg/J3DaYDzxNq";
 
 export const FALSE_FLOOR = {
   name: "False Floor LLC",
