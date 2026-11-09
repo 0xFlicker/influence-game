@@ -21,14 +21,14 @@ test("only known product operations are instrumented", () => {
 });
 
 test("validated campaign attribution survives while secrets and invalid values are removed", () => {
-  const properties: Record<string, unknown> = { utm_source: "discord", utm_content: "spring-launch-video", utm_term: "strategy-fans", gclid: "tracking-id", fbclid: "fb.123", ttclid: "tt-456",
+  const properties: Record<string, unknown> = { utm_source: "discord", utm_content: "spring-launch-video", utm_term: "strategy-fans", gclid: "tracking-id", fbclid: "fb.123", ttclid: "tt-456", twclid: "x-789",
     landing_variant: "hero-a", onboarding_variant: "guided", starter_prompt: "rival-duo", starter_skill: "bluffing",
     utm_id: "unlisted-field", search_keyword: "not-retained",
-    $set_once: { $initial_utm_term: "strategy-fans", $initial_utm_source: "private@example.com", $initial_current_url: "data:text/plain,private", $initial_gclid: "bad click id!" } };
+    $set_once: { $initial_utm_term: "strategy-fans", $initial_utm_source: "private@example.com", $initial_current_url: "data:text/plain,private", $initial_gclid: "bad click id!", $initial_twclid: "bad click id!" } };
   sanitizeAnalyticsProperties(properties);
   expect(properties).toEqual({
     utm_source: "discord", utm_content: "spring-launch-video", utm_term: "strategy-fans",
-    gclid: "tracking-id", fbclid: "fb.123", ttclid: "tt-456",
+    gclid: "tracking-id", fbclid: "fb.123", ttclid: "tt-456", twclid: "x-789",
     landing_variant: "hero-a", onboarding_variant: "guided", starter_prompt: "rival-duo", starter_skill: "bluffing",
     $set_once: { $initial_utm_term: "strategy-fans" },
   });
