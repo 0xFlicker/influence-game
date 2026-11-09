@@ -36,13 +36,36 @@ export function episodeFallbackFrames(game: { episode?: Pick<NonNullable<GameSum
   return frames;
 }
 
-export function EpisodeArtwork({ frames, active, title, backgroundUrl = INFLUENCE_CARD_ART }: { frames: EpisodeFrame[]; active: boolean; title: string; backgroundUrl?: string }) {
+export function EpisodeArtwork({ frames, title, backgroundUrl = INFLUENCE_CARD_ART }: { frames: EpisodeFrame[]; title: string; backgroundUrl?: string }) {
+  const artwork = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [touchVisible, setTouchVisible] = useState(false);
+  useEffect(() => {
+    const element = artwork.current;
+    if (!element) return;
+    const touch = window.matchMedia("(hover: none), (pointer: coarse)");
+    let visible = false;
+    let scrolling = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = () => setTouchVisible(touch.matches && visible && !scrolling);
+    const observer = new IntersectionObserver(([entry]) => { visible = !!entry?.isIntersecting; update(); });
+    observer.observe(element);
+    const onScroll = () => {
+      scrolling = true; update();
+      clearTimeout(timer);
+      timer = setTimeout(() => { scrolling = false; update(); }, 200);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    touch.addEventListener("change", update);
+    return () => { observer.disconnect(); clearTimeout(timer); window.removeEventListener("scroll", onScroll, true); touch.removeEventListener("change", update); };
+  }, []);
+  const active = hovered || touchVisible;
   const [frameId, setFrameId] = useState(() => frames.find(frame => frame.id.startsWith("cast:"))?.id ?? frames[0]?.id);
   const index = Math.max(0, frames.findIndex(frame => frame.id === frameId));
   const frame = frames[index];
   useEffect(() => {
     if (!active || frames.length < 2) return;
-    const motion = matchMedia("(prefers-reduced-motion: reduce)");
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let timer: ReturnType<typeof setInterval> | undefined;
     const update = () => {
       clearInterval(timer);
@@ -55,7 +78,9 @@ export function EpisodeArtwork({ frames, active, title, backgroundUrl = INFLUENC
     motion.addEventListener("change", update);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", update); motion.removeEventListener("change", update); };
   }, [active, frames]);
-  return <div className={`episode-artwork ${active ? "is-playing" : ""}`} aria-label={`${title} preview`}>
+  return <div ref={artwork} className={`episode-artwork ${active ? "is-playing" : ""}`} aria-label={`${title} preview`}
+    onPointerEnter={event => { if (event.pointerType === "mouse") setHovered(true); }}
+    onPointerLeave={event => { if (event.pointerType === "mouse") setHovered(false); }}>
     {frame && <div key={frame.id} data-frame-id={frame.id} className="episode-frame is-visible">
       <Image src={frame.imageUrl ? resolveApiUrl(frame.imageUrl) : backgroundUrl} alt="" fill sizes="(max-width: 1023px) 100vw, 700px" className="episode-scene" unoptimized />
       <div className="episode-vignette" />
@@ -92,28 +117,17 @@ export function EpisodeTrailer({ preview, autoplay, onEnded }: { preview: Episod
 }
 
 export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; management?: ReactNode; onJoin?: () => void }) {
-  const [active, setActive] = useState(false);
-  const [focused, setFocused] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [preview, setPreview] = useState<EpisodePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
   const request = useRef<Promise<void> | null>(null);
-  const card = useRef<HTMLElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const title = gameDisplayName(game);
   const load = () => {
     if (preview || request.current) return;
     request.current = getEpisodePreview(game.id).then(p => { setPreview(p); setError(null); }).catch(() => setError("Trailer unavailable. You can still open the game.")).finally(() => { request.current = null; });
   };
-  useEffect(() => {
-    let visible = false;
-    const update = () => setActive(visible && !document.hidden);
-    const observer = new IntersectionObserver(([entry]) => { visible = !!entry?.isIntersecting; update(); });
-    if (card.current) observer.observe(card.current);
-    document.addEventListener("visibilitychange", update);
-    return () => { observer.disconnect(); document.removeEventListener("visibilitychange", update); };
-  }, [game.id]);
   useEffect(() => {
     if (!expanded) return;
     const d = dialog.current!; const prior = document.activeElement as HTMLElement | null;
@@ -136,19 +150,18 @@ export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; m
       : live || game.status === "completed" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Open game</Link>}
   </>;
   return <>
-    <GameCard ref={card} gameKind={werewolf ? "werewolf" : "influence"} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label}
+    <GameCard gameKind={werewolf ? "werewolf" : "influence"} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label}
       description={game.episode?.description ?? (werewolf ? "A village of agents. A pack hiding in plain sight." : "Meet the cast. Step inside the House.")}
       meta={<>{season && <span className="episode-season">{season.name}{game.episode?.episodeNumber != null ? ` · Ep ${game.episode.episodeNumber}` : ""}</span>}
         <span>{waiting ? `${Math.min(joined, game.playerCount)}/${game.playerCount} joined` : `${game.playerCount} agents`}</span></>}
-      artwork={<EpisodeArtwork frames={frames} active={active && !focused && !expanded} title={title} backgroundUrl={backgroundUrl} />}
+      artwork={<EpisodeArtwork frames={frames} title={title} backgroundUrl={backgroundUrl} />}
       actions={actions}
       management={management}
-      onFocusCapture={() => setFocused(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}
       onMouseEnter={() => { if (!waiting && matchMedia("(hover: hover) and (pointer: fine)").matches) load(); }}
       onOpen={e => {if(waiting || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)return;if(matchMedia("(hover: none), (pointer: coarse)").matches){e.preventDefault();load();setEnded(false);setExpanded(true);}else if(!werewolf) requestEpisodePlayback(game.slug);}} />
     {expanded && <dialog ref={dialog} className="episode-modal" aria-label={title} onCancel={() => setExpanded(false)} onClose={() => setExpanded(false)}>
       <header><GameLogo game={werewolf ? "werewolf" : "influence"} className="episode-modal-logo" /><button autoFocus type="button" onClick={() => setExpanded(false)}>Close ×</button></header>
-      <div className="episode-modal-media">{preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay onEnded={() => setEnded(true)} /> : <EpisodeArtwork frames={frames} active title={title} backgroundUrl={backgroundUrl} />}</div>
+      <div className="episode-modal-media">{preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay onEnded={() => setEnded(true)} /> : <EpisodeArtwork frames={frames} title={title} backgroundUrl={backgroundUrl} />}</div>
       <div className="episode-copy"><h2>{title}</h2><p>{game.episode?.description}</p>{error && <p role="status">{error}</p>}
       <div className="episode-modal-actions"><Link className="influence-button-secondary" href={gameHref(game.slug)}>Open game</Link>{actions}
       {ended && preview?.media.status === "ready" && <button onClick={() => setEnded(false)}>Replay trailer</button>}</div>

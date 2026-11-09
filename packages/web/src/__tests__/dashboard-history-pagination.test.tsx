@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { Window } from "happy-dom";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import { DashboardHistory } from "../app/dashboard/dashboard-history";
@@ -15,8 +15,8 @@ beforeEach(() => {
   for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: tab[key] });
   tab.localStorage.setItem("influence_session", "token");
 });
-afterEach(() => {
-  cleanup();
+afterEach(async () => {
+  await act(async () => { cleanup(); });
   globalThis.fetch = originalFetch;
   tab.close();
   for (const key of globals) {
@@ -92,8 +92,7 @@ test("failed pages can be retried and stale responses cannot cross accounts", as
   await waitFor(() => expect(calls).toBe(1));
   view.rerender(<History owner="second" />);
   await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Could not load"));
-  resolveOld(Response.json({ items: [entry(0)], nextCursor: null }));
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await act(async () => { resolveOld(Response.json({ items: [entry(0)], nextCursor: null })); });
   expect(view.queryByRole("link", { name: "Game 0" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Try again" }));
   await waitFor(() => expect(view.getByRole("link", { name: "Game 1" })).toBeTruthy());
@@ -112,8 +111,7 @@ test("a late response cannot replace a newer game filter", async () => {
   await waitFor(() => expect(calls).toBe(1));
   fireEvent.click(view.getByRole("button", { name: "Werewolf" }));
   await waitFor(() => expect(view.getByRole("link", { name: "Game 1" })).toBeTruthy());
-  resolveAll(Response.json({ items: [entry(0)], nextCursor: null }));
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await act(async () => { resolveAll(Response.json({ items: [entry(0)], nextCursor: null })); });
   expect(view.queryByRole("link", { name: "Game 0" })).toBeNull();
   expect(view.getByRole("button", { name: "Werewolf" }).getAttribute("aria-pressed")).toBe("true");
 });
