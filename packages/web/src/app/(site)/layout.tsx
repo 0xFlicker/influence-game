@@ -60,6 +60,7 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [promoImage],
     },
     other: {
+      "facebook-domain-verification": "vnvu1np49wyusdaisz25v39757c623",
       "fc:miniapp": serializeMiniAppEmbedMeta(embedBase),
     },
   };
