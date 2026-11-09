@@ -1,4 +1,6 @@
 "use client";
+
+import { CampaignIdeaHandoff } from "@/components/campaigns/campaign-idea-handoff";
 import {
   AgentGenerations,
   useAgentGenerations,
@@ -106,6 +108,7 @@ interface AgentFormProps {
     context: { creationRequestId: string },
   ) => Promise<SavedAgent | void>;
   imageRequest?: string;
+  ideaRequest?: string;
   onCancel: () => void;
   submitLabel?: string;
 }
@@ -270,6 +273,7 @@ export function AgentForm({
   onSubmit,
   onCancel,
   imageRequest,
+  ideaRequest,
 }: AgentFormProps) {
   const [guided, setGuided] = useState(initialGuided);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -2286,6 +2290,21 @@ export function AgentForm({
               hidden={!guided}
               className={guided ? styles.guidedContent : "hidden"}
             >
+              <CampaignIdeaHandoff
+                requestId={ideaRequest}
+                ready={draftReady && remoteReady && !pendingRestore && !unreadableDraft}
+                hasConversation={Boolean(conversation?.input || conversation?.messages.length)}
+                onApply={(text) => {
+                  setConversation((current) => ({
+                    stage: "character",
+                    messages: current?.messages ?? [],
+                    sections: [],
+                    ended: false,
+                    input: text,
+                  }));
+                  setConversationKey((value) => value + 1);
+                }}
+              />
               <AgentCreationChat
                 key={conversationKey}
                 conversation={conversation}

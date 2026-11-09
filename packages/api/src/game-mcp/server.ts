@@ -2428,10 +2428,16 @@ function jsonRpcErrorData(error: unknown): { data?: unknown } {
 function mcpManagementContext(auth: GameMcpAuthContext): {
   userId: string;
   publicBaseUrl?: string;
+  channel: "mcp";
+  mcpClientId: string;
 } {
   return {
     userId: auth.userId,
     publicBaseUrl: resourceOrigin(auth.resource),
+    // Conversion events from MCP tools must be attributable to the MCP
+    // channel and OAuth client, never inferred from tool arguments.
+    channel: "mcp",
+    mcpClientId: auth.clientId,
   };
 }
 

@@ -13,7 +13,7 @@ function createFlow(value: string | undefined): AgentCreateFlow {
 export default async function AgentCreatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ flow?: string; gameId?: string; seasonId?: string; season?: string; draft?: string; imageRequest?: string }>;
+  searchParams: Promise<{ flow?: string; gameId?: string; seasonId?: string; season?: string; draft?: string; imageRequest?: string; idea?: string }>;
 }) {
   const query = await searchParams;
   const savedScope=query.draft?.match(/^create:(join_game|daily_free):(.+)$/);
@@ -24,7 +24,7 @@ export default async function AgentCreatePage({
     <div className="min-h-dvh flex flex-col">
       <Nav />
       <main className="flex min-h-0 w-full flex-1 flex-col">
-          <AgentCreateContent imageRequest={query.imageRequest} draftScope={query.draft?.startsWith("create:") ? query.draft : undefined} flow={flow} gameId={flow === "join_game" ? query.gameId ?? targetId : undefined} seasonId={flow === "daily_free" ? query.seasonId ?? targetId : undefined} seasonSlug={flow === "daily_free" ? query.season : undefined} />
+          <AgentCreateContent ideaRequest={query.idea && /^[0-9a-f-]{36}$/i.test(query.idea) ? query.idea : undefined} imageRequest={query.imageRequest} draftScope={query.draft?.startsWith("create:") ? query.draft : undefined} flow={flow} gameId={flow === "join_game" ? query.gameId ?? targetId : undefined} seasonId={flow === "daily_free" ? query.seasonId ?? targetId : undefined} seasonSlug={flow === "daily_free" ? query.season : undefined} />
       </main>
     </div>
   );

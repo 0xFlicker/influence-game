@@ -1,3 +1,4 @@
+import { recordAgentCreated, recordAgentReady } from "./campaign-conversions.js";
 import { parseAgentEntryIntent, saveAgentEntryIntent } from "./agent-entry-intents.js";
 import { authorizedModelPreference, GameModelRoutingError } from "./game-model-routing.js";
 import { normalizeModelPreference, type ModelPreference } from "@influence/engine";
@@ -157,6 +158,9 @@ export type ParsedAgentAvatarUrl =
 
 export interface AgentProfileManagementContext {
   userId: string;
+  /** Acquisition channel for conversion events. Defaults to web in routes. */
+  channel?: "web" | "mcp" | "api";
+  mcpClientId?: string | null;
   publicBaseUrl?: string;
   avatarChangeSource?: AvatarChangeSource;
   avatarGenerationRequestId?: string;
@@ -616,7 +620,13 @@ export async function createOwnedAgentProfile(
         });
       }
       if(input.entryIntent!==undefined)await saveAgentEntryIntent(tx,context.userId,created.profile.id,input.entryIntent);
-      return recordContentSubmission(tx, created, { id: submissionId(input.creationRequestId ?? input.submissionId), requestHash: sha256StableJson(input), assets: contentAssets, voiceId: input.voiceId });
+      const channel = context.channel ?? "web";
+      await recordAgentCreated(tx, { userId: context.userId, agentProfileId: created.profile.id, channel, mcpClientId: context.mcpClientId ?? null });
+      const submitted = await recordContentSubmission(tx, created, { id: submissionId(input.creationRequestId ?? input.submissionId), requestHash: sha256StableJson(input), assets: contentAssets, voiceId: input.voiceId });
+      if (submitted.receipt.publication === "published" && submitted.receipt.contentRevisionId) {
+        await recordAgentReady(tx, { userId: context.userId, agentProfileId: created.profile.id, contentRevisionId: submitted.receipt.contentRevisionId, channel, mcpClientId: context.mcpClientId ?? null });
+      }
+      return submitted;
     });
   } catch (error) {
     if (values.creationRequestId) {
@@ -860,13 +870,23 @@ export async function updateOwnedAgentProfileInLockedTransaction(
   const [current] = await loadPayloads(tx.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, existing.currentRevisionId!)));
   if (!current) throw new AgentProfileManagementError("agent_update_conflict", "The active revision is unavailable.", 409);
   const revision = { revision: current, created: false, ratingRecalibrated: false };
-  return recordContentSubmission(tx, profileMutationRead(existing, revision, await describeAgentMutationReceipt(tx,existing,revision)), {
+  const submitted = await recordContentSubmission(tx, profileMutationRead(existing, revision, await describeAgentMutationReceipt(tx,existing,revision)), {
     id: submissionId(input.input.submissionId), requestHash: sha256StableJson(input.input), assets: input.context.contentAssets,
     candidate: { ...draft, ...updates, modelPreference },
     voiceId: input.input.voiceId,
     avatarChangeSource:input.context.avatarChangeSource,
     sourceReviewId: input.input.sourceReviewId,
   });
+  if (submitted.receipt.publication === "published" && submitted.receipt.contentRevisionId) {
+    await recordAgentReady(tx, {
+      userId: input.context.userId,
+      agentProfileId: existing.id,
+      contentRevisionId: submitted.receipt.contentRevisionId,
+      channel: input.context.channel ?? "web",
+      mcpClientId: input.context.mcpClientId ?? null,
+    });
+  }
+  return submitted;
 }
 
 function prepareAgentProfileUpdates(

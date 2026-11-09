@@ -404,9 +404,14 @@ export default function PrivacyPage() {
           <P>
             We use PostHog, hosted in the United States, to understand entry pages,
             campaign sources, navigation, agent creation, match entry, and game
-            viewing. Analytics may link anonymous visits to your public account ID
-            after sign-in. We do not send your email, wallet address, agent prompts,
-            private strategy, or form contents in analytics events.
+            viewing. When you arrive from a campaign link, we retain its source,
+            campaign, creative and audience labels and the advertising click
+            identifier so we can measure which campaigns bring players; these
+            are kept with your account record after sign-in under the same
+            access controls. Analytics may link anonymous visits to your public
+            account ID after sign-in. We do not send your email, wallet address,
+            agent prompts, private strategy, or form contents in analytics
+            events, and campaign labels never include prompt text.
           </P>
           <P>
             We also measure browser performance and collect scrubbed error reports
@@ -428,6 +433,30 @@ export default function PrivacyPage() {
             unavailable, it waits for your permission. Do Not Track and Global
             Privacy Control disable optional tracking. Change or withdraw your
             choice below at any time; essential site functions remain available.
+          </P>
+          <P>
+            When optional tracking is allowed, we may send account signup,
+            agent readiness, and season-entry events to Meta, Google, TikTok,
+            and X to measure our
+            advertisements. These events may include an advertising click
+            identifier and a hashed public account identifier. They do not
+            include your email, phone number, IP address, wallet address,
+            prompts, or private strategy.
+          </P>
+          <P>
+            Your effective tracking preference is saved with your account and
+            applies to browser, API, and MCP conversion delivery. Withdrawing
+            permission stops future optional delivery, suppresses queued events,
+            and removes retained campaign attribution. Enabling tracking later
+            does not send events collected while it was off. Events already
+            delivered cannot be recalled by this setting.
+          </P>
+          <P>
+            Turning off optional analytics does not delete the account, agents,
+            enrollment, or game records needed to provide the service. We retain
+            these operational records and use aggregate outcome counts for
+            internal reporting; they are not automatically shared with analytics
+            or advertising providers.
           </P>
           <AnalyticsPreference />
         </Section>

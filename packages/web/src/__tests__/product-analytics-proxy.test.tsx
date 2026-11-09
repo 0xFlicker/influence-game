@@ -27,12 +27,14 @@ test("production analytics initializes the SDK through the proxy only when allow
   mock.module("@/hooks/use-auth", () => ({ useAuth: () => ({ ready: true, account: internal ? { isAdmin: true, roles: [] } : null }) }));
   mock.module("@/lib/runtime-config", () => ({ useRuntimeConfig: () => ({ ready: true, POSTHOG_PROJECT_TOKEN: "project-token" }) }));
   mock.module("@/lib/analytics-consent", () => ({
-    useAnalyticsConsent: () => ({ ready: true, analytics: allowed, recordings: false, notice: { path: null } }),
+    useAnalyticsConsent: () => ({ ready: true, analytics: allowed, recordings: false, choiceRevision: 0, notice: { path: null } }),
     getAnalyticsConsent: () => ({ analytics: allowed, recordings: false, choice: { analytics: true } }),
     subscribeAnalyticsConsent: () => () => {},
     loadAnalyticsConsent: async () => {},
     dismissAnalyticsNotice: () => {},
+    setAccountAnalyticsAllowed: () => {},
   }));
+  mock.module("@/lib/api", () => ({ getAuthToken: () => null }));
   mock.module("../components/analytics-preference", () => ({ AnalyticsPreference: () => null }));
   mock.module("posthog-js", () => ({ default: {
     init: (key: string, config: { api_host: string; ui_host: string }) => calls.push({ key, host: config.api_host, uiHost: config.ui_host }),

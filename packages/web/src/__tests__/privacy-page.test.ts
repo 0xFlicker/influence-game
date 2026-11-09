@@ -27,7 +27,7 @@ describe("privacy policy page", () => {
     expect(pageSource).not.toContain("personally endorses The House");
     expect(pageSource).toContain("third-party AI providers");
     expect(pageSource).toContain("train and improve their");
-    expect(pageSource).toContain("Meta");
+    expect(pageSource).toMatch(/events to Meta, Google, TikTok,\s+and X/);
     expect(pageSource).toContain("do not include sensitive or personal information");
     expect(pageSource).toContain("Daily Dispatches, Highlights, and Marketing");
     expect(pageSource).toContain("remix the winning agent");
