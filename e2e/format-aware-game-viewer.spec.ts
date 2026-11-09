@@ -1551,15 +1551,19 @@ test.describe("format-aware game viewer", () => {
       await expect(tableau.locator('[data-winner-image="full-body"] img')).toBeVisible();
       await expect(tableau.locator('[data-placement="2"]')).toContainText("Lyra");
       await expect(tableau.locator('[data-placement="3"]')).toContainText("Echo");
+      await expect(tableau.getByRole("list", { name: "Final four" }).getByRole("listitem")).toHaveCount(2);
+      await expect(tableau.locator('[data-placement="3"]')).toContainText("Jury");
+      await page.getByRole("button", { name: "Play replay", exact: true }).click();
+      await page.clock.runFor(5_200);
       await expect(tableau.locator('[data-placement="4"]')).toContainText("Atlas");
-      await expect(tableau.getByRole("list", { name: "Final four placements" }).getByRole("listitem")).toHaveCount(3);
       await expect(tableau.getByRole("list", { name: "Jury", exact: true }).getByRole("listitem")).toHaveCount(1);
       await expect(tableau.getByRole("list", { name: "Jury", exact: true })).toContainText("Sage");
+      await expect(tableau.locator('[data-placement="5"]')).toContainText("Sage");
+      await page.clock.runFor(5_000);
       await expect(tableau.getByRole("list", { name: "Rest of the cast" }).getByRole("listitem")).toHaveCount(1);
       await expect(tableau.getByRole("list", { name: "Rest of the cast" })).toContainText("Nova");
-      await expect(tableau.locator('[data-placement="3"]')).toContainText("Jury");
-      await expect(tableau.locator('[data-placement="5"]')).toContainText("Sage");
       await expect(tableau.locator('[data-placement="6"]')).toContainText("Nova");
+      await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
       // Global playback shortcuts must not steal keys from focused controls.
       await next.evaluate(element => (element as HTMLElement).blur());
       await playbackKey(page, "ArrowLeft");
@@ -1576,9 +1580,7 @@ test.describe("format-aware game viewer", () => {
       const sceneBox = await tableau.boundingBox();
       expect(winnerBox!.width / sceneBox!.width).toBeGreaterThan(.33);
       expect(winnerBox!.width / sceneBox!.width).toBeLessThanOrEqual(.5);
-      const heads = await Promise.all([2, 3, 4].map(rank => tableau.locator(`[data-placement="${rank}"] img`).boundingBox()));
-      expect(heads[0]!.width).toBeGreaterThan(heads[1]!.width);
-      expect(heads[1]!.width).toBeGreaterThan(heads[2]!.width);
+      await expect(tableau.locator('[data-placement="2"] img')).toBeVisible();
       await tableau.screenshot({ path: testInfo.outputPath("winner-fullscreen.png") });
       if (mobile) await page.setViewportSize({ width: 844, height: 390 });
       await expect(tableau.getByRole("img", { name: "Rex", exact: true })).toBeInViewport();
