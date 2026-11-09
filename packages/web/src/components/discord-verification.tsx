@@ -42,8 +42,8 @@ function AccountPair({ accountName, discordName, connected = false, disconnectin
   </div>;
 }
 
-function Introduction({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
-  return <div className={styles.introduction}><p className={styles.eyebrow}>{eyebrow}</p><h1>{title}</h1><p className={styles.description}>{children}</p></div>;
+function Introduction({ eyebrow, title, children }: { eyebrow?: string; title: string; children: React.ReactNode }) {
+  return <div className={styles.introduction}>{eyebrow && <p className={styles.eyebrow}>{eyebrow}</p>}<h1>{title}</h1><p className={styles.description}>{children}</p></div>;
 }
 
 export function DiscordVerification() {
@@ -55,8 +55,8 @@ export function DiscordVerification() {
     </header>
     <main className={styles.main}>
       <section className={styles.panel} aria-label="Connect your accounts">
-        {!ready ? <><Introduction eyebrow="The House × Discord" title="A place for your people.">One connection. Your House identity, inside the community.</Introduction><p className={styles.loading} role="status">Loading your account…</p></> : !authenticated || !account ? <>
-          <Introduction eyebrow="The House × Discord" title="A place for your people.">Bring your House identity into Discord. Connect once to receive your community and staff roles.</Introduction>
+        {!ready ? <><Introduction title="The House × Discord">One connection. Your House identity, inside the community.</Introduction><p className={styles.loading} role="status">Loading your account…</p></> : !authenticated || !account ? <>
+          <Introduction title="The House × Discord">Bring your House identity into Discord. Connect once to receive your community and staff roles.</Introduction>
           <AccountPair />
           <div className={styles.actions}>
             <button className={styles.primary} onClick={openSignIn}>Sign in to The House <span aria-hidden="true">↗</span></button>
