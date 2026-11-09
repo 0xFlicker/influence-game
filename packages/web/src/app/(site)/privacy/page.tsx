@@ -439,7 +439,8 @@ export default function PrivacyPage() {
             agent readiness, and season-entry events to Meta, Google, TikTok,
             and X to measure our
             advertisements. These events may include an advertising click
-            identifier and a hashed public account identifier. They do not
+            identifier and a hashed public account identifier. Web conversions sent
+            to Meta also include your browser’s user-agent string. They do not
             include your email, phone number, IP address, wallet address,
             prompts, or private strategy.
           </P>

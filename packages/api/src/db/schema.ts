@@ -271,6 +271,7 @@ export const userAnalyticsPreferences = pgTable("user_analytics_preferences", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   analytics: boolean("analytics").notNull().default(false),
   analyticsExplicit: boolean("analytics_explicit").notNull().default(false),
+  webUserAgent: text("web_user_agent"),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 });
 
@@ -305,6 +306,7 @@ export const campaignConversionEvents = pgTable("campaign_conversion_events", {
   channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
   mcpClientId: text("mcp_client_id"),
   attribution: jsonb("attribution").$type<Record<string, string>>(),
+  clientUserAgent: text("client_user_agent"),
   occurredAt: text("occurred_at").notNull().default(sql`now()::text`),
   posthogStatus: text("posthog_status").notNull().default("pending"),
   posthogAttempts: integer("posthog_attempts").notNull().default(0),

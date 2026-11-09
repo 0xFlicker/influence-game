@@ -20,7 +20,7 @@ import {
   syncAnalyticsPreference,
   recordConversion,
   reconcileSignupConversions,
-  recordAuthenticationTracking,
+  retainBrowserUserAgent, recordAuthenticationTracking,
   type ConversionFetch,
 } from "../services/campaign-conversions.js";
 
@@ -164,6 +164,7 @@ async function conversionFixture(allowed = true) {
   const db = await setupTestDB();
   const [user] = await db.insert(schema.users).values({ id: randomUUID(), displayName: "Conversion regression" }).returning();
   await db.transaction(tx => syncAnalyticsPreference(tx, user!.id, allowed));
+  await db.transaction(tx => retainBrowserUserAgent(tx, user!.id, "Mozilla/5.0 TestBrowser/1.0"));
   return { db, user: user! };
 }
 const deliveryEnv = { posthogProjectToken: "test", posthogHost: "https://posthog.example", metaPixelId: "pixel", metaAccessToken: "test" };
@@ -237,11 +238,11 @@ test("withdrawal suppresses pending events, strips attribution, and never backfi
 test("unknown preference still records business outcomes but cannot retain attribution or deliver", async () => {
   const db = await setupTestDB();
   const [user] = await db.insert(schema.users).values({ id: randomUUID() }).returning();
-  await recordAuthenticationTracking(db, { userId: user!.id, publicId: user!.publicId, created: true, attribution: { campaign: "declined" } });
+  await recordAuthenticationTracking(db, { userId: user!.id, publicId: user!.publicId, created: true, userAgent: "Mozilla/5.0 UnknownConsent", attribution: { campaign: "declined" } });
   expect(await db.select().from(schema.userAnalyticsPreferences)).toHaveLength(0);
   expect(await db.select().from(schema.userCampaignAttribution)).toHaveLength(0);
   const [event] = await db.select().from(schema.campaignConversionEvents);
-  expect(event).toMatchObject({ attribution: null, posthogStatus: "suppressed", platformStatus: "suppressed" });
+  expect(event).toMatchObject({ attribution: null, clientUserAgent: null, posthogStatus: "suppressed", platformStatus: "suppressed" });
   const result = await deliverPendingConversions(db, deliveryEnv, async () => { throw new Error("Must not send"); });
   expect(result.claimed).toBe(0);
   expect(await db.transaction(tx => syncAnalyticsPreference(tx, user!.id, true))).toBe(true);
@@ -308,7 +309,7 @@ test("authenticated preference endpoint persists rejection and lets GPC override
   process.env.JWT_SECRET = "campaign-preference-regression";
   const token = await createSessionToken(user.id);
   const post = (body: unknown, extraHeaders: Record<string, string> = {}) => app.request("/api/attribution/retain", {
-    method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json", ...extraHeaders }, body: JSON.stringify(body),
+    method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json", "User-Agent": "Mozilla/5.0 RouteBrowser/1.0", ...extraHeaders }, body: JSON.stringify(body),
   });
   expect((await post({ firstTouch: { campaign: "missing-choice" } })).status).toBe(400);
   const rejected = await post({ analytics: false, firstTouch: { campaign: "not-permitted" } });
@@ -322,12 +323,15 @@ test("authenticated preference endpoint persists rejection and lets GPC override
   expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.analyticsExplicit).toBe(true);
   await post({ analytics: true, expectedVersion: denial.version, firstTouch: { campaign: "stale" } });
   expect(await db.select().from(schema.userCampaignAttribution)).toHaveLength(0);
+  expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.webUserAgent).toBeNull();
   await post({ analytics: true, expectedVersion: enabled.version, firstTouch: { campaign: "current" } });
   const [retained] = await db.select().from(schema.userCampaignAttribution);
   expect(retained?.firstTouch?.utm_campaign).toBe("current");
+  expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.webUserAgent).toBe("Mozilla/5.0 RouteBrowser/1.0");
   expect(await (await post({ analytics: true, analyticsExplicit: true, explicitChoice: true }, { "Sec-GPC": "1" })).json()).toMatchObject({ analytics: false });
   expect(await (await post({ analytics: true, analyticsExplicit: true, explicitChoice: true }, { DNT: "1" })).json()).toMatchObject({ analytics: false });
   expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.analyticsExplicit).toBe(false);
+  expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.webUserAgent).toBeNull();
   const [suppressed] = await db.select().from(schema.campaignConversionEvents);
   expect(suppressed).toMatchObject({ googleStatus: "suppressed", tiktokStatus: "suppressed", xStatus: "suppressed" });
 });
@@ -368,4 +372,61 @@ test("an enable request arriving after a newer withdrawal cannot restore trackin
   const [current] = await db.select().from(schema.userAnalyticsPreferences);
   await db.transaction(tx => syncAnalyticsPreference(tx, user.id, false, true));
   expect(await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, current!.updatedAt))).toBe(false);
+});
+
+
+test("Meta web user agent is consented, frozen across retries, and removed on withdrawal", async () => {
+  const { db, user } = await conversionFixture();
+  await recordAuthenticationTracking(db, { userId: user.id, publicId: user.publicId, created: true,
+    analytics: true, userAgent: "Mozilla/5.0 SignupBrowser/1.0" });
+  await db.transaction(tx => retainBrowserUserAgent(tx, user.id, "Mozilla/5.0 LaterBrowser/2.0"));
+  const calls: { url: string; body: string }[] = [];
+  const fetchFn: ConversionFetch = async (url, init) => {
+    calls.push({ url, body: String(init?.body) });
+    return Response.json({}, { status: url.includes("graph.facebook") ? 500 : 200 });
+  };
+  await deliverPendingConversions(db, deliveryEnv, fetchFn);
+  await deliverPendingConversions(db, deliveryEnv, fetchFn);
+  const meta = calls.filter(call => call.url.includes("graph.facebook"));
+  expect(meta).toHaveLength(2);
+  for (const call of meta) expect(JSON.parse(call.body).data[0].user_data.client_user_agent).toBe("Mozilla/5.0 SignupBrowser/1.0");
+  expect(calls.find(call => call.url.includes("posthog"))?.body).not.toContain("SignupBrowser");
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, false));
+  expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.webUserAgent).toBeNull();
+  expect((await db.select().from(schema.campaignConversionEvents))[0]).toMatchObject({ clientUserAgent: null, platformStatus: "suppressed" });
+  const before = calls.length;
+  await deliverPendingConversions(db, deliveryEnv, fetchFn);
+  expect(calls).toHaveLength(before);
+});
+
+test("missing browser metadata suppresses Meta only; API events never inherit a browser user agent", async () => {
+  const { db, user } = await conversionFixture();
+  await db.transaction(tx => retainBrowserUserAgent(tx, user.id, "bad\nheader"));
+  await recordSignupCompleted(db, { userId: user.id, channel: "web" });
+  await db.transaction(tx => retainBrowserUserAgent(tx, user.id, "Mozilla/5.0 LaterBrowser/2.0"));
+  await recordConversion(db, { id: "api-ready", eventName: "agent_ready", userId: user.id, publicId: user.publicId, channel: "api" });
+  const meta: Record<string, unknown>[] = [];
+  await deliverPendingConversions(db, deliveryEnv, async (url, init) => {
+    if (url.includes("graph.facebook")) meta.push(JSON.parse(String(init?.body)).data[0]);
+    return Response.json({});
+  });
+  expect(meta).toHaveLength(1);
+  expect(meta[0]).toMatchObject({ action_source: "system_generated" });
+  expect(meta[0]?.user_data).not.toHaveProperty("client_user_agent");
+  const [web] = await db.select().from(schema.campaignConversionEvents).where(eq(schema.campaignConversionEvents.id, `signup:${user.id}`));
+  expect(web).toMatchObject({ clientUserAgent: null, platformStatus: "suppressed", platformAttempts: 0, posthogStatus: "delivered" });
+});
+
+
+test("browser metadata rejects oversized values and cannot be retained after denial", async () => {
+  const { db, user } = await conversionFixture();
+  for (const invalid of [undefined, "", "x".repeat(1025), "bad\rheader", "bad\u007fheader"]) {
+    await db.transaction(tx => retainBrowserUserAgent(tx, user.id, invalid));
+    expect((await db.select().from(schema.userAnalyticsPreferences))[0]?.webUserAgent).toBeNull();
+  }
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, false));
+  await recordAuthenticationTracking(db, { userId: user.id, publicId: user.publicId, created: true,
+    analytics: true, userAgent: "Mozilla/5.0 StaleConsent" });
+  expect((await db.select().from(schema.userAnalyticsPreferences))[0]).toMatchObject({ analytics: false, webUserAgent: null });
+  expect((await db.select().from(schema.campaignConversionEvents))[0]).toMatchObject({ clientUserAgent: null, platformStatus: "suppressed" });
 });

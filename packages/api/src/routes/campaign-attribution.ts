@@ -23,6 +23,7 @@ import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
   getCampaignReport,
   retainUserAttribution,
+  retainBrowserUserAgent,
   syncAnalyticsPreference,
 } from "../services/campaign-conversions.js";
 
@@ -41,6 +42,7 @@ export function createCampaignAttributionRoutes(db: DrizzleDB) {
       // A delayed touch from before withdrawal cannot reappear after re-enabling.
       // Initial sync returns the version; the next browser write supplies it.
       if (allowed && body.expectedVersion === saved!.updatedAt) {
+        await retainBrowserUserAgent(tx, user.id, c.req.header("User-Agent"));
         await retainUserAttribution(tx, {
           userId: user.id, channel: "web", firstTouch: body.firstTouch, lastTouch: body.lastTouch,
         });
