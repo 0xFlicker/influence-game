@@ -268,3 +268,17 @@ boundary; it proves website confirmation, delivery status, refresh and disconnec
 not a real Discord grant. Screenshots are under `.renders/discord-verification/`.
 
 Protocol reference: [Discord OAuth2](https://docs.discord.com/developers/topics/oauth2).
+
+## Focused account-linker interface
+
+The verification page uses a standalone full-height account-linker presentation.
+The shared site footer is omitted only on `/discord/verify`; other account and
+site pages retain it. Paired House and Discord identity cards stay visible through
+confirmation, delivery, and disconnect. Current House roles appear as individual
+badges, with Sysop emphasized. The success message describes the last requested
+role update; it does not imply ongoing role synchronization.
+
+The existing authenticated confirmation, membership-screening retries, explicit
+role refresh, and disconnect confirmation remain intact. Browser coverage exercises
+these states against an isolated PostgreSQL database with a synthetic Discord
+boundary, and captures mobile/desktop screenshots under `.renders/discord-verification/`.

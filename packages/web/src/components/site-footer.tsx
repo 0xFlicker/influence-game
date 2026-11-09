@@ -56,6 +56,7 @@ export const SITE_FOOTER_SECTIONS: ReadonlyArray<{
 ];
 
 export function shouldShowSiteFooter(pathname: string): boolean {
+  if (/^\/discord\/verify\/?$/.test(pathname)) return false;
   // Immersive watch + full-screen replay (including /replay/:sequence deep-links).
   return !/^\/games\/(?!new(?:\/|$)|free(?:\/|$))[^/]+(?:\/replay(?:\/[^/]+)?)?\/?$/.test(pathname);
 }
