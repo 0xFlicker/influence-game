@@ -131,7 +131,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   } else if (beat.kind === "nominee-selection") {
     content = <NomineeSelection beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} />;
   } else if (beat.kind === "winner") {
-    content = <WinnerScene beat={beat} fullscreen={fullscreen} controlsInset={controlsInset} />;
+    content = <WinnerScene beat={beat} elapsedMs={clockElapsedMs} />;
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {

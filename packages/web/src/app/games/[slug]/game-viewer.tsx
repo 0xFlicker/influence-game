@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   getGame,
   getGamePresentation,
@@ -862,9 +863,15 @@ export function GameViewer({
   if (playbackCompletedMode === "results") return <CompletedResultsReview gameId={game.slug} game={game} />;
 
   if (isBufferedFormat && game.status !== "waiting" && (game.status !== "completed" || playbackCompletedMode === "replay") && presentationSnapshotGameIdRef.current !== game.id) {
-    return <div><WatchWaiting label={presentationHydration.status === "unavailable" ? "Playback could not load." : "Preparing playback…"} />
-      {presentationHydration.status === "unavailable" && <button onClick={() => { void hydratePresentationFrames({afterSequence:0,preserveScreen:false}); }}>Retry playback</button>}
-    </div>;
+    if (presentationHydration.status !== "unavailable") return <WatchWaiting label="Preparing playback…" />;
+    return <section role="alert" className="flex min-h-[16rem] flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+      <h2 className="text-xl font-semibold text-white">Playback could not load</h2>
+      <p className="max-w-md text-sm text-white/70">Try loading this game again, or choose another game to watch.</p>
+      <div className="flex flex-wrap justify-center gap-3">
+        <button type="button" className="min-h-11 rounded border border-amber-200/50 bg-amber-100 px-5 text-sm font-semibold text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-100" onClick={() => { void hydratePresentationFrames({afterSequence:0,preserveScreen:false}); }}>Retry playback</button>
+        <Link className="inline-flex min-h-11 items-center rounded border border-white/30 px-5 text-sm text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" href="/games">Browse games</Link>
+      </div>
+    </section>;
   }
 
   if (game.status === "suspended" && !game.visualPaused && !game.watchState?.retrospective.outcome) {

@@ -1,6 +1,7 @@
 import type { GameWatchReplayFrame } from "@/lib/api";
 import type { EndgamePresentationCue, PresentationCue } from "./types";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
+import { winnerSceneDurationMs } from "./winner-scene-timing";
 
 /** Reveal saved ballots at resolution; never reconstruct a vote from narration. */
 export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFrame[]): EndgamePresentationCue[] {
@@ -16,11 +17,13 @@ export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFra
         canonicalSequence: frame.sequence, round: frame.round, phase: "RETROSPECTIVE" });
       else {
         const survivors = frame.players.filter(player => player.status === "alive");
-        if (survivors.length === 1) cues.push({source: "endgame", kind: "endgame_winner", key: `endgame:${frame.sequence}:results`,
-          canonicalSequence: frame.sequence, round: frame.round, phase: "RETROSPECTIVE", playerId: survivors[0]!.id, baseDurationMs: 4000,
-          standings: frame.players.map(player => ({playerId: player.id, placement: player.id === survivors[0]!.id ? 1
-            : eliminatedIds.length === frame.players.length - 1 && eliminatedIds.includes(player.id) ? frame.players.length - eliminatedIds.indexOf(player.id) : null})),
-          juryVoterIds: []});
+        if (survivors.length === 1) {
+          const standings = frame.players.map(player => ({playerId: player.id, placement: player.id === survivors[0]!.id ? 1
+            : eliminatedIds.length === frame.players.length - 1 && eliminatedIds.includes(player.id) ? frame.players.length - eliminatedIds.indexOf(player.id) : null}));
+          cues.push({source: "endgame", kind: "endgame_winner", key: `endgame:${frame.sequence}:results`,
+            canonicalSequence: frame.sequence, round: frame.round, phase: "RETROSPECTIVE", playerId: survivors[0]!.id,
+            baseDurationMs: winnerSceneDurationMs(standings, survivors[0]!.id), minimumDurationMs: winnerSceneDurationMs(standings, survivors[0]!.id), readingHold: true, standings, juryVoterIds: []});
+        }
       }
     }
     const event = frame.viewerDecisionEvent;
@@ -55,7 +58,8 @@ export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFra
             : eliminatedIndex >= 0 && completeExitOrder ? frame.players.length - eliminatedIndex
             : remaining.length === 1 && remaining[0]!.id === player.id ? 2 : null };
         }).sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity));
-        cues.push({ ...base, phase, key: `endgame:${event.sequence}:winner`, kind: "endgame_winner", playerId: event.payload.winnerId, resultVotes:event.payload.votes, standings, juryVoterIds: Object.keys(event.payload.votes), baseDurationMs: 4000 });
+        const duration = winnerSceneDurationMs(standings, event.payload.winnerId);
+        cues.push({ ...base, phase, key: `endgame:${event.sequence}:winner`, kind: "endgame_winner", playerId: event.payload.winnerId, resultVotes:event.payload.votes, standings, juryVoterIds: Object.keys(event.payload.votes), baseDurationMs: duration, minimumDurationMs: duration, readingHold: true });
       }
     } else if (event.type === "player.eliminated" && pendingElimination?.playerId === event.payload.playerId && pendingElimination.round === event.round) {
       cues.push({ ...base, phase: "VOTE", key: `endgame:${event.sequence}:elimination`, kind: "endgame_elimination", playerId: event.payload.playerId, resultEventSequence:pendingElimination.resultEventSequence, resultVotes:pendingElimination.resultVotes, resultJuryVotes:pendingElimination.resultJuryVotes, baseDurationMs: 4000 });
