@@ -114,7 +114,7 @@ test("old/new House cards, title search, stable links and responsive art",async(
     await text(page,"Watch Mystery");
     expect(new URL(page.url()).pathname).toBe('/games/old-lantern-village');
     expect(await page.title()).toContain('Lanterns and Lies');
-    expect(await page.evaluate(`document.querySelector('meta[property="og:image"]')?.content`)).toContain('/visual/werewolf/lantern-village.webp');
+    expect(await page.evaluate(`document.querySelector('meta[property="og:image"]')?.content`)).toContain('/games/old-lantern-village/card-image');
     await page.screenshot({path:'/tmp/w7b-entry-mobile.png',fullPage:true});
     await page.click('a[href="/games/old-lantern-village/results"]');
     await text(page,"The cast");await text(page,"Lanterns and Lies");

@@ -6,6 +6,9 @@ import { setupTestDB } from "./test-utils.js";
 import { createPublicPlayerRoutes } from "../routes/public-players.js";
 import { grantAward } from "../services/awards.js";
 import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { withPublicArtworkCapacity } from "../services/public-artwork-admission.js";
+import { contentImageFixture } from "./content-image-fixture.js";
+import { storeBinary, storeJson } from "../services/payload-storage.js";
 
 type FoundProfile = Extract<Awaited<ReturnType<typeof import("../services/public-agent-profile.js").getPublicAgentProfile>>, { status: "found" }>;
 
@@ -61,6 +64,48 @@ test("unavailable, archived, unapproved and synthetic agents return anonymous no
   expect(absent.status).toBe(404);
   expect(absent.headers.get("Cache-Control")).toBe("no-store");
   expect(await absent.json()).toEqual({ schemaVersion: 1, status: "not_found" });
+});
+
+test("public artwork is limited to eligible agents and an explicit image kind", async () => {
+  const { db, app, agent } = await fixture();
+  await db.update(schema.agentProfiles).set({ avatarUrl: "/avatars/personas/strategic.png" }).where(eq(schema.agentProfiles.id, agent));
+  const portrait = await app.request(`/api/public/agents/${agent}/art?kind=portrait`);
+  expect(portrait.status).toBe(200);
+  expect(portrait.headers.get("content-type")).toBe("image/png");
+  expect(portrait.headers.get("cache-control")).toBe("private, no-store");
+  expect((await portrait.arrayBuffer()).byteLength).toBeGreaterThan(0);
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=body`)).status).toBe(404);
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=anything`)).status).toBe(400);
+  await db.update(schema.agentProfiles).set({ archivedAt: "2026-11-01T00:00:00.000Z" }).where(eq(schema.agentProfiles.id, agent));
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=portrait`)).status).toBe(404);
+});
+
+test("public agent artwork selects the saved derivative of the currently published body", async () => {
+  const { db, app, owner, agent } = await fixture();
+  const source = await contentImageFixture(`pfp/${randomUUID()}.png`);
+  const cutout = await contentImageFixture(`characters/${randomUUID()}.png`);
+  const hash = "c".repeat(64), revision = randomUUID();
+  await db.insert(schema.agentContentAssets).values({ hash, bytes: await storeBinary(Buffer.from("source")), transparentUrl: cutout });
+  await db.insert(schema.agentContentRevisions).values({ id: revision, agentProfileId: agent, userId: owner, fingerprint: "public-art-test", snapshot: await storeJson({ assets: { [source]: hash } }) });
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: source, contentRevisionId: revision }).where(eq(schema.agentProfiles.id, agent));
+  const image = await app.request(`/api/public/agents/${agent}/art?kind=body`);
+  expect(image.status).toBe(200);
+  expect(image.headers.get("content-type")).toBe("image/png");
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "/different-body.png" }).where(eq(schema.agentProfiles.id, agent));
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=body`)).status).toBe(404);
+});
+
+test("public artwork rejects excess concurrent renders and releases capacity", async () => {
+  const { app, agent } = await fixture();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const active = Array.from({ length: 4 }, () => withPublicArtworkCapacity(() => gate));
+  try {
+    const response = await app.request(`/api/public/agents/${agent}/art?kind=portrait`);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("5");
+  } finally { release(); await Promise.all(active); }
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=portrait`)).status).toBe(404);
 });
 
 test("Werewolf history includes only this agent's canonical completed public participation", async () => {

@@ -48,6 +48,29 @@ async function readWerewolfEpisodeCast(db: Pick<DrizzleDB, "select">, games: Epi
   return castByGame;
 }
 const now = () => new Date().toISOString();
+
+/** Public opening identities only, independent of episode copy, scenes and outcomes. */
+export async function readEpisodeCast(db: Pick<DrizzleDB, "select">, games: EpisodeGame[]): Promise<Map<string, EpisodeCast[]>> {
+  const influenceIds = games.filter(game => game.gameKind === "influence").map(game => game.id);
+  const [players, wolfCast] = await Promise.all([
+    influenceIds.length ? db.select({ id: schema.gamePlayers.id, gameId: schema.gamePlayers.gameId, persona: schema.gamePlayers.persona, profileAvatarUrl: schema.agentProfiles.avatarUrl, ownerWalletAddress: schema.users.walletAddress }).from(schema.gamePlayers)
+      .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
+      .leftJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
+      .where(inArray(schema.gamePlayers.gameId, influenceIds)).orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id)) : Promise.resolve([]),
+    readWerewolfEpisodeCast(db, games.filter(game => game.gameKind === "werewolf")),
+  ]);
+  const castByGame = new Map<string, EpisodeCast[]>();
+  for (const p of players) {
+    const persona = JSON.parse(p.persona) as { name?: string; avatarUrl?: string; personaKey?: string };
+    const cast = castByGame.get(p.gameId) ?? [];
+    const profileAvatar = isImportedSyntheticPlayer(p.ownerWalletAddress) ? null : p.profileAvatarUrl;
+    cast.push({ id: p.id, name: persona.name ?? "Agent", avatarUrl: persona.avatarUrl ?? profileAvatar ?? null, personaKey: persona.personaKey ?? null });
+    castByGame.set(p.gameId, cast);
+  }
+  for (const [id, cast] of wolfCast) castByGame.set(id, cast);
+  return castByGame;
+}
+
 export function decodeEpisodeCopy(raw: string): EpisodeCopy {
   const value: unknown = JSON.parse(raw);
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).sort().join() !== "description,title") throw new Error("Invalid episode copy fields");
@@ -79,12 +102,9 @@ export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "s
   if (!games.length) return new Map();
   const ids = games.map(g => g.id);
   const influenceIds = games.filter(game => game.gameKind === "influence").map(game => game.id);
-  const [rows, players, seasons, covers, publications, wolfCast] = await Promise.all([
+  const [rows, castByGame, seasons, covers, publications] = await Promise.all([
     db.select().from(table).where(inArray(table.gameId, ids)),
-    db.select({ id: schema.gamePlayers.id, gameId: schema.gamePlayers.gameId, persona: schema.gamePlayers.persona, profileAvatarUrl: schema.agentProfiles.avatarUrl, ownerWalletAddress: schema.users.walletAddress }).from(schema.gamePlayers)
-      .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
-      .leftJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-      .where(inArray(schema.gamePlayers.gameId, ids)).orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id)),
+    readEpisodeCast(db, games),
     options.includeEpisodeNumbers === false ? Promise.resolve([]) : db.select({ id: schema.games.id, seasonId: schema.games.seasonId }).from(schema.games).where(inArray(schema.games.seasonId, [...new Set(games.flatMap(g => g.seasonId ? [g.seasonId] : [])), "__none__"])).orderBy(asc(schema.games.createdAt), asc(schema.games.id)),
     db.selectDistinctOn([schema.visualScenes.gameId], { id: schema.visualScenes.id, gameId: schema.visualScenes.gameId, artifact: schema.visualScenes.imageArtifactId, plan: schema.visualScenes.plan }).from(schema.visualScenes).where(and(inArray(schema.visualScenes.gameId, influenceIds), eq(schema.visualScenes.roomId, "lobby"), eq(schema.visualScenes.status, "ready"))).orderBy(asc(schema.visualScenes.gameId), asc(schema.visualScenes.boundarySequence)),
     db.selectDistinctOn([schema.visualMediaPublications.sceneId], {
@@ -95,7 +115,6 @@ export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "s
       .innerJoin(schema.visualMediaVersions, eq(schema.visualMediaVersions.id, schema.visualMediaPublications.versionId))
       .where(inArray(schema.visualMediaPublications.gameId, influenceIds))
       .orderBy(asc(schema.visualMediaPublications.sceneId), desc(schema.visualMediaPublications.revision)),
-    readWerewolfEpisodeCast(db, games.filter(game => game.gameKind === "werewolf")),
   ]);
   const published = new Map(publications.map(p => [p.sceneId, p]));
   const selectedCovers = covers.map(c => { const p = published.get(c.id); return p ? { ...c, artifact: p.artifact, plan: p.plan } : c; });
@@ -103,14 +122,6 @@ export async function readEpisodePresentations(db: Pick<DrizzleDB, "select" | "s
   const numbers = new Map<string, number>();
   for (const game of seasons) { const n = (counts.get(game.seasonId!) ?? 0) + 1; counts.set(game.seasonId!, n); numbers.set(game.id, n); }
   const byGame = new Map(rows.map(r => [r.gameId, r]));
-  const castByGame = new Map<string, EpisodeCast[]>();
-  for (const p of players) {
-    const persona = JSON.parse(p.persona) as { name?: string; avatarUrl?: string; personaKey?: string };
-    const cast = castByGame.get(p.gameId) ?? [];
-    const profileAvatar = isImportedSyntheticPlayer(p.ownerWalletAddress) ? null : p.profileAvatarUrl;
-    cast.push({ id: p.id, name: persona.name ?? "Agent", avatarUrl: persona.avatarUrl ?? profileAvatar ?? null, personaKey: persona.personaKey ?? null }); castByGame.set(p.gameId, cast);
-  }
-  for (const [id, cast] of wolfCast) castByGame.set(id, cast);
   const coverByGame = new Map(selectedCovers.filter(c => c.artifact && c.plan.cast.length === (castByGame.get(c.gameId)?.length ?? 0) && c.plan.cast.every(p => castByGame.get(c.gameId)?.some(a => a.id === p.id))).map(c => [c.gameId, `/api/games/${c.gameId}/visual/artifacts/${c.artifact}`]));
   return new Map(games.map(game => { const row = byGame.get(game.id); return [game.id, {
     title: row?.title ?? game.slug, description: row?.description ?? (game.gameKind === "werewolf" ? "A village of agents. A pack hiding in plain sight." : "Meet the cast. Step inside the House."), episodeNumber: numbers.get(game.id) ?? null,

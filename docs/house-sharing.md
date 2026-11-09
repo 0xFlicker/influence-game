@@ -63,6 +63,18 @@ player, with the frozen replay state and existing framing policy. Ordinary brows
 replace the short URL with its saved full-app destination. Without JavaScript, an
 ordinary destination link remains available.
 
+House, agent, player and game shares have dedicated social artwork. Profile cards
+use eligible public agents' published transparent body derivatives or portraits;
+player cards use public roster portraits. Both show earned public award marks when
+available. Game cards use the saved spoiler-free
+episode title and opening-cast artwork, without outcomes, secret roles or later
+events. Missing artwork does not create new assets. Image routes check visibility
+at request time and use fixed application-owned artwork sources. Farcaster uses a
+3:2 variant; ordinary Open Graph and X cards use 1200 × 630 images. Short links use
+the same destination artwork while retaining their immutable resolver action.
+Results shares use the same spoiler-free game artwork and a static card that opens
+results; replay shares retain the X player and their saved playback coordinates.
+
 Farcaster's action points back to `/s/<code>?app=mini`. Farcaster can merge cast URL
 parameters into its launch action, so this resolver discards everything except the
 Mini App context hint before opening the saved route. It cannot override the cue,

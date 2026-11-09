@@ -491,6 +491,8 @@ test.describe("local public player identity", () => {
         for (const title of ["Open Influence", "Open Werewolf"]) {
           const card = shelf.locator("article").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
           await card.scrollIntoViewIfNeeded();
+          if (touch) await page.clock.runFor(250);
+          else await card.locator(".episode-artwork").hover();
           const visible = card.locator(".episode-frame.is-visible");
           await expect(card.locator(".episode-artwork")).toHaveClass(/is-playing/);
           await expect(visible).toContainText("Meet the cast");
@@ -506,20 +508,17 @@ test.describe("local public player identity", () => {
           await expect.poll(() => scene.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
           await expect(card.getByRole("button")).toHaveCount(0);
           await expect(card.locator('img[src="/logo.png"]')).toHaveCount(0);
-          await page.clock.runFor(4300);
-          await expect(visible).toContainText("Cast 5");
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 5");
           await expect(visible.locator(".episode-cast > div")).toHaveCount(4);
-          await page.clock.runFor(4200);
-          await expect(visible).toContainText("Cast 9");
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 9");
           await expect(visible.locator(".episode-cast > div")).toHaveCount(1);
-          await page.clock.runFor(4200);
-          await expect(visible).toContainText("Cast 1");
-          const join = card.getByRole("link", { name: "Join game", exact: true });
-          await join.focus();
-          await expect(card.locator(".episode-artwork")).not.toHaveClass(/is-playing/);
-          await page.clock.runFor(12600);
-          await expect(visible).toContainText("Cast 1");
-          await join.evaluate(link => (link as HTMLElement).blur());
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 1");
+          if (!touch) {
+            await page.mouse.move(0, 0);
+            await expect(card.locator(".episode-artwork")).not.toHaveClass(/is-playing/);
+            await page.clock.runFor(12600);
+            await expect(visible).toContainText("Cast 1");
+          }
           await expect(page).toHaveURL(`${servers.webUrl}/games`);
         }
         await page.emulateMedia({ reducedMotion: "reduce" });

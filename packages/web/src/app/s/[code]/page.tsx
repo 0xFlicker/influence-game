@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { parseHouseShareTarget, SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
 import { serverApiFetch, ServerApiError } from "@/lib/server-api";
 import { getPlayerCardGame } from "@/lib/server-player-card";
-import { playerCardMetadata } from "@/lib/player-card";
+import { playerCardMetadata, resultsCardMetadata } from "@/lib/player-card";
 import { serializeMiniAppEmbedMeta } from "@/lib/farcaster-miniapp";
 import { getHighlightsShareMetadata, getProfileShareMetadata } from "@/lib/server-share-metadata";
 import { ShareDestination } from "./share-destination";
@@ -28,19 +28,27 @@ export async function generateMetadata({params}: Props): Promise<Metadata> {
   const request = await headers();
   const origin = process.env.WEB_BASE_URL?.trim() || (process.env.NODE_ENV === "production" ? "https://thehouse.game" : `${request.get("x-forwarded-proto") ?? "http"}://${request.get("host") ?? "localhost:3001"}`);
   const url = new URL(target.path, origin);
-  let metadata: Metadata = {title: "The House", description: "Watch Influence and Werewolf in the House.", openGraph: {title: "The House", images: ["/promo.png"]}, twitter: {card: "summary_large_image", images: ["/promo.png"]}};
+  const houseDescription = "Watch Influence and Werewolf in the House.";
+  let metadata: Metadata = {title: "The House", description: houseDescription, openGraph: {title: "The House", description: houseDescription, images: ["/social/house-og.png"]}, twitter: {card: "summary_large_image", title: "The House", description: houseDescription, images: ["/social/house-og.png"]}};
   if (target.kind === "game") {
     const game = await getPlayerCardGame(target.identifier!);
     metadata = target.mode === "highlights"
       ? await getHighlightsShareMetadata(target.identifier!, url.searchParams.get("scene") ?? undefined, url.searchParams.get("audience") ?? undefined)
-      : playerCardMetadata(game, origin, Object.fromEntries(url.searchParams), target.sequence);
+      : target.mode === "results"
+        ? resultsCardMetadata(game, origin)
+        : playerCardMetadata(game, origin, Object.fromEntries(url.searchParams), target.sequence);
   } else if (target.kind === "profile") {
     metadata = await getProfileShareMetadata(target.identifier!, url.searchParams.get("game") ?? undefined);
   }
+  const imagePath = target.kind === "profile"
+    ? `/profile/${encodeURIComponent(target.identifier!)}/card-image?format=farcaster`
+    : target.kind === "game" && target.mode !== "highlights"
+      ? `/games/${encodeURIComponent(target.identifier!)}/card-image?format=farcaster`
+      : undefined;
   return { ...metadata, metadataBase: new URL(origin), alternates: {canonical: target.path}, robots: {index: false, follow: false},
     // Farcaster merges the cast URL's query onto its action URL. Resolve through
     // our short route so extra cast parameters cannot change the frozen settings.
-    other: {"fc:miniapp": serializeMiniAppEmbedMeta(origin, {path: `/s/${code}`, buttonTitle: metadata.twitter && "card" in metadata.twitter && metadata.twitter.card === "player" ? "Watch replay" : "Open in the House"})} };
+    other: {"fc:miniapp": serializeMiniAppEmbedMeta(origin, {path: `/s/${code}`, imagePath, buttonTitle: target.mode === "results" ? "View results" : metadata.twitter && "card" in metadata.twitter && metadata.twitter.card === "player" ? "Watch replay" : "Open in the House"})} };
 }
 
 export default async function ShortSharePage({params, searchParams}: Props) {
