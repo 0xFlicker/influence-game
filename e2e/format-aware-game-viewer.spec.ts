@@ -191,6 +191,20 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  test("plays a persisted historical huddle without a publication slot", async ({page}) => {
+    test.skip(Boolean(process.env.PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL), "Requires the isolated historical database fixture.");
+    await page.clock.install();
+    const response = page.waitForResponse(result => result.url().includes("/api/games/historical-huddle-replay/presentation"));
+    await page.goto(viewerUrl("/games/historical-huddle-replay/replay"));
+    const presentation = await response;
+    expect(presentation.status()).toBe(200);
+    const body = await presentation.json() as {messages: Array<{entry: {text: string}}>};
+    expect(body.messages.map(message => message.entry.text)).toContain("Historical huddle: we keep our promises.");
+    await pauseAutoplay(page, "⏸ Pause");
+    await advanceUntilVisible(page, page.getByText("Historical huddle: we keep our promises.", {exact: true}), "historical huddle");
+    await expect(page.getByText("Historical huddle: we keep our promises.", {exact: true})).toBeVisible();
+  });
+
   for (const kind of ["influence", "werewolf"] as const) test(`${kind} starts master-muted with low music on the audio taper`,async ({page})=>{
     await observeMusic(page);
     const slug=`volume-default-${kind}`;
