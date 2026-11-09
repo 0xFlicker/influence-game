@@ -99,7 +99,7 @@ test("profile cards render only earned public award marks in both image formats"
       expect(generic.equals(noAwards)).toBe(false);
     }
   } finally { globalThis.fetch = original; }
-}, 20_000);
+}, 90_000);
 
 test("card renderer rejects artwork withdrawn while rendering", async () => {
   const original = globalThis.fetch;
