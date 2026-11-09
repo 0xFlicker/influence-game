@@ -66,7 +66,7 @@ function awardMarks(awards: readonly PublicAward[] | undefined) {
   </div>;
 }
 
-export async function renderAgentCard(profile: PublicAgentProfile, farcaster = false): Promise<Response> {
+export async function renderAgentCard(profile: Pick<PublicAgentProfile, "name" | "profileHref" | "awards">, farcaster = false): Promise<Response> {
   const id = publicAgentId(profile.profileHref);
   if (!id) throw new Error("Public agent identity is invalid");
   const body = await artwork(id, "body");

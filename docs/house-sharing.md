@@ -75,6 +75,12 @@ the same destination artwork while retaining their immutable resolver action.
 Results shares use the same spoiler-free game artwork and a static card that opens
 results; replay shares retain the X player and their saved playback coordinates.
 
+Agent-card identity and artwork use lightweight public projections rather than
+loading game histories for every artwork read. They still check published agent
+and owner eligibility before returning artwork; the image route rechecks identity
+and awards after rendering. These responses remain uncached so withdrawn content
+is not served from the application cache.
+
 Farcaster's action points back to `/s/<code>?app=mini`. Farcaster can merge cast URL
 parameters into its launch action, so this resolver discards everything except the
 Mini App context hint before opening the saved route. It cannot override the cue,

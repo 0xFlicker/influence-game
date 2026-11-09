@@ -66,6 +66,26 @@ test("unavailable, archived, unapproved and synthetic agents return anonymous no
   expect(await absent.json()).toEqual({ schemaVersion: 1, status: "not_found" });
 });
 
+test("public card identity and artwork follow agent eligibility without exposing history", async () => {
+  const { db, app, owner, agent } = await fixture();
+  await db.update(schema.agentProfiles).set({ avatarUrl: "/avatars/personas/strategic.png" }).where(eq(schema.agentProfiles.id, agent));
+  const card = await app.request(`/api/public/agents/${agent}/card`);
+  expect(card.status).toBe(200);
+  expect(await card.json()).toEqual({ schemaVersion: 1, status: "found", profile: { name: "Public Agent", avatarUrl: "/avatars/personas/strategic.png", profileHref: `/agents/${agent}`, awards: [] } });
+  await grantAward(db, { definitionCode: "season-0-agent-participant", recipient: { type: "agent", id: agent }, actorId: owner, sourceKey: "card-fixture", evidence: { secret: "PRIVATE_AWARD" }, reason: "PRIVATE_REASON", requestId: randomUUID() });
+  const awardedCard = await (await app.request(`/api/public/agents/${agent}/card`)).json() as { profile: { awards: Array<{ code: string }> } };
+  expect(awardedCard.profile.awards.map(award => award.code)).toEqual(["season-0-agent-participant"]);
+  expect(JSON.stringify(awardedCard)).not.toContain("PRIVATE_");
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=portrait`)).status).toBe(200);
+  await db.update(schema.users).set({ walletAddress: "imported-private-fixture" }).where(eq(schema.users.id, owner));
+  expect((await app.request(`/api/public/agents/${agent}/card`)).status).toBe(404);
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=portrait`)).status).toBe(404);
+  await db.update(schema.users).set({ walletAddress: "0x1234567890abcdef1234567890abcdef12345678" }).where(eq(schema.users.id, owner));
+  await db.update(schema.agentProfiles).set({ moderationRequired: true, contentRevisionId: null }).where(eq(schema.agentProfiles.id, agent));
+  expect((await app.request(`/api/public/agents/${agent}/card`)).status).toBe(404);
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=portrait`)).status).toBe(404);
+});
+
 test("public artwork is limited to eligible agents and an explicit image kind", async () => {
   const { db, app, agent } = await fixture();
   await db.update(schema.agentProfiles).set({ avatarUrl: "/avatars/personas/strategic.png" }).where(eq(schema.agentProfiles.id, agent));

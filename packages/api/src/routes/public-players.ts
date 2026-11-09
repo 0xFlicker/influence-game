@@ -9,6 +9,8 @@ import { readAgentTransparentBodies } from "../services/agent-transparent-bodies
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import sharp from "sharp";
 import { PublicArtworkOverloadedError, withPublicArtworkCapacity } from "../services/public-artwork-admission.js";
+import { isImportedSyntheticPlayer } from "../services/public-player-identity.js";
+import { publicAgentAwards } from "../services/awards.js";
 
 export function createPublicPlayerRoutes(db: DrizzleDB) {
   const app = new Hono();
@@ -31,6 +33,19 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
     return c.json(result, result.status === "found" ? 200 : 404);
   });
 
+  // Cards need only current public identity and awards, not game history.
+  app.get("/api/public/agents/:identifier/card", async c => {
+    c.header("Cache-Control", "no-store");
+    const id = c.req.param("identifier");
+    const [row] = await db.select({ name: schema.agentProfiles.name, avatarUrl: schema.agentProfiles.avatarUrl, wallet: schema.users.walletAddress })
+      .from(schema.agentProfiles).innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
+      .where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
+    if (!row || isImportedSyntheticPlayer(row.wallet)) return c.notFound();
+    return c.json({ schemaVersion: 1, status: "found", profile: {
+      name: row.name, avatarUrl: row.avatarUrl, profileHref: `/agents/${encodeURIComponent(id)}`, awards: await publicAgentAwards(db, id),
+    } });
+  });
+
   // Expose only the artwork of an eligible public agent. Never accept a URL
   // from the caller: the visual reader enforces application-owned storage.
   app.get("/api/public/agents/:identifier/art", async c => {
@@ -39,20 +54,21 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
     if (kind !== "body" && kind !== "portrait") return c.json({ error: "Invalid artwork kind" }, 400);
     try {
       return await withPublicArtworkCapacity(async () => {
-        const publicProfile = await getPublicAgentProfile(db, id);
-        if (publicProfile.status !== "found") return c.notFound();
-        const [profile] = await db.select().from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
-        if (!profile) return c.notFound();
+        const [initial] = await db.select({ profile: schema.agentProfiles, wallet: schema.users.walletAddress }).from(schema.agentProfiles)
+          .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
+          .where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
+        if (!initial || isImportedSyntheticPlayer(initial.wallet)) return c.notFound();
+        const profile = initial.profile;
         const url = kind === "body" ? (await readAgentTransparentBodies(db, [profile])).get(id) : profile.avatarUrl;
         if (!url) return c.notFound();
         const bytes = await readVisualProfileImage(url, { name: profile.name, personaKey: profile.personaKey ?? "" }, { db });
         const image = await sharp(bytes, { limitInputPixels: 32_000_000 }).resize(800, 800, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
         // A profile can be hidden or changed while the image is being fetched.
         // Revalidate before returning the old bytes, never cache visibility.
-        if ((await getPublicAgentProfile(db, id)).status !== "found") return c.notFound();
-        const [current] = await db.select({ revision: schema.agentProfiles.contentRevisionId, body: schema.agentProfiles.fullBodyReferenceUrl, avatar: schema.agentProfiles.avatarUrl })
-          .from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
-        if (!current) return c.notFound();
+        const [current] = await db.select({ revision: schema.agentProfiles.contentRevisionId, body: schema.agentProfiles.fullBodyReferenceUrl, avatar: schema.agentProfiles.avatarUrl, wallet: schema.users.walletAddress })
+          .from(schema.agentProfiles).innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
+          .where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
+        if (!current || isImportedSyntheticPlayer(current.wallet)) return c.notFound();
         if (current.revision !== profile.contentRevisionId || current.body !== profile.fullBodyReferenceUrl || current.avatar !== profile.avatarUrl) {
           return new Response(null, { status: 503, headers: { "Cache-Control": "private, no-store", "Retry-After": "1" } });
         }
