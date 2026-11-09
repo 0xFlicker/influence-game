@@ -15,7 +15,7 @@ export function ProductAnalytics() {
   const consent = useAnalyticsConsent();
   const { ready, account } = useAuth();
   const internal = Boolean(account?.isAdmin || account?.roles.some(role => ["admin", "sysop", "producer"].includes(role)));
-  const privateRoute = /^\/(admin|oauth|sign-in|sign-up|callback)(\/|$)/.test(pathname);
+  const privateRoute = /^\/(admin|oauth|discord|sign-in|sign-up|callback)(\/|$)/.test(pathname);
   useEffect(() => { void loadAnalyticsConsent(); }, []);
   useEffect(() => {
     if (consent.notice.path !== null && consent.notice.path !== pathname) dismissAnalyticsNotice();

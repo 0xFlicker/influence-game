@@ -372,7 +372,7 @@ test("adding affirmative metadata to an allowed account preserves the attributio
 
 test("migration preserves existing delivery history while suppressing every new destination", async () => {
   const db = await setupTestDB();
-  const migration = readFileSync(new URL("../../drizzle/0168_ad_platform_conversions.sql", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../../drizzle/0169_ad_platform_conversions.sql", import.meta.url), "utf8");
   await db.transaction(async tx => {
     // Temporary tables shadow the real names on this transaction's connection.
     await tx.execute(sql`CREATE TEMP TABLE user_analytics_preferences (user_id text, analytics boolean) ON COMMIT DROP`);

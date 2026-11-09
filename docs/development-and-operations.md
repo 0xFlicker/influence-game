@@ -318,8 +318,8 @@ Configuration (Doppler `social-strategy-agent`, API/worker env):
 
 Internal reporting: `GET /api/admin/campaign-report` (admin permission),
 optionally with caller-supplied spend (`?spend={"campaign":amount}`).
-Deployment: apply migrations `0166_campaign_attribution_conversions` and
-`0167_campaign_tracking_preferences`, and `0168_ad_platform_conversions`, deploy
+Deployment: apply migrations `0167_campaign_attribution_conversions` and
+`0168_campaign_tracking_preferences`, and `0169_ad_platform_conversions`, deploy
 API/worker and web through the normal gates, then verify one tagged journey
 on production per [the analytics release verification](product-analytics.md).
 Do not launch advertisements or spend without separate authorization.

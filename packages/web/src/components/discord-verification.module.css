@@ -1,0 +1,73 @@
+.shell { --gold: #e5c98d; --muted: #aaa7b1; min-height: 100svh; color: #f1eee8; background: radial-gradient(ellipse at 50% 18%, #342a1d33, transparent 55%), #09090d; display: flex; flex-direction: column; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 40px; }
+.wordmark { display: inline-flex; align-items: center; gap: 12px; font-family: Georgia, serif; font-size: 24px; letter-spacing: -.6px; }
+.header > span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .18em; }
+.main { width: 100%; max-width: 860px; margin: auto; padding: 24px 24px 36px; }
+.panel { position: relative; padding: 40px 56px 28px; border: 1px solid #e5c98d24; border-radius: 28px; background: linear-gradient(145deg, #19181e, #101015 75%); box-shadow: 0 24px 100px #0005; }
+.panel::before { content: ""; position: absolute; top: -1px; left: 22%; right: 22%; height: 1px; background: linear-gradient(90deg, transparent, #e5c98d99, transparent); }
+.introduction { text-align: center; }
+.eyebrow { color: var(--gold); font-size: 10px; font-weight: 600; line-height: 1.5; letter-spacing: .24em; text-transform: uppercase; margin-bottom: 14px; }
+.introduction h1 { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; font-size: clamp(36px, 4.4vw, 54px); line-height: 1.12; letter-spacing: -.045em; text-wrap: balance; }
+.description { max-width: 480px; margin: 16px auto 0; color: var(--muted); font-size: 15px; line-height: 1.65; text-wrap: pretty; }
+.accounts { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; margin: 30px 0 26px; }
+.account { display: flex; align-items: center; flex-direction: column; padding: 20px 16px; border: 1px solid #ffffff12; border-radius: 16px; background: #08080d55; text-align: center; min-width: 0; }
+.account strong { max-width: 100%; overflow-wrap: anywhere; font-size: 16px; font-weight: 550; line-height: 1.5; }
+.houseIcon { border-radius: 12px; }
+.discordIcon { width: 48px; height: 48px; border-radius: 12px; background: #6665e521; color: #a9a7ff; display: grid; place-items: center; }
+.discordIcon svg { width: 28px; height: 28px; }
+.accountLabel { margin: 14px 0 6px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .15em; }
+.accountDetail { color: var(--muted); margin-top: 6px; font-size: 11px; }
+.bridge { position: absolute; z-index: 1; width: 38px; height: 38px; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 1px solid #41404a; border-radius: 50%; display: grid; place-items: center; background: #19181e; color: var(--muted); }
+.bridge svg { width: 19px; height: 19px; }
+.connected { color: var(--gold); border-color: #e5c98d55; background: #28231c; }
+.actions { display: flex; align-items: center; flex-direction: column; gap: 17px; margin-top: 25px; }
+.primary { width: 100%; max-width: 400px; display: flex; align-items: center; justify-content: center; gap: 16px; padding: 15px 20px; border: 1px solid #eddaa7; border-radius: 10px; background: linear-gradient(115deg, #ebd6a3, #d9b977); color: #211b12; font-size: 14px; line-height: 1.5; font-weight: 650; transition: filter .15s, transform .15s; text-align: center; }
+.primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.primary span { font-size: 18px; line-height: 1; }
+.textButton { font-size: 12px; color: #c2bdc9; padding: 8px 4px; text-underline-offset: 4px; }
+.textButton:hover { color: #fff; text-decoration: underline; }
+.secondaryPrompt { color: var(--muted); font-size: 12px; }
+.secondaryPrompt .textButton { color: var(--gold); }
+.delivery { text-align: center; }
+.deliveryStatus { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; line-height: 1.6; color: #d4d0da; }
+.statusDot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: #c5b18c; }
+.statusComplete { background: #8bceac; box-shadow: 0 0 9px #8bceac25; }
+.roles { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; margin: 16px 0 12px; }
+.role { border: 1px solid #ffffff1a; border-radius: 6px; padding: 5px 9px; color: #c8c3d0; font-size: 11px; line-height: 1.5; background: #ffffff04; }
+.sysop { border-color: #e5c98d55; color: var(--gold); background: #e5c98d0c; }
+.deliveryHint, .timestamp { font-size: 11px; line-height: 1.6; color: var(--muted); }
+.timestamp { margin-top: 4px; font-size: 10px; }
+.management { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; color: #77717f; }
+.privacy { display: flex; justify-content: center; align-items: center; gap: 7px; margin-top: 26px; padding-top: 21px; border-top: 1px solid #ffffff0b; font-size: 11px; line-height: 1.6; color: var(--muted); text-align: center; }
+.privacy svg { flex-shrink: 0; width: 13px; height: 13px; }
+.back { display: flex; justify-content: center; gap: 10px; margin-top: 22px; padding: 8px; font-size: 12px; color: var(--muted); }
+.back:hover { color: var(--gold); }
+.error, .notice { margin: 16px 0; padding: 14px 16px; border: 1px solid #d4a2a233; border-radius: 10px; color: #f2bdbd; background: #40212133; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.notice { color: #e5c98d; border-color: #e5c98d33; background: #3a2c1833; }
+.loading { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
+.disconnect { margin-top: 22px; padding: 20px; border: 1px solid #f2bdbd33; border-radius: 12px; background: #40212122; }
+.disconnect h2 { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.disconnect p { font-size: 13px; line-height: 1.6; color: #c5b6bc; margin: 10px 0 16px; }
+.danger { padding: 10px 14px; font-size: 12px; border-radius: 8px; border: 1px solid #f2bdbd66; color: #f2bdbd; }
+.shell button:disabled { cursor: wait; opacity: .55; transform: none; }
+.shell :is(button, a):focus-visible { outline: 2px solid var(--gold); outline-offset: 5px; }
+@media (max-width: 600px) {
+  .header { padding: 16px 22px; }
+  .wordmark { font-size: 21px; gap: 9px; }
+  .header > span { font-size: 9px; letter-spacing: .1em; }
+  .main { padding: 12px 16px 20px; }
+  .panel { padding: 24px 20px 20px; border-radius: 22px; }
+  .description { font-size: 13px; line-height: 1.65; margin-top: 12px; }
+  .accounts { gap: 18px; margin: 20px 0 18px; }
+  .account { padding: 14px 9px; border-radius: 12px; }
+  .account strong { font-size: 13px; }
+  .accountDetail { font-size: 10px; }
+  .bridge { width: 30px; height: 30px; }
+  .bridge svg { width: 16px; height: 16px; }
+  .privacy { font-size: 10px; gap: 6px; margin-top: 18px; padding-top: 16px; }
+  .deliveryStatus { font-size: 12px; }
+  .actions { gap: 10px; margin-top: 20px; }
+  .roles { margin: 12px 0 8px; }
+  .back { margin-top: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .primary { transition: none; } .primary:hover { transform: none; } }

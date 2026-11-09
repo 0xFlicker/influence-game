@@ -206,7 +206,7 @@ metadata does not change the regional policy or re-enable a denied account.
 Later acceptance never changes an older event's consent snapshot.
 
 All destinations obey the same account-wide permission and withdrawal lock,
-including DNT/GPC and MCP/API outcomes. Migration `0168_ad_platform_conversions`
+including DNT/GPC and MCP/API outcomes. Migration `0169_ad_platform_conversions`
 defaults Google/TikTok/X statuses to `suppressed` on existing rows; only newly
 captured permitted events become `pending`. Re-enabling tracking never
 backfills suppressed events. Missing configuration consumes no attempts; adding

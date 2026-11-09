@@ -3,6 +3,7 @@ import {
   reconcileSignupConversions,
   deliverPendingConversions,
 } from "./services/campaign-conversions.js";
+import { createDiscordRoutes } from "./routes/discord.js";
 import { startCharacterReferenceWorker } from "./services/character-reference-jobs.js";
 import { restoreLocalChampionshipSchedules, stopLocalChampionshipTimers } from "./services/championship-scheduling.js";
 import { createGameRetryRoutes } from "./routes/game-retry.js";
@@ -753,6 +754,7 @@ app.route("/", uploadRoutes);
 
 const profileRoutes = createProfileRoutes(db);
 app.route("/", profileRoutes);
+app.route("/", createDiscordRoutes(db));
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support
