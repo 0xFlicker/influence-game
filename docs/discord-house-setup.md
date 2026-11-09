@@ -282,3 +282,24 @@ The existing authenticated confirmation, membership-screening retries, explicit
 role refresh, and disconnect confirmation remain intact. Browser coverage exercises
 these states against an isolated PostgreSQL database with a synthetic Discord
 boundary, and captures mobile/desktop screenshots under `.renders/discord-verification/`.
+
+## Arrival and rules screening (2026-11-09)
+
+The live welcome screen leads with `#start-here`; onboarding defaults are limited
+ to `#start-here`, `#rules`, and `#verification-help`. The verification card is
+pinned at https://discord.com/channels/1521918107554152468/1521921705386184714/1569191523717873704.
+The non-expiring entry invite is https://discord.gg/J3DaYDzxNq and targets
+`#start-here`. The former invite targets `#general` and remains valid for existing
+shared links; website and support links now use the entry invite.
+
+Rules Screening is enabled (`MEMBER_VERIFICATION_GATE_ENABLED`), with one required
+TERMS field containing the eight existing published House rules. Discord requires
+acceptance before participation; the role worker refuses delivery while a member
+is pending screening. Configuration was verified by API readback; a fresh human
+join and acceptance was not performed by the operator.
+
+Unverified community members, including legacy Member/Player/Spectator/Builder
+roles, can access only the three entry channels. Only verification-help permits
+posting. House User unlocks community channels; existing staff access remains.
+Do not rerun the broad legacy `setup-house-discord.ts` configuration unchanged:
+its public channel overrides and onboarding defaults predate this verification gate.

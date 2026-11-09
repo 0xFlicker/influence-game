@@ -1383,7 +1383,7 @@ test("exhausted generations retain the contact dialog and the unsent revision", 
       await page.$eval('dialog[open] a[href*="discord.gg"]', (element) =>
         element.getAttribute("href"),
       ),
-    ).toBe("https://discord.gg/XfsmWr26xW");
+    ).toBe("https://discord.gg/J3DaYDzxNq");
     await page.screenshot({
       path: proof + "generation-limit.png",
       fullPage: true,
