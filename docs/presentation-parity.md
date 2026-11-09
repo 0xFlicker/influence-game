@@ -59,6 +59,12 @@ holds allow time for every cast page; long room names and captions use measured
 pagination, and recorded voice retains its original audio duration. Werewolf uses its own room
 presentation and is not routed through this Influence-specific treatment.
 
+Influence winner scenes page the other finalists, jury and cast members in pairs on the
+sampled presentation clock. The winner cue reserves five seconds per page;
+the final page remains held at the end. Rebuild existing bundles from their
+frozen selection and source to pick up the revised timing and layout, then
+render existing movies again. Do not alter the selected source or media pins.
+
 For a new beat, explicitly decide its catalog identity, source position, duration,
 speech/thought ownership, recording identity, selection/default inclusion, allowed
 framing context and ending/handoff. Use structured canonical coordinates and
