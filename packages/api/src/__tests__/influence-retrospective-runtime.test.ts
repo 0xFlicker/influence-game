@@ -40,6 +40,9 @@ describe("Influence retrospective durable runtime", () => {
     expect(source.input).toBeNull();
     expect(source.transcriptThroughSequence).toBe(before!.execution.heads.dialogueSequence);
     expect(source.dialogueAnchors).toHaveLength(source.transcriptThroughSequence);
+    expect(source.dialogueAnchors.map(anchor => anchor.entrySequence)).toEqual(
+      Array.from({ length: source.transcriptThroughSequence }, (_, index) => index + 1),
+    );
     expect(source.dialogueAnchors.every(anchor => anchor.eventSequence <= outcome.eventSequence)).toBeTrue();
 
     const agents = makeAgents();

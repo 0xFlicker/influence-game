@@ -103,7 +103,8 @@ export function createDurableGameRunnerStore(
       if (!outcomeTurn) throw new DurableGameRunnerStoreIntegrityError("Outcome has no committed owning turn");
       const transcriptThroughSequence = outcomeTurn.state.heads.dialogueSequence;
       const rows = await db.select({ sequence: schema.transcripts.entrySequence, anchor: schema.transcripts.firstDurableEventSequence })
-        .from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId));
+        .from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId))
+        .orderBy(asc(schema.transcripts.entrySequence));
       const dialogueAnchors = rows.flatMap(row => row.sequence !== null && row.sequence <= transcriptThroughSequence
         ? [{ entrySequence: row.sequence, eventSequence: Math.min(row.anchor ?? 0, outcome.eventSequence) }] : []);
       const stored = (await loadPayloads(db.select().from(schema.gameRetrospectiveInputs)
