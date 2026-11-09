@@ -48,7 +48,7 @@ reject "$controller" 'bypass_pull_request_allowances|allow_force_pushes|required
 require "$controller" 'can_admins_bypass == false' "environment bypass protection is not checked"
 require "$controller" 'prevent_self_review == true' "self-review protection is not checked"
 require "$controller" 'production environment must not contain secrets' "environment secret absence is not checked"
-require "$controller" 'approval workflow is not the current Influence main revision' "stale broker revisions remain authoritative"
+reject "$controller" '/git/ref/heads/main' "unrelated main updates invalidate approvals"
 require "$controller" 'length >= 1' "legitimate repeat approval cannot be revalidated"
 require "$controller" '\.operation\.qualification \| keys \| sort' "public qualification fields are not allowlisted"
 reject "$controller" 'release_bundle_dir' "public approval schema exposes a private host path"
