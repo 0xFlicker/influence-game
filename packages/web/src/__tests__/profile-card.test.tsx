@@ -116,14 +116,17 @@ test("agent image endpoint rechecks public visibility after rendering", async ()
   const original = globalThis.fetch;
   const png = await readFile(`${import.meta.dir}/../../public/avatars/personas/strategic.png`);
   let profiles = 0;
+  const profileRequests: string[] = [];
   globalThis.fetch = Object.assign(async (url: Parameters<typeof fetch>[0]) => {
     if (String(url).includes("/art?")) return new Response(png, { headers: { "content-type": "image/png" } });
+    profileRequests.push(new URL(String(url)).pathname);
     return ++profiles === 1 ? Response.json({ schemaVersion: 1, status: "found", profile: agent }) : new Response("not found", { status: 404 });
   }, { preconnect: original.preconnect });
   try {
     const response = await getAgentCard(new Request("https://thehouse.game/agents/agent-1/card-image"), { params: Promise.resolve({ id: "agent-1" }) });
     expect(response.status).toBe(404);
     expect(profiles).toBe(2);
+    expect(profileRequests).toEqual(["/api/public/agents/agent-1/card", "/api/public/agents/agent-1/card"]);
   } finally { globalThis.fetch = original; }
 });
 
