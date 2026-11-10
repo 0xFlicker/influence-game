@@ -641,6 +641,9 @@ export type AgentAction =
 export const MIN_NEW_GAME_PLAYERS = 6;
 /** Maximum roster size admitted for newly created games. */
 export const MAX_NEW_GAME_PLAYERS = 12;
+/** Custom round limits for newly created API games; existing games keep their frozen limit. */
+export const MIN_NEW_GAME_ROUNDS = 1;
+export const MAX_NEW_GAME_ROUNDS = 16;
 
 export interface GameConfig {
   /** Frozen at game creation; new engine-only games default to the current version. */
