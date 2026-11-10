@@ -673,6 +673,7 @@ test("historical v7 result opens as a completed replay without a retrospective t
   try {
     await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
     await dismissAnalyticsNotice(page);
+    await skipWerewolfOpening(page);
     await page.waitForSelector("[data-werewolf-stage][data-cursor]");
     await pauseWerewolf(page);
     expect(await page.$eval("[data-werewolf-stage]",node=>node.getAttribute("data-cursor"))).not.toBeNull();
