@@ -214,11 +214,16 @@ describe("public player profile", () => {
       expect(metadata.openGraph?.url).toBe("/profile/flick");
       expect(metadata.title).toContain("Flick");
       expect((metadata.twitter as { card?: string } | null | undefined)?.card)
-        .toBe("summary");
+        .toBe("summary_large_image");
+      expect(JSON.stringify(metadata.openGraph?.images)).toContain("/profile/flick/card-image");
+      const miniapp = JSON.parse(String(metadata.other?.["fc:miniapp"]));
+      expect(miniapp.imageUrl).toContain("/profile/flick/card-image?format=farcaster");
+      expect(miniapp.button.action.url).toContain("/profile/flick?app=mini");
+      const filtered = await generateMetadata({ params: Promise.resolve({ id: profileFixture.identity.publicId }), searchParams: Promise.resolve({ game: "werewolf" }) });
+      expect(JSON.parse(String(filtered.other?.["fc:miniapp"])).button.action.url).toContain("/profile/flick?game=werewolf&app=mini");
       expect(html).toContain("Flick");
-      expect(requestedUrls.every((url) => url.endsWith(
-        `/api/players/${profileFixture.identity.publicId}?game=all`,
-      ))).toBe(true);
+      expect(requestedUrls).toContainEqual(expect.stringContaining(`/api/players/${profileFixture.identity.publicId}?game=all`));
+      expect(requestedUrls).toContainEqual(expect.stringContaining(`/api/players/${profileFixture.identity.publicId}?game=werewolf`));
     } finally {
       globalThis.fetch = originalFetch;
     }

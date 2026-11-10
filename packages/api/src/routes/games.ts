@@ -488,6 +488,9 @@ export function createGameRoutes(db: DrizzleDB) {
         if (error.reason === "owner_seat_limit") {
           return c.json({ error: error.message, code: error.reason }, 403);
         }
+        if (error.reason === "full_body_required") {
+          return c.json({ error: error.message, code: error.reason }, 409);
+        }
         return c.json({ error: error.message }, error.code === "rated_roster_invalid" ? 409 : 400);
       }
       throw error;

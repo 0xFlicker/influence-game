@@ -431,9 +431,10 @@ test.describe("deterministic layered authentication", () => {
       expiredProof: harness.tokens.uiWalletPrivyExpired,
     });
     const page = await context.newPage();
-    await page.goto(`${harness.webUrl}/dashboard/profile`, {
+    await page.goto(`${harness.webUrl}/dashboard`, {
       waitUntil: "networkidle",
     });
+    await page.getByRole("button", { name: /Settings/ }).click();
     await page.getByRole("button", { name: "Add email/password" }).click();
     await expect(page.getByRole("heading", { name: "Add email/password" }))
       .toBeVisible();

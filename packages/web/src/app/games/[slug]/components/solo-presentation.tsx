@@ -74,7 +74,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
     top:geometry.image.top + geometry.image.height * face.y, width:geometry.image.width * face.width, height:geometry.image.height * face.height},
     thought?.focus ?? 0, !fullBody, reducedMotion);
   const speechBox = geometry.bubble;
-  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", available < 300, beat.roleLabel ? 48 : 28);
+  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", available < 300 || size.width < 480 && available < 340, beat.roleLabel ? 48 : 28);
   const fittedSpeechWidth = speechFit.typography?.width ?? speechBox.width;
   const bubble = {...speechBox, width:fittedSpeechWidth, height:speechFit.typography?.height ?? speechBox.height,
     left:speechBox.left + (geometry.beside ? 0 : (speechBox.width - fittedSpeechWidth) / 2),

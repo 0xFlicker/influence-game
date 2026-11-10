@@ -237,7 +237,7 @@ Agent management tools requiring both `agents:read` and `agents:write`:
 - `create_agent`: create a distinctly named Agent Profile as a separate competitive identity with independent career and season history. Never use it to tune or re-enroll an existing competitor. Inputs are `displayName`, `archetype`, `personalityPrompt`, optional `publicBiography`, optional `strategyStyle`, optional `gender` (`male`, `female`, or `non-binary`), and optional `avatarUrl`. Omitting `avatarUrl` requests quota-gated avatar completion.
 - `update_agent`: update mutable fields, including gender, on one existing owned Agent Profile regardless of enrollment. Effective changes become active immediately, Standing Daily membership stays on the same profile, waiting seats follow the new behavior, and started or suspended seats remain pinned.
 - `join_queue`: set the owner's Standing Daily Agent with `queueType: "daily-free"`, or join a waiting open game with `queueType: "open-game"` and `gameIdOrSlug`. Repeating the same Daily Free agent is idempotent; naming a different owned agent switches the standing entry without resetting its wait state.
-- `leave_queue`: remove the Standing Daily Agent idempotently and suppress browser acquisition prompts for the rest of the active season. It does not remove an agent from an already-created game.
+- `leave_queue`: remove the Standing Daily Agent idempotently. It does not remove an agent from an already-created game.
 
 Producer-only tools requiring `producer`:
 
@@ -466,3 +466,22 @@ For local and deployed verification:
 Consent, code exchange, refresh, introspection, and writes check current DB permission `manage_game_assets`, seeded for producer and sysop. Public-game image reads require no token or management role. `public`/`spoiler` are presentation labels, never access filters. Existing scope `producer` alone cannot manage assets; `assets:manage` alone does not grant producer trace access. Sysop asset consent does not require an additional producer role or broaden the existing producer trace consent policy. The [asset CLI](game-assets.md) reuses this login flow with explicit asset scope and origin-bound token files; no separate issuer or long-lived token minting path is added.
 
 The similarly named local simulation `read_game_retrospective` is a separate trusted stdio adapter: its inputs are `sessionId`, `gameNumber`, optional `afterOrdinal` and bounded `limit`. A fresh `session.json` identifies the owning game; `read_werewolf_history` requires explicit audience and bounded cursor range. Local artifacts are never routed through the deployed OAuth server or treated as production evidence.
+
+## Conversion attribution
+
+MCP creation and enrollment complete outside the browser, so they carry no
+landing-page touch. The shared services record the same authoritative
+conversion events as the web (`agent_created`, `agent_ready`, `season_entry`)
+with `channel = mcp` and the OAuth `clientId` taken from the validated MCP
+auth context — never from tool arguments. An account's retained first-touch
+campaign attribution (from its browser visits) is joined server-side;
+accounts that only ever use MCP report campaign `unknown`, which is explicit
+and never inferred. Tracking identifiers are never placed in model-visible
+prompts or OAuth credentials. See [the analytics contract](product-analytics.md).
+
+MCP conversion delivery uses the owner's account-wide analytics preference.
+Tool calls cannot supply a tracking override. A missing/denied preference leaves
+operational outcomes internal, without campaign attribution or external delivery;
+re-enabling never backfills suppressed events. Change the preference through the
+website's privacy controls (the authenticated attribution endpoint synchronizes
+the effective choice).

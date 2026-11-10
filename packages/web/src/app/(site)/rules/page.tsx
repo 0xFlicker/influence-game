@@ -1,10 +1,18 @@
+import type { Metadata } from "next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Nav } from "@/components/nav";
 import { readRulesContent, ruleSectionId } from "@/lib/rules-content";
 import { RulesNavigation } from "@/app/rules/rules-reader";
 import "@/app/rules/rules.css";
-export const metadata = { title: "Game Rules — The House", description: "How to play Influence and Werewolf at The House." };
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ game?: string }> }): Promise<Metadata> {
+  const { game } = await searchParams;
+  return {
+    title: "Game Rules — The House",
+    description: "How to play Influence and Werewolf at The House.",
+    alternates: { canonical: game === "werewolf" ? "/rules?game=werewolf" : "/rules" },
+  };
+}
 export default async function RulesPage({ searchParams }: { searchParams: Promise<{ game?: string }> }) {
   const query = await searchParams;
   const game = query.game === "werewolf" ? "werewolf" : "influence";

@@ -59,3 +59,27 @@ test('closing discussion is triggered by the canonical post-retrospective repris
  expect(werewolfPlaybackConcluded(ending,'in_progress')).toBe(false);
  expect(werewolfPlaybackConcluded(ending,'completed')).toBe(true);
 });
+
+test('visual pack entrance withholds context and commentary through transformation and recorded speech',async()=>{
+ const events=await completedCurrentWerewolfFixture('pack-floor',11);
+ const moment=projectWerewolfProductionWatch(events,'omniscient').moments.find(m=>m.transformWolfIds?.length)!;
+ expect(moment).toBeDefined();
+ const cue=werewolfMomentCues({...moment,wolfForms:Object.fromEntries(moment.transformWolfIds!.map(id=>[id,`/wolf/${id}`]))})[0]!;
+ expect(cue.transformation).toBeDefined();
+ const {werewolfFollowRevealAtMs}=await import('../components/games/werewolf/werewolf-follow-position');
+ const reveal=werewolfFollowRevealAtMs(cue);
+ expect(werewolfPlaybackPolicy.scrubAtMs!(cue)).toBe(0);
+ expect(reveal).toBeGreaterThanOrEqual(cue.transformation!.durationMs);
+ const clock=new FollowClock(),director=new PresentationDirector<WerewolfPlaybackCue>({clock,policy:werewolfPlaybackPolicy,followTail:true});
+ director.load([cue]);director.setRecordings(cue.key,{speechMs:20000});director.play();
+ expect(werewolfCommentaryReady(director)).toBe(false);
+ clock.tick(cue.transformation!.durationMs-1);
+ expect(director.getElapsedBaseMs()).toBeLessThan(reveal);
+ expect(werewolfCommentaryReady(director)).toBe(false);
+ clock.tick(reveal-director.getElapsedBaseMs()+1);
+ expect(director.getAudioPosition()?.part).toBe('speech');
+ expect(werewolfCommentaryReady(director)).toBe(false);
+ clock.tick(19000);expect(werewolfCommentaryReady(director)).toBe(false);
+ clock.tick(3000);expect(director.getAudioPosition()).toBeNull();expect(werewolfCommentaryReady(director)).toBe(true);
+ director.dispose();
+});

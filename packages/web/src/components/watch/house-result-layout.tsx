@@ -3,8 +3,8 @@ import {useLayoutEffect, useRef, useState, type ReactNode} from "react";
 import {HouseMessage} from "./house-message";
 
 /** Reserve readable narration space without covering the scene or shrinking its text. */
-export function HouseResultLayout({children, text, elapsedMs = 0, progress, logoUrl, controlsInset = 0}: {
-  children:ReactNode; text:string; elapsedMs?:number; progress?:number; logoUrl?:string; controlsInset?:number;
+export function HouseResultLayout({children, text, elapsedMs = 0, progress, progressDurationMs, logoUrl, controlsInset = 0}: {
+  children:ReactNode; text:string; elapsedMs?:number; progress?:number; progressDurationMs?:number; logoUrl?:string; controlsInset?:number;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(false);
@@ -25,6 +25,6 @@ export function HouseResultLayout({children, text, elapsedMs = 0, progress, logo
     gridTemplateRows:wide ? "minmax(0, 1fr)" : "minmax(0, 1fr) minmax(86px, 28%)",
   }}>
     <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden" data-house-result-scene>{children}</div>
-    <HouseMessage text={text} elapsedMs={elapsedMs} progress={progress} logoUrl={logoUrl} />
+    <HouseMessage text={text} elapsedMs={elapsedMs} progress={progress} progressDurationMs={progressDurationMs} logoUrl={logoUrl} />
   </div>;
 }

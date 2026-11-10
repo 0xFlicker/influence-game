@@ -1,6 +1,6 @@
 # Farcaster Mini App
 
-Influence can run as a hybrid **website + Farcaster Mini App** on
+The House can run as a hybrid **website + Farcaster Mini App** on
 [`thehouse.game`](https://thehouse.game).
 
 **Operator deploy checklist:**
@@ -44,8 +44,8 @@ domain. JWT verification uses the hostname only.
 | Surface | Location |
 | --- | --- |
 | Manifest | `GET /.well-known/farcaster.json` |
-| Embed meta | Site layout default; completed game/replay pages override `fc:miniapp` |
-| Embed image | `/farcaster/embed.png` (3:2) |
+| Embed meta | Site layout default; game, results, replay and public profile pages override `fc:miniapp` |
+| Embed image | `/social/house-farcaster.png` by default; game and profile cards use destination-specific 1200 × 800 PNGs |
 | Icon / splash | `/logo.png` |
 
 Manifest and embed builders live in
@@ -69,8 +69,9 @@ This uses the normal site providers, Mini App detection, Quick Auth, and navigat
 It does not launch `/embed/`, whose anonymous player and framing policy are for X.
 Farcaster supports authentication and wallet actions through its SDK; normal House
 account permissions still apply, and wallet actions require the host/user approvals.
-The existing 3:2 Farcaster artwork is retained. The manifest's default home launch
-and non-replay cards are unchanged.
+The 3:2 Farcaster artwork uses the House's published character portraits and
+names both Influence and Werewolf. The manifest's default home launch remains
+the House homepage.
 
 Next.js serves blocking metadata for every User-Agent so the launch tag is present
 in the initial HTML head without JavaScript, including for unrecognized Farcaster

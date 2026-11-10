@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createSeasonRoutes } from "../routes/seasons.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createAcceptedTestProfile as createOwnedAgentProfile } from "./test-utils.js";
 import { closeSeason, createSeason } from "../services/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 

@@ -14,7 +14,7 @@ import { advanceWerewolf, werewolfFallback, defaultWerewolfStrategy, nextWerewol
 import { schema, type DrizzleDB } from "../db/index.js";
 import { pinWerewolfRulesVersion, setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfLiveView, readWerewolfEvents, readWerewolfView, releaseWerewolfOwner } from "../services/werewolf-games.js";
-import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createAcceptedTestProfile as createOwnedAgentProfile, submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { createGameRoutes } from "../routes/games.js";

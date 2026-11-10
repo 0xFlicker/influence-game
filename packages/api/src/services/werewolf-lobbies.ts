@@ -15,7 +15,7 @@ import { generateUniqueSlug } from "../lib/slug.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { checkGameStartAdmissionInTransaction } from "./deployment-admission.js";
 import { readPublishedWerewolfCharacters, readWerewolfCastingPlayers } from "./werewolf-cast.js";
-import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
+import { hasEligibleAgentContent, hasFullBodyAgentArt } from "./agent-content-eligibility.js";
 import { createWerewolfHousePlayers, freezeWerewolfRoster, WerewolfGameError } from "./werewolf-games.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
@@ -56,6 +56,7 @@ export async function joinWerewolfLobby(db: DrizzleDB, id: string, userId: strin
     const seats = (await readWerewolfCastingPlayers(tx, [game.id])).get(game.id) ?? [];
     const existing = seats.find(seat => seat.agentProfileId === agentProfileId);
     if (existing) return { playerId: existing.id };
+    if (!hasFullBodyAgentArt(profile)) throw new WerewolfGameError("Add a full-body image to this agent before joining a game.", 409);
     if (seats.length >= game.maxPlayers) throw new WerewolfGameError("The village is full.");
     const [owner] = await tx.select({ publicId: schema.users.publicId }).from(schema.users).where(eq(schema.users.id, userId));
     if (seats.some(seat => seat.ownerPublicId === owner!.publicId) && !await userHasAnyRole(tx, userId, ["admin", "sysop", "producer"])) throw new WerewolfGameError("You already have an agent in this game.", 403);

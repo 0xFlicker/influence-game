@@ -81,7 +81,7 @@ export function agentMutationReceiptOutputSchema(): Record<string, unknown> {
     properties: {
       contentRevisionId: { type: "string" },
       moderationRecordId: { type: "string" },
-      publication: { type: "string", enum: ["published", "held"] },
+      publication: { type: "string", enum: ["published", "reviewing", "held"] },
       schemaVersion: { type: "number", const: 1 },
       operation: { type: "string", enum: ["created", "updated"] },
       agent: {

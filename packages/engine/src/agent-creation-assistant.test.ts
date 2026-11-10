@@ -3,10 +3,21 @@ import { CHARACTER_FIELDS, characterEditFields, decodeCharacterEditTool } from "
 
 test("visual tool selects only visual fields and empty fields are added deterministically", () => {
   const command = decodeCharacterEditTool("update_visuals", "{}");
-  expect(command).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
+  expect(command).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"], generateImages: true });
   const profile = Object.fromEntries(CHARACTER_FIELDS.map(field => [field, "Existing"]));
   expect(characterEditFields(profile, ["visualDesign"])).toEqual(["visualDesign"]);
   expect(characterEditFields({ ...profile, backstory: "", performanceInstructions: "  " }, ["visualDesign"])).toEqual(["backstory", "performanceInstructions", "visualDesign"]);
+});
+test("gender wording and missing notes can change without requesting artwork", () => {
+  const profile = Object.fromEntries(CHARACTER_FIELDS.map(field => [field, "Existing"]));
+  const fields = characterEditFields({...profile, werewolfStrategyStyle:""}, ["gender", "backstory", "visualDesign"]);
+  expect(fields).toEqual(["gender", "backstory", "werewolfStrategyStyle", "visualDesign"]);
+  expect(fields).not.toContain("name");
+  expect(decodeCharacterEditTool("update_character", JSON.stringify({fields:["gender","backstory","visualDesign"],generateImages:false}))).toMatchObject({generateImages:false});
+  expect(decodeCharacterEditTool("update_character", JSON.stringify({fields:["gender","visualDesign"],generateImages:true}))).toMatchObject({generateImages:true});
+  for (const args of [{fields:["gender"]},{fields:["gender"],generateImages:"false"},{fields:["gender"],generateImages:true}]) {
+    expect(()=>decodeCharacterEditTool("update_character",JSON.stringify(args))).toThrow();
+  }
 });
 test("tool decoder rejects malformed, permissive, unknown and extra arguments", () => {
   for (const [tool, args] of [["update_visuals", '{"fields":["name"]}'], ["update_character", "{}"], ["update_character", '{"fields":[]}'], ["update_character", '{"fields":["unknown"]}'], ["update_character", '{"fields":["name","name"]}'], ["update_character", '{"fields":["name"],"extra":true}'], ["clarify", '{"message":""}'], ["publish", "{}"], ["update_visuals", "```json\n{}\n```"], ["update_visuals", "text {}"], ["update_visuals", "not json"]]) {

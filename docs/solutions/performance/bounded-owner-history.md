@@ -6,8 +6,9 @@ problem_type: performance
 
 # Owner history on demand
 
-The dashboard requests an owner-scoped first page of 20 entries and requests
-older pages only when selected. The game-kind filter applies before the cursor,
+The dashboard requests an owner-scoped page of three entries and requests
+another page only when selected. Previous navigation reuses the cursor for the
+earlier page; the API does not supply a total page count. The game-kind filter applies before the cursor,
 including multiple owned Werewolf seats in one game. Lifetime totals are removed
 until they can be calculated without traversing the complete history. The legacy
 array endpoint remains unchanged for existing clients.

@@ -1,3 +1,4 @@
+import { acceptTestAgent } from "./test-utils.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { randomUUID } from "node:crypto";
 import { legacyWerewolfConfig, replayWerewolf, runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
@@ -14,6 +15,7 @@ export async function playedWerewolfReview(db: DrizzleDB, existingOwner?: string
     name: `Learner ${i}`, personality: "Patient", gender: "non-binary", personaKey: "observer", backstory: "Librarian",
     strategyStyle: "INFLUENCE_ONLY", werewolfStrategyStyle: null,
   })).profile);
+  for(const profile of profiles)await acceptTestAgent(db,profile.id);
   const game = await createWerewolfGame(db, ownerUserId, { preset: "two_wolves", agentProfileIds: profiles.map(p => p.id), maxDays: 1, visibility: "unlisted" });
   // Owner-learning parity is a replay of the historical thread/checkpoint
   // flow. Pin its starting event explicitly so it does not inherit fresh-game

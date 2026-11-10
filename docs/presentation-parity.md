@@ -59,6 +59,12 @@ holds allow time for every cast page; long room names and captions use measured
 pagination, and recorded voice retains its original audio duration. Werewolf uses its own room
 presentation and is not routed through this Influence-specific treatment.
 
+Influence winner scenes page the other finalists, jury and cast members in pairs on the
+sampled presentation clock. The winner cue reserves five seconds per page;
+the final page remains held at the end. Rebuild existing bundles from their
+frozen selection and source to pick up the revised timing and layout, then
+render existing movies again. Do not alter the selected source or media pins.
+
 For a new beat, explicitly decide its catalog identity, source position, duration,
 speech/thought ownership, recording identity, selection/default inclusion, allowed
 framing context and ending/handoff. Use structured canonical coordinates and
@@ -78,10 +84,17 @@ Fit and reflow cast, labels and names within the picture. Paginate long speech,
 thoughts and House copy using the shared presentation clock and enough reading
 time. Clipping required content, shrinking it to unreadable text, or asking the
 viewer to page manually or to use a separate required paging UI are not acceptable
-substitutes. Normal keyboard/click advancement following the established player
-transport rules remains allowed. Cropping decorative
+substitutes. Normal keyboard/click advancement follows the shared director's
+measured page schedule: a gesture advances one page before the existing exit
+and cue transition. Automatic clock-driven pagination remains complete without
+interaction. Cropping decorative
 scenery is different from hiding required cast/text content. Studio's editorial
 lists, inspectors and timeline outside the rendered picture may scroll.
+
+Narrow solo ballots reserve enough speech-bubble height for the role label,
+pagination and a complete readable line while keeping the portrait and vote
+ledger in their own space. The same solo layout and typography measurement are
+used by the viewer, Studio and freshly prepared exports.
 
 Regression coverage must inspect the actual player/stage at narrow, short and
 fullscreen geometries with large casts and long names/copy. Reject scrollable

@@ -1,4 +1,16 @@
+> Current workspace: Guided and Advanced share one persistent draft, model and voice controls, explicit artwork selection and a before/after submission review. Save enters enforced screening; see [the current contract](agent-content-submissions.md). The assistant stage/command details below operate inside that workspace.
+
 # Guided Agent creation
+
+Once a draft has character text, an unscoped `revise_character` turn uses the
+existing strict edit tool to select fields before generation. Gender edits may
+update pronouns and gendered references in related text, and character edits can
+complete missing fields, including game notes. Populated unrelated content and
+the existing name stay fixed unless the user requests a change. Explicit section
+choices supply the requested scope; focused strategy edits stay isolated to that
+game. The tool carries an explicit `generateImages` decision, so text consistency
+in appearance/performance notes does not itself dispatch artwork. Image requests
+still require explicit intent, and all text changes appear in the review.
 
 ## Public preview and signup
 
@@ -42,9 +54,9 @@ there is no account-specific draft. Saving or discarding retires the active draf
 
 All creation entry points (ordinary, join-game and Daily Free) offer an AI
 assistant or Advanced create. Advanced uses the existing full editor and save
-contract. Switching from the assistant preserves the current draft. The global
-Daily Free acquisition prompt is suppressed on the creation route so its delayed
-reminder cannot interrupt either creation mode.
+contract. Switching from the assistant preserves the current draft. The former
+site-wide Daily Free acquisition prompt is no longer displayed; queue entry lives
+on the relevant game and season pages.
 
 The assistant fills the viewport over a dark stone hall with gold and purple
 accents. The House mark and starting cue remain in the upper scene through
@@ -60,11 +72,102 @@ the full width without a separate icon. The House message, ingredient picker,
 and labeled composer share one centered column. Ingredient rows stay directly
 above the composer when available; the composer has a distinct surface and
 border so the entry point stays visible.
-Clicking anywhere on a fixture opens its full text in a full-screen reader.
-Close returns without changes. Edit closes the reader, focuses the composer,
-and adds a removable “Change” section pill with a brief highlight animation
-(respecting reduced motion). Selected sections constrain
-which generated fields the client applies.
+Clicking a long-text character tile or an Advanced **Refine** link selects that
+field and focuses the Guided composer immediately. Image **Revise** uses the same
+transition, scoped to Appearance. Its arrow separately opens a full-text reader;
+reading never selects a change. A mouse hover previews full text after 600ms,
+without reflow, and can be dismissed with Escape. Touch uses the arrow.
+Name and Archetype open compact editors directly in Guided. Cancel or Escape
+discards the local buffer; OK (or Enter for Name) applies it to the shared draft.
+The sparkle queues that field's existing draft value for the next assistant turn,
+preserves the composer message and returns focus there without making a request.
+All these dialogs anchor near the clicked tile, flip to fit, and stay inside the
+visible viewport rather than using the editor's bottom activity panel position.
+The selected section appears above the composer with its current text; longer
+text can be expanded inline. Removing the section restores an unrestricted
+message. Selecting another section replaces the scope. Repeating Refine on the
+same field restores focus and scope. Failed requests preserve both scope and
+message, while successful requests clear them. Selected sections constrain which
+generated fields the client applies.
+
+Authenticated generation and Review wait for account-draft recovery. The footer
+shows “Loading draft…” while the account read is pending; loading alone does not
+show a failure or start an image request. A failed read retains Reload and support.
+Closing an untouched creator does not create an empty recovery draft.
+The footer reserves its geometry from initial loading through draft restoration,
+text updates, image work and validation. It stays fixed on mobile with content
+space reserved underneath. Activity opens a dialog above the footer (a sheet on
+mobile), containing requests, draft choices/conflicts and moderation details.
+Resume remains a direct footer action. No late status adds a row above the form,
+and reveal motion never translates the editor vertically.
+
+Active text generation sweeps only its selected fields (including missing fields
+being completed), in Guided fixtures and Advanced inputs. The composer shows
+activity immediately while routing or awaiting a reply. Existing artwork stays
+still during text-only edits. Image generation and portrait preparation scan the
+artwork independently, retaining its pixels and the real operation stage. These
+indeterminate effects do not imply a percentage or completion estimate. They use
+existing geometry and stop on success, failure or cancellation. Reduced motion
+uses a static highlight instead of a moving scan.
+
+Agent management opens an owner's profile from the agent image or name. Both
+share one keyboard-focusable link and preserve the list's return position. Edit
+remains the card's primary button; there is no separate View button.
+Edit, Analyze and Archive share one always-visible row without a disclosure.
+Archive asks for confirmation with Cancel and Archive, without a duplicate Close
+action or a change to the gallery layout.
+Analyze remains available because the collection does not provide a reliable
+availability flag across season receipts and owner learning; management does not
+load each agent's analysis just to decide whether to show a link.
+The Needs attention panel and filter are hidden when no agents need attention,
+using the collection's existing attention list without an extra request or scan.
+An empty attention filter returns to All and removes that URL parameter while
+preserving search and the agent return position.
+Management cards put the name, archetype, model, voice and activity in badges over
+the full-body artwork. The name sits above the figure; other badges occupy its
+left edge. Voice badges include the catalog gender, never an inferred character
+gender. Only Edit, Analyze and Archive sit below the picture. Cards have a fixed
+picture height, and long names reflow above the image rather than covering faces.
+Ready agents have no status badge. Pending edits show Still usable alongside
+review status only when a published version exists. Queued/running image work
+scans the artwork; automatic review spins its badge without scanning the image.
+Effects stop on terminal states and respect reduced motion. Status changes never
+move the action row or neighboring cards.
+The management grid always uses the full content width. Generation requests,
+attention items, errors and accepted game/season continuations appear in Activity,
+whose count includes each pending continuation. Activity never reserves a sidebar
+or changes card positions when its contents change.
+The management header has no duplicate Create action. Its Activity control is an
+icon with a numeric badge, hidden when empty. It spins for queued/running image
+work and automatic review, stays still for results or errors needing a decision,
+and respects reduced motion. The dialog includes reviewing agents as well as
+attention items and image requests.
+The owner profile's Agents link sits above the background panel, aligned with the
+profile heading and separated by a 16px gap on desktop and mobile.
+
+Pending images appear in both the editor and agent management. View reconnects to
+the correct workspace; Cancel keeps character edits while retiring image work.
+See [pending generation and charge recovery](agent-generations.md).
+
+After character text exists, Guided has a direct Gender control. It changes the
+draft immediately without inference, pronoun rewriting, or image generation.
+On acceptance, an automatic voice follows the saved gender; an explicitly
+selected voice stays selected. AI requests can also change gender through the
+strict structured field: the existing value is context, not a fixed constraint
+when gender is selected or the request is unrestricted. An explicit top-level
+gender constraint or an edit to other selected fields keeps gender fixed.
+
+Voice options display the catalog's Male/Female label beside each name, and the
+selected voice retains that label in the closed picker.
+
+Advanced groups Character, Strategy and Appearance inside one dark, blurred
+panel with connected tabs. Arrow keys, Home and End navigate the tabs. Model and
+voice preferences stay outside this panel. Archetypes use a styled listbox with
+icons, descriptions, typeahead and keyboard navigation.
+
+Exhausted or paused generation allowance still opens the contact dialog with
+Discord, email and X links, including inside the workspace. Dismissing it leaves
+the draft and unsent message intact; a short inline notice retains support links.
 
 Submitted messages appear on the right and clear the composer immediately, with
 an assistant typing bubble while awaiting a response. The ingredient picker,
@@ -87,7 +190,9 @@ without typing a prompt. Successful turns clear them; failed
 requests preserve the tags and typed message for retry.
 
 The conversation proceeds through character direction, character approval,
-appearance and portrait review. Character feedback regenerates the draft and
+appearance and review. Once artwork is ready, a new agent can proceed directly
+to Review and Create; artwork selection and portrait adjustment remain available
+but are not mandatory. Character feedback regenerates the draft and
 asks for approval again. The explicit “Yes, that feels right” button advances
 locally without a model call; typed replies still use the command router.
 Approval requests appearance only when no image exists. With an existing image,
@@ -133,7 +238,7 @@ interactive character creation uses Standard instead.
 ## Advanced edit and incomplete profiles
 
 The Workshop sends incomplete drafts to inference; missing gender or archetype
-does not block an assistant turn. Strategy-only edits select only the requested game block, even if shared fields or the other strategy are blank. Other character edits include missing shared details in the structured profile writer's selection; unselected game strategy blocks stay unchanged. Text-only strategy edits do not read existing image files. Gender and archetype come
+does not block an assistant turn. Strategy-only edits select only the requested game block, even if shared fields or the other strategy are blank. Other character edits include missing fields in the structured profile writer's selection, including empty game notes; populated unrelated blocks stay unchanged. Guided appearance revisions select visual design, complete missing details and keep populated unrelated character fields. Text-only edits omit image references, including gendered wording corrections to appearance notes. Gender and archetype come
 from validated enum fields in its response, never from application parsing of
 character prose. A missing archetype is sent as missing rather than silently
 replaced with Strategist.

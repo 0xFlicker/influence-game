@@ -31,7 +31,7 @@ import {
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
 } from "./owner-learning-test-utils.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 
 const NOW = new Date("2026-08-04T03:00:00.000Z");
 
@@ -63,6 +63,8 @@ describe("production MCP owner-learning parity", () => {
     expect((await rawToolCall(server, ownerAuth("stranger"), "read_learning_review", { reviewId })).error).toBeDefined();
     const applied = await callTool(server, auth, "apply_learning_review", { reviewId, proposalFingerprint });
     expectMatchesJsonSchema(applied, APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    expect(applied).toMatchObject({application:{receipt:{publication:"reviewing"}}});
+    await acceptTestAgent(db, args.agentProfileId);
     const profile = (await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, args.agentProfileId)))[0]!;
     expect(profile.werewolfStrategyStyle).toBe(proposal.after);
     expect(profile.strategyStyle).toBe("INFLUENCE_ONLY");
@@ -474,6 +476,7 @@ describe("production MCP owner-learning parity", () => {
       strategyStyle: "Verify reciprocity before declaring a voting bloc.",
       sourceReviewId: manualReviewId,
     });
+    await acceptTestAgent(db,manual.agentProfileId);
     expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
       .where(eq(schema.agentLearningReviews.id, manualReviewId))))[0]?.resolution)
       .toBe("manual_update");
@@ -486,6 +489,7 @@ describe("production MCP owner-learning parity", () => {
       agentId: superseded.agentProfileId,
       strategyStyle: "Unlinked owner edit supersedes the old review.",
     });
+    await acceptTestAgent(db,superseded.agentProfileId);
     expect((await loadPayloads(db.select().from(schema.agentLearningReviews)
       .where(eq(schema.agentLearningReviews.id, supersededReviewId))))[0]?.resolution)
       .toBe("superseded");

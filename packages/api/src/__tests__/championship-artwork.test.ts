@@ -14,7 +14,7 @@ import { renderChampionshipVisualReference } from "../services/visual-render-jou
 import { ensureActiveAgentRevision, resolveFreeTrackEffectiveRuntimeSnapshot } from "../services/agent-revisions.js";
 
 const existing = await sharp({ create: { width: 40, height: 60, channels: 3, background: "#123456" } }).png().toBuffer();
-const generated = await sharp({ create: { width: 40, height: 60, channels: 3, background: "#987654" } }).png().toBuffer();
+const generated = await sharp({ create: { width: 40, height: 60, channels: 4, background: "#00000000" } }).composite([{ input: await sharp({ create: { width: 20, height: 40, channels: 4, background: "#987654" } }).png().toBuffer(), left: 10, top: 10 }]).png().toBuffer();
 const publish = async (image: Parameters<import("../services/championship-artwork.js").ChampionshipArtDependencies["publish"]>[0]) => { await readPayload(image); return `/api/uploads/local?key=characters/${image.sha256}.png`; };
 async function draft() {
   const f = await championshipFixture();

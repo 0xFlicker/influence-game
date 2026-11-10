@@ -42,7 +42,44 @@ async function run(impl: ScreeningProvider) {
   return (await db.select().from(schema.agentScreenings).where(eq(schema.agentScreenings.id, job!.id)))[0]!;
 }
 
-describe("shadow agent screening", () => {
+test("a new agent waits for screening; a clear complete assessment publishes its exact revision", async () => {
+  const created = await create("Play independently.");
+  expect(created.receipt.publication).toBe("reviewing");
+  expect(created.profile.contentRevisionId).toBeNull();
+  await run(provider(JSON.stringify(clear)).impl);
+  const [accepted] = await db.select().from(schema.agentProfiles);
+  expect(accepted!.contentRevisionId).toBe(created.profile.latestContentRevisionId);
+  const [review] = await db.select().from(schema.agentModerationReviews);
+  expect(review).toMatchObject({ status: "resolved", held: false, disposition: "allowed" });
+});
+
+test("pending and held edits preserve accepted text, model and voice; acceptance commits the selected configuration", async () => {
+  await create("Original accepted character.");
+  await run(provider(JSON.stringify(clear)).impl);
+  const original = (await db.select().from(schema.agentProfiles))[0]!;
+  const held = await updateOwnedAgentProfile(db, ctx, original.id, { personality: collusion, voiceId: "aurora", submissionId: randomUUID(), expectedContentRevisionId: original.latestContentRevisionId });
+  expect(held.receipt.publication).toBe("reviewing");
+  await run(provider().impl);
+  expect((await db.select().from(schema.agentProfiles))[0]!.personality).toBe(original.personality);
+  expect((await db.select().from(schema.agentProfiles))[0]!.contentRevisionId).toBe(original.contentRevisionId);
+  const corrected = await updateOwnedAgentProfile(db, ctx, original.id, { personality: "Evaluate each player from their actions.", voiceId: "aurora", submissionId: randomUUID(), expectedContentRevisionId: held.profile.latestContentRevisionId });
+  await run(provider(JSON.stringify(clear)).impl);
+  const [accepted] = await db.select().from(schema.agentProfiles);
+  expect(accepted!.contentRevisionId).toBe(corrected.profile.latestContentRevisionId);
+  expect(accepted!.personality).toBe("Evaluate each player from their actions.");
+  expect((await db.select().from(schema.agentVoices))[0]!.assignment).toMatchObject({ voiceId: "aurora", origin: "selected" });
+});
+
+test("a human flag prevents an otherwise clear automatic assessment from publishing", async () => {
+  const created = await create("Independent play.");
+  await db.update(schema.agentModerationReviews).set({ flagged: true, version: 1 });
+  await run(provider(JSON.stringify(clear)).impl);
+  expect((await db.select().from(schema.agentProfiles))[0]!.contentRevisionId).toBeNull();
+  expect((await db.select().from(schema.agentModerationReviews))[0]!.flagged).toBe(true);
+  expect(created.receipt.publication).toBe("reviewing");
+});
+
+describe("agent screening", () => {
   test.each(["moderation", "luna"] as const)("%s safety refusal runs only text collusion and retains human review without changing publication", async refusedStage => {
     await create();
     const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions));
@@ -99,7 +136,7 @@ describe("shadow agent screening", () => {
     const job = await run({ async invoke(stage) { calls.push(stage); return { status: 400, body: JSON.stringify({ error: { code: "too_many_images" } }) }; } });
     expect(calls).toEqual(["moderation"]); expect(job.failureCode).toBe("request_error");
   });
-  test("create, update and exact retries enqueue once; screening never mutates publication, claims or human decisions", async () => {
+  test("create, update and exact retries enqueue once; flagged submissions remain unpublished", async () => {
     const created = await create();
     const [before] = await db.select().from(schema.agentProfiles);
     const [reviewBefore] = await db.select().from(schema.agentModerationReviews);
@@ -111,14 +148,14 @@ describe("shadow agent screening", () => {
     expect(await db.select().from(schema.agentModerationReviews)).toEqual([reviewBefore!]);
     expect(await db.select().from(schema.moderationActions)).toHaveLength(0);
     expect(await db.select().from(schema.moderationClaims)).toHaveLength(0);
-    const change = { personality: "Form alliances based on what happens during the match.", submissionId: randomUUID(), expectedContentRevisionId: created.profile.contentRevisionId };
+    const change = { personality: "Form alliances based on what happens during the match.", submissionId: randomUUID(), expectedContentRevisionId: created.profile.latestContentRevisionId };
     const updated = await updateOwnedAgentProfile(db, ctx, created.profile.id, change);
     await updateOwnedAgentProfile(db, ctx, created.profile.id, change);
-    expect(updated.receipt.publication).toBe("published");
+    expect(updated.receipt.publication).toBe("reviewing");
     expect(await db.select().from(schema.agentScreenings)).toHaveLength(2);
     const next = await run(provider(JSON.stringify(clear)).impl);
-    expect(next.contentRevisionId).toBe(updated.profile.contentRevisionId!);
-    const retained = await readAgentScreening(db, created.profile.contentRevisionId!);
+    expect(next.contentRevisionId).toBe(updated.profile.latestContentRevisionId!);
+    const retained = await readAgentScreening(db, created.profile.latestContentRevisionId!);
     expect(retained!.result).toEqual(recommendation);
     expect(retained!.safetySignals!.model).toBe(safety.model);
     const evidence = await db.select().from(schema.agentScreeningAttempts);
@@ -140,15 +177,17 @@ describe("shadow agent screening", () => {
     const created = await create();
     const impl: ScreeningProvider = { async invoke(stage) {
       if (stage === "moderation") return response(safety);
-      await updateOwnedAgentProfile(db, ctx, created.profile.id, { personality: "Independent strategy", submissionId: randomUUID(), expectedContentRevisionId: created.profile.contentRevisionId });
+      await updateOwnedAgentProfile(db, ctx, created.profile.id, { personality: "Independent strategy", submissionId: randomUUID(), expectedContentRevisionId: created.profile.latestContentRevisionId });
       return luna(JSON.stringify(recommendation));
     } };
     const job = await run(impl);
     const [profile] = await db.select().from(schema.agentProfiles);
-    expect(profile!.personality).toBe("Independent strategy");
+    expect(profile!.personality).toBe(collusion);
+    const [latest] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile!.latestContentRevisionId!)));
+    expect(latest!.snapshot.personality).toBe("Independent strategy");
     expect(profile!.contentRevisionId).not.toBe(job.contentRevisionId);
     expect(job.recommendation).toBe("review");
-    expect((await readAgentScreening(db, profile!.contentRevisionId!))!.status).toBe("pending");
+    expect((await readAgentScreening(db, profile!.latestContentRevisionId!))!.status).toBe("pending");
   });
   test("screens only retained full-body bytes, excluding portrait and crop source, and stops on hash mismatch", async () => {
     const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();

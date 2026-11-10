@@ -6,7 +6,6 @@ import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
   createOwnedAgentProfile,
-  updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
   getLatestAgentRevision,
@@ -17,7 +16,7 @@ import {
   COMPETITION_RATING_POLICY_VERSION,
   initialCompetitionRating,
 } from "../services/season-policy.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
 import { backfillAgentRevisions } from "../scripts/backfill-agent-revisions.js";
 import {
   AGENT_MUTATION_RECEIPT_SCHEMA_VERSION,
@@ -194,7 +193,7 @@ describe("agent revision persistence", () => {
     expect(revisions.map((revision) => revision.ordinal).sort()).toEqual([1, 2]);
     expect(revisions.find((revision) => revision.ordinal === 2)).toMatchObject({
       priorRevisionId: revisions.find((revision) => revision.ordinal === 1)?.id,
-      trigger: "profile_edit",
+      trigger: "moderation",
     });
   });
 

@@ -52,9 +52,9 @@
 .episode-scene {
   object-fit:cover;
   transform:scale(1);
-  transition:transform 6s ease-out
 }
 .is-playing .is-visible .episode-scene {
+  transition:transform 6s ease-out;
   transform:scale(1.065)
 }
 .episode-vignette {
@@ -74,7 +74,6 @@
   flex:0 1 23%;
   min-width:0;
   text-align:center;
-  transition:transform 2s;
 }
 .episode-cast>div>div {
   width:100%;
@@ -93,6 +92,7 @@
   white-space:nowrap
 }
 .is-playing .is-visible .episode-cast>div:nth-child(even) {
+  transition:transform 2s;
   transform:translateY(-8px)
 }
 .episode-house {
@@ -530,6 +530,9 @@
 .episode-card :is(a,button):focus-visible, .episode-library-toolbar :is(input,select,a):focus-visible,
 .episode-shelf-heading :is(a,button):focus-visible { outline:2px solid #ddbf87; outline-offset:3px; }
 .episode-card-link:focus-visible { outline-offset:-3px; }
+.episode-watch-actions { flex:1 1 180px; min-width:0; }
+.episode-desktop-actions:has(> .episode-watch-actions) { flex:1 1 100%; flex-wrap:nowrap; }
+.episode-desktop-actions:has(> .episode-watch-actions) > a { flex-shrink:0; }
 .episode-library-toolbar input::placeholder { color:#a8a4b0; }
 .episode-shelf-heading :is(a,button) { min-height:44px; white-space:nowrap; }
 .episode-meta > span { display:block; }

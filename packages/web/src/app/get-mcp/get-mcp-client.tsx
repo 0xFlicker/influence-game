@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import {
   buildMcpSetupClients,
@@ -21,6 +22,17 @@ export function GetMcpSetupContent({
   clients = buildMcpSetupClients(mcpUrl),
   returnHref = "/dashboard",
 }: GetMcpSetupContentProps) {
+  useEffect(() => {
+    function openLinkedClient() {
+      const id = window.location.hash.slice(1);
+      if (!clients.some((client) => id === `setup-${client.id}`)) return;
+      const section = document.getElementById(id);
+      if (section instanceof HTMLDetailsElement) section.open = true;
+    }
+    openLinkedClient();
+    window.addEventListener("hashchange", openLinkedClient);
+    return () => window.removeEventListener("hashchange", openLinkedClient);
+  }, [clients]);
   return (
     <main className="relative flex-1 overflow-x-hidden bg-[rgb(var(--void))] px-4 py-8 text-[rgb(var(--text-primary))] sm:px-6 sm:py-10 lg:px-8">
       <div className="influence-phase-atmosphere" />
@@ -103,8 +115,8 @@ export function GetMcpSetupContent({
                   {client.prompt ? (
                     <div className="min-w-0 rounded-lg border border-border-active/50 bg-black/35 p-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
-                        <span className="text-xs text-text-secondary">Paste into Muse chat</span>
-                        <CopyCommandButton command={client.prompt} title="Copy Muse connection prompt" />
+                        <span className="text-xs text-text-secondary">{client.promptLabel ?? "Paste into your AI chat"}</span>
+                        <CopyCommandButton command={client.prompt} title="Copy connection prompt" />
                       </div>
                       <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-primary"><code>{client.prompt}</code></pre>
                     </div>

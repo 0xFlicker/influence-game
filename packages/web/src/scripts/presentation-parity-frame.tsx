@@ -14,7 +14,7 @@ import {PresentationDirector} from "../components/watch/watch-director";
 import {ActiveFormatOverlay} from "../app/games/[slug]/components/active-format-label";
 import {ProductionPreview} from "../app/admin/production/production-preview";
 
-export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; prepare?:boolean};
+export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; references?:ExportCue[]; prepare?:boolean};
 
 function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; expectedPaged:boolean}) {
   const frame = useCurrentFrame();
@@ -37,7 +37,7 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
       }
       const pill = document.querySelector<HTMLElement>("[data-active-format-overlay]");
       const label = document.querySelector<HTMLElement>("[data-room-context-label]");
-      for (const node of document.querySelectorAll<HTMLElement>("[data-influence-stage], [data-influence-stage] *")) {
+      for (const node of document.querySelectorAll<HTMLElement>("[data-influence-stage], [data-influence-stage] *, [data-werewolf-stage], [data-werewolf-stage] *")) {
         const style=getComputedStyle(node);
         if ([style.overflowX,style.overflowY].some(value=>value === "auto" || value === "scroll")) throw new Error("Scrollable player content");
       }
@@ -71,28 +71,52 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
             throw new Error(`Cast names overlap: ${name.textContent}`);
         }
       }
-      for (const page of document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy], [data-paginated-portrait-room] [data-speech-page-copy]")) {
+      for (const page of document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy], [data-paginated-portrait-room] [data-speech-page-copy], [data-speech-bubble] [data-speech-page-copy]")) {
         if (page.closest<HTMLElement>("[data-speech-bubble]") && Number(getComputedStyle(page.closest<HTMLElement>("[data-speech-bubble]")!).opacity) <= .1) continue;
         const rect=page.getBoundingClientRect(), container=page.parentElement!.getBoundingClientRect();
         if (rect.left < container.left - 1 || rect.right > container.right + 1 || rect.bottom > container.bottom + 1 || parseFloat(getComputedStyle(page).fontSize) < 14)
           throw new Error(`Format rules page does not fit at readable size: ${JSON.stringify({rect,container,font:getComputedStyle(page).fontSize,text:page.textContent})}`);
       }
       const room = document.querySelector<HTMLElement>("[data-paginated-portrait-room]");
+      const winner = document.querySelector<HTMLElement>("[data-winner-scene]");
+      if (winner) {
+        const bounds = winner.getBoundingClientRect();
+        for (const element of [winner, ...winner.querySelectorAll<HTMLElement>("*")]) {
+          const style = getComputedStyle(element);
+          if (["auto", "scroll"].includes(style.overflowX) || ["auto", "scroll"].includes(style.overflowY)) throw new Error("Winner scene contains a scrollable element");
+        }
+        for (const label of winner.querySelectorAll<HTMLElement>("[data-winner-player] p, [data-winner-votes], h2, h3")) {
+          const rect = label.getBoundingClientRect();
+          if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1 || label.scrollHeight > label.clientHeight + 4 || parseFloat(getComputedStyle(label).fontSize) < 12)
+            throw new Error(`Winner label does not fit: ${label.textContent} ${JSON.stringify({rect,bounds})}`);
+        }
+        for (const image of winner.querySelectorAll<HTMLElement>("[data-winner-player] img")) {
+          const rect = image.getBoundingClientRect();
+          if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1)
+            throw new Error(`Winner portrait does not fit: ${JSON.stringify({rect,bounds})}`);
+        }
+        const winnerImage = winner.querySelector<HTMLElement>("[data-winner-image]");
+        if (!winnerImage || winnerImage.getBoundingClientRect().height < 24) throw new Error("Winner artwork has no readable space");
+      }
       const namePage = room?.querySelector<HTMLElement>("[data-room-context-label] [data-speech-page]");
-      const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble]");
+      const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble]") ?? document.querySelector<HTMLElement>("[data-speech-bubble]");
       const speechPage = speechBox && Number(getComputedStyle(speechBox).opacity) > .1 ? speechBox.querySelector<HTMLElement>("[data-speech-page]") : null;
       setResult(JSON.stringify({frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,
-        castMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-room-player]")).map(member=>member.dataset.roomPlayer)}));
+        castMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-room-player]")).map(member=>member.dataset.roomPlayer),
+        winnerMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-winner-player]")).map(member=>member.dataset.winnerPlayer)}));
       continueRender(handle);
     })().catch(cancelRender);
   },[frame,handle,expectedFormat,expectedPaged]);
   return result ? <Artifact filename={`format-audit-${frame}.json`} content={result} /> : null;
 }
 
-function ViewerFrame({manifest,reference}:ParityProps) {
+function ViewerFrame({manifest,reference:singleReference,references}:ParityProps) {
   const frame = useCurrentFrame();
-  const sample = sampleTiming(manifest.timeline[0]!,frame * 1000 / manifest.fps);
+  const time = frame * 1000 / manifest.fps;
+  const index = cueIndexAt(manifest.timeline,time);
+  const reference = references?.[index] ?? singleReference;
+  const sample = sampleTiming(manifest.timeline[index]!,time);
   const picture = reference.picture;
   const director = useMemo(() => {
     const value = new PresentationDirector({policy:werewolfWatchPolicy});
@@ -114,7 +138,7 @@ function ViewerFrame({manifest,reference}:ParityProps) {
       continueRender(ready);
     })().catch(cancelRender);
   },[ready]);
-  const actor = manifest.cues[0]!.picture;
+  const actor = manifest.cues[index]!.picture;
   const thought = sample.thought ? {...sample.thought,speaker:actor.kind === "thinking" ? actor.actor.name : ""} : null;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black text-white">
     {picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={manifest.reducedMotion} /> : picture.kind === "werewolf" ? <WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
@@ -123,7 +147,7 @@ function ViewerFrame({manifest,reference}:ParityProps) {
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
       <div data-influence-stage className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
         {reference.activeFormatId && <ActiveFormatOverlay formatId={reference.activeFormatId} onOpen={() => {}} />}
-        <VisualPresentationFrame beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster}/>
+        <VisualPresentationFrame beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster} voteLedger={picture.ledger ?? undefined}/>
       </SceneThinkingProvider></div>
     </> : null}
     <FormatAudit expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
@@ -141,11 +165,14 @@ function ExportFrame(props:ParityProps) {
 /** Exercise the real Studio Player with an isolated selected moment. */
 function StudioFrame({manifest,view}:ParityProps & {view:"source"|"cut"}) {
   const frame=useCurrentFrame();
-  const id="format-context-proof", cue={...manifest.cues[0]!,momentId:id};
-  const omitted={...cue,momentId:"omitted",speech:cue.speech ? {...cue.speech,text:"OMITTED NEIGHBOR MUST NOT APPEAR"} : null};
-  const source=view === "cut" ? [{id:"omitted",segments:[omitted]},{id,segments:[cue]}] : [{id,segments:[cue]}];
-  const compiled={momentIds:[id],moments:[{id,startFrame:0,contentFrame:0,endFrame:manifest.range.untilFrame,sourceOrder:view === "cut" ? 1 : 0}],
-    cues:[cue],timeline:manifest.timeline,audio:manifest.audio};
+  const ids=manifest.cues.map((_,index)=>`format-context-proof-${index}`);
+  const cues=manifest.cues.map((cue,index)=>({...cue,momentId:ids[index]!}));
+  const cue=cues[0]!;
+  const omitted={...cue,momentId:"omitted",speech:{messageId:"omitted",speakerId:null,speaker:"Omitted neighbor",text:"OMITTED NEIGHBOR MUST NOT APPEAR"}};
+  const selectedSource=cues.map((item,index)=>({id:ids[index]!,segments:[item]}));
+  const source=view === "cut" ? [{id:"omitted",segments:[omitted]},...selectedSource] : selectedSource;
+  const compiled={momentIds:ids,moments:ids.map((id,index)=>({id,startFrame:manifest.timeline[index]!.startFrame,contentFrame:manifest.timeline[index]!.startFrame,endFrame:manifest.timeline[index]!.endFrame,sourceOrder:index+(view === "cut" ? 1 : 0)})),
+    cues,timeline:manifest.timeline,audio:manifest.audio};
   const [ready]=useState(()=>delayRender("Studio Player intended frame",{timeoutInMilliseconds:60000}));
   useLayoutEffect(()=>{
     let active=true;
@@ -169,8 +196,8 @@ function StudioFrame({manifest,view}:ParityProps & {view:"source"|"cut"}) {
     <style>{`.format-proof-studio [data-production-preview],.format-proof-studio [aria-label="Playable preview"]{width:100%;height:100%;display:flex;flex-direction:column;min-height:0;padding:0;border:0}
       .format-proof-studio [aria-label="Playable preview"] > :first-child,.format-proof-studio [aria-label="Playable preview"] > :last-child{display:none}
       .format-proof-studio [aria-label="Preview keyboard controls"]{width:100%;height:100%;min-height:0;flex:1;padding:0;border:0;border-radius:0}`}</style>
-    <ProductionPreview key={`${view}:${frame}`} base={manifest} source={source} compiled={compiled} selectedIds={[id]} view={view}
-      onActiveMomentChange={()=>{}} onViewChange={()=>{}} emptyLabel="Empty" readAnchor={()=>({momentId:id,offsetMs:frame*1000/manifest.fps})}
+    <ProductionPreview key={`${view}:${frame}`} base={manifest} source={source} compiled={compiled} selectedIds={ids} view={view}
+      onActiveMomentChange={()=>{}} onViewChange={()=>{}} emptyLabel="Empty" readAnchor={()=>{const index=cueIndexAt(manifest.timeline,frame*1000/manifest.fps);return {momentId:ids[index]!,offsetMs:(frame-manifest.timeline[index]!.startFrame)*1000/manifest.fps};}}
       onAnchorChange={()=>{}} playback={{muted:true,volume:1}} onPlaybackChange={()=>{}} renderLayout={monitor=>monitor}
       onOpenHints={()=>{}} characterShortcuts={false} keyboardAvailable={()=>true} />
   </div>;

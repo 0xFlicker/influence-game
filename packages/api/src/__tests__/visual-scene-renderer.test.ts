@@ -26,7 +26,7 @@ let rejectIdentity: boolean;
 beforeEach(async () => {
   db = await setupTestDB();
   await db.insert(schema.games).values({ id: "game", slug: "render-game", config: "{}" });
-  png = await sharp({ create: { width: 512, height: 864, channels: 3, background: "#ddccaa" } }).png().toBuffer();
+  png = await sharp({ create: { width: 512, height: 864, channels: 4, background: {r:0,g:0,b:0,alpha:0} } }).composite([{input:await sharp({create:{width:100,height:200,channels:4,background:"#ddccaa"}}).png().toBuffer(),top:80,left:200}]).png().toBuffer();
   artifactId = await storeVisualArtifact(db, "game", png);
   process.env.OPENAI_API_KEY = "test-not-a-real-key";
   imageCalls = 0; visionCalls = 0; rejectIdentity = false;

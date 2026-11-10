@@ -7,13 +7,13 @@ import {
   updateProfile,
   type AuthenticatedPublicIdentity,
 } from "@/lib/api";
-import { containedFocusTargetIndex } from "./standing-daily-agent-prompt-model";
 import {
   applyAvailableIdentitySuggestion,
   applyIdentityCollision,
   changeIdentityDisplayName,
   changeIdentityHandle,
   completeIdentitySave,
+  containedFocusTargetIndex,
   createIdentityFormState,
   markIdentitySaveFailed,
   markIdentitySaving,

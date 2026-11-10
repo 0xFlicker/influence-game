@@ -21,8 +21,8 @@ import {
   useBufferState,
 } from "remotion";
 import { WerewolfContentFrame, WerewolfHouseLayout } from "../../components/games/werewolf/werewolf-watch-stage";
-import { VisualPresentationFrame, hasInlineHouseMessage } from "../../app/games/[slug]/components/visual-presentation";
-import { FormatPresentation } from "../../app/games/[slug]/components/format-presentation";
+import { VisualPresentationFrame, hasInlineHouseMessage, presentationBeatOwnsBackdrop } from "../../app/games/[slug]/components/visual-presentation";
+import { FormatPresentation, formatPresentationOwnsBackdrop } from "../../app/games/[slug]/components/format-presentation";
 import { FitPresentation } from "../../app/games/[slug]/components/fit-presentation";
 import { SceneThinkingProvider } from "../../components/watch/watch-thinking";
 import { SampledStageProvider } from "../../components/watch/sampled-stage";
@@ -180,7 +180,7 @@ export function ReplayFrame({
               className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"
             >
               {cue.activeFormatId && <ActiveFormatOverlay formatId={cue.activeFormatId} />}
-              {picture.kind === "influence" && picture.cue.resultsPresentation && <div className="absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(picture.cue.phase)} resilient /></div>}
+              {picture.kind === "influence" && picture.cue.resultsPresentation && !(picture.beat ? presentationBeatOwnsBackdrop(picture.beat) : picture.cue.source === "format" ? formatPresentationOwnsBackdrop(picture.cue, false) : false) && <div className="absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(picture.cue.phase)} resilient /></div>}
               {picture.kind === "influence-opening" ? <InfluenceOpeningFrame {...picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfHouseLayout cue={picture.cue} elapsed={sample.elapsedMs} narration={houseWindow} logoUrl={staticFile("logo.png")}>
                 <WerewolfContentFrame

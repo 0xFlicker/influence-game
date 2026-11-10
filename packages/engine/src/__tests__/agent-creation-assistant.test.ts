@@ -5,9 +5,9 @@ describe("bounded character assistant", () => {
   test("game strategy edits cannot fill other games or shared fields", () => {
     expect(characterEditFields({}, ["werewolfStrategyStyle"])).toEqual(["werewolfStrategyStyle"]);
     expect(characterEditFields({}, ["strategyStyle"])).toEqual(["strategyStyle"]);
-    expect(characterEditFields({}, ["personality"])).not.toContain("werewolfStrategyStyle");
-    expect(characterEditFields({}, ["personality"])).not.toContain("strategyStyle");
-    expect(decodeCharacterEditTool("update_character", '{"fields":["werewolfStrategyStyle"]}')).toEqual({ tool: "update_character", fields: ["werewolfStrategyStyle"] });
+    expect(characterEditFields({}, ["personality"])).toContain("werewolfStrategyStyle");
+    expect(characterEditFields({}, ["personality"])).toContain("strategyStyle");
+    expect(decodeCharacterEditTool("update_character", '{"fields":["werewolfStrategyStyle"],"generateImages":false}')).toEqual({ tool: "update_character", fields: ["werewolfStrategyStyle"], generateImages: false });
     for (const args of ['{}', 'not json', '{"fields":[]}', '{"fields":["werewolfStrategyStyle","werewolfStrategyStyle"]}', '{"fields":["werewolfStrategyStyle"],"text":"extra"}', '```json\n{"fields":["werewolfStrategyStyle"]}\n```']) {
       expect(() => decodeCharacterEditTool("update_character", args)).toThrow();
     }

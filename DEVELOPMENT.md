@@ -855,7 +855,7 @@ Use the existing local MinIO bootstrap and `LINODE_PRIVATE_CONTENT_*` settings f
 
 ### Shared player thinking and entry modes
 
-Werewolf viewing mode is selected before playback (`?audience=mystery` or `?audience=omniscient`); it stays fixed for the session. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Strategy Lens remains available for reading eligible evidence.
+Werewolf replay links select an audience (`?audience=mystery` or `?audience=omniscient`); the player can also switch in place. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Strategy Lens remains available for reading eligible evidence.
 
 ### House integration verification
 
@@ -885,9 +885,15 @@ The [RT-01 contract](docs/game-retrospective-contract.md), migration `0115_game_
 ## Product analytics
 
 The House uses PostHog for browser acquisition, agent creation and match-entry
-funnels, and shared-player watch time. See [the analytics event contract and
-release verification](docs/product-analytics.md). Local and staging traffic do
-not enter the production project.
+funnels, and shared-player watch time. Paid-campaign attribution (validated
+`utm_*`, click IDs, landing/onboarding variants, starter identities) is
+retained first-party and on the account record; authoritative conversions are
+server events in `campaign_conversion_events` across web, API and MCP. See
+[the analytics event contract and release verification](docs/product-analytics.md).
+Local and staging traffic do not enter the production project. Server
+conversion delivery reads `POSTHOG_PROJECT_TOKEN` (server-side, distinct
+from the public browser token); the prepared Meta adapter stays inactive
+until `META_PIXEL_ID` and `META_CAPI_ACCESS_TOKEN` are configured.
 
 
 Influence Lobby, Mingle and private alliance huddles now use bounded open conversations (320 UTF-8 bytes per speech, 400 per participant). Two ordinary room rounds have one simultaneous movement checkpoint. Passes stay in private evidence and are skipped by playback; spoken huddles use the normal Show thinking toggle. Full-game evaluation uses `bun run simulate:api -- --players 6 --games 1 --model-catalog meta-muse:muse-spark-1.3-contributor --visibility unlisted` against localhost, with explicit spend authorization and the API-side evaluation ledger. See [local evaluation](docs/local-model-evaluation.md) and [observability](docs/reasoning-transcript-observability.md) for preserved provider evidence and participant-only recall. Keep direct House calls and exact types; no `as any`.

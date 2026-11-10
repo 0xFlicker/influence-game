@@ -13,7 +13,10 @@ const nextConfig: NextConfig = {
   ...(process.env.NEXT_PUBLIC_E2E_AUTH === "true" ? { devIndicators: false as const } : {}),
   // Transpile Privy + wagmi packages as needed
   transpilePackages: [],
-  outputFileTracingIncludes: { "/rules": ["../../docs/rules-page-content.md", "../../docs/werewolf-rules-page-content.md"] },
+  outputFileTracingIncludes: {
+    "/rules": ["../../docs/rules-page-content.md", "../../docs/werewolf-rules-page-content.md"],
+    "/sitemap.xml": ["./content/updates/*.md"],
+  },
   images: {
     remotePatterns: [
       {
@@ -24,6 +27,9 @@ const nextConfig: NextConfig = {
   },
   // Standalone output for Docker deployments only
   ...(process.env.DOCKER_BUILD === "1" ? { output: "standalone" as const } : {}),
+  async redirects() {
+    return [{ source: "/favicon.ico", destination: "/logo.png", permanent: true }];
+  },
   async headers() {
     return [{source:"/embed/:path*",headers:[
       {key:"Content-Security-Policy",value:"frame-ancestors 'self' https://x.com https://*.x.com https://twitter.com https://*.twitter.com"},

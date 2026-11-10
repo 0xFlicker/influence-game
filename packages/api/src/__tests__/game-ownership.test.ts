@@ -1,13 +1,11 @@
+import {acceptTestAgent,createAcceptedTestProfile as createOwnedAgentProfile,submitAcceptedTestProfile as updateOwnedAgentProfile} from "./test-utils.js";
 import { actorProviderManifest } from "@influence/engine";
 import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import {
-  createOwnedAgentProfile,
-  updateOwnedAgentProfile,
-} from "../services/agent-profile-management.js";
+import { updateOwnedAgentProfile as submitProfile } from "../services/agent-profile-management.js";
 import {
   adoptDurableGameRunOwner,
   acquireGameRunOwner,
@@ -40,6 +38,7 @@ import { tryReturnZeroEventOwnerFailureToWaiting } from "../services/game-lifecy
 describe("atomic game owner claim and roster freeze", () => {
   test("serializes update-before-freeze into one coherent new tuple and snapshot", async () => {
     const fixture = await createRatedWaitingFixture();
+    await submitProfile(fixture.db, { userId: fixture.ownerA }, fixture.profileA.id, { personality: "Update wins before freeze." });
     const locked = deferred<void>();
     const release = deferred<void>();
     const blocker = fixture.db.transaction(async (tx) => {
@@ -49,12 +48,7 @@ describe("atomic game owner claim and roster freeze", () => {
     });
     await locked.promise;
 
-    const update = updateOwnedAgentProfile(
-      fixture.db,
-      { userId: fixture.ownerA },
-      fixture.profileA.id,
-      { personality: "Update wins before freeze." },
-    );
+    const update = acceptTestAgent(fixture.db, fixture.profileA.id);
     let start: ReturnType<typeof acquireGameRunOwner> | undefined;
     try {
       await waitForBlockedGameLocks(fixture.db, 1);
@@ -71,7 +65,7 @@ describe("atomic game owner claim and roster freeze", () => {
     expect(await fixture.db.select().from(schema.gameEpisodePresentations)).toMatchObject([{ gameId: fixture.gameId, status: "queued" }]);
     const seat = await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id);
     expect(JSON.parse(seat.persona).personality).toBe("Update wins before freeze.");
-    expect(updated.receipt.waitingSeats.games[0]?.effectiveRevisionId).toBe(seat.agentRevisionId!);
+    expect(updated!.receipt.waitingSeats.games[0]?.effectiveRevisionId).toBe(seat.agentRevisionId!);
     await expectCoherentFrozenSeat(fixture.db, fixture.gameId, seat);
   });
 
@@ -105,7 +99,8 @@ describe("atomic game owner claim and roster freeze", () => {
 
     const [owner, updated] = await Promise.all([start, update]);
     expect(owner.ok).toBeTrue();
-    expect(updated.receipt.waitingSeats).toMatchObject({ crossedFreeze: 1, reconciled: 0 });
+    expect(updated.receipt.waitingSeats).toMatchObject({ crossedFreeze: 0, reconciled: 0 });
+    expect(updated.receipt.frozenSeats).toEqual({ unchanged: 1 });
     const seat = await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id);
     expect(JSON.parse(seat.persona).personality).toBe("Original A behavior.");
     expect((await fixture.db.select().from(schema.agentProfiles)

@@ -3,6 +3,7 @@
  * Provider gender labels describe voices, not inferred character identities.
  */
 export const VOICE_CATALOG_VERSION = "xai-stock-2026-10-24";
+export const VOICE_AUDITION_VERSION = `${VOICE_CATALOG_VERSION}-gameplay-v1`;
 export const VOICE_ASSIGNMENT_VERSION = 1;
 export const STOCK_VOICES = Object.freeze([
   Object.freeze({ id: "altair", name: "Altair", gender: "male" } as const),

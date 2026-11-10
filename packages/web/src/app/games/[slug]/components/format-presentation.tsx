@@ -14,6 +14,22 @@ import {ResultStage, formatResultPlayers} from "./result-stage";
 import {resultRoom} from "./influence-rooms";
 import {TimedSpeech} from "./timed-speech";
 
+/**
+ * True when this cue paints its own full-stage room backdrop (a ResultStage
+ * or a Two Names result stage). Stage roots must suppress their fallback
+ * scenery for these cues, or the same room renders twice: once across the
+ * stage and again inset inside the result section.
+ */
+export function formatPresentationOwnsBackdrop(cue: FormatPresentationCue, currentStateEntry: boolean): boolean {
+  if (cue.kind === "format_selected" && cue.stage === "rules_reveal" && !currentStateEntry) return true;
+  if (cue.kind === "format_menu" && cue.resultsPresentation && cue.compactEmpower) return true;
+  if (cue.kind.startsWith("two_names_")) return true;
+  if ((cue.kind === "format_aggregate" || cue.kind === "format_elimination") && cue.after.activeFormatId === "two_names") return true;
+  const specialized = cue.kind.startsWith("two_names_") || cue.kind.startsWith("safety_bounce_")
+    || cue.after.activeFormatId === "two_names";
+  return Boolean(cue.resultsPresentation && !specialized);
+}
+
 export function FormatPresentation(props: Parameters<typeof FormatPresentationContent>[0]) {
   const {cue, roster} = props;
   if (cue.kind === "format_selected" && cue.stage === "rules_reveal" && !props.currentStateEntry) {

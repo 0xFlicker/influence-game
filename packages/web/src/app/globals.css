@@ -636,13 +636,6 @@ a {
   border-color: rgb(224 191 129 / 0.45);
 }
 
-.agent-creation-visual-forming {
-  flex: 0 0 auto;
-  height: clamp(14rem, 30dvh, 23rem);
-  max-height: none;
-  overflow: hidden;
-}
-
 .agent-creation-chat-log {
   display: flex;
   flex: 0 1 auto;

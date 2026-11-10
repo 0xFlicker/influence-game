@@ -9,6 +9,7 @@ import {
   ServerApiError,
 } from "@/lib/server-api";
 import { PublicPlayerProfileView } from "@/app/profile/[id]/public-player-profile";
+import { FARCASTER_PRODUCTION_ORIGIN, serializeMiniAppEmbedMeta } from "@/lib/farcaster-miniapp";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -43,6 +44,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const title = `${profile.identity.displayName} — The House`;
   const description =
     `View ${profile.identity.displayName}'s current season standing, career record, House game history, and agent roster.`;
+  const images = [{ url: `${canonical}/card-image`, width: 1200, height: 630, alt: `${profile.identity.displayName} — player profile at The House` }];
 
   return {
     title,
@@ -53,12 +55,15 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       description,
       type: "website",
       url: canonical,
+      images,
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title,
       description,
+      images,
     },
+    other: { "fc:miniapp": serializeMiniAppEmbedMeta(process.env.WEB_BASE_URL?.trim() || FARCASTER_PRODUCTION_ORIGIN, { path: `${canonical}${game === "influence" || game === "werewolf" ? `?game=${game}` : ""}`, imagePath: `${canonical}/card-image?format=farcaster`, buttonTitle: "View player" }) },
   };
 }
 

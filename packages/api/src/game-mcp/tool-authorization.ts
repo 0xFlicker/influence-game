@@ -126,6 +126,9 @@ const GAME_READ_TOOLS = [
 const AGENT_READ_TOOLS = [
   "read_model_catalog",
   "list_archetypes",
+  "read_agent_artwork",
+  "list_agent_generations",
+  "list_agent_voices",
   "list_agents",
   "get_agent",
   "search_agents",
@@ -136,6 +139,9 @@ const AGENT_READ_TOOLS = [
 ] as const;
 
 const AGENT_WRITE_TOOLS = [
+  "retry_agent_artwork",
+  "decide_agent_artwork",
+  "cancel_agent_generation",
   "set_agent_model",
   "generate_agent_visual_reference",
   "crop_agent_portrait",

@@ -1,3 +1,10 @@
+import { abortActiveOwnerLearningReview } from "./owner-learning-worker.js";
+import { describeAgentMutationReceipt } from "./agent-profile-management.js";
+import { recordAvatarChange } from "./avatar-generation.js";
+import { finalizePublishedLearning } from "./owner-learning-publication.js";
+import { publishSubmittedVoice } from "./agent-submission-preferences.js";
+import { normalizeModelPreference } from "@influence/engine/game-model-routing";
+import { publishContentImages } from "./agent-draft-images.js";
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { readAgentScreening } from "./agent-screening-read.js";
 import { SCREENING_POLICY_VERSION } from "./agent-screening-policy.js";
@@ -361,7 +368,8 @@ export async function decideModerationReview(db: DrizzleDB, userId: string, inpu
     throw new ModerationError("invalid_action", "Provide a valid decision and a reason for rejecting a disposition.", 400);
   }
   const hash = sha256StableJson({ ...input, reason });
-  return write(db, userId, async (tx, _now, authority) => {
+  let resolvedReviewId:string|null=null;
+  const result=await write(db, userId, async (tx, _now, authority) => {
     const prior = await replay(tx, userId, input.actionId, hash);
     if (prior) return prior;
     const [target] = await loadPayloads(tx.select({ review: reviews, revision: revisions }).from(reviews)
@@ -417,11 +425,19 @@ export async function decideModerationReview(db: DrizzleDB, userId: string, inpu
       moderationRequired: profile.moderationRequired || input.disposition === "rejected", updatedAt: now,
     }).where(eq(schema.agentProfiles.id, profile.id)).returning();
     if (effectiveId && effectiveId !== profile.contentRevisionId) {
+      await publishContentImages(tx,states.find(state=>state.revision.id===effectiveId)!.revision.snapshot);
+      const selectedSnapshot=states.find(state=>state.revision.id===effectiveId)!.revision.snapshot;
+      await publishSubmittedVoice(tx,effective!,selectedSnapshot);
+      if(profile.avatarUrl!==effective!.avatarUrl)await recordAvatarChange(tx,{userId:profile.userId,agentProfileId:profile.id,source:states.find(state=>state.revision.id===effectiveId)!.revision.avatarChangeSource??"mcp_update",status:"completed",previousAvatarUrl:profile.avatarUrl,newAvatarUrl:effective!.avatarUrl});
+      if(selectedSnapshot.modelPreference!==undefined)await tx.update(schema.agentProfiles).set({modelPreference:normalizeModelPreference(selectedSnapshot.modelPreference)}).where(eq(schema.agentProfiles.id,profile.id));
       // Archive controls availability, not which competitive revision describes the profile.
-      await ensureActiveAgentRevisionInTransaction(tx, { profile: effective!, effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(effective!), trigger: "moderation" });
+      const activeRevision = await ensureActiveAgentRevisionInTransaction(tx, { profile: effective!, effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(effective!), trigger: "moderation" });
       for (const game of games) {
-        if (!profile.archivedAt && game.status === "waiting" && !game.startedAt) await reconcileOwnedProfileSeatsInLockedGame(tx, { game, userId: profile.userId, agentProfileId: profile.id });
+        const [competition] = await tx.select({ id: schema.championshipMatchAttempts.gameId }).from(schema.championshipMatchAttempts).where(eq(schema.championshipMatchAttempts.gameId, game.id));
+        if (!competition && !profile.archivedAt && game.status === "waiting" && !game.startedAt) await reconcileOwnedProfileSeatsInLockedGame(tx, { game, userId: profile.userId, agentProfileId: profile.id });
       }
+      const [published]=await tx.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id,profile.id));
+      resolvedReviewId=await finalizePublishedLearning(tx,profile,published!,effectiveId,selectedSnapshot,{...await describeAgentMutationReceipt(tx,published!,activeRevision),publication:"published",contentRevisionId:effectiveId,moderationRecordId:updated!.id});
     }
     await tx.delete(claims).where(eq(claims.reviewId, input.reviewId));
     const result = { reviewId: updated!.id, version: updated!.version, cycle: updated!.cycle, route: updated!.route,
@@ -432,6 +448,8 @@ export async function decideModerationReview(db: DrizzleDB, userId: string, inpu
       cycle: updated!.cycle, requestHash: hash, reason, result });
     return result;
   });
+  if(resolvedReviewId)abortActiveOwnerLearningReview(resolvedReviewId);
+  return result;
 }
 
 /** Explicit recovery starts another review cycle; ordinary readers cannot reopen history. */

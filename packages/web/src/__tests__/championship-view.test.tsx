@@ -62,7 +62,8 @@ describe("championship presentation", () => {
     expect(html).not.toContain("private-order");
     expect(html).not.toContain("href=\"/games/null");
     const werewolf = renderToStaticMarkup(<ChampionshipEventView event={{...view, matches: [{...view.matches[0]!, gameSlug: "werewolf-game", status: "completed"}]}} />);
-    expect(werewolf).toContain('aria-label="Werewolf viewing mode"');
+    expect(werewolf).toContain('aria-label="Watch Mystery"');
+    expect(werewolf).toContain('aria-label="Watch Omniscient"');
     const finale = renderToStaticMarkup(<ChampionshipEventView event={{...view, matches: [{...view.matches[1]!, gameSlug: "influence-game", status: "completed"}]}} />);
     expect(finale).toContain('data-game-kind="influence"');
     expect(finale).not.toContain('aria-label="Werewolf viewing mode"');

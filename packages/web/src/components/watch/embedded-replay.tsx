@@ -7,8 +7,8 @@ import type {WerewolfAudience} from "@influence/engine/werewolf/observation";
 import {WatchWaiting} from "./watch-waiting";
 const InfluencePlayer = dynamic(() => import("@/app/games/[slug]/components/dramatic-replay-viewer").then(m => m.DramaticReplayViewer), {loading:() => <WatchWaiting label="Loading player…" />});
 const WerewolfPlayer = dynamic(() => import("@/components/games/werewolf/werewolf-viewer").then(m => m.WerewolfViewer), {loading:() => <WatchWaiting label="Loading player…" />});
-export function EmbeddedReplay({game,audience,startCursor,startSequence,contained = false}: {game:Pick<PlayerCardGame,"id"|"slug"|"gameKind"|"status"|"title">;audience:WerewolfAudience;startCursor?:number;startSequence?:number;contained?:boolean}) {
-  if (game.gameKind === "werewolf") return <WerewolfPlayer slug={game.slug} title={game.title} audience={audience} startCursor={startCursor} contained={contained} embedded />;
+export function EmbeddedReplay({game,audience,onAudienceChange,startCursor,startSequence,contained = false}: {game:Pick<PlayerCardGame,"id"|"slug"|"gameKind"|"status"|"title">;audience:WerewolfAudience;onAudienceChange?:(audience:WerewolfAudience)=>void;startCursor?:number;startSequence?:number;contained?:boolean}) {
+  if (game.gameKind === "werewolf") return <WerewolfPlayer slug={game.slug} title={game.title} audience={audience} onAudienceChange={onAudienceChange} startCursor={startCursor} contained={contained} embedded />;
   return <InfluenceReplay contained={contained} key={game.id} slug={game.slug} startSequence={startSequence} />;
 }
 function InfluenceReplay({slug,startSequence,contained}: {slug:string;startSequence?:number;contained:boolean}) {

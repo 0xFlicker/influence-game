@@ -183,7 +183,7 @@ export interface AdminOwnerLearningReviewDetail {
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   application: {
-    appliedAt: string;
+    appliedAt: string | null;
   } | null;
 }
 
@@ -390,7 +390,7 @@ function adminReviewFilterConditions(filters: AdminOwnerLearningReviewFilters): 
   const review = schema.agentLearningReviews;
   const application = schema.agentLearningReviewApplications;
   const acceptance = sql<AdminOwnerLearningAcceptance>`CASE
-    WHEN ${application.reviewId} IS NOT NULL THEN 'accepted'
+    WHEN ${application.appliedAt} IS NOT NULL THEN 'accepted'
     WHEN ${review.resolution} = 'no_change'
       OR (
         ${review.resolution} IS NULL
@@ -789,7 +789,7 @@ function deriveAdminDisposition(
   review: Pick<BaseReviewRow, "analysisStatus" | "resolution" | "result">,
   application: ApplicationRow | null,
 ): AdminOwnerLearningDisposition {
-  if (application) return "applied";
+  if (application?.appliedAt) return "applied";
   if (review.resolution === "applied") {
     throw new Error("Applied owner learning review is missing its application receipt");
   }

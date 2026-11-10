@@ -446,11 +446,11 @@ const ownerLearningReviewApplicationSchema = closedObject(
   {
     sourceRecommendationIds: { type: "array", items: { type: "string" } },
     priorRevisionId: { type: "string" },
-    resultingRevisionId: { type: "string" },
+    resultingRevisionId: { type: ["string", "null"] },
     priorStrategyStyle: { type: "string" },
     resultingStrategyStyle: { type: "string" },
     mutationReceipt: agentMutationReceiptOutputSchema(),
-    appliedAt: { type: "string" },
+    appliedAt: { type: ["string", "null"] },
   },
 );
 const ownerLearningReviewSchema = closedObject(
@@ -523,7 +523,7 @@ const ownerLearningReviewSchema = closedObject(
     diveCount: { type: "number" },
     applyDisposition: {
       type: "string",
-      enum: ["not_ready", "awaiting_owner", "available", "applied", "manual_update", "declined", "no_change", "failed", "superseded", "unavailable"],
+      enum: ["not_ready", "awaiting_owner", "submitted", "available", "applied", "manual_update", "declined", "no_change", "failed", "superseded", "unavailable"],
     },
     evidence: closedObject(["games"], {
       games: {
@@ -772,11 +772,11 @@ export const APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
         proposalFingerprint: { type: "string" },
         sourceRecommendationIds: { type: "array", items: { type: "string" } },
         priorRevisionId: { type: "string" },
-        resultingRevisionId: { type: "string" },
+        resultingRevisionId: { type: ["string", "null"] },
         priorStrategyStyle: { type: "string" },
         resultingStrategyStyle: { type: "string" },
         receipt: agentMutationReceiptOutputSchema(),
-        appliedAt: { type: "string" },
+        appliedAt: { type: ["string", "null"] },
         replayed: { type: "boolean" },
       },
     ),

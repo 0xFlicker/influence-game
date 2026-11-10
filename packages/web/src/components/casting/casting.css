@@ -5,8 +5,6 @@
 .pre-show-nav > a:first-child { color: #b4ada2; white-space: nowrap; }
 .pre-show-nav > a:first-child:hover { color: #fff8e8; }
 .pre-show-code { overflow-wrap: anywhere; color: #b4ada2; }
-.pre-show-create { display: inline-flex; justify-content: center; align-items: center; gap: .5rem; min-height: 2.75rem; margin-left: auto; padding: .65rem 1.1rem; border: 1px solid #dfbe8066; color: #f5d99f; background: #dfbe8012; white-space: nowrap; border-radius: .35rem; font-weight: 600; }
-.pre-show-create:hover { background: #dfbe8026; border-color: #dfbe80; }
 .pre-show-hero { position: relative; isolation: isolate; display: grid; grid-template-columns: 1.15fr 1fr; overflow: hidden; border: 1px solid #dfbe8030; border-radius: .7rem; background: #110e14; }
 .pre-show-hero::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, #110e14fa 15%, #110e14c9 48%, #110e1420), url('/agent-creation-hall.webp') 60% 43% / cover; }
 .pre-show-hero-copy { padding: 2.5rem 0 2.5rem 2.5rem; }

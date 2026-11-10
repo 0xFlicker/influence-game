@@ -9,81 +9,210 @@ import type { Browser } from "puppeteer";
 import { schema } from "../db/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { createProfileRoutes } from "../routes/profile.js";
+import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 import { createAnonymousAgentCreationRoutes } from "../routes/anonymous-agent-creation.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
 import { runAccountText } from "../services/account-text-usage.js";
 import { decodeAnonymousCreationTurn } from "../services/anonymous-agent-creation.js";
-import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
+import {
+  createIsolatedTestDb,
+  destroyIsolatedTestDb,
+  type TestDB,
+} from "./test-db.js";
 import { launchBrowser, closeBrowser } from "./test-browser.js";
 import { cleanupE2eResources } from "./cleanup.js";
 
-let database: TestDB, browser: Browser, api: ReturnType<typeof Bun.serve>, web: Bun.Subprocess;
+let database: TestDB,
+  browser: Browser,
+  api: ReturnType<typeof Bun.serve>,
+  web: Bun.Subprocess;
 let webUrl: string;
 const temporaryPath = (name: string) => join(tmpdir(), name);
-const profile = { name: "Mira Vale", personaKey: "diplomat", gender: "female", personality: "A warm diplomat who keeps receipts.",
-  backstory: "An exiled ambassador.", strategyStyle: "Build trust at the risk of waiting too long.",
-  performanceInstructions: "Quiet gestures.", visualDesign: "A blue coat.", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["Trust takes time.", "I keep receipts.", "We can talk."] };
-const response = { id: "deterministic-preview", object: "chat.completion" as const, created: 0, model: "gpt-5.6-luna", choices: [],
-  usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } };
+const profile = {
+  name: "Mira Vale",
+  personaKey: "diplomat",
+  gender: "female",
+  personality: "A warm diplomat who keeps receipts.",
+  backstory: "An exiled ambassador.",
+  strategyStyle: "Build trust at the risk of waiting too long.",
+  performanceInstructions: "Quiet gestures.",
+  visualDesign: "A blue coat.",
+  werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.",
+  introQuips: ["Trust takes time.", "I keep receipts.", "We can talk."],
+};
+const response = {
+  id: "deterministic-preview",
+  object: "chat.completion" as const,
+  created: 0,
+  model: "gpt-5.6-luna",
+  choices: [],
+  usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
+};
 
 beforeAll(async () => {
   process.env.JWT_SECRET = "public-creation-browser-secret";
   database = await createIsolatedTestDb();
   const app = new Hono<AuthEnv>();
-  app.get("/health", c => c.json({ status: "ok" }));
-  app.route("/", createAuthRoutes(database.db, {
-    managedAuthMode: "full", compatibilityBridgeEnabled: false, isInviteRequired: async () => false,
-    clerkVerifier: { provider: "clerk", verify: async token => token === "clerk:ui-new" ? {
-      status: "verified", evidence: { provider: "clerk", subject: "public-creator-new", owner: { kind: "email", normalizedEmail: "ui-new+e2e@example.test" }, productWalletAddress: null },
-    } : { status: "invalid" } },
-  }));
+  app.get("/health", (c) => c.json({ status: "ok" }));
+  app.route(
+    "/",
+    createAuthRoutes(database.db, {
+      managedAuthMode: "full",
+      compatibilityBridgeEnabled: false,
+      isInviteRequired: async () => false,
+      clerkVerifier: {
+        provider: "clerk",
+        verify: async (token) =>
+          token === "clerk:ui-new"
+            ? {
+                status: "verified",
+                evidence: {
+                  provider: "clerk",
+                  subject: "public-creator-new",
+                  owner: {
+                    kind: "email",
+                    normalizedEmail: "ui-new+e2e@example.test",
+                  },
+                  productWalletAddress: null,
+                },
+              }
+            : { status: "invalid" },
+      },
+    }),
+  );
   app.route("/", createProfileRoutes(database.db));
-  app.route("/", createAnonymousAgentCreationRoutes(database.db, async (_input, _signal, record) => {
-    await record(response);
-    return decodeAnonymousCreationTurn(JSON.stringify({ reply: "Mira builds trust, but may hesitate to act. Does she feel right?", profile }));
-  }));
-  app.post("/api/agent-profiles/creation-assistant", requireAuth(database.db), async c => c.json(await runAccountText(database.db, {
-    userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key")!, kind: "creation_assistant", model: response.model, payload: await c.req.json(),
-  }, async record => { await record(response); return { command: "clarify", reply: "Your account is ready. We can keep shaping Mira." }; })));
+  app.route(
+    "/",
+    createAnonymousAgentCreationRoutes(
+      database.db,
+      async (_input, _signal, record) => {
+        await record(response);
+        return decodeAnonymousCreationTurn(
+          JSON.stringify({
+            reply:
+              "Mira builds trust, but may hesitate to act. Does she feel right?",
+            profile,
+          }),
+        );
+      },
+    ),
+  );
+  app.post(
+    "/api/agent-profiles/creation-assistant",
+    requireAuth(database.db),
+    async (c) =>
+      c.json(
+        await runAccountText(
+          database.db,
+          {
+            userId: c.get("user").id,
+            requestKey: c.req.header("Idempotency-Key")!,
+            kind: "creation_assistant",
+            model: response.model,
+            payload: await c.req.json(),
+          },
+          async (record) => {
+            await record(response);
+            return {
+              command: "clarify",
+              reply: "Your account is ready. We can keep shaping Mira.",
+            };
+          },
+        ),
+      ),
+  );
+  // Real draft recovery routes; character inference above remains deterministic.
+  app.route("/", createAgentProfileRoutes(database.db));
   api = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
   const webPort = 20000 + Math.floor(Math.random() * 30000);
   webUrl = `http://localhost:${webPort}`;
   web = Bun.spawn([process.execPath, "run", "dev", "--hostname", "127.0.0.1"], {
     cwd: `${import.meta.dir}/../../../web`,
-    env: { ...process.env, NODE_ENV: "development", PORT: String(webPort), API_URL: "", NEXT_PUBLIC_API_URL: "", API_BACKEND_URL: `http://127.0.0.1:${api.port}`,
-      PRIVY_APP_ID: "e2e-test-privy-app-id-001", NEXT_PUBLIC_PRIVY_APP_ID: "e2e-test-privy-app-id-001",
-      NEXT_PUBLIC_E2E_AUTH: "true", NEXT_PUBLIC_E2E_LAYERED_AUTH: "true", MANAGED_AUTH_MODE: "full",
-      CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e", NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e" },
-    stdout: Bun.file(temporaryPath("public-creator-browser-web.log")), stderr: Bun.file(temporaryPath("public-creator-browser-web-errors.log")),
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      PORT: String(webPort),
+      API_URL: "",
+      NEXT_PUBLIC_API_URL: "",
+      API_BACKEND_URL: `http://127.0.0.1:${api.port}`,
+      PRIVY_APP_ID: "e2e-test-privy-app-id-001",
+      NEXT_PUBLIC_PRIVY_APP_ID: "e2e-test-privy-app-id-001",
+      NEXT_PUBLIC_E2E_AUTH: "true",
+      NEXT_PUBLIC_E2E_LAYERED_AUTH: "true",
+      MANAGED_AUTH_MODE: "full",
+      CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
+    },
+    stdout: Bun.file(temporaryPath("public-creator-browser-web.log")),
+    stderr: Bun.file(temporaryPath("public-creator-browser-web-errors.log")),
   });
   const deadline = Date.now() + 60_000;
   while (true) {
-    try { const result = await fetch(`${webUrl}/agents/create`, { signal: AbortSignal.timeout(1000) }); if (result.ok) break; }
-    catch { /* Child startup is polled until the bounded deadline. */ }
-    if (Date.now() >= deadline) throw new Error(`Public creator web server did not start; see ${temporaryPath("public-creator-browser-web-errors.log")}`);
+    try {
+      const result = await fetch(`${webUrl}/agents/create`, {
+        signal: AbortSignal.timeout(1000),
+      });
+      if (result.ok) break;
+    } catch {
+      /* Child startup is polled until the bounded deadline. */
+    }
+    if (Date.now() >= deadline)
+      throw new Error(
+        `Public creator web server did not start; see ${temporaryPath("public-creator-browser-web-errors.log")}`,
+      );
     await Bun.sleep(250);
   }
   browser = await launchBrowser();
 }, 120_000);
 
-afterAll(async () => { await cleanupE2eResources([
-  ["browser", async () => { if (browser) await closeBrowser(browser); }],
-  ["web", async () => { if (web) { web.kill(); await web.exited; } }],
-  ["api", async () => { if (api) api.stop(true); }],
-  ["database", async () => { if (database) await destroyIsolatedTestDb(database.databaseUrl); }],
-]); }, 60_000);
+afterAll(async () => {
+  await cleanupE2eResources([
+    [
+      "browser",
+      async () => {
+        if (browser) await closeBrowser(browser);
+      },
+    ],
+    [
+      "web",
+      async () => {
+        if (web) {
+          web.kill();
+          await web.exited;
+        }
+      },
+    ],
+    [
+      "api",
+      async () => {
+        if (api) api.stop(true);
+      },
+    ],
+    [
+      "database",
+      async () => {
+        if (database) await destroyIsolatedTestDb(database.databaseUrl);
+      },
+    ],
+  ]);
+}, 60_000);
 
 test("creator sits below working desktop/mobile navigation with visible Advanced create and Close", async () => {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
   await rejectOptionalAnalytics(page);
   try {
-    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    for (const viewport of [
+      { width: 1440, height: 1000 },
+      { width: 390, height: 844 },
+    ]) {
       await page.setViewport(viewport);
       await page.goto(`${webUrl}/agents/create`, { waitUntil: "networkidle0" });
-      await page.waitForSelector('textarea[aria-label="Message the character assistant"]:not([disabled])');
+      await page.waitForSelector(
+        'textarea[aria-label="Message the character assistant"]:not([disabled])',
+      );
       const assertLayout = async () => {
-        const layout = await page.$eval(".agent-creation-form", creator => {
+        const layout = await page.$eval("[data-agent-workspace]", (creator) => {
           const document = creator.ownerDocument;
           const nav = document.querySelector("nav")!;
           return {
@@ -93,15 +222,32 @@ test("creator sits below working desktop/mobile navigation with visible Advanced
             bodyOverflow: document.body.style.overflow,
           };
         });
-        const controls = await page.$$eval(".agent-creation-header button", buttons => buttons.map(button => {
-          const rect = button.getBoundingClientRect();
-          return { text: button.textContent, top: rect.top, bottom: rect.bottom,
-            hit: button.contains(button.ownerDocument.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)) };
-        }));
+        const controls = await page.$$eval(
+          "[data-agent-workspace] header button",
+          (buttons) =>
+            buttons.map((button) => {
+              const rect = button.getBoundingClientRect();
+              return {
+                text: button.textContent,
+                top: rect.top,
+                bottom: rect.bottom,
+                hit: button.contains(
+                  button.ownerDocument.elementFromPoint(
+                    rect.left + rect.width / 2,
+                    rect.top + rect.height / 2,
+                  ),
+                ),
+              };
+            }),
+        );
         expect(layout.navInert).toBe(false);
         expect(layout.bodyOverflow).not.toBe("hidden");
         expect(layout.creatorTop).toBeGreaterThanOrEqual(layout.navBottom);
-        expect(controls.map(control => control.text)).toEqual(["Advanced create", "Close"]);
+        expect(controls.map((control) => control.text)).toEqual([
+          "Guided",
+          "Advanced",
+          "Close",
+        ]);
         for (const control of controls) {
           expect(control.top).toBeGreaterThanOrEqual(layout.navBottom);
           expect(control.bottom).toBeLessThanOrEqual(viewport.height);
@@ -114,80 +260,193 @@ test("creator sits below working desktop/mobile navigation with visible Advanced
         await page.waitForSelector('button[aria-label="Close menu"]');
         await assertLayout();
       }
-      await page.screenshot({ path: temporaryPath(`public-creator-navigation-${viewport.width}.png`) });
+      await page.screenshot({
+        path: temporaryPath(`public-creator-navigation-${viewport.width}.png`),
+      });
       await Promise.all([
         page.waitForFunction("window.location.pathname === '/rules'"),
-        page.click(viewport.width < 1280 ? 'nav > div:last-child a[href="/rules"]' : 'nav a[href="/rules"]'),
+        page.click(
+          viewport.width < 1280
+            ? 'nav > div:last-child a[href="/rules"]'
+            : 'nav a[href="/rules"]',
+        ),
       ]);
       await page.goto(`${webUrl}/agents/create`, { waitUntil: "networkidle0" });
-      await page.waitForSelector('textarea[aria-label="Message the character assistant"]:not([disabled])');
+      await page.waitForSelector(
+        'textarea[aria-label="Message the character assistant"]:not([disabled])',
+      );
       await Promise.all([
         page.waitForFunction("window.location.pathname === '/games'"),
-        page.click(".agent-creation-header button:last-child"),
+        page.click("[data-agent-workspace] header > div > button"),
       ]);
     }
-  } finally { await context.close(); }
+  } finally {
+    await context.close();
+  }
 }, 120_000);
 
 test("public hall → one tracked preview → image signup → free account messages, with draft preserved", async () => {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
   await rejectOptionalAnalytics(page);
-  page.on("console", message => { if (message.type() === "error") console.error("[browser]", message.text()); });
+  page.on("console", (message) => {
+    if (message.type() === "error") console.error("[browser]", message.text());
+  });
   try {
     await page.setViewport({ width: 1440, height: 1000 });
     await page.goto(`${webUrl}/agents/create`, { waitUntil: "networkidle0" });
-    await page.waitForSelector('textarea[aria-label="Message the character assistant"]:not([disabled])');
+    await page.waitForSelector(
+      'textarea[aria-label="Message the character assistant"]:not([disabled])',
+    );
     expect(await page.$('[role="dialog"]')).toBeNull();
-    expect(await page.evaluate("document.body.innerText.includes('Sign in to access this page.')")).toBe(false);
-    await page.screenshot({ path: temporaryPath("public-creator-desktop.png") });
-    await page.type('textarea[aria-label="Message the character assistant"]', "An exiled diplomat who keeps receipts");
+    expect(
+      await page.evaluate(
+        "document.body.innerText.includes('Sign in to access this page.')",
+      ),
+    ).toBe(false);
+    await page.screenshot({
+      path: temporaryPath("public-creator-desktop.png"),
+    });
+    await page.type(
+      'textarea[aria-label="Message the character assistant"]',
+      "An exiled diplomat who keeps receipts",
+    );
     await page.click('button[aria-label="Send"]');
-    await page.waitForFunction("document.querySelector('button[aria-label=\"Read Name\"]')?.textContent?.includes('Mira Vale')");
+    await page.waitForFunction(
+      "document.querySelector('button[aria-label=\"Revise Name\"]')?.textContent?.includes('Mira Vale')",
+    );
     expect(await page.$('[role="dialog"]')).toBeNull();
-    expect((await loadPayloads(database.db.select().from(schema.anonymousTextOperations)))).toHaveLength(1);
-    expect((await database.db.select().from(schema.users))).toHaveLength(0);
-    await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Yes, that feels right')?.click()");
-    await page.type('textarea[aria-label="Message the character assistant"]', "A blue coat and gold rings");
+    expect(
+      await loadPayloads(
+        database.db.select().from(schema.anonymousTextOperations),
+      ),
+    ).toHaveLength(1);
+    expect(await database.db.select().from(schema.users)).toHaveLength(0);
+    await page.evaluate(
+      "Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Continue')?.click()",
+    );
+    await page.type(
+      'textarea[aria-label="Message the character assistant"]',
+      "A blue coat and gold rings",
+    );
     await page.click('button[aria-label="Send"]');
-    await page.waitForSelector('[role="dialog"][aria-label="Influence authentication"]');
-    expect(await page.$eval('[role="dialog"]', element => element.closest("[inert]"))).toBeNull();
-    await page.screenshot({ path: temporaryPath("public-creator-signup-desktop.png") });
+    await page.waitForSelector(
+      '[role="dialog"][aria-label="Influence authentication"]',
+    );
+    expect(
+      await page.$eval('[role="dialog"]', (element) =>
+        element.closest("[inert]"),
+      ),
+    ).toBeNull();
+    await page.screenshot({
+      path: temporaryPath("public-creator-signup-desktop.png"),
+    });
     await page.setViewport({ width: 390, height: 844 });
-    await page.screenshot({ path: temporaryPath("public-creator-signup-mobile.png") });
-    await page.type('[role="dialog"] input[type="email"]', "ui-new+e2e@example.test");
+    await page.screenshot({
+      path: temporaryPath("public-creator-signup-mobile.png"),
+    });
+    await page.type(
+      '[role="dialog"] input[type="email"]',
+      "ui-new+e2e@example.test",
+    );
     await page.type('[role="dialog"] input[type="password"]', "test-password");
     await page.click('[role="dialog"] input[type="checkbox"]');
     await page.click('[role="dialog"] button[type="submit"]');
-    await page.waitForFunction("document.querySelector('[role=\"dialog\"]')?.textContent?.includes('Verification code')");
+    await page.waitForFunction(
+      "document.querySelector('[role=\"dialog\"]')?.textContent?.includes('Verification code')",
+    );
     await page.type('[role="dialog"] input[inputmode="numeric"]', "424242");
-    await page.evaluate("Array.from(document.querySelectorAll('[role=\"dialog\"] button')).find(button => button.textContent === 'Verify code')?.click()");
-    await page.waitForFunction("!document.querySelector('[role=\"dialog\"][aria-label=\"Influence authentication\"]')");
-    expect(await page.$eval('button[aria-label="Read Name"]', element => element.textContent)).toContain("Mira Vale");
-    expect(await page.evaluate("document.querySelector('textarea[aria-label=\"Message the character assistant\"]').value")).toBe("A blue coat and gold rings");
+    await page.evaluate(
+      "Array.from(document.querySelectorAll('[role=\"dialog\"] button')).find(button => button.textContent === 'Verify code')?.click()",
+    );
+    await page.waitForFunction(
+      '!document.querySelector(\'[role="dialog"][aria-label="Influence authentication"]\')',
+    );
+    expect(
+      await page.$eval(
+        'button[aria-label="Revise Name"]',
+        (element) => element.textContent,
+      ),
+    ).toContain("Mira Vale");
+    expect(
+      await page.evaluate(
+        "document.querySelector('textarea[aria-label=\"Message the character assistant\"]').value",
+      ),
+    ).toBe("A blue coat and gold rings");
     await page.waitForSelector('[aria-labelledby="public-identity-title"]');
-    await page.type('[aria-labelledby="public-identity-title"] input[placeholder="Flick"]', "Mira Player");
-    await page.type('[aria-labelledby="public-identity-title"] input[placeholder="flick"]', "mira-player");
-    await page.click('[aria-labelledby="public-identity-title"] button[type="submit"]');
-    await page.waitForFunction("!document.querySelector('[aria-labelledby=\"public-identity-title\"]')");
+    await page.type(
+      '[aria-labelledby="public-identity-title"] input[placeholder="Flick"]',
+      "Mira Player",
+    );
+    await page.type(
+      '[aria-labelledby="public-identity-title"] input[placeholder="flick"]',
+      "mira-player",
+    );
+    await page.click(
+      '[aria-labelledby="public-identity-title"] button[type="submit"]',
+    );
+    await page.waitForFunction(
+      "!document.querySelector('[aria-labelledby=\"public-identity-title\"]')",
+    );
+    await page.waitForSelector(
+      'textarea[aria-label="Message the character assistant"]:not([disabled])',
+    );
     await page.click('button[aria-label="Send"]');
-    await page.waitForFunction("document.body.innerText.includes('Your account is ready. We can keep shaping Mira.')");
-    const [owner] = await database.db.select().from(schema.users).where(eq(schema.users.email, "ui-new+e2e@example.test"));
+    await page.waitForFunction(
+      "document.body.innerText.includes('Your account is ready. We can keep shaping Mira.')",
+    );
+    const [owner] = await database.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.email, "ui-new+e2e@example.test"));
     expect(owner).toBeDefined();
-    const [allowance] = await database.db.select().from(schema.inferenceAccounts).where(eq(schema.inferenceAccounts.userId, owner!.id));
-    expect(allowance).toMatchObject({ textBalance: 99, imageBalance: 25, planId: "free" });
-    expect(await loadPayloads(database.db.select().from(schema.anonymousTextOperations))).toHaveLength(1);
-    await page.screenshot({ path: temporaryPath("public-creator-after-signup-mobile.png") });
-    await page.click(".agent-creation-header button:first-child");
-    await page.waitForSelector('#agent-name');
-    expect(await page.evaluate("document.querySelector('#agent-name').value")).toBe("Mira Vale");
-    await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Switch to assistant create')?.click()");
-    await page.waitForSelector('.agent-creation-header');
-    expect(await page.$eval('button[aria-label="Read Name"]', element => element.textContent)).toContain("Mira Vale");
-    expect(await page.$eval('nav', element => element.closest('[inert]'))).toBeNull();
+    const [allowance] = await database.db
+      .select()
+      .from(schema.inferenceAccounts)
+      .where(eq(schema.inferenceAccounts.userId, owner!.id));
+    expect(allowance).toMatchObject({
+      textBalance: 99,
+      imageBalance: 25,
+      planId: "free",
+    });
+    expect(
+      await loadPayloads(
+        database.db.select().from(schema.anonymousTextOperations),
+      ),
+    ).toHaveLength(1);
+    await page.screenshot({
+      path: temporaryPath("public-creator-after-signup-mobile.png"),
+    });
+    await page.evaluate(
+      `Array.from(document.querySelectorAll('[aria-label="Editing mode"] button')).find(button => button.textContent.trim() === 'Advanced').click()`,
+    );
+    await page.waitForSelector("#agent-name");
+    expect(
+      await page.evaluate("document.querySelector('#agent-name').value"),
+    ).toBe("Mira Vale");
+    await page.evaluate(
+      `Array.from(document.querySelectorAll('[aria-label="Editing mode"] button')).find(button => button.textContent.trim() === 'Guided').click()`,
+    );
+    await page.waitForSelector('[data-agent-workspace][data-mode="guided"]');
+    expect(
+      await page.$eval(
+        'button[aria-label="Revise Name"]',
+        (element) => element.textContent,
+      ),
+    ).toContain("Mira Vale");
+    expect(
+      await page.$eval("nav", (element) => element.closest("[inert]")),
+    ).toBeNull();
   } catch (error) {
-    await page.screenshot({ path: temporaryPath("public-creator-browser-failure.png") });
-    console.error("[browser failure]", await page.evaluate("document.body.innerText"));
+    await page.screenshot({
+      path: temporaryPath("public-creator-browser-failure.png"),
+    });
+    console.error(
+      "[browser failure]",
+      await page.evaluate("document.body.innerText"),
+    );
     throw error;
-  } finally { await context.close(); }
+  } finally {
+    await context.close();
+  }
 }, 120_000);

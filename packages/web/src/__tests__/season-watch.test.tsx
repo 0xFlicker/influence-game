@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { Window } from 'happy-dom';
 import { SeasonWatch } from '../app/seasons/season-watch';
 import type { SeasonGame } from '../app/seasons/season-games';
@@ -26,4 +26,14 @@ test('waiting, empty and unavailable feeds never claim playback exists',()=>{
  expect(view.getByRole('link',{name:'View game →'})).toBeTruthy();expect(view.queryByRole('button',{name:/Watch live/})).toBeNull();
  view.rerender(<SeasonWatch {...props} games={[]}/>);expect(view.getByText('No games to watch.')).toBeTruthy();
  view.rerender(<SeasonWatch {...props} games={[]} error="Unavailable"/>);expect(view.getByRole('alert').textContent).toBe('Unavailable');expect(requests).toBe(0);
+});
+test('the selected Werewolf audience remains selected when choosing another season game',()=>{
+ const first:SeasonGame={...live,id:'first',slug:'first-wolf',gameKind:'werewolf',status:'completed'};
+ const second:SeasonGame={...first,id:'second',slug:'second-wolf'};
+ const view=render(<SeasonWatch games={[first,second]} seasonName="Season 1" seasonSlug="s1" loading={false} error={null}/>);
+ fireEvent.click(view.getAllByRole('button',{name:'Watch Omniscient'})[0]!);
+ expect(view.getByTestId('season-player').getAttribute('data-audience')).toBe('omniscient');
+ fireEvent.click(view.getByRole('button',{name:/second-wolf/}));
+ expect(view.getByTestId('season-player').getAttribute('data-audience')).toBe('omniscient');
+ expect(requests).toBe(0);
 });

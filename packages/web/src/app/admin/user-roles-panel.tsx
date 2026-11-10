@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   listRoles,
   listUserRoles,
@@ -13,6 +14,19 @@ import {
 } from "@/lib/api";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { formatRoleName, getRoleBadgeClass } from "@/lib/role-display";
+import { compareSortValues, SortableColumnHeader, type SortDirection } from "./sortable-column-header";
+
+type UserSortKey = "address" | "displayName" | "email" | "roles" | "joined";
+
+function userSortValue(user: AdminUser, key: UserSortKey): string | null {
+  switch (key) {
+    case "address": return user.walletAddress;
+    case "displayName": return user.displayName;
+    case "email": return user.email;
+    case "roles": return user.roles.length > 0 ? [...user.roles].sort().join(", ") : null;
+    case "joined": return user.createdAt;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -136,6 +150,14 @@ function UserRolesTable({
   users: AdminUser[];
   onRevoke: (userId: string, roleId: string, roleName: string) => void;
 }) {
+  const [sortKey, setSortKey] = useState<"account" | "roles" | "grantedBy">("account");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  function handleSort(column: "account" | "roles" | "grantedBy") {
+    setSortDirection(column === sortKey && sortDirection === "asc" ? "desc" : "asc");
+    setSortKey(column);
+  }
+
   const usersById = new Map<string, AdminUser>();
   for (const u of users) {
     if (u.id) {
@@ -157,20 +179,35 @@ function UserRolesTable({
     list.push(a);
     grouped.set(a.userId, list);
   }
+  const sortedAssignments = [...grouped.entries()].sort(([aId, aRoles], [bId, bRoles]) => {
+    function value(userId: string, roles: UserRoleAssignment[]): string | null {
+      const user = usersById.get(userId);
+      switch (sortKey) {
+        case "account": return user?.displayName ?? user?.email ?? user?.walletAddress ?? userId;
+        case "roles": return roles.map((role) => role.roleName).sort().join(", ");
+        case "grantedBy": return roles[0]?.grantedBy ?? null;
+      }
+    }
+    const aValue = value(aId, aRoles);
+    const bValue = value(bId, bRoles);
+    if (aValue === null || bValue === null) return aValue === null ? (bValue === null ? 0 : 1) : -1;
+    return compareSortValues(aValue, bValue) * (sortDirection === "asc" ? 1 : -1)
+      || aId.localeCompare(bId);
+  });
 
   return (
     <div className="border border-white/10 rounded-xl overflow-hidden">
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/10">
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Account</th>
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Roles</th>
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Granted By</th>
-            <th className="text-right py-3 px-4 text-xs text-white/30 font-medium">Actions</th>
+            <SortableColumnHeader column="account" label="Account" sortKey={sortKey} direction={sortDirection} onSort={handleSort} />
+            <SortableColumnHeader column="roles" label="Roles" sortKey={sortKey} direction={sortDirection} onSort={handleSort} />
+            <SortableColumnHeader column="grantedBy" label="Granted By" sortKey={sortKey} direction={sortDirection} onSort={handleSort} />
+            <th scope="col" className="py-3 px-4 text-right text-xs font-medium text-white/30">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {[...grouped.entries()].map(([addr, roles]) => {
+          {sortedAssignments.map(([addr, roles]) => {
             const user = usersById.get(addr);
             const label = user?.displayName && !user.displayName.startsWith("0x")
               ? user.displayName
@@ -180,15 +217,23 @@ function UserRolesTable({
               <td className="py-3 px-4 text-sm">
                 {label ? (
                   <div className="flex flex-col">
-                    <span className="text-white/70">{label}</span>
+                    {user?.publicProfileId ? (
+                      <Link href={`/profile/${encodeURIComponent(user.publicProfileId)}`} prefetch={false} className="text-white/70 hover:underline focus-visible:underline">{label}</Link>
+                    ) : (
+                      <span className="text-white/70">{label}</span>
+                    )}
                     <span className="text-white/25 text-xs font-mono">
                       <TruncatedAddress address={addr} maxWidth="11ch" />
                     </span>
                   </div>
                 ) : (
-                  <span className="text-white/60 font-mono">
-                    <TruncatedAddress address={addr} maxWidth="11ch" />
-                  </span>
+                  user?.publicProfileId ? (
+                    <Link href={`/profile/${encodeURIComponent(user.publicProfileId)}`} prefetch={false} className="text-white/60 hover:underline focus-visible:underline">View profile</Link>
+                  ) : (
+                    <span className="text-white/60 font-mono">
+                      <TruncatedAddress address={addr} maxWidth="11ch" />
+                    </span>
+                  )
                 )}
               </td>
               <td className="py-3 px-4">
@@ -228,13 +273,21 @@ function UserRolesTable({
 // Users table
 // ---------------------------------------------------------------------------
 
-function UsersTable({
+export function UsersTable({
   users,
   onQuickAssign,
 }: {
   users: AdminUser[];
   onQuickAssign: (userId: string) => void;
 }) {
+  const [sortKey, setSortKey] = useState<UserSortKey>("joined");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  function handleSort(column: UserSortKey) {
+    setSortDirection(column === sortKey && sortDirection === "asc" ? "desc" : "asc");
+    setSortKey(column);
+  }
+
   if (users.length === 0) {
     return (
       <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
@@ -243,31 +296,51 @@ function UsersTable({
     );
   }
 
+  const sorted = [...users].sort((a, b) => {
+    const aValue = userSortValue(a, sortKey);
+    const bValue = userSortValue(b, sortKey);
+    if (aValue === null || bValue === null) return aValue === null ? (bValue === null ? 0 : 1) : -1;
+    return compareSortValues(aValue, bValue) * (sortDirection === "asc" ? 1 : -1)
+      || a.id.localeCompare(b.id);
+  });
+
   return (
     <div className="border border-white/10 rounded-xl overflow-hidden">
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/10">
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Address</th>
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Display Name</th>
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Email</th>
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Roles</th>
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Joined</th>
-            <th className="text-right py-3 px-4 text-xs text-white/30 font-medium">Actions</th>
+            {([
+              ["address", "Address"], ["displayName", "Display Name"], ["email", "Email"],
+              ["roles", "Roles"], ["joined", "Joined"],
+            ] as const).map(([key, label]) => (
+              <SortableColumnHeader
+                key={key}
+                column={key}
+                label={label}
+                sortKey={sortKey}
+                direction={sortDirection}
+                onSort={handleSort}
+              />
+            ))}
+            <th scope="col" className="py-3 px-4 text-right text-xs font-medium text-white/30">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {users.map((user) => (
+          {sorted.map((user) => (
             <tr key={user.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
               <td className="py-3 px-4 text-white/60 text-sm font-mono">
                 {user.walletAddress ? <TruncatedAddress address={user.walletAddress} maxWidth="11ch" /> : "—"}
               </td>
               <td className="py-3 px-4 text-white text-sm font-mono">
-                {user.displayName
-                  ? (user.displayName.startsWith("0x")
-                      ? <TruncatedAddress address={user.displayName} maxWidth="11ch" />
-                      : user.displayName)
-                  : "—"}
+                {user.publicProfileId ? (
+                  <Link href={`/profile/${encodeURIComponent(user.publicProfileId)}`} prefetch={false} className="hover:underline focus-visible:underline" aria-label={`View ${user.displayName ?? user.email ?? "user"} public profile`}>
+                    {user.displayName
+                      ? (user.displayName.startsWith("0x")
+                          ? <TruncatedAddress address={user.displayName} maxWidth="11ch" />
+                          : user.displayName)
+                      : "View profile"}
+                  </Link>
+                ) : (user.displayName ?? "—")}
               </td>
               <td className="py-3 px-4 text-white/50 text-sm">{user.email ?? "—"}</td>
               <td className="py-3 px-4">

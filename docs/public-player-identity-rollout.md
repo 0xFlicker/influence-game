@@ -22,6 +22,8 @@ The allowed response paths are:
 - `POST /api/auth/login`, `GET /api/auth/me`, and `GET/PATCH /api/profile`, where the response subject is the authenticated user.
 - `GET /api/admin/users` and `GET /api/admin/agents`, where email fields are returned for the subject user or a caller with a privileged email role. The route's existing permission gate still applies; the email role does not grant endpoint access by itself.
 
+The admin users list includes `publicProfileId` for links to `/profile/:id`; imported synthetic users have `null` because they have no public player profile. The admin agent list includes `publicProfileAvailable` so eligible public agents link to `/agents/:id`; its separate details dialog remains available for all agents. The admin people tables support ascending and descending column sorting; registered users initially appear newest first.
+
 All other REST, MCP, WebSocket, replay, leaderboard, queue, season, and public-player responses must omit email values, including an email copied or embedded in a legacy display-name field. Administrative labels such as invite-code owners use the same display-name redaction even though they never expose an email field. Public identity queries may load email internally only to reject email-derived display names. The generic authenticated request context deliberately omits email so serializing `c.get("user")` cannot expose it.
 
 ## Contract Matrix
@@ -76,7 +78,7 @@ Prove the tolerant web build against the old API first. Retain this compatibilit
 
 An old producer can create or authenticate an account without returning or enforcing the identity step. While any old producer remains, a player can temporarily enter without claiming a handle; if an old producer survives past the cutoff, it can also violate the required-new-player experience for that session. This is a rollout risk, not an accepted compatibility mode.
 
-After a successful required or deferrable identity save, that browser session carries an account-scoped, one-shot handoff into standing Daily agent onboarding. The existing queue and agent reads still complete before the “Play for Free” dialog opens, but this handoff skips its ordinary three-second presentation delay. The handoff survives only the prompt's bounded retry sequence and is consumed by an eligible result, queue ineligibility, or exhausted retries. Dismissal, returning complete identities, generic identity updates, profile edits, and reloads keep the ordinary delayed behavior.
+The former post-identity handoff to the site-wide “Play for Free” dialog has been removed. Completing identity onboarding now returns the player to the current page; queue entry remains on the relevant game and season pages.
 
 ### Gate 4: Drain Proof and Activation
 

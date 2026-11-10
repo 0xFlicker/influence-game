@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { playedWerewolfReview } from "./owner-learning-werewolf-test-utils.js";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
-import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
 import { getOwnerLearningEligibleInputs, validateOwnerLearningSelection } from "../services/owner-learning-eligibility.js";
 import { projectOwnerLearningEvidence, OWNER_LEARNING_INPUT_TOKEN_LIMIT } from "../services/owner-learning-evidence.js";
 import { runOwnerLearningHarness, OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA } from "../services/owner-learning-harness.js";
@@ -13,7 +13,7 @@ import { buildBudgetedOwnerLearningProviderInput } from "../services/owner-learn
 import { startOwnerLearningReview, OWNER_LEARNING_MODEL } from "../services/owner-learning-review.js";
 import { getOwnedOwnerLearningReview } from "../services/owner-learning-read.js";
 import { claimOwnerLearningReview, runClaimedOwnerLearningReview } from "../services/owner-learning-worker.js";
-import { applyOwnedOwnerLearningReview } from "../services/owner-learning-apply.js";
+import { applyAcceptedTestReview as applyOwnedOwnerLearningReview } from "./test-utils.js";
 import { fingerprintOwnerLearningValue } from "../services/owner-learning-contracts.js";
 
 const noChange = { provisionalThemes: [], selectedMomentHandles: [], findings: [], finalResult: {

@@ -9,11 +9,14 @@ import {bundle} from "@remotion/bundler";
 import {openBrowser, renderStill, renderFrames, renderMedia, selectComposition} from "@remotion/renderer";
 import tailwindConfig from "../../tailwind.config";
 import {createFormatKernelViewerScenario} from "@influence/engine/fixtures/format-kernel-viewer";
+import {Phase} from "@influence/engine";
 import {completedCurrentWerewolfFixture, completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
+import {SOLO_READ_START_MS, visualSpeechReadingMs} from "@influence/engine/visual-speech";
 import type {GameWatchReplayFrame, TranscriptEntry} from "../lib/api";
 import {formatPresentationMetadata} from "@influence/engine/format-presentation-metadata";
 import {portraitRoomPageCount} from "../app/games/[slug]/components/portrait-room-pagination";
+import {WINNER_PAGE_MS, WINNER_PAGE_SIZE} from "../app/games/[slug]/components/winner-scene-timing";
 import {buildExportCues, type ExportCue} from "../lib/replay-export/cues";
 import {thinkingSegment} from "../lib/replay-export/presentation";
 import {compileTiming, parseTimingProfile} from "../lib/replay-export/timing";
@@ -54,6 +57,19 @@ for (const [name,message] of [["format-mingle",social],["format-huddle",huddle]]
   cases.push({name:`${name}-thought`,reference:cue,cue:thinkingSegment(cue,`${name}-thought`,message.thinking!,"atlas")});
 }
 const largePlayers = [...players.map((player,index)=>index === 0 ? {...player,name:"Alexandria Very Long Contestant Name"} : player),...Array.from({length:8},(_,index)=>({...players[0]!,id:`extra-${index}`,name:`Long Contestant Name ${index + 1}`}))];
+const winnerPlayers = largePlayers.slice(0,12).map((player,index)=>index === 1 ? {...player,name:"Bartholomew Another Long Contestant Name"} : player);
+const winnerEvent = {type:"jury.winner_determined" as const, sequence:100, timestamp:"2026-01-01T00:00:00Z", round:5, phase:Phase.JURY_VOTE,
+  payload:{winnerId:winnerPlayers[0]!.id,votes:{[winnerPlayers[2]!.id]:winnerPlayers[0]!.id,[winnerPlayers[3]!.id]:winnerPlayers[1]!.id}}};
+const winnerFrame:GameWatchReplayFrame = {...frames[0]!,sequence:100,eventType:winnerEvent.type,phase:"JURY_VOTE",players:winnerPlayers,viewerDecisionEvent:winnerEvent,
+  counts:{totalPlayers:winnerPlayers.length,alivePlayers:winnerPlayers.length,eliminatedPlayers:0,unknownPlayers:0}};
+const winnerExits:GameWatchReplayFrame[] = winnerPlayers.slice(2).map((player,index)=>{
+  const event = {type:"player.eliminated" as const,sequence:index+1,timestamp:"2026-01-01T00:00:00Z",round:index+1,phase:Phase.VOTE,payload:{playerId:player.id,playerName:player.name}};
+  return {...winnerFrame,sequence:event.sequence,eventType:event.type,round:event.round,phase:Phase.VOTE,viewerDecisionEvent:event};
+});
+const winnerSequence = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:winnerPlayers},messages:[],frames:[...winnerExits,winnerFrame],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies:{[winnerPlayers[0]!.id]:"/avatars/personas/full-body-v1/strategic.webp"}}});
+const winnerCue = winnerSequence.find(cue=>cue.picture.kind === "influence" && cue.picture.beat?.kind === "winner");
+if (!winnerCue) throw new Error("Missing Influence winner fixture");
+cases.push({name:"influence-winner",reference:winnerCue,cue:winnerCue});
 const largeFrames = socialFrames.slice(0,2).map(frame => ({...frame,players:largePlayers,counts:{...frame.counts,totalPlayers:largePlayers.length,alivePlayers:largePlayers.length}}));
 const huddleMembers = largePlayers.slice(0,-1);
 const largeHuddle:TranscriptEntry = {...huddle,id:103,entrySequence:103,toPlayerIds:huddleMembers.slice(1).map(player=>player.id),
@@ -69,6 +85,9 @@ const largeThoughtCue = thinkingSegment(largeHuddleCue,"format-huddle-large-thou
 cases.push({name:"format-huddle-large-thought",reference:largeHuddleCue,cue:largeThoughtCue});
 cases.push({name:"format-huddle-large-thought-recorded",reference:largeHuddleCue,cue:{...largeThoughtCue,timing:{...largeThoughtCue.timing,recording:{assetId:"assets/format-context-voice.wav",durationMs:2000}}}});
 cases.push({name:"format-huddle-large-recorded",reference:largeHuddleCue,cue:{...largeHuddleCue,timing:{...largeHuddleCue.timing,recording:{assetId:"assets/format-context-voice.wav",durationMs:2000}}}});
+const sixPageThought = Array.from({length:10},()=>largeHuddle.thinking!).join(" ");
+const sixThoughtCue = thinkingSegment(largeHuddleCue,"format-huddle-six-thought",sixPageThought,"atlas");
+cases.push({name:"format-huddle-six-thought",reference:largeHuddleCue,cue:sixThoughtCue});
 const fiveMembers = largePlayers.slice(0,5);
 const fiveHuddle:TranscriptEntry = {...largeHuddle,id:104,entrySequence:104,toPlayerIds:fiveMembers.slice(1).map(player=>player.id),
   allianceSession:{sessionId:"five",allianceId:"five",allianceName:"The Exceptionally Long Night Shift Alliance",memberIds:fiveMembers.map(player=>player.id)}};
@@ -98,6 +117,17 @@ for (const suite of suites) for (const audience of ["mystery","omniscient"] as c
     cases.push({name:`${suite.prefix}${audience}-${kind}`,cue,reference:cue});
   }
 }
+// A long accepted ballot exercises the exact speech adapter used by manual
+// page advancement, including an isolated Studio cut with omitted neighbors.
+const pageText = "I'm voting to eliminate Kimi K3. They pushed for a four-vote majority without naming a suspect first, then only offered DeepSeek Flash after Meta Spark pressed them directly. That sequencing—demand commitment before naming—is a wolf pattern worth acting on today. I will listen to anyone who can disprove this.";
+const pageEvents = await completedCurrentWerewolfFixture("page-parity", 10);
+for (const event of pageEvents) if (event.type === "werewolf.action_accepted" && event.payload.action === "public_vote" && event.payload.decision.kind === "spoken_target") event.payload.decision.text = pageText;
+const pageProjection = projectWerewolfProductionWatch(pageEvents,"omniscient");
+for (const moment of pageProjection.moments) for (const player of moment.snapshot.players) {player.avatarUrl="/avatars/personas/strategic.png";player.fullBodyReferenceUrl="/avatars/personas/full-body-v1/strategic.webp";}
+const pageCue = buildExportCues({kind:"werewolf",windows:[{...pageProjection,audience:"omniscient",status:"completed",slug:"page-parity",publicationCutoff:"fixture",media:{}}],thoughts:[]})
+  .find(item => item.picture.kind === "werewolf" && item.picture.cue.moment.entry.kind === "ballot" && item.speech?.text === pageText);
+if (!pageCue) throw new Error("Missing long ballot pagination fixture");
+cases.push({name:"page-werewolf-ballot",cue:pageCue,reference:pageCue});
 // Optional saved, already-authorized source cases let a repair prove the actual
 // changed adapter rather than replacing its evidence with unrelated fixtures.
 const suppliedCases = process.argv[3];
@@ -108,6 +138,7 @@ const results:{name:string;width:number;height:number;frame:number;meanDifferenc
 const encodedResults:{name:string;frame:number;meanDifference:number;video:string}[]=[];
 const audioResults:unknown[]=[];
 const studioResults:unknown[]=[];
+const sequenceResults:unknown[]=[];
 async function pixels(path:string) {
   const destination=join(scratch,"pixels.rgb");
   await runProcess("ffmpeg",["-y","-v","error","-i",path,"-pix_fmt","rgb24","-f","rawvideo",destination]);
@@ -138,15 +169,20 @@ try {
     const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
     const portrait = process.env.FORMAT_CONTEXT_PORTRAIT === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
-    const geometries: readonly (readonly [number, number])[] = narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(suppliedCases ? [[390,700] as const] : [])];
-    const geometryCases = narrow || portrait ? cases.filter(item => ["format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
+    const geometries: readonly (readonly [number, number])[] = process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
+    const geometryCases = narrow || portrait ? cases.filter(item => ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
-    const selectedCases = process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
+    const selectedCases = process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
     for(const [width,height] of geometries) for(const item of selectedCases) {
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
       const timeline=compileTiming([item.cue.timing],profile,fps);
+      const winnerAudio = process.env.WINNER_AUDIO === "1" && item.name === "influence-winner";
+      const musicPath = winnerAudio && item.cue.music ? join(webRoot,"public",item.cue.music.src) : null;
+      const musicDuration = musicPath ? Math.round(Number(await runProcess("ffprobe",["-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",musicPath]))*1000) : 0;
+      const musicAssets = musicPath && item.cue.music ? {[item.cue.music.src]:{path:musicPath,sha256:sha256(await readFile(musicPath)),mediaType:"audio" as const,durationMs:musicDuration}} : {};
+      if (winnerAudio && !musicPath) throw new Error("Winner fixture is missing its closing music");
       let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:item.name,kind:item.cue.picture.kind === "thinking" || item.cue.picture.kind === "influence" ? "influence" : "werewolf"},
-        width,height,fps,reducedMotion:item.reducedMotion === true,thinking:item.cue.picture.kind === "thinking",profile,cues:[item.cue],timeline,assets:{},staticFiles:{},boundary:{},audio:compileAudio([item.cue],timeline,{},profile,false),
+        width,height,fps,reducedMotion:item.reducedMotion === true,thinking:item.cue.picture.kind === "thinking",profile,cues:[item.cue],timeline,assets:musicAssets,staticFiles:{},boundary:{},audio:compileAudio([item.cue],timeline,musicAssets,profile,winnerAudio),
         range:{fromFrame:0,untilFrame:timeline[0]!.endFrame},revision:"fixture",dirty:true};
       const prefix=join(output,`${item.name}-${width}`);
       // The same layout prepass used by the local exporter freezes typography before encoding.
@@ -175,14 +211,33 @@ try {
       const expectedCast = item.name === "format-huddle-five" ? fiveMembers : huddleMembers;
       const castPages = portraitRoomPageCount(expectedCast.length);
       const castSamples = ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
-        : item.name.startsWith("format-huddle-large-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
+        : (item.name.startsWith("format-huddle-large-thought") || item.name === "format-huddle-six-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
       let dialogueSamples:number[]=[];
       let roomSamples:number[]=[];
       let expectedDialoguePages=0, expectedRoomPages=0;
-      if(item.name.startsWith("format-huddle-large")) {
-        const text = item.name.includes("-thought") ? largeHuddle.thinking! : largeHuddle.text;
+      if (item.name === "page-werewolf-ballot") {
+        const dialoguePages = [...Object.values(pages),...Object.values(layouts).map(layout => layout.pages)].find(value => value.join("") === pageText);
+        if (!dialoguePages || dialoguePages.length < 2) throw new Error("Ballot fixture must render multiple pages");
+        if (width === 320 && dialoguePages.length < 6) throw new Error(`Expected at least six ballot pages, got ${dialoguePages.length}`);
+        expectedDialoguePages = dialoguePages.length;
+        const weights=dialoguePages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)), total=weights.reduce((a,b)=>a+b,0);
+        let prior=0;
+        dialogueSamples=weights.flatMap(weight=>{
+          const fractions=[prior/total,(prior+weight/2)/total];prior+=weight;
+          return fractions.map(fraction=>{
+            const source=SOLO_READ_START_MS+visualSpeechReadingMs(pageText)*fraction;
+            const segment=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
+            if (!segment) throw new Error("Missing ballot reading segment");
+            // The first frame at or after a click's measured page boundary.
+            return Math.ceil((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
+          });
+        });
+      }
+      if(item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought") {
+        const text = item.name === "format-huddle-six-thought" ? sixPageThought : item.name.includes("-thought") ? largeHuddle.thinking! : largeHuddle.text;
         const dialoguePages=Object.values(pages).find(value=>value.join("") === text);
         if(!dialoguePages?.length || dialoguePages.some(page=>!page.trim())) throw new Error("Huddle pagination did not retain every word");
+        if (item.name === "format-huddle-six-thought" && width === 640 && dialoguePages.length < 6) throw new Error(`Expected at least six thought pages, got ${dialoguePages.length}`);
         expectedDialoguePages = dialoguePages.length;
         const weights=dialoguePages.map(page=>page.trim().split(/\s+/u).length),total=weights.reduce((sum,value)=>sum+value,0);
         let prior=0;
@@ -208,14 +263,17 @@ try {
           return Math.floor((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
         });
       }
-      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : item.name.startsWith("format-") && item.name !== "format-menu" ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...castSamples,...dialogueSamples,...roomSamples])];
+      const winnerRemaining = item.cue.picture.kind === "influence" && item.cue.picture.beat?.kind === "winner" ? item.cue.picture.beat.standings.length : 0;
+      const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
+      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round(thought.enterMs*.5*fps/1000),Math.round((thought.readAtMs+500)*fps/1000),Math.round((thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : item.name.startsWith("format-") && item.name !== "format-menu" ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples])];
       const observedCast = new Set<string>();
+      const observedWinnerCast = new Set<string>();
       const observedDialoguePages = new Set<string>(), observedRoomPages = new Set<string>();
       for(const frame of samples) {
         const paths={viewer:`${prefix}-${frame}-viewer.png`,export:`${prefix}-${frame}-export.png`};
         await renderStill({serveUrl,composition:viewer,inputProps,frame,output:paths.viewer,imageFormat:"png",puppeteerInstance:browser});
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:paths.export,imageFormat:"png",puppeteerInstance:browser,
-          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); for (const id of data.castMembers ?? []) observedCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
+          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); for (const id of data.castMembers ?? []) observedCast.add(id); for (const id of data.winnerMembers ?? []) observedWinnerCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
         const meanDifference=difference(await pixels(paths.viewer),await pixels(paths.export));
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
         await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,frames:results},null,2));
@@ -228,18 +286,21 @@ try {
           if(delta>1) throw new Error(`Studio ${view} mismatch: ${item.name} ${width} frame ${frame}: ${delta}`);
         }
       }
-      if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-five") && expectedCast.some(player=>!observedCast.has(player.id))) throw new Error(`Not every huddle member appeared: ${[...observedCast].join(", ")}`);
-      if(item.name.startsWith("format-huddle-large") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
+      if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought" || item.name === "format-huddle-five") && expectedCast.some(player=>!observedCast.has(player.id))) throw new Error(`Not every huddle member appeared: ${[...observedCast].join(", ")}`);
+      if(item.name === "influence-winner" && winnerPlayers.slice(1).some(player=>!observedWinnerCast.has(player.id))) throw new Error(`Not every winner-scene cast member appeared: ${[...observedWinnerCast].join(", ")}`);
+      if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
         throw new Error(`Not every huddle page appeared: room ${observedRoomPages.size}/${expectedRoomPages}, dialogue ${observedDialoguePages.size}/${expectedDialoguePages}`);
+      if (item.name === "page-werewolf-ballot" && observedDialoguePages.size !== expectedDialoguePages)
+        throw new Error(`Not every ballot page appeared: ${observedDialoguePages.size}/${expectedDialoguePages}`);
       // Verify random-access stability independently of the comparison order.
       for(const frame of samples.toReversed()) {
         const path=join(scratch,"reverse.png");
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && (suppliedCases || ["format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if(width===640 && (suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
-        await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",audioCodec:"aac",muted:!recorded,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
+        await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",crf:item.name === "influence-winner" ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
         for(const frame of samples) {
           const encoded=`${prefix}-${frame}-encoded.png`;
           await runProcess("ffmpeg",["-y","-v","error","-i",`${prefix}.mp4`,"-vf",`select=eq(n\\,${frame})`,"-frames:v","1",encoded]);
@@ -258,10 +319,60 @@ try {
           if(alignment.correlation<.98 || alignment.relativeError>.25) throw new Error(`Recorded audio differs: ${JSON.stringify(alignment)}`);
           audioResults.push({name:item.name,alignment});
         }
+        if (winnerAudio && musicPath) {
+          for (const startMs of [2000, 25000]) {
+            const pcm = async(path:string,destination:string) => {
+              await runProcess("ffmpeg",["-y","-v","error","-ss",String(startMs/1000),"-i",path,"-t","3","-ar","48000","-ac","1","-f","f32le",destination]);
+              const buffer=await readFile(destination);return new Float32Array(buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength));
+            };
+            const source=await pcm(musicPath,join(scratch,"winner-source.pcm"));
+            const actual=await pcm(`${prefix}.mp4`,join(scratch,"winner-audio.pcm"));
+            // Compare at the score's native sample rate; coarse resampling changes
+            // phase and underestimates correlation for complex stereo music.
+            const alignment=compareRecordingPcm(Float32Array.from(source,value=>value*.3),Array.from(actual),48000,50);
+            if(alignment.correlation<.96 || alignment.relativeError>.35) throw new Error(`Winner music differs at ${startMs}ms: ${JSON.stringify(alignment)}`);
+            audioResults.push({name:item.name,startMs,alignment});
+          }
+        }
       }
       console.log(`Verified ${item.name} ${width}×${height}`);
     }
+    if (process.env.FORMAT_CONTEXT_CASE === "influence-winner" && process.env.WINNER_AUDIO !== "1") {
+      const winnerIndex=winnerSequence.indexOf(winnerCue);
+      if (winnerIndex < 1) throw new Error("Missing the winner's preceding ballot");
+      const cues=winnerSequence.slice(0,winnerIndex+1).filter(cue=>cue.picture.kind === "influence" && cue.picture.cue.source === "endgame"), width=640, height=360, fps=30;
+      if (cues.length < 2) throw new Error("Missing the jury ballot sequence");
+      const profile=parseTimingProfile({ending:{holdMs:0}}), timeline=compileTiming(cues.map(cue=>cue.timing),profile,fps);
+      let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:"influence-winner-sequence",kind:"influence"},width,height,fps,reducedMotion:false,thinking:false,profile,cues,timeline,assets:{},staticFiles:{},boundary:{},audio:compileAudio(cues,timeline,{},profile,false),range:{fromFrame:0,untilFrame:timeline.at(-1)!.endFrame},revision:"fixture",dirty:true};
+      const preparation={manifest,reference:cues[0]!,references:cues,prepare:true};
+      const measuring=await selectComposition({serveUrl,id:"Export",inputProps:preparation,puppeteerInstance:browser});
+      const layouts:NonNullable<ReplayManifest["layouts"]>={}, pages:NonNullable<ReplayManifest["pages"]>={};
+      await renderFrames({serveUrl,composition:measuring,inputProps:preparation,outputDir:join(scratch,"sequence-measure"),imageFormat:"none",concurrency:1,puppeteerInstance:browser,onStart:()=>{},onFrameUpdate:()=>{},onArtifact:artifact=>{const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content));Object.assign(layouts,data.layouts);Object.assign(pages,data.pages);}});
+      manifest={...manifest,layouts,pages};
+      await writeFile(join(output,"influence-winner-sequence.manifest.json"),JSON.stringify(manifest,null,2));
+      const inputProps={manifest,reference:cues[0]!,references:cues};
+      const exported=await selectComposition({serveUrl,id:"Export",inputProps,puppeteerInstance:browser});
+      const viewer=await selectComposition({serveUrl,id:"Viewer",inputProps,puppeteerInstance:browser});
+      const studio=await Promise.all(["source","cut"].map(async view=>({view,composition:await selectComposition({serveUrl,id:view === "source" ? "StudioSource" : "StudioCut",inputProps:{...inputProps,view},puppeteerInstance:browser})})));
+      const boundary=timeline.at(-1)!.startFrame;
+      const samples=[0,...timeline.slice(1).flatMap(cue=>[Math.max(0,cue.startFrame-1),cue.startFrame]),Math.min(boundary+75,manifest.range.untilFrame-1),manifest.range.untilFrame-1];
+      for (const frame of [...new Set(samples)]) {
+        const prefix=join(output,`influence-winner-sequence-${frame}`), viewerPath=`${prefix}-viewer.png`, exportPath=`${prefix}-export.png`;
+        await renderStill({serveUrl,composition:viewer,inputProps,frame,output:viewerPath,imageFormat:"png",puppeteerInstance:browser});
+        await renderStill({serveUrl,composition:exported,inputProps,frame,output:exportPath,imageFormat:"png",puppeteerInstance:browser});
+        const delta=difference(await pixels(viewerPath),await pixels(exportPath));
+        if(delta>1) throw new Error(`Winner sequence viewer/export mismatch at ${frame}: ${delta}`);
+        for (const {view,composition} of studio) {
+          const path=`${prefix}-studio-${view}.png`;
+          await renderStill({serveUrl,composition,inputProps:{...inputProps,view},frame,output:path,imageFormat:"png",puppeteerInstance:browser,timeoutInMilliseconds:60000});
+          const studioDelta=difference(await pixels(exportPath),await pixels(path));
+          if(studioDelta>1) throw new Error(`Winner sequence Studio ${view} mismatch at ${frame}: ${studioDelta}`);
+          sequenceResults.push({frame,view,meanDifference:studioDelta,path,viewer:viewerPath,export:exportPath});
+        }
+      }
+      console.log("Verified ballot-to-winner sequence and handoff");
+    }
   } finally {await browser.close({silent:true});}
-  await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,reverseOrder:true,frames:results,studio:studioResults,encoded:encodedResults,audio:audioResults},null,2));
+  await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,reverseOrder:true,frames:results,studio:studioResults,encoded:encodedResults,audio:audioResults,sequence:sequenceResults},null,2));
   console.log(`Saved ${results.length} comparisons and ${new Set(encodedResults.map(row=>row.video)).size} fresh videos: ${output}`);
 } finally {await rm(scratch,{recursive:true,force:true});}

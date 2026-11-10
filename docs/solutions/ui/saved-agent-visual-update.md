@@ -8,6 +8,8 @@ tags: [agents, visuals, recovery, seasons]
 
 The Seasons entry panel offers **Update** when the selected saved agent lacks a headshot, full-body reference, visual design, or performance instructions. Complete agents retain an **Edit agent** link. Selecting an agent, joining the queue, and opening the page do not create visual-update jobs.
 
+The same job now also fills missing Influence and Werewolf strategy fields when its owner explicitly starts an update. Game and Daily Free entry use the dedicated preparation flow described in [Full-body Agent entry](full-body-agent-entry.md); older waiting seats remain valid.
+
 ## Explicit action and recovery
 
 Owner-authenticated `POST /api/agent-profiles/:id/visual-update` creates or explicitly retries one durable job. Concurrent clicks converge under an agent advisory transaction lock and a unique active-job index. The source and stage checkpoint are private object-backed payloads; the public response contains only status and a safe message. Missing fields alone are prepared, using existing appearance references. The normal saved-agent update path validates image evidence, preserves unrelated fields, records a content revision and applies normal moderation.

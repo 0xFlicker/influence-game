@@ -6,6 +6,7 @@ import { loadPayloads, payloadHash, readJson, storeJson } from "./payload-storag
 import { prepareOwnerLearningDurableValue } from "./owner-learning-failure-evidence.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { SCREENING_POLICY_VERSION, validateScreeningRecommendation } from "./agent-screening-policy.js";
+import { publishScreenedAgent, reconcileScreenedAgents } from "./agent-screening-publication.js";
 import { buildScreeningRequest, decodeScreeningResponse, ScreeningFailure, type ScreeningImage, type ScreeningProvider, type ScreeningResponse, type ScreeningStage } from "./agent-screening-provider.js";
 
 const jobs = schema.agentScreenings, attempts = schema.agentScreeningAttempts;
@@ -127,17 +128,20 @@ export async function executeAgentScreening(db: DrizzleDB, job: Job, provider: S
     } catch (error) {
       if (!(error instanceof ScreeningFailure) || error.code !== "refusal") throw error;
       refused = true;
-      // Advisory review signal survives even if the fallback fails. No human flag or hold.
+      // A refusal requires human review even when the collusion-only assessment succeeds.
       await db.update(jobs).set({ recommendation: "review" }).where(liveLease(job));
       assessed = await runStage(db, job, "luna_collusion", buildScreeningRequest("luna_collusion", revision.snapshot, null, safety), revision.snapshot, [], provider, signal);
     }
     const result = validateScreeningRecommendation(assessed, revision.snapshot, refused ? [] : hashes);
     const stored = await storeJson(result);
-    await db.update(jobs).set({ status: "completed", recommendation: refused ? "review" : result.recommendation, result: stored, finishedAt: sql`now()`, owner: null, leaseUntil: null, failureCode: null }).where(liveLease(job));
+    const safetyFlagged = safety !== null && typeof safety === "object" && "results" in safety
+      && Array.isArray(safety.results) && safety.results.some((entry: unknown) => entry !== null && typeof entry === "object" && "flagged" in entry && entry.flagged === true);
+    const finished = await db.update(jobs).set({ status: "completed", recommendation: refused || safetyFlagged ? "review" : result.recommendation, result: stored, finishedAt: sql`now()`, owner: null, leaseUntil: null, failureCode: null }).where(liveLease(job)).returning({ id: jobs.id });
+    if (finished.length) await publishScreenedAgent(db, job.contentRevisionId);
   } catch (error) {
     const failureCode = error instanceof ScreeningFailure ? error.code : "evidence_or_execution_failed";
     await db.update(jobs).set({ status: "incomplete", failureCode, finishedAt: sql`now()`, owner: null, leaseUntil: null }).where(liveLease(job));
-    console.warn("[agent-screening] Shadow assessment incomplete", { screeningId: job.id, failureCode });
+    console.warn("[agent-screening] Assessment incomplete", { screeningId: job.id, failureCode });
   }
 }
 
@@ -147,6 +151,7 @@ export function startAgentScreeningWorker(db: DrizzleDB, provider: ScreeningProv
   const tick = () => {
     if (stopped || running || !canClaim()) return;
     running = (async () => {
+      await reconcileScreenedAgents(db);
       const job = await claimAgentScreening(db);
       if (!job) return;
       if (stopped || !canClaim()) {

@@ -10,6 +10,7 @@ const gamesPageSource = readFileSync(
   join(import.meta.dir, "../app/(site)/games/page.tsx"),
   "utf8",
 );
+const navSource = readFileSync(join(import.meta.dir, "../components/nav.tsx"), "utf8");
 const pagedOverviewSource = readFileSync(join(import.meta.dir, "../app/games/paged-overview.tsx"), "utf8");
 const hybridBrowserSource = readFileSync(join(import.meta.dir, "../app/games/hybrid-games-browser.tsx"), "utf8");
 const combinedSource = `${gamesBrowserSource}\n${gamesPageSource}\n${pagedOverviewSource}\n${hybridBrowserSource}`;
@@ -39,8 +40,9 @@ describe("games list House/Influence rebrand", () => {
     expect(gamesBrowserSource).not.toContain("Any tier");
   });
 
-  it("includes Werewolf discovery through the shared card and retains game creation", () => {
-    expect(gamesPageSource).toContain('href="/games/new"');
+  it("includes Werewolf discovery through the shared card and keeps game creation in navigation", () => {
+    expect(gamesPageSource).not.toContain('href="/games/new"');
+    expect(navSource).toContain('href="/games/new"');
     expect(gamesPageSource).toContain("PagedGamesInitial");
     expect(pagedOverviewSource).toContain('name="Werewolf"');
     expect(hybridBrowserSource).toContain('aria-label="Game type"');

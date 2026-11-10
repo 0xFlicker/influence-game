@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile, createOwnedAgent, updateOwnedAgent } from "../services/agent-profile-management.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { writeLocalUpload } from "../lib/storage.js";
@@ -29,11 +29,13 @@ afterEach(async () => {
 });
 async function create() { return createOwnedAgentProfile(db, context, { ...initial, creationRequestId: randomUUID() }); }
 describe("atomic character content submissions", () => {
-  test("records the full profile and pending review, without a moderation call or admission gate", async () => {
+  test("records the full profile and pending review, without a moderation call before admission", async () => {
     const result = await create();
     const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions));
     const [review] = await db.select().from(schema.agentModerationReviews);
-    expect(result.profile.contentRevisionId).toBe(revision!.id);
+    expect(result.profile.contentRevisionId).toBeNull();
+    expect(result.profile.latestContentRevisionId).toBe(revision!.id);
+    expect(result.receipt.publication).toBe("reviewing");
     expect(result.receipt).toMatchObject({ contentRevisionId: revision!.id, moderationRecordId: review!.id });
     expect(review!.status).toBe("pending");
     expect(revision!.parentRevisionId).toBeNull();
@@ -44,9 +46,9 @@ describe("atomic character content submissions", () => {
   test("replays the original creation receipt even after later edits", async () => {
     const input = { ...initial, creationRequestId: randomUUID() };
     const first = await createOwnedAgentProfile(db, context, input);
-    const changed = await updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Changed", submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
-    const [child] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, changed.profile.contentRevisionId!)));
-    expect(child!.parentRevisionId).toBe(first.profile.contentRevisionId);
+    const changed = await updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Changed", submissionId: randomUUID(), expectedContentRevisionId: first.profile.latestContentRevisionId });
+    const [child] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, changed.profile.latestContentRevisionId!)));
+    expect(child!.parentRevisionId).toBe(first.profile.latestContentRevisionId);
     expect(child!.ancestryKnown).toBe(true);
     const replay = await createOwnedAgentProfile(db, context, input);
     expect(replay.receipt).toEqual(first.receipt);
@@ -62,26 +64,26 @@ describe("atomic character content submissions", () => {
   });
   test("accepted snapshots cannot be rewritten", async () => {
     const first = await create();
-    await expect(db.update(schema.agentContentRevisions).set(await storeFields({ snapshot: { name: "Tampered" } }, {"snapshot":"json-gzip"})).where(eq(schema.agentContentRevisions.id, first.profile.contentRevisionId!)).execute()).rejects.toThrow();
+    await expect(db.update(schema.agentContentRevisions).set(await storeFields({ snapshot: { name: "Tampered" } }, {"snapshot":"json-gzip"})).where(eq(schema.agentContentRevisions.id, first.profile.latestContentRevisionId!)).execute()).rejects.toThrow();
     await expect(db.update(schema.agentContentSubmissions).set({ requestHash: "tampered" }).execute()).rejects.toThrow();
     const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions));
     expect(revision!.snapshot.name).toBe(initial.name);
   });
   test("deduplicates retries and unchanged saves; rejects changed reuse and stale image edits", async () => {
     const first = await create();
-    const input = { personality: "Decisive", submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId };
+    const input = { personality: "Decisive", submissionId: randomUUID(), expectedContentRevisionId: first.profile.latestContentRevisionId };
     const updated = await updateOwnedAgentProfile(db, context, first.profile.id, input);
     const replay = await updateOwnedAgentProfile(db, context, first.profile.id, input);
     expect(replay.receipt).toEqual(updated.receipt);
     await expect(updateOwnedAgentProfile(db, context, first.profile.id, { ...input, personality: "Another" })).rejects.toThrow("submission ID");
-    await expect(updateOwnedAgentProfile(db, context, first.profile.id, { submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId, visualDesign: "Blue coat" })).rejects.toThrow("another session");
-    await updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Decisive", submissionId: randomUUID(), expectedContentRevisionId: updated.profile.contentRevisionId });
+    await expect(updateOwnedAgentProfile(db, context, first.profile.id, { submissionId: randomUUID(), expectedContentRevisionId: first.profile.latestContentRevisionId, visualDesign: "Blue coat" })).rejects.toThrow("another session");
+    await updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Decisive", submissionId: randomUUID(), expectedContentRevisionId: updated.profile.latestContentRevisionId });
     expect(await loadPayloads(db.select().from(schema.agentContentRevisions))).toHaveLength(2);
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
   });
   test("concurrent edits accept only one starting revision", async () => {
     const first = await create();
-    const results = await Promise.allSettled(["One", "Two"].map((visualDesign) => updateOwnedAgentProfile(db, context, first.profile.id, { visualDesign, submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId })));
+    const results = await Promise.allSettled(["One", "Two"].map((visualDesign) => updateOwnedAgentProfile(db, context, first.profile.id, { visualDesign, submissionId: randomUUID(), expectedContentRevisionId: first.profile.latestContentRevisionId })));
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
   });
@@ -91,12 +93,12 @@ describe("atomic character content submissions", () => {
     const { readVisualProfileImage } = await import("../services/visual-game-assets.js");
     const bytes = await readVisualProfileImage("/api/uploads/local?key=pfp%2Fsource.png", { name: "", personaKey: "" });
     const url = "http://localhost/api/uploads/local?key=pfp%2Fsource.png";
-    const second = await updateOwnedAgentProfile(db, context, first.profile.id, { headPosition: await headPositionFixture(url), fullBodyReferenceUrl: url, avatarUrl: url, submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
+    const second = await updateOwnedAgentProfile(db, context, first.profile.id, { headPosition: await headPositionFixture(url), fullBodyReferenceUrl: url, avatarUrl: url, submissionId: randomUUID(), expectedContentRevisionId: first.profile.latestContentRevisionId });
     const crop = { sourceUrl: url, x: 0.1, y: 0, width: 0.4, height: 0.4 };
-    const third = await updateOwnedAgentProfile(db, context, first.profile.id, { portraitCrop: crop, submissionId: randomUUID(), expectedContentRevisionId: second.profile.contentRevisionId });
+    const third = await updateOwnedAgentProfile(db, context, first.profile.id, { portraitCrop: crop, submissionId: randomUUID(), expectedContentRevisionId: second.profile.latestContentRevisionId });
     expect(third.profile.currentRevisionId).toBe(first.profile.currentRevisionId);
     expect(third.profileRevision.ratingRecalibrated).toBe(false);
-    const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, third.profile.contentRevisionId!)));
+    const [revision] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, third.profile.latestContentRevisionId!)));
     expect(revision!.snapshot.portraitCrop).toEqual(crop);
     await writeLocalUpload("pfp/source.png", "image/png", Uint8Array.from([0]).buffer);
     const [asset] = await loadPayloads(db.select().from(schema.agentContentAssets));
@@ -109,14 +111,15 @@ describe("atomic character content submissions", () => {
       avatarUrl: sourceUrl, fullBodyReferenceUrl: sourceUrl, headPosition: await headPositionFixture(sourceUrl),
       strategyStyle: "Keep Influence strategy", creationRequestId: randomUUID(),
     });
-    const [before] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, first.profile.contentRevisionId!)));
+    const [before] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, first.profile.latestContentRevisionId!)));
     await rm(directory, { recursive: true, force: true });
     const saved = await updateOwnedAgent(db, context, { agentId: first.profile.id,
       werewolfStrategyStyle: "Compare claims as village; coordinate discreetly as wolf.",
-      submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId,
+      submissionId: randomUUID(), expectedContentRevisionId: first.profile.latestContentRevisionId,
     });
+    await acceptTestAgent(db,first.profile.id);
     const [profile] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, first.profile.id));
-    const [after] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, saved.agent.contentRevisionId!)));
+    const [after] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, saved.agent.latestContentRevisionId!)));
     expect(profile!.werewolfStrategyStyle).toBe("Compare claims as village; coordinate discreetly as wolf.");
     expect(profile!.strategyStyle).toBe("Keep Influence strategy");
     expect(profile!.headPosition).toEqual(first.profile.headPosition);
@@ -126,14 +129,15 @@ describe("atomic character content submissions", () => {
     // Selecting a missing image is not silently accepted using old evidence.
     await expect(updateOwnedAgentProfile(db, context, first.profile.id, { avatarUrl: sourceUrl })).rejects.toThrow("Visual upload is unavailable");
     await expect(updateOwnedAgentProfile(db, context, first.profile.id, { avatarUrl: "http://localhost/api/uploads/local?key=pfp%2Fmissing.png" })).rejects.toThrow("Visual upload is unavailable");
-    expect((await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, first.profile.id)))[0]!.contentRevisionId).toBe(saved.agent.contentRevisionId!);
+    expect((await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, first.profile.id)))[0]!.contentRevisionId).toBe(saved.agent.latestContentRevisionId!);
     await expect(updateOwnedAgentProfile(db, context, first.profile.id, {
       headPosition: { ...first.profile.headPosition!, sourceHash: "b".repeat(64) },
     })).rejects.toThrow("source image changed");
     // Replacing only the portrait must not re-fetch the unchanged missing full body.
     const portraitUrl = `http://localhost${await contentImageFixture("pfp/new-portrait.png")}`;
     const replaced = await updateOwnedAgentProfile(db, context, first.profile.id, { avatarUrl: portraitUrl });
-    expect(replaced.profile.avatarUrl).toBe(portraitUrl);
+    const [replacedDraft]=await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id,replaced.receipt.contentRevisionId!)));
+    expect(replacedDraft!.snapshot.avatarUrl).toBe(portraitUrl);
     expect(replaced.profile.fullBodyReferenceUrl).toBe(sourceUrl);
     expect(replaced.profile.headPosition).toEqual(first.profile.headPosition);
   });
@@ -161,7 +165,7 @@ describe("atomic character content submissions", () => {
     await db.execute(sql`CREATE FUNCTION reject_test_review() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected review write failure'; END $$`);
     await db.execute(sql`CREATE TRIGGER reject_test_review BEFORE INSERT ON agent_moderation_reviews FOR EACH ROW EXECUTE FUNCTION reject_test_review()`);
     try {
-      await expect(updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Never accepted", submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId })).rejects.toThrow();
+      await expect(updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Never accepted", submissionId: randomUUID(), expectedContentRevisionId: first.profile.latestContentRevisionId })).rejects.toThrow();
       const [saved] = await db.select().from(schema.agentProfiles);
       expect(saved!.personality).toBe(initial.personality);
       expect(await loadPayloads(db.select().from(schema.agentContentRevisions))).toHaveLength(1);
@@ -174,26 +178,30 @@ describe("atomic character content submissions", () => {
   test("agent tools submit image-only and crop-only drafts without changing competitive history", async () => {
     const first = await createOwnedAgent(db, context, { creationRequestId: randomUUID(), displayName: initial.name, archetype: "observer", personalityPrompt: initial.personality, publicBiography: null, strategyStyle: null });
     const sourceUrl = await contentImageFixture("pfp/crop-tool.png");
-    let revision = first.agent.contentRevisionId;
+    let revision = first.agent.latestContentRevisionId;
     for (const change of [{ avatarUrl: sourceUrl }, { portraitCrop: { sourceUrl, x: 0, y: 0, width: 0.5, height: 0.5 } }]) {
       const saved = await updateOwnedAgent(db, context, { agentId: first.agent.id, ...change, submissionId: randomUUID(), expectedContentRevisionId: revision });
       expect(saved.agent.currentRevision).toEqual(first.agent.currentRevision);
       expect(saved.receipt.moderationRecordId).toBeTruthy();
-      revision = saved.agent.contentRevisionId;
+      revision = saved.agent.latestContentRevisionId;
     }
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(3);
   });
   test("agent tools share the same submission and do not schedule a portrait after saving", async () => {
     const first = await createOwnedAgent(db, context, { creationRequestId: randomUUID(), displayName: initial.name, archetype: "observer", personalityPrompt: initial.personality, publicBiography: null, strategyStyle: null });
-    const result = await updateOwnedAgent(db, context, { agentId: first.agent.id, submissionId: randomUUID(), expectedContentRevisionId: first.agent.contentRevisionId, performanceInstructions: "37" });
+    const result = await updateOwnedAgent(db, context, { agentId: first.agent.id, submissionId: randomUUID(), expectedContentRevisionId: first.agent.latestContentRevisionId, performanceInstructions: "37" });
     expect(result.receipt.moderationRecordId).toBeTruthy();
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
     expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
   });
+  test("new characters can retain artwork when head localization is unavailable", async () => {
+    const sourceUrl = `http://localhost${await contentImageFixture("pfp/unlocalized-head.png")}`;
+    const unlocalized = await createOwnedAgentProfile(db, context, { ...initial, fullBodyReferenceUrl: sourceUrl });
+    expect(unlocalized.profile.headPosition).toBeNull();
+  });
   test("head confirmation validates image evidence, records the actor, and is retry safe", async () => {
     const sourceUrl = `http://localhost${await contentImageFixture("pfp/head-confirm.png")}`;
     const headPosition = await headPositionFixture(sourceUrl);
-    await expect(createOwnedAgentProfile(db, context, { ...initial, fullBodyReferenceUrl: sourceUrl })).rejects.toThrow("Confirm the head");
     const first = await createOwnedAgentProfile(db, context, { ...initial, creationRequestId: randomUUID(), fullBodyReferenceUrl: sourceUrl,
       headPosition: { ...headPosition, confirmation: { userId: "forged", at: "1900-01-01" } } });
     expect(first.profile.headPosition?.confirmation?.userId).toBe(context.userId);
@@ -203,15 +211,15 @@ describe("atomic character content submissions", () => {
     }
     const nextUrl = `http://localhost${await contentImageFixture("pfp/other-head.png")}`;
     await expect(updateOwnedAgentProfile(db, context, first.profile.id, { fullBodyReferenceUrl: nextUrl })).rejects.toThrow("different image");
-    const update = { submissionId: randomUUID(), headPosition: { ...headPosition, rect: { ...headPosition.rect, y: .04 } }, expectedContentRevisionId: first.profile.contentRevisionId };
+    const update = { submissionId: randomUUID(), headPosition: { ...headPosition, rect: { ...headPosition.rect, y: .04 } }, expectedContentRevisionId: first.profile.latestContentRevisionId };
     const second = await updateOwnedAgentProfile(db, context, first.profile.id, update);
     const retry = await updateOwnedAgentProfile(db, context, first.profile.id, update);
     expect(retry.receipt).toEqual(second.receipt);
     expect(retry.profile.headPosition).toEqual(second.profile.headPosition);
     expect(second.profile.currentRevisionId).toBe(first.profile.currentRevisionId);
-    await updateOwnedAgentProfile(db, context, first.profile.id, { headPosition: second.profile.headPosition });
+    await updateOwnedAgentProfile(db, context, first.profile.id, { headPosition: update.headPosition });
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
-    const [old] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, first.profile.contentRevisionId!)));
+    const [old] = await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, first.profile.latestContentRevisionId!)));
     expect(old!.snapshot.headPosition).toEqual(first.profile.headPosition);
   });
   test("legacy text edits do not invent head evidence; tool submissions require the same confirmation", async () => {
@@ -223,6 +231,7 @@ describe("atomic character content submissions", () => {
     const nextUrl = `http://localhost${await contentImageFixture("pfp/tool-head.png")}`;
     await expect(updateOwnedAgent(db, context, { agentId: first.profile.id, fullBodyReferenceUrl: nextUrl })).rejects.toThrow("Confirm the head");
     const tool = await updateOwnedAgent(db, context, { agentId: first.profile.id, fullBodyReferenceUrl: nextUrl, headPosition: await headPositionFixture(nextUrl) });
-    expect(tool.agent.headPosition?.confirmation?.userId).toBe(context.userId);
+    const [toolDraft]=await loadPayloads(db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id,tool.receipt.contentRevisionId!)));
+    expect((toolDraft!.snapshot.headPosition as {confirmation:{userId:string}}).confirmation.userId).toBe(context.userId);
   });
 });

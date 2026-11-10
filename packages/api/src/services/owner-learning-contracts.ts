@@ -114,6 +114,7 @@ export type OwnerLearningCapacityPath = "flex" | "standard_fallback";
 export type OwnerLearningApplyDisposition =
   | "not_ready"
   | "awaiting_owner"
+  | "submitted"
   | "available"
   | "applied"
   | "manual_update"
@@ -266,11 +267,11 @@ export interface OwnerLearningReviewDTO {
   application: {
     sourceRecommendationIds: string[];
     priorRevisionId: string;
-    resultingRevisionId: string;
+    resultingRevisionId: string | null;
     priorStrategyStyle: string;
     resultingStrategyStyle: string;
     mutationReceipt: Record<string, unknown>;
-    appliedAt: string;
+    appliedAt: string | null;
   } | null;
   createdAt: string;
   updatedAt: string;
@@ -401,7 +402,8 @@ export function deriveOwnerLearningApplyDisposition(input: {
   hasApplication: boolean;
   reviewedRevisionIsCurrent: boolean;
 }): OwnerLearningApplyDisposition {
-  if (input.hasApplication || input.resolution === "applied") return "applied";
+  if(input.hasApplication && !input.resolution)return "submitted";
+  if (input.resolution === "applied") return "applied";
   if (input.resolution != null) return input.resolution;
   if (input.analysisStatus === "failed") return "failed";
   if (input.analysisStatus === "no_change") return "no_change";

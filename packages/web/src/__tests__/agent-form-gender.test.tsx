@@ -33,7 +33,7 @@ describe("AgentForm", () => {
     expect(html).toContain("flex-[1_1_auto]");
     expect(html).toContain("whitespace-nowrap");
     expect(html).not.toContain("Also generate");
-    expect(html).toContain("Would you like me to update their visuals?");
+    expect(html).toContain("Guided");
   });
 
   test("shows the saved gender as selected on edit", () => {
@@ -55,7 +55,7 @@ describe("AgentForm", () => {
     });
 
     expect(html).toMatch(/role="radio"[^>]*aria-checked="true"[^>]*>Female<\/button>/);
-    expect(html).toContain("Tell me what you want to change.");
+    expect(html).toContain("Advanced");
     expect(html).not.toContain("Also generate");
   });
 
@@ -73,10 +73,11 @@ describe("AgentForm", () => {
     const html = renderForm();
 
     expect(html.indexOf('id="agent-name"')).toBeLessThan(html.indexOf('id="agent-strategyStyle"'));
-    expect(html).toContain('aria-label="Base archetype"');
-    expect(html).toContain('aria-label="Agent Workshop"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).not.toContain('<select');
+    expect(html).not.toContain('aria-label="Agent Workshop"');
     expect(html).toContain('aria-label="Character ingredient suggestions"');
-    expect(html).toContain("Surprise me");
+    expect(html).toContain("Refine");
   });
 
   test("starts a review edit from the proposal and keeps the baseline visible", () => {
@@ -113,6 +114,6 @@ describe("AgentForm", () => {
     expect(html).toContain("Build one voting bloc, then commit.");
     expect(html).toContain(">Build one voting bloc, then commit.</textarea>");
     expect(html).toContain("Edit the suggestion to save a custom Strategy update.");
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Save Agent<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Review<\/button>/);
   });
 });

@@ -41,7 +41,7 @@ export function NomineeSelection({beat, elapsedMs, reducedMotion = false}: {
         /* eslint-disable-next-line @next/next/no-img-element -- frozen character art with portrait fallback */
         <img src={body} alt={beat.chooser.name} onError={event => void characterImageError(event, () => setFailedBody(body))} className="min-h-0 w-full flex-1 object-contain" />
         : <div className="flex min-h-0 items-center justify-center"><AgentAvatar {...beat.chooser} size="32" /></div>}
-      {beat.speech && motion.speechOpacity > 0 && <blockquote data-speech-bubble className="absolute bottom-16 left-2 right-2 flex h-[40%] min-h-0 flex-col rounded-2xl bg-black/90 p-4 text-white" style={{opacity: motion.speechOpacity}}><TimedSpeech text={beat.speech.text} elapsedMs={motion.speechElapsedMs} /></blockquote>}
+      {beat.speech && motion.speechOpacity > 0 && <blockquote data-speech-bubble className="absolute bottom-16 left-2 right-2 flex h-[40%] min-h-0 flex-col rounded-2xl bg-black/90 p-4 text-white" style={{opacity: motion.speechOpacity}}><TimedSpeech advancePart="speech" text={beat.speech.text} elapsedMs={motion.speechElapsedMs} /></blockquote>}
       <p className="mt-3 text-center text-lg font-semibold text-white">{beat.chooser.name}</p>
       <p className="text-xs uppercase tracking-widest text-amber-200">Empowered · deciding vote</p>
     </div>

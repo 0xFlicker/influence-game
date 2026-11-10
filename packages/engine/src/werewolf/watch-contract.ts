@@ -25,6 +25,8 @@ export interface WerewolfWatchMoment {
   night?: { actions: WerewolfNightAction[]; before: Omit<WerewolfView, "entries"> };
 }
 export interface WerewolfWatchIndex { cursor: number; step: number; chapterId: string; sceneId: string; label: string }
+/** Destination-local coordinates only; canonical provenance stays server-side. */
+export interface WerewolfWatchPosition {cursor:number|null; key:string|null; exact:boolean; boundaryCursor?:number|null}
 export interface WerewolfWatchWindow {
   gameId: string; slug: string; status: string; visualPaused?: boolean; audience: WerewolfAudience; rulesVersion: WerewolfView["rulesVersion"];
   publicationCutoff: string; latestCursor: number; fromCursor: number; throughCursor: number;

@@ -1,144 +1,346 @@
 "use client";
-
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  listAgents,
-  deleteAgent,
-  getAuthToken,
-  type SavedAgent,
-} from "@/lib/api";
-import { AgentList } from "./agent-list";
-
+import { useRouter, useSearchParams } from "next/navigation";
+import { apiFetch, listAgents, deleteAgent, type SavedAgent } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { agentPreparationHref } from "@/lib/agent-entry";
+import { withManagementReturn } from "./agent-management-navigation";
+import { AgentList, agentNeedsAttention, agentActivity } from "./agent-list";
+import styles from "./agent-workspace.module.css";
+import { AgentWorkspacePanel } from "./agent-workspace-panel";
+import { AgentGenerations, useAgentGenerations } from "./agent-generations";
+type Draft = { scope: string; name: string; updatedAt: string };
 export function AgentsContent() {
-  const router = useRouter();
-  const [agents, setAgents] = useState<SavedAgent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [deleteConfirm, setDeleteConfirm] = useState<SavedAgent | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  const fetchAgents = useCallback(() => {
-    if (!getAuthToken()) return;
-    setLoading(true);
-    setFetchError(null);
-    listAgents()
-      .then(setAgents)
-      .catch((err) => {
-        console.warn("[AgentsContent] Failed to load agents:", err);
-        setFetchError("Failed to load agents. Please try again.");
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
+  const generations = useAgentGenerations();
+  const [attentionOpen, setAttentionOpen] = useState(false);
+  const router = useRouter(),
+    params = useSearchParams(),
+    { authenticated, account } = useAuth();
+  const [archive, setArchive] = useState<SavedAgent | null>(null),
+    [archiving, setArchiving] = useState(false),
+    [actionError, setActionError] = useState<string | null>(null);
+  const collection = useQuery({
+    queryKey: ["agent-collection", account?.id],
+    enabled: authenticated,
+    queryFn: async ({ signal }) => {
+      const [agents, drafts] = await Promise.all([
+        listAgents(signal),
+        apiFetch<Draft[]>("/api/agent-profiles/drafts", { signal }),
+      ]);
+      return { agents, drafts };
+    },
+    refetchInterval: 5000,
+    retry: false,
+  });
+  const agents = collection.data?.agents ?? [],
+    drafts = collection.data?.drafts ?? [],
+    loading = collection.isPending,
+    error = collection.error?.message ?? generations.error?.message;
+  const attention = agents.filter(agentNeedsAttention);
+  const query = params.get("q") ?? "",
+    attentionOnly = params.get("attention") === "1" && attention.length > 0;
   useEffect(() => {
-    queueMicrotask(fetchAgents);
-    window.addEventListener("auth:session-ready", fetchAgents);
-    return () => window.removeEventListener("auth:session-ready", fetchAgents);
-  }, [fetchAgents]);
-
-  async function handleDelete(agent: SavedAgent) {
-    setError(null);
+    if (collection.isSuccess && !attention.length && params.get("attention") === "1") {
+      const next = new URLSearchParams(params);
+      next.delete("attention");
+      router.replace("/dashboard/agents" + (next.size ? "?" + next : ""), { scroll: false });
+    }
+  }, [collection.isSuccess, attention.length, params, router]);
+  function filter(key: string, value: string) {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    router.replace("/dashboard/agents" + (next.size ? "?" + next : ""), {
+      scroll: false,
+    });
+  }
+  async function fetchAgents() {
+    generations.refresh();
+    await collection.refetch();
+  }
+  const restored = useRef(false);
+  useEffect(() => {
+    if (collection.data && !restored.current) {
+      restored.current = true;
+      const at = params.get("at");
+      if (at)
+        document
+          .getElementById("agent-" + at)
+          ?.scrollIntoView({ block: "center" });
+    }
+  }, [collection.data, params]);
+  function returnPath(id: string) {
+    const next = new URLSearchParams(params);
+    next.set("at", id);
+    return "/dashboard/agents?" + next;
+  }
+  function edit(agent: SavedAgent) {
+    router.push(
+      withManagementReturn(
+        "/dashboard/agents/" + agent.id + "/edit",
+        returnPath(agent.id),
+      ),
+    );
+  }
+  async function confirmArchive() {
+    if (!archive || archiving) return;
+    setArchiving(true);
+    setActionError(null);
     try {
-      await deleteAgent(agent.id);
-      setDeleteConfirm(null);
-      fetchAgents();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete agent.");
+      await deleteAgent(archive.id);
+      setArchive(null);
+      await fetchAgents();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Archive failed");
+    } finally {
+      setArchiving(false);
     }
   }
-
-
-  return (
-    <div>
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <Link href="/dashboard" className="influence-copy-muted hover:text-text-primary text-sm transition-colors">
-              Dashboard
-            </Link>
-            <span className="influence-copy-muted opacity-50">/</span>
-            <h1 className="text-2xl font-bold text-text-primary">Agents</h1>
-          </div>
-          <p className="influence-copy text-sm">
-            Create and manage your saved agents. Use them to quickly join games.
-          </p>
-        </div>
-        <Link
-          href="/agents/create"
-          className="influence-button-primary text-sm px-4 py-2 rounded-lg font-medium"
-        >
-          + New Agent
-        </Link>
-      </div>
-
-      {/* Error */}
+  const reviewingAgents = agents.filter((agent) => agent.reviewState === "reviewing"),
+    entryAgents = agents.filter(
+      (agent) => agent.entryIntent && agent.reviewState === "accepted",
+    ),
+    filtered = agents.filter(
+      (agent) =>
+        (!attentionOnly || agentNeedsAttention(agent)) &&
+        agent.name.toLowerCase().includes(query.toLowerCase()),
+    );
+  const activityCount = attention.length + reviewingAgents.length +
+    generations.rows.length + entryAgents.length + Number(Boolean(error));
+  const activityWorking = reviewingAgents.length > 0 || generations.rows.some(
+    (row) => row.status === "queued" || row.status === "running",
+  );
+  useEffect(() => {
+    if (!activityCount) setAttentionOpen(false);
+  }, [activityCount]);
+  const notifications = (
+    <>
+      <AgentGenerations
+        rows={generations.rows}
+        onCancelled={(row) => {
+          generations.retire(row.id, row.source);
+          setAttentionOpen(false);
+          void collection.refetch();
+        }}
+      />
       {error && (
-        <p className="text-red-400 text-sm rounded-lg px-4 py-2.5 mb-4 border border-red-400/30 bg-red-400/10">
-          {error}
-        </p>
-      )}
-
-      {loading ? (
-        <div className="influence-empty-state rounded-xl p-8 text-center text-sm">
-          Loading...
-        </div>
-      ) : fetchError ? (
-        <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
-          <p className="text-red-400 text-sm">{fetchError}</p>
-          <button
-            onClick={fetchAgents}
-            className="mt-3 text-xs influence-copy hover:text-text-primary underline transition-colors"
-          >
+        <div role="alert">
+          <p>{error}</p>
+          <button type="button" onClick={() => void fetchAgents()}>
             Retry
           </button>
         </div>
-      ) : (
-        <AgentList
-          agents={agents}
-          onGenerateAvatar={(agent) => router.push(`/dashboard/agents/${agent.id}/edit`)}
-          onEdit={(agent) => router.push(`/dashboard/agents/${agent.id}/edit`)}
-          onDelete={(agent) => setDeleteConfirm(agent)}
-        />
       )}
-
-      {/* Delete confirmation modal */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="influence-overlay absolute inset-0"
-            onClick={() => setDeleteConfirm(null)}
-          />
-          <div className="influence-modal relative w-full max-w-sm rounded-2xl p-6">
-            <h3 className="text-text-primary font-semibold mb-2">Archive Agent</h3>
-            <p className="influence-copy text-sm mb-1">
-              Are you sure you want to archive <strong className="text-text-primary">{deleteConfirm.name}</strong>?
-            </p>
-            <p className="influence-copy-muted text-xs mt-2">An admin can restore this character. Saved revisions and game history are retained.</p>
-            {deleteConfirm.gamesPlayed > 0 && (
-              <p className="influence-copy-muted text-xs mb-4">
-                This agent has played {deleteConfirm.gamesPlayed} game{deleteConfirm.gamesPlayed !== 1 ? "s" : ""}. Game history will be preserved.
-              </p>
-            )}
-            <div className="flex gap-3 mt-4">
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                className="influence-button-secondary flex-1 text-sm py-2.5 rounded-lg"
+      {reviewingAgents.length > 0 && (
+        <section className={styles.activity} aria-label="Reviewing agents">
+          <h2>Reviewing <small>{reviewingAgents.length}</small></h2>
+          {reviewingAgents.map((agent) => (
+            <div className={styles.attentionRow} key={agent.id}>
+              <strong>{agent.name}</strong>
+              <Link
+                className="action"
+                href={withManagementReturn(
+                  "/dashboard/agents/" + agent.id + "/profile",
+                  returnPath(agent.id),
+                )}
               >
-                Cancel
-              </button>
+                View
+              </Link>
+            </div>
+          ))}
+        </section>
+      )}
+      {attention.length > 0 && (
+        <section className={styles.attention}>
+          <h2>
+            Needs attention <small>{attention.length}</small>
+          </h2>
+          {attention.map((agent) => (
+            <div className={styles.attentionRow} key={agent.id}>
+              <div>
+                <strong>{agent.name}</strong>
+                <p className={styles.meta}>
+                  {agentNeedsAttention(agent) && !agent.fullBodyReferenceUrl
+                    ? "Full-body image missing"
+                    : agentActivity(agent)}
+                </p>
+              </div>
               <button
-                onClick={() => handleDelete(deleteConfirm)}
-                className="influence-button-danger flex-1 text-sm py-2.5 rounded-lg font-medium"
+                type="button"
+                onClick={() =>
+                  router.push(
+                    withManagementReturn(
+                      "/dashboard/agents/" +
+                        agent.id +
+                        "/edit" +
+                        (agent.visualActivity?.id
+                          ? "?imageRequest=" + agent.visualActivity.id
+                          : ""),
+                      returnPath(agent.id),
+                    ),
+                  )
+                }
               >
-                Delete
+                {agent.visualActivity?.status === "ready"
+                  ? "Review"
+                  : agent.visualActivity?.status === "failed"
+                    ? "Retry"
+                    : "Edit"}
               </button>
             </div>
-          </div>
-        </div>
+          ))}
+        </section>
       )}
-    </div>
+      {entryAgents.map((agent) => (
+        <section key={agent.id} className={styles.attentionRow}>
+          <p>
+            {agent.name} is ready. Continue to your selected{" "}
+            {agent.entryIntent?.flow === "join_game" ? "game" : "season"}.
+          </p>
+          <Link
+            className="action"
+            href={agentPreparationHref(agent.id, agent.entryIntent!)}
+          >
+            Continue
+          </Link>
+        </section>
+      ))}
+    </>
+  );
+  return (
+    <section className={styles.collection}>
+      <Link href="/dashboard">← Dashboard</Link>
+      <header className={styles.masthead}>
+        <h1>Your agents</h1>
+        {activityCount > 0 && (
+          <button
+            type="button"
+            className={styles.managementActivity}
+            data-working={activityWorking}
+            data-activity-count={activityCount}
+            aria-label="Activity"
+            aria-describedby="agent-management-activity-count"
+            aria-haspopup="dialog"
+            aria-expanded={attentionOpen}
+            title={`${activityCount} activity ${activityCount === 1 ? "item" : "items"}`}
+            onClick={() => setAttentionOpen(true)}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity=".25" />
+              <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <span className={styles.managementActivityBadge} aria-hidden="true">
+              {activityCount}
+            </span>
+            <span id="agent-management-activity-count" className="sr-only">
+              {activityCount} activity {activityCount === 1 ? "item" : "items"}
+            </span>
+          </button>
+        )}
+      </header>
+      <div className={styles.managementMain}>
+        <div className={styles.toolbar}>
+          <div>
+            <button
+              type="button"
+              aria-pressed={!attentionOnly}
+              onClick={() => filter("attention", "")}
+            >
+              All {agents.length}
+            </button>
+            {attention.length > 0 && (
+              <button
+                type="button"
+                aria-pressed={attentionOnly}
+                onClick={() => filter("attention", "1")}
+              >
+                Needs attention
+              </button>
+            )}
+          </div>
+          <input
+            type="search"
+            aria-label="Find an agent"
+            placeholder="Find an agent…"
+            value={query}
+            onChange={(event) => filter("q", event.target.value)}
+          />
+        </div>
+        {loading ? (
+          <p role="status">Loading agents…</p>
+        ) : (
+          <AgentList
+            agents={filtered}
+            returnPath={returnPath}
+            onEdit={edit}
+            onDelete={(agent) => {
+              setActionError(null);
+              setArchive(agent);
+            }}
+            archivePending={archiving}
+          />
+        )}
+        {!!drafts.length && (
+          <section className={styles.drafts}>
+            <h2>Drafts</h2>
+            {drafts.map((draft) => (
+              <div className={styles.draftRow} key={draft.scope}>
+                <div>
+                  <h3>{draft.name || "Untitled agent"}</h3>
+                  <p className={styles.meta}>
+                    Saved {new Date(draft.updatedAt).toLocaleString()}
+                  </p>
+                </div>
+                <Link
+                  className="action"
+                  href={
+                    draft.scope.startsWith("edit:")
+                      ? "/dashboard/agents/" + draft.scope.slice(5) + "/edit"
+                      : "/agents/create?draft=" +
+                        encodeURIComponent(draft.scope)
+                  }
+                >
+                  Continue
+                </Link>
+              </div>
+            ))}
+          </section>
+        )}
+      </div>
+      <AgentWorkspacePanel
+        open={attentionOpen}
+        title="Activity"
+        onClose={() => setAttentionOpen(false)}
+      >
+        {notifications}
+      </AgentWorkspacePanel>
+      <AgentWorkspacePanel
+        open={Boolean(archive)}
+        title={archive ? `Archive ${archive.name}?` : "Archive agent"}
+        onClose={() => setArchive(null)}
+        showCloseButton={false}
+      >
+        <p>Game history is retained.</p>
+        {actionError && <p role="alert">{actionError}</p>}
+        <div className={styles.confirmationActions}>
+          <button
+            type="button"
+            disabled={archiving}
+            onClick={() => setArchive(null)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={archiving}
+            onClick={() => void confirmArchive()}
+          >
+            {archiving ? "Archiving…" : "Archive"}
+          </button>
+        </div>
+      </AgentWorkspacePanel>
+    </section>
   );
 }

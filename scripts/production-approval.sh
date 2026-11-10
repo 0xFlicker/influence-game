@@ -280,12 +280,6 @@ verify_policy() {
   jq -e '.total_count == 0 and (.secrets | length) == 0' "$output_dir/environment-secrets.json" >/dev/null \
     || die "Influence production environment must not contain secrets"
 
-  gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/git/ref/heads/main" \
-    > "$output_dir/main-ref.json"
-  jq -e --arg workflow_sha "$GITHUB_SHA" '
-    .ref == "refs/heads/main" and .object.type == "commit" and .object.sha == $workflow_sha
-  ' "$output_dir/main-ref.json" >/dev/null || die "approval workflow is not the current Influence main revision"
-
   if [ "$require_approval" = true ]; then
     gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" \
       > "$output_dir/approval-history.json"

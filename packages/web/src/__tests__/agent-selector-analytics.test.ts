@@ -29,7 +29,7 @@ test("join opening follows analytics readiness only while the selector is mounte
     const { createElement } = await import("react");
     const { render, act, cleanup } = await import("@testing-library/react");
     const { AgentSelector } = await import("./src/components/casting/agent-selector");
-    const props = { description: "Join", createHref: "/agents/create", onClose() {}, onSelect() {}, submitLabel: "Join", pendingLabel: "Joining" };
+    const props = { description: "Join", createHref: "/agents/create", intent: { flow: "join_game", gameId: "game-1" }, onClose() {}, onSelect() {}, submitLabel: "Join", pendingLabel: "Joining" };
     const changeActivity = async value => act(async () => { active = value; listeners.forEach(listener => listener()); });
     let view;
     await act(async () => { view = render(createElement(AgentSelector, props)); });

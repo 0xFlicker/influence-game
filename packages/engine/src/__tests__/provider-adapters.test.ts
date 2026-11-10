@@ -105,7 +105,7 @@ it("adaptive effort respects a model's frozen reasoning limits", () => {
 });
 
 function runtime(
-  catalogId: "katana:claude-opus-4-7" | "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor",
+  catalogId: "katana:claude-opus-4-7" | "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor" | "meta-muse:muse-ember-1.0",
   client: OpenAI,
   position = 0,
 ): LlmProviderRuntime {
@@ -887,6 +887,14 @@ describe("provider-native adapters", () => {
     expect(body.text).toMatchObject({format: {type: "json_schema", name: "cast_vote", strict: true}});
     const request = meta.adapter.compile(invocation, meta);
     expect(request.transport).toBe("meta-muse.responses");
+  });
+
+  it("compiles Muse Ember decisions to Responses with enforced JSON Schema", () => {
+    const ember = runtime("meta-muse:muse-ember-1.0", {} as OpenAI);
+    const body = compileMetaMuseResponsesRequest(invocation, ember) as unknown as Record<string, unknown>;
+    expect(body.model).toBe("muse-ember-1.0");
+    expect(body.text).toMatchObject({ format: { type: "json_schema", name: "cast_vote", strict: true } });
+    expect(ember.adapter.compile(invocation, ember).transport).toBe("meta-muse.responses");
   });
 
   it("compiles Meta Muse structured invocations to strict json_schema text format", () => {

@@ -21,7 +21,7 @@ export function SpeechBubble({speaker, caption, roleLabel, text, box, opacity, t
     </div>
     <blockquote className="flex min-h-0 flex-1 flex-col">
       {staticSpeech ? <p className="break-words" style={{fontSize:typography?.fontSize,lineHeight:1.4}}>{normalizeAudioDelivery(text).cleanText}</p>
-        : <TimedSpeech text={text} elapsedMs={elapsedMs} typography={typography}/>}
+        : <TimedSpeech advancePart="speech" text={text} elapsedMs={elapsedMs} typography={typography}/>}
     </blockquote>
     <span aria-hidden="true" data-speech-tail className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${tail.side === "left" ? "-left-2 border-l border-b" : tail.side === "bottom" ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={tail.style}/>
   </div>;

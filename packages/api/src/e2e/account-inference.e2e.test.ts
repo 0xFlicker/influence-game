@@ -29,6 +29,7 @@ test('owner exhaustion preserves draft, admin grants allowance and sees usage co
   await page.waitForSelector('textarea[aria-label="Message the character assistant"]:not([disabled])',{timeout:30000});
   await page.type('textarea[aria-label="Message the character assistant"]','A patient detective with a dry sense of humor');
   await page.waitForSelector('button[aria-label="Send"]:not([disabled])');
+  await page.$eval('button[aria-label="Send"]', button => button.scrollIntoView({ block: 'center' }));
   await page.click('button[aria-label="Send"]');
   await page.waitForSelector('dialog[open]',{timeout:20000});
   expect(await page.$eval('dialog[open]',el=>el.textContent)).toContain('Need more generations?');
@@ -57,110 +58,49 @@ test('owner exhaustion preserves draft, admin grants allowance and sees usage co
  }finally{await adminPage.close();}
 },120000);
 
-test('advanced visual affirmation uses context, preserves character text and opens the full editor',async()=>{
- const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/agents/create`,{privateKey:owner.wallet.privateKey});
- let context:Record<string,unknown>|undefined;
+
+// The removed Workshop and Advanced assistant controls were replaced by the
+// shared Guided editor. Scoped visual updates are covered by
+// agent-workspace.e2e.test.ts and agent-profiles.test.ts; missing identity and
+// failed-save recovery are covered by agent-form-draft-recovery.test.tsx.
+
+test('incomplete identity can be completed and a failed save retried',async()=>{
+ const agentId='11111111-1111-4111-8111-111111111111';
+ const original={id:agentId,name:'Legacy Arden',personality:'Warm and steady.',backstory:'A careful negotiator.',strategyStyle:'Build lasting alliances.',personaKey:null,gender:null,avatarUrl:'/avatars/personas/strategic.png',fullBodyReferenceUrl:'/avatars/personas/strategic.png',performanceInstructions:'Soft voice',visualDesign:'A blue coat',gamesPlayed:2,gamesWon:1,createdAt:'2026-08-01T00:00:00.000Z',updatedAt:'2026-08-01T00:00:00.000Z'};
+ const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/dashboard`,{privateKey:owner.wallet.privateKey});
+ const saves:Record<string,unknown>[]=[];
+ const generations:Record<string,unknown>[]=[];
  try {
   await page.setRequestInterception(true);
   page.on('request',request=>{
-   if (request.method() !== 'POST') { void request.continue(); return; }
    const path=new URL(request.url()).pathname;
-   const respond=(body:unknown)=>request.respond({status:200,contentType:'application/json',headers:{'access-control-allow-origin':servers.webUrl,'access-control-allow-credentials':'true'},body:JSON.stringify(body)});
-   if(path==='/api/agent-profiles/edit-assistant') {
-    context=JSON.parse(request.postData()!).context;
-    void respond({tool:'update_visuals',fields:['performanceInstructions','visualDesign']});
-   } else if(path==='/api/agent-profiles/generate') {
-    void respond({name:'Unwanted rename',personality:'Unwanted rewrite',backstory:'A careful observer.',strategyStyle:'Wait for evidence.',personaKey:'strategic',gender:'female',performanceInstructions:'Soft voice',visualDesign:'A blue coat',werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips:[]});
-   } else if(path==='/api/agent-profiles/visual-reference') {
-    void respond({fullBodyReferenceUrl:'/avatars/personas/strategic.png',avatarUrl:'/avatars/personas/strategic.png',portraitCrop:{sourceUrl:'/avatars/personas/strategic.png',x:0,y:0,width:1,height:1},headSuggestion:null,cropWarning:null});
+   const respond=(body:unknown,status=200)=>request.respond({status,contentType:'application/json',headers:{'access-control-allow-origin':servers.webUrl,'access-control-allow-credentials':'true'},body:JSON.stringify(body)});
+   if(path===`/api/agent-profiles/${agentId}` && request.method()==='GET') void respond(original);
+   else if(path==='/api/agent-profiles/generate' && request.method()==='POST') {
+    generations.push(JSON.parse(request.postData()!));
+    void respond({...original,name:'Unwanted rename',personality:'Unwanted rewrite',gender:'female',personaKey:'loyalist',werewolfStrategyStyle:'Compare claims before voting.',introQuips:[]});
+   } else if(path===`/api/agent-profiles/${agentId}` && request.method()==='PATCH') {
+    saves.push(JSON.parse(request.postData()!));
+    void respond(saves.length===1?{error:'Save unavailable. Try again.'}:{...original,...saves.at(-1),receipt:{publication:'held'}},saves.length===1?503:200);
    } else void request.continue();
   });
-  await page.waitForSelector('textarea[aria-label="Message the character assistant"]');
-  await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Advanced create' && !b.disabled)");
-  await page.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Advanced create')?.click()");
+  await page.goto(`${servers.webUrl}/dashboard/agents/${agentId}/edit`,{waitUntil:'networkidle0'});
   await page.waitForSelector('#agent-name');
-  await page.type('#agent-name','Existing Arden');
-  await page.type('#agent-personality','Patient and calculating.');
-  await page.waitForFunction("document.body.innerText.includes('Would you like me to update their visuals?')");
-  expect(await page.evaluate("document.body.innerText.includes('Also generate')")).toBe(false);
-  await page.type('#agent-ai-change-request','Yes please');
-  await page.click('button[aria-label="Send Agent request"]');
-  await page.waitForSelector('dialog[open] #portrait-editor-title',{timeout:20000});
-  expect(context).toMatchObject({name:'Existing Arden',personality:'Patient and calculating.',hasFullBody:false});
-  expect(await page.evaluate("document.querySelector('#agent-name').value")).toBe('Existing Arden');
-  expect(await page.evaluate("document.querySelector('#agent-personality').value")).toBe('Patient and calculating.');
-  expect(await page.$eval('#portrait-editor-title',el=>el.textContent)).toBe('Adjust character images');
-  await page.screenshot({path:'/tmp/agentic-advanced-editor.png',fullPage:true});
- } finally {await page.close();}
-},120000);
-
-test('incomplete edits show save feedback and let AI fill identity on desktop and mobile',async()=>{
- const agentId='11111111-1111-4111-8111-111111111111';
- const original={id:agentId,name:'Legacy Arden',personality:'Warm and steady.',backstory:'A careful negotiator.',strategyStyle:'Build lasting alliances.',personaKey:null,gender:null,avatarUrl:'/avatars/personas/strategic.png',fullBodyReferenceUrl:'/avatars/personas/strategic.png',performanceInstructions:'Soft voice',visualDesign:'A blue coat',gamesPlayed:2,gamesWon:1,createdAt:'2026-08-01T00:00:00.000Z',updatedAt:'2026-08-01T00:00:00.000Z'};
- for(const viewport of [{width:1440,height:1000},{width:390,height:844}]) {
-  const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/dashboard`,{privateKey:owner.wallet.privateKey});
-  let generation:Record<string,unknown>|undefined,releaseGeneration:(()=>void)|undefined;
-  let generationRequestedResolve!:()=>void;
-  const generationRequested=new Promise<void>(resolve=>{generationRequestedResolve=resolve;});
-  const saves:Record<string,unknown>[]=[];
-  let imageRequests=0;
-  try {
-   await page.setViewport(viewport);
-   await page.setRequestInterception(true);
-   page.on('request',request=>{
-    const path=new URL(request.url()).pathname;
-    const respond=(body:unknown,status=200)=>request.respond({status,contentType:'application/json',headers:{'access-control-allow-origin':servers.webUrl,'access-control-allow-credentials':'true'},body:JSON.stringify(body)});
-    if(path===`/api/agent-profiles/${agentId}` && request.method()==='GET') void respond(original);
-    else if(path==='/api/agent-profiles/generate' && request.method()==='POST') {
-     generation=JSON.parse(request.postData()!);
-     releaseGeneration=()=>{releaseGeneration=undefined;void respond({...original,name:'Unwanted rename',personality:'Unwanted personality',gender:'female',personaKey:'loyalist',werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips:[]});};
-     generationRequestedResolve();
-    } else if(path===`/api/agent-profiles/${agentId}` && request.method()==='PATCH') {
-     saves.push(JSON.parse(request.postData()!));
-     void respond(saves.length===1?{error:'Save unavailable. Try again.'}:{...original,...saves.at(-1),receipt:{publication:'held'}},saves.length===1?503:200);
-    } else {
-     if(request.method()==='POST' && path==='/api/agent-profiles/visual-reference')imageRequests++;
-     void request.continue();
-    }
-   });
-   await page.goto(`${servers.webUrl}/dashboard/agents/${agentId}/edit`,{waitUntil:'networkidle0'});
-   await page.waitForSelector('button[role="radio"]');
-   await page.locator('[aria-label="Agent Workshop"] button[type="submit"]').click();
-   await page.waitForFunction("document.querySelector('[aria-label=\"Agent Workshop\"] [role=\"alert\"]')?.textContent.includes('Select a gender')");
-   expect(saves).toHaveLength(0);
-   const feedbackVisible=await page.$eval('[aria-label="Agent Workshop"] [role="alert"]',(el,height)=>{const r=el.getBoundingClientRect();return r.top>=0 && r.bottom<=height;},viewport.height);
-   expect(feedbackVisible).toBe(true);
-   await page.waitForFunction("document.querySelector('#agent-gender-male').getBoundingClientRect().bottom <= document.querySelector('[aria-label=\"Agent Workshop\"]').parentElement.parentElement.getBoundingClientRect().top");
-   await page.screenshot({path:`/tmp/workshop-validation-${viewport.width}.png`});
-   const workshopButtons=await page.$$('[aria-label="Agent Workshop"] button');
-   let clickedFill=false;
-   for(const button of workshopButtons) {
-    if(await button.evaluate(el=>el.textContent==='Fill missing details')) {await button.click();clickedFill=true;break;}
-   }
-   expect(clickedFill).toBe(true);
-   await page.waitForFunction("document.querySelector('[aria-label=\"AI generation activity\"]') && Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Save changes' && b.disabled)");
-   await generationRequested;
-   expect(generation).toMatchObject({selectedFields:['personaKey','gender'],allowPersonaChange:true});
-   expect(generation!.existingProfile).not.toHaveProperty('gender');
-   expect(generation!.existingProfile).not.toHaveProperty('personaKey');
-   releaseGeneration!();
-   await page.waitForSelector('#agent-gender-female[aria-checked="true"]');
-   expect(await page.$eval('#agent-name',el=>(el as unknown as {value:string}).value)).toBe(original.name);
-   expect(await page.$eval('#agent-personality',el=>(el as unknown as {value:string}).value)).toBe(original.personality);
-   expect(await page.$('[aria-label="Agent Workshop"] [role="alert"]')).toBeNull();
-   expect(imageRequests).toBe(0);
-   await page.locator('[aria-label="Agent Workshop"] button[type="submit"]').click();
-   await page.waitForFunction("document.querySelector('[aria-label=\"Agent Workshop\"] [role=\"alert\"]')?.textContent.includes('Save unavailable')");
-   await page.screenshot({path:`/tmp/workshop-save-error-${viewport.width}.png`});
-   await page.locator('[aria-label="Agent Workshop"] button[type="submit"]').click();
-   await page.waitForFunction("document.body.innerText.includes('Submitted for review')");
-   expect(saves).toHaveLength(2);
-   expect(saves[1]).toMatchObject({name:original.name,personality:original.personality,gender:'female',personaKey:'loyalist',fullBodyReferenceUrl:original.fullBodyReferenceUrl});
-   expect(saves[1]!.submissionId).toBe(saves[0]!.submissionId);
-  } catch(error) {
-   await page.screenshot({path:`/tmp/workshop-browser-failure-${viewport.width}.png`});
-   console.error('Workshop browser failure',await page.evaluate("({dialogs:Array.from(document.querySelectorAll('dialog[open]')).map(d=>d.textContent),workshop:document.querySelector('[aria-label=\"Agent Workshop\"]')?.textContent})"));
-   throw error;
-  } finally {releaseGeneration?.();await page.close();}
- }
+  expect(await page.$eval('button[type="submit"]',button=>(button as unknown as {disabled:boolean}).disabled)).toBe(true);
+  await page.evaluate("[...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Complete').click()");
+  await page.waitForSelector('#agent-gender-female[aria-checked="true"]');
+  expect(generations).toHaveLength(1);
+  expect(generations[0]!.selectedFields).toEqual(expect.arrayContaining(['personaKey','gender']));
+  expect(await page.$eval('#agent-name',element=>(element as unknown as {value:string}).value)).toBe(original.name);
+  expect(await page.$eval('#agent-personality',element=>(element as unknown as {value:string}).value)).toBe(original.personality);
+  await page.evaluate("[...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Review').click()");
+  await page.waitForSelector('[role="dialog"][aria-label="Review changes"]');
+  await page.evaluate("[...document.querySelector('[aria-label=\"Review changes\"]').querySelectorAll('button')].find(button=>button.textContent.trim()==='Save').click()");
+  await page.waitForSelector('[aria-label="Review changes"] [role="alert"]');
+  await page.evaluate("[...document.querySelector('[aria-label=\"Review changes\"]').querySelectorAll('button')].find(button=>button.textContent.trim()==='Save').click()");
+  await page.waitForFunction('location.pathname === "/dashboard/agents"');
+  expect(saves).toHaveLength(2);
+  expect(saves[1]).toMatchObject({name:original.name,personality:original.personality,gender:'female',personaKey:'loyalist',fullBodyReferenceUrl:original.fullBodyReferenceUrl});
+  expect(saves[1]!.submissionId).toBe(saves[0]!.submissionId);
+ } finally { await page.close(); }
 },120000);

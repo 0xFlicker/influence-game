@@ -2,7 +2,7 @@ import { houseContent } from "../game-mcp/house-contracts.js";
 import { assertMcpOutputSchema } from "../game-mcp/output-validation.js";
 import Ajv from "ajv";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
-import { contentImageFixture } from "./content-image-fixture.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine";
@@ -32,7 +32,7 @@ import {
 import { seedRBAC } from "../db/rbac-seed.js";
 import { MCP_OAUTH_CLIENT_ID } from "../services/mcp-oauth.js";
 import { createSeason } from "../services/seasons.js";
-import { setupTestDB } from "./test-utils.js";
+import { acceptTestAgent, setupTestDB } from "./test-utils.js";
 
 const GAMES_AUTH: GameMcpAuthContext = {
   userId: "user-1",
@@ -135,6 +135,26 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }
   });
 
+  test("unadvertised capability families return empty lists, not errors", async () => {
+    const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
+      clientScopes: GAMES_AUTH.scopes, hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
+    }));
+    const prompts = await server.handle({
+      jsonrpc: "2.0",
+      id: "prompts",
+      method: "prompts/list",
+    }, GAMES_AUTH);
+    expect(prompts?.error).toBeUndefined();
+    expect(prompts?.result).toEqual({ prompts: [] });
+    const templates = await server.handle({
+      jsonrpc: "2.0",
+      id: "templates",
+      method: "resources/templates/list",
+    }, GAMES_AUTH);
+    expect(templates?.error).toBeUndefined();
+    expect(templates?.result).toEqual({ resourceTemplates: [] });
+  });
+
   test("model routing writes require separately consented routing scope and current producer role", () => {
     const eligibility: GameMcpEligibilitySnapshot = {clientScopes: ["producer", "producer:routing"], hasProducerRole: true};
     expect(resolveGameMcpToolAccess("read_game_model_routing", PRODUCER_AUTH, eligibility).invocationAllowed).toBe(true);
@@ -226,6 +246,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_open_learning_reviews",
       "read_learning_review",
       "preflight_learning_review",
+      "list_agent_generations",
+      "cancel_agent_generation",
+      "read_agent_artwork",
+      "list_agent_voices",
+      "retry_agent_artwork",
+      "decide_agent_artwork",
       "generate_agent_visual_reference", "crop_agent_portrait",
       "create_agent",
       "update_agent",
@@ -627,7 +653,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
   test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
 
-    for (const name of ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
+    for (const name of ["retry_agent_artwork", "decide_agent_artwork", "set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
       const response = await server.handle({
         jsonrpc: "2.0",
         id: name,
@@ -1327,6 +1353,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "retry_learning_review",
       "apply_learning_review",
       "resolve_learning_review",
+      "list_agent_generations",
+      "cancel_agent_generation",
+      "read_agent_artwork",
+      "list_agent_voices",
+      "retry_agent_artwork",
+      "decide_agent_artwork",
       "generate_agent_visual_reference", "crop_agent_portrait",
       "create_agent",
       "update_agent",
@@ -1416,10 +1448,13 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
-          : ["set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
+          : ["cancel_agent_generation", "retry_agent_artwork", "decide_agent_artwork", "set_agent_model", "generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [
+              "list_agent_generations",
+              "read_agent_artwork",
+              "list_agent_voices",
               "read_model_catalog",
               "list_archetypes",
               "list_agents",
@@ -1444,6 +1479,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       readOnlyHint: true,
       openWorldHint: false,
       destructiveHint: false,
+    });
+    expect(byName.get("cancel_agent_generation")?.annotations).toEqual({
+      readOnlyHint: false,
+      openWorldHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
     });
     expect(byName.get("create_agent")?.annotations).toEqual({
       readOnlyHint: false,
@@ -2143,6 +2184,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       displayName: "Games User",
     });
     const server = createProductionGameMcpServer(db);
+    const fullBodyReferenceUrl = await contentImageFixture("pfp/lillith.png");
+    const headPosition = await headPositionFixture(fullBodyReferenceUrl);
     const toolsResponse = await server.handle({
       jsonrpc: "2.0",
       id: "agent-command-schemas",
@@ -2167,7 +2210,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           personalityPrompt: "Patient and observant.",
           publicBiography: null,
           strategyStyle: "Build trust before acting.",
-          avatarUrl: await contentImageFixture("pfp/lillith.png"),
+          avatarUrl: fullBodyReferenceUrl,
+          fullBodyReferenceUrl,
+          headPosition,
         },
       },
     }, AGENT_WRITE_AUTH);
@@ -2193,7 +2238,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           personalityPrompt: "Patient and observant.",
           publicBiography: null,
           strategyStyle: "Build trust before acting.",
-          avatarUrl: await contentImageFixture("pfp/lillith.png"),
+          avatarUrl: fullBodyReferenceUrl,
+          fullBodyReferenceUrl,
+          headPosition,
         },
       },
     }, AGENT_WRITE_AUTH);
@@ -2202,6 +2249,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       structuredContent: { agent: { id: string } };
     }).structuredContent.agent.id).toBe(created.agent.id);
 
+    await acceptTestAgent(db, created.agent.id);
     await db.insert(schema.games).values({
       id: "mcp-revision-waiting",
       slug: "mcp-revision-waiting",
@@ -2271,6 +2319,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       };
     }).structuredContent;
     expectMatchesJsonSchema(updated, commandSchemas.get("update_agent"));
+    expect((updated.receipt as unknown as {publication:string}).publication).toBe("reviewing");
+    const published = await acceptTestAgent(db, created.agent.id);
+    expect(published!.receipt.waitingSeats.reconciled).toBe(1);
 
     expect(updated.agent.id).toBe(created.agent.id);
     expect(updated.receipt).toMatchObject({
@@ -2278,9 +2329,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         agentProfileId: created.agent.id,
         identityDisposition: "preserved",
       },
-      profileRevision: { outcome: "created", active: true },
+      profileRevision: { outcome: "preserved", active: true },
       dailyFree: "preserved_follows_profile",
-      waitingSeats: { total: 1, reconciled: 1 },
+      waitingSeats: { total: 1, reconciled: 0 },
       frozenSeats: { unchanged: 0 },
     });
     expect(updated.agent.currentRevision.revisionId).toBe(

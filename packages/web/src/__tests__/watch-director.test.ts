@@ -33,6 +33,82 @@ test("append while paused at a tail cannot move the active source position",()=>
  expect(director.getSnapshot().position).toBe(4);expect(director.getSnapshot().isPlaying).toBe(false);director.play();expect(director.getSnapshot().position).toBe(9);
 });
 const speechPolicy: WatchPolicy<Cue> = {...policy, speech: () => ({showAtMs: 500, readAtMs: 800, hideAtMs: 3500, hiddenAtMs: 3800})};
+test("advance waits for pending page measurement", () => {
+ const director = new PresentationDirector({clock:new Clock(),policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.seekTimeline(0,800);
+ const owner = Symbol();
+ const unregister = director.registerPages(owner,{cueKey:"one",part:"speech",starts:[0],ready:false,contentOffsetMs:800,fadeMs:0,readingDurationMs:2700});
+ director.manualAdvance();expect(director.getElapsedBaseMs()).toBe(800);
+ unregister();director.registerPages(owner,{cueKey:"one",part:"speech",starts:[0,.5],ready:true,contentOffsetMs:800,fadeMs:0,readingDurationMs:2700});
+ director.manualAdvance();expect(director.getElapsedBaseMs()).toBeCloseTo(2150.1,1);
+});
+test("manual advance moves through measured speech pages before leaving the cue", () => {
+ const clock = new Clock(), director = new PresentationDirector({clock,policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000},{key:"two",cursor:2,baseDurationMs:4000}]);
+ director.seekTimeline(0,800);
+ director.registerPages(Symbol(),{cueKey:"one",part:"speech",starts:[0,.1,.25,.5,.7,.85],contentOffsetMs:800,fadeMs:0,readingDurationMs:2700});
+ for (const fraction of [.1,.25,.5,.7,.85]) {
+  director.manualAdvance();
+  expect(director.getSnapshot().activeKey).toBe("one");
+  expect(director.getSnapshot().isPlaying).toBe(false);
+  expect(director.getElapsedBaseMs()).toBeCloseTo(800 + fraction * 2700 + .1, 1);
+ }
+ director.manualAdvance(); clock.tick(300);
+ expect(director.getElapsedBaseMs()).toBe(3800);
+});
+test("successive advances follow an explicit caption progress clock", () => {
+ const director = new PresentationDirector({clock:new Clock(),policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.seekTimeline(0,800);
+ director.registerPages(Symbol(),{cueKey:"one",part:"speech",starts:[0,.25,.5,.75],contentOffsetMs:0,fadeMs:0,readingDurationMs:2700,
+  progress:{value:.2,timelineMs:800,contentMs:800,durationMs:2400,clock:"timeline"}});
+ for (const expected of [920.1,1520.1,2120.1]) {director.manualAdvance();expect(director.getTimelineElapsedBaseMs()).toBeCloseTo(expected,1);}
+});
+test("manual advance steps through thought pages before speech", () => {
+ const clock = new Clock(), director = new PresentationDirector({clock,policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);
+ director.setThinking("one", "A thought with several distinct words.");
+ director.seekTimeline(0,1800);
+ const start = director.getThinkingFrame()!;
+ director.registerPages(Symbol(),{cueKey:"one",part:"thinking",starts:[0,.1,.25,.5,.7,.85],contentOffsetMs:0,fadeMs:0,readingDurationMs:1});
+ for (const fraction of [.1,.25,.5,.7,.85]) {
+  director.manualAdvance();
+  expect(director.getThinkingFrame()!.elapsedMs).toBeCloseTo(start.durationMs * fraction + .1, 1);
+  expect(director.getSnapshot().activeKey).toBe("one");
+ }
+ director.manualAdvance();clock.tick(1200);
+ expect(director.getThinkingFrame()).toBeNull();
+ expect(director.getElapsedBaseMs()).toBe(500);
+});
+test("page advancement seeks the corresponding recorded speech offset", () => {
+ const director = new PresentationDirector({clock:new Clock(),policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);
+ director.setRecordings("one",{speechMs:6000});
+ director.seekTimeline(0,800);
+ director.registerPages(Symbol(),{cueKey:"one",part:"speech",starts:[0,.1,.25,.5,.7,.85],contentOffsetMs:800,fadeMs:0,readingDurationMs:2700});
+ for (const offset of [600,1500,3000,4200,5100]) {
+  director.manualAdvance();
+  expect(director.getAudioPosition()?.part).toBe("speech");
+  expect(director.getAudioPosition()!.offsetMs).toBeCloseTo(offset + .1,1);
+  expect(director.getSnapshot().isPlaying).toBe(false);
+ }
+});
+test("a content seek survives recording metadata that arrives later", () => {
+ const director = new PresentationDirector({clock:new Clock(),policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.seekContent(0,2000);
+ director.setRecordings("one",{speechMs:8000});
+ expect(director.getElapsedBaseMs()).toBeCloseTo(2000,2);
+ expect(director.getSnapshot().isPlaying).toBe(false);
+ expect(director.getAudioPosition()?.part).toBe("speech");
+});
+test("a switched speech position survives late thinking and then recording metadata", () => {
+ const director = new PresentationDirector({clock:new Clock(),policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.seekContent(0,2000);
+ director.setThinking("one","A thought that arrives after the switch.");
+ director.setRecordings("one",{speechMs:8000,thinkingMs:2000});
+ expect(director.getElapsedBaseMs()).toBeCloseTo(2000,2);
+ expect(director.getThinkingFrame()).toBeNull();
+ expect(director.getAudioPosition()?.part).toBe("speech");
+});
 test("recorded timing compiles once while sampling, then invalidates on duration changes", () => {
  let speechReads = 0;
  const clock = new Clock(), director = new PresentationDirector({clock, policy:{...speechPolicy,speech:cue => {speechReads++; return speechPolicy.speech(cue);}}});
@@ -155,6 +231,19 @@ test("thinking preference changes retain the current speech position", () => {
  expect(director.getTimelineElapsedBaseMs()).toBe(2000);
  director.setThinkingEnabled(true);
  expect(director.getElapsedBaseMs()).toBe(2000);
+});
+
+test("content seeks retain speech when thinking is cached or arrives later", () => {
+ const director = new PresentationDirector({clock:new Clock(),policy:speechPolicy});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000},{key:"two",cursor:2,baseDurationMs:4000}]);
+ director.setThinking("one","A cached thought.");
+ director.seekContent(0,2000);
+ expect(director.getElapsedBaseMs()).toBeCloseTo(2000,3);
+ expect(director.getThinkingFrame()).toBeNull();
+ director.seekContent(1,2000);
+ director.setThinking("two","A late thought.");
+ expect(director.getElapsedBaseMs()).toBeCloseTo(2000,3);
+ expect(director.getThinkingFrame()).toBeNull();
 });
 
 test("duration refreshes preserve local frame and pause instead of changing source position", () => {
