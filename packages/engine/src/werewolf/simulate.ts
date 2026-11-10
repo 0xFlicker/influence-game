@@ -13,8 +13,9 @@
  * the last recipient redirects or passes, and may reference earlier statements.
  * One public serial vote with optional speech follows; all living voters finish,
  * strict majority eliminates, and abstentions never lower the threshold.
- * Pack speech includes a standing target, with up to three full exchanges;
- * matching proposals resolve early. Older completed rules retain their replay.
+ * V13 pack speech negotiates an attack and plans the next public vote in at most
+ * three turns per wolf. Agreement locks the target; two subsequent consecutive
+ * passes can end talk early. Older completed rules retain their own replay.
  * Capped standalone evaluations supply --budget-usd and a shared --budget-ledger;
  * attempts, retries, compaction and retrospectives all reserve against that cap.
  * No `as any` and no Influence House calls: the rules own every transition.

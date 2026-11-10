@@ -401,7 +401,7 @@ An optional opaque acting/feeling note attached to an original speech or pass, f
 
 ## Werewolf pack proposal
 
-Current v9 combines each living wolf's short speech and explicit target into a structured proposal. Wolves alternate in seeded order for up to three back-and-forth exchanges, stopping when current targets agree; this permits up to six decisions for two wolves, not a forced six. A lone wolf selects a target directly. Proposals are private to wolf observations and Omniscient replay. Historical v7/v8 retain sequential proposal plus sealed-batch unanimity.
+V13 combines each living wolf's short speech, explicit target and individual private thinking into one decision. Wolves alternate for at most three turns each to agree on an attack and plan the next day's discussion and vote. The first matching standing targets permanently lock the attack; strategy talk continues until the limit or two consecutive successful passes after the locking decision. Pre-agreement silence consumes turns without early closure. No agreement by six decisions means no attack. A lone wolf keeps one target and one private spoken explanation. Pack speech is shared with partners; thinking is not. Proposals and plans remain private to wolves and Omniscient replay. Historical v9–v12 end immediately on agreement; v7/v8 retain separate proposals and sealed-batch unanimity.
 
 ## Werewolf private observation
 

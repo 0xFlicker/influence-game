@@ -988,3 +988,23 @@ provider calls, decision fields or contestant knowledge are introduced. Historic
 accepted decisions remain unchanged. Evaluate future two-wolf games over multiple
 days for faction outcomes and decision quality; glossary usage alone is not a
 success metric. No paid simulation was run for this prompt update.
+
+### Werewolf v13 pack strategy
+
+Each multi-wolf night slot keeps exact `{targetId, text, cue, thinking}` output.
+V13 frozen requests add wolf-only `packTurn` (current actor's turn, three-turn
+maximum and locked target). Agreement locks the target immediately but only the
+later `werewolf.pack_vote_resolved` closes talk. Its `discussion` records total
+beats, agreement beat and closure reason. Each wolf has at most three turns;
+successful passes count toward early closure only after the locking decision.
+Provider failures never impersonate voluntary silence or erase the lock.
+
+Pack planning must be in accepted speech for the partner to hear it. Individual
+thinking and native reasoning remain private evidence. Verify the next day's wolf
+priority, discussion and ballot prompts contain accepted pack speech; non-wolves
+and Mystery must not. Playback and Studio omit passes even with Show thinking;
+debug APIs retain their canonical records and private evidence. Keep one durable
+provider slot per decision, complete sanitized attempts and immutable accepted
+values; recovery reuses the same slot without redispatch. Use direct House calls
+and exact types without `as any` when extending orchestration. Paid evaluations
+require their own authorization and durable localhost API game IDs.

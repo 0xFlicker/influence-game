@@ -17,6 +17,7 @@ const players: WerewolfPlayer[] = Array.from({ length: 8 }, (_, index) => ({
 
 function hunterState(seed = "hunter-seed") {
   const config = werewolfConfig("two_wolves", 10, { playerCount: 8, wolves: 2, seer: false, doctor: true, hunter: true });
+  config.rulesVersion = 12;
   return applyWerewolfEvent(null, startWerewolf("hunter-game", players, config, seed));
 }
 
@@ -62,7 +63,7 @@ function untilNightResolved(seed: string, snipe: "fire-wolf" | "hold") {
 }
 
 function eventsThroughFirstNight(seed: string, snipe: "fire-wolf" | "hold") {
-  const started = startWerewolf("hunter-game", players, werewolfConfig("two_wolves", 10, { playerCount: 8, wolves: 2, seer: false, doctor: true, hunter: true }), seed);
+  const started = startWerewolf("hunter-game", players, {...werewolfConfig("two_wolves", 10, { playerCount: 8, wolves: 2, seer: false, doctor: true, hunter: true }), rulesVersion:12}, seed);
   const events: import("../werewolf/types").WerewolfEvent[] = [started];
   let state = applyWerewolfEvent(null, started);
   for (let guard = 0; guard < 200 && !state.history.some((entry) => entry.kind === "night"); guard++) {
@@ -77,14 +78,14 @@ function eventsThroughFirstNight(seed: string, snipe: "fire-wolf" | "hold") {
   return events;
 }
 
-test("v12 hunter setup freezes one hunter with a single snipe and keeps historical setups on v11", () => {
+test("v12 hunter setup retains one hunter with a single snipe; fresh non-Hunter setups use v13", () => {
   const state = hunterState();
   expect(state.config.rulesVersion).toBe(12);
   expect(Object.values(state.roles).sort()).toEqual(["doctor", "hunter", "villager", "villager", "villager", "villager", "werewolf", "werewolf"]);
   const hunter = byRole(state, "hunter");
   expect(state.items[hunter.id]).toEqual(["snipe"]);
   expect(Object.entries(state.items).filter(([, items]) => items.length > 0)).toHaveLength(1);
-  expect(werewolfConfig("two_wolves", 10, { playerCount: 8, wolves: 2, seer: true, doctor: true }).rulesVersion).toBe(11);
+  expect(werewolfConfig("two_wolves", 10, { playerCount: 8, wolves: 2, seer: true, doctor: true }).rulesVersion).toBe(13);
 });
 
 test("item context is public about existence, private about ownership, and seen after a public snipe death", () => {

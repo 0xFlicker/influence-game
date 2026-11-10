@@ -16,7 +16,9 @@ describe("game MCP rules catalog", () => {
     for (const text of [rules, AGENT_CREATION_GAME_PRIMER]) {
       expect(text).toContain("everyone votes exactly once");
       expect(text).toContain("More than half of ALL living players");
-      expect(text).toContain("three full exchanges");
+      expect(text).toContain("three turns EACH");
+      expect(text).toContain("do not end talk or reset the turn limit");
+      expect(text).toContain("Before agreement, passes consume turns but cannot end talk early");
       expect(text).toContain("shared UTF-8 speech byte allowance");
       expect(text).not.toContain("final plurality vote");
     }

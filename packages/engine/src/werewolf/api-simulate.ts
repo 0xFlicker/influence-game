@@ -13,8 +13,9 @@
  * the last recipient redirects or passes, and may reference earlier statements.
  * One public serial vote with optional speech follows; all living voters finish,
  * strict majority eliminates, and abstentions never lower the threshold.
- * Pack speech includes a standing target, with up to three full exchanges;
- * matching proposals resolve early. Older completed rules retain their replay.
+ * V13 pack speech negotiates an attack and plans the next public vote in at most
+ * three turns per wolf. Agreement locks the target; two subsequent consecutive
+ * passes can end talk early. Older completed rules retain their own replay.
  * Paid evaluations run through this API client. Configure the server game-worker
  * with WEREWOLF_EVALUATION_BUDGET_USD and WEREWOLF_EVALUATION_BUDGET_LEDGER;
  * attempts, retries, compaction and retrospectives all reserve against that cap.
@@ -169,7 +170,9 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         if (view.rulesVersion >= 9) {
           emit("Discussion uses a shared UTF-8 byte allowance and up to three directed handoffs; the final turn redirects or passes. Remaining space does not guarantee every player a discussion opportunity.");
           emit("One public sequential ballot follows: vote with optional speech or abstain. A strict majority of all living players is required; the day then ends either way.");
-          emit("Pack speech and attack proposals are combined: up to three full exchanges, ending immediately when current targets match.");
+          emit(view.rulesVersion >= 13
+            ? "Pack speech and attack choices are combined: three turns per wolf to agree on a target and plan tomorrow's vote. Agreement locks the target while strategy talk continues; two consecutive passes after the lock end talk early."
+            : "Pack speech and attack proposals are combined: up to three full exchanges, ending immediately when current targets match.");
         } else {
         emit("After each thread, everyone votes for a target or abstains to hear more. A strict majority of all living players eliminates the target and ends the day; otherwise discussion continues. The final ballot requires a target: unique most votes wins; a tie means no village elimination.");
         emit("Each night the pack has three proposal/ballot attempts to agree unanimously. Three disagreements mean no attack.");

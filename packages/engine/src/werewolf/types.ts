@@ -28,7 +28,7 @@ export interface WerewolfPlayer {
 export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean; hunter?: boolean }
 
 export interface WerewolfConfig {
-  rulesVersion: 7 | 8 | 9 | 10 | 11 | 12;
+  rulesVersion: 7 | 8 | 9 | 10 | 11 | 12 | 13;
   preset: WerewolfPreset;
   setup?: WerewolfSetup;
   maxDays: number;
@@ -46,6 +46,13 @@ export type WerewolfDecision =
   | { kind: "item_use"; itemId: WerewolfItemId | null; targetId: string | null; text: string | null; cue: string | null }
   | { kind: "target"; targetId: string | null; thinking: string };
 
+/** Frozen v13 multi-wolf slot; turn is this actor's 1-based opportunity. */
+export interface WerewolfPackTurn {
+  lockedTargetId: string | null;
+  turn: number;
+  maxTurns: 3;
+}
+
 export type WerewolfRequest = {
   actorId: string;
   legalTargetIds: string[];
@@ -54,7 +61,7 @@ export type WerewolfRequest = {
   | { action: "vote"; voteMode: WerewolfVoteMode }
   | { action: "conversation"; legalRecipientIds: string[]; legalReplyIds: number[]; messageBytes: number }
   | { action: "public_vote"; messageBytes: number }
-  | { action: "pack_propose"; messageBytes: number; targetRequired: boolean; solo?: true }
+  | { action: "pack_propose"; messageBytes: number; targetRequired: boolean; solo?: true; packTurn?: WerewolfPackTurn }
   | { action: "protect" | "investigate"; solo: true; messageBytes: number }
   | { action: "snipe"; solo: true; messageBytes: number; usableItemIds: WerewolfItemId[] }
   | { action: Exclude<WerewolfAction, "open_thread" | "vote" | "conversation" | "public_vote" | "pack_propose" | "snipe"> }
@@ -77,7 +84,7 @@ export interface WerewolfNightResult {
   protectedId: string | null;
   killedId: string | null;
   investigation: { seerId: string; targetId: string; isWolf: boolean } | null;
-  /** Present only in rules v12 games with items. Null when the holder held fire or had no item. */
+  /** Present in v12+ night results. Null when no holder fired an item. */
   snipe?: WerewolfSnipeResult | null;
 }
 
@@ -104,12 +111,16 @@ export interface WerewolfPackVote {
   ballots: Array<{ voterId: string; targetId: string }>;
   targetId: string | null;
   endReason: "agreed" | "attempt_limit" | null;
+  /** Required by the v13 reducer; historical resolutions retain their exact shape. */
+  discussion?: { beats: number; agreementBeat: number | null; endedBy: "both_pass" | "turn_limit" | "solo" };
 }
 
 export interface WerewolfPackNegotiation {
   attemptsCompleted: number;
   targetId: string | null;
   ended: boolean;
+  /** V13 only. Agreement evidence is frozen before strategy acknowledgments. */
+  discussion?: { agreementBeat: number | null; agreementBallots: Array<{ voterId: string; targetId: string }>; consecutivePasses: number };
 }
 
 /** Engine-owned sequence; production cues never control the schedule. */

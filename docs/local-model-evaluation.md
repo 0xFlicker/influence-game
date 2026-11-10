@@ -767,3 +767,21 @@ provider calls, decision fields or contestant knowledge are introduced. Historic
 accepted decisions remain unchanged. Evaluate future two-wolf games over multiple
 days for faction outcomes and decision quality; glossary usage alone is not a
 success metric. No paid simulation was run for this prompt update.
+
+### Werewolf v13 nighttime coordination
+
+New games use v13: three turns per wolf, a permanent first target agreement, and
+optional strategy speech until the limit or two consecutive post-agreement passes.
+Pre-agreement silence cannot end negotiation early. The prompt asks for both the
+attack and tomorrow's voting strategy; check that the wolves actually share their
+plan in speech and receive it in the following day's observation. Private thinking
+alone cannot coordinate partners. No extra planning/summary call is introduced.
+
+Run an authorized evaluation through `bun run simulate:werewolf:api -- --help`
+and the existing localhost API workflow, using two wolves and at most eight players.
+Retain the actual game ID/watch URL and sanitized provider evidence, accepted
+thinking, native reasoning, retries, failures, usage and local report. Review the
+next day's speeches and irreversible public ballots for reasonable use or revision
+of the plan; verbosity or wolf wins alone are not quality proof. Keep direct House
+calls and no `as any` in simulation work. These implementation tests use mocked
+providers; they do not establish measured strategy improvements.

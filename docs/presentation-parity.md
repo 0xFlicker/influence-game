@@ -216,3 +216,35 @@ Studio source, independent cue selection, caption timing and TTS source. Histori
 sources without references keep fixed factual narration; missing referenced copy
 must fail integrity checks rather than silently change the movie. Existing movies
 need re-encoding, and adopting newer narration requires an explicit source refresh.
+
+## Werewolf v13 pack strategy proof
+
+From `packages/web`, run:
+
+```sh
+PACK_STRATEGY_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts /absolute/path/to/pack-proof
+```
+
+The canonical eight-player v13 fixture agrees at beat two, speaks 320-byte strategy
+messages at beats three/four and passes at five/six. It exercises the production
+catalog, the full pack → night-actions → dawn sequence and independent
+speech/thought/closure binding. Frozen v8 and v12 pack pictures also render. The proof
+compares the viewer stage, actual Studio Source/Selected cut Player and fresh
+H.264 exports, including long frozen names, reduced motion, recorded/unrecorded
+speech, Mystery dawn, direct seeks and reverse-order frames at 1280×720, 640×360,
+360×240 and 390×700. `pack-source.json` and `pack-cases.json` retain exact canonical
+events, catalog/selection identities, source and settings; comparison/manifest,
+frame-audit and page-coverage files retain coordinates and assertions. Pass thinking must not enter the catalog
+or movie. The recorded case uses deterministic local fixture audio, not paid TTS.
+
+V7–v12 retain their historical pack sequences; old frozen sources never acquire
+v13 speech. Reprepare a bundle from the same selection/source to update rendering
+and encode a new movie. Including additional accepted live strategy requires an
+explicit source/selection refresh. Never regenerate game history or pinned media.
+
+Shared room names wrap rather than ellipsize. Speech bubbles reserve the measured
+speaker-label width before tightening short dialogue; short two-person pictures
+reuse the compact room so names and speech fit. Taller rooms retain the circular
+staging. Fresh preparation captures the new label-aware layout keys. Rebuild old
+bundles from the same frozen selection/source before re-encoding; the selection
+does not need new game history or replacement character images.

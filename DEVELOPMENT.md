@@ -878,6 +878,14 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 
 Use `bun run replay:export -- <slug> --output ./exports/game.mp4` to render a completed Influence or Werewolf game locally through the fullscreen content stages. See [local replay export](docs/local-replay-export.md) for audience rules, offline bundles, adjustable presentation timing, prerecorded speech, and verification boundaries. This does not invoke providers or publish media.
 
+Werewolf v13 gives each wolf three nighttime turns total for target agreement and
+next-day planning. Agreement locks the target while speech may continue; only two
+consecutive passes after that lock can end talk early. Use the deterministic
+`werewolf-v13.test.ts` engine/API/export regressions and the
+[pack render proof](docs/presentation-parity.md#werewolf-v13-pack-strategy-proof).
+Paid strategy evaluation stays opt-in through the localhost API simulator, retaining
+game IDs and complete private evidence. Keep direct House calls and no `as any`.
+
 ## Retrospective contracts
 
 The [RT-01 contract](docs/game-retrospective-contract.md), migration `0115_game_retrospective_inputs`, [RT-02 context compilers](docs/game-retrospective-context.md) and [RT-03 strict invocations](docs/game-retrospective-invocation.md) establish retrospective records, complete frozen context, speaker ordering and mandatory final-statement methods. [RT-04](docs/game-retrospective-runtime.md) connects Influence to durable initialization, one committed speech per turn and final completion. RT-05 connects Werewolf through its own validated post-outcome slots. MCP inspection/recovery, replay, Studio/export and local simulation artifacts also include the retrospective. Run the provider-free suite, PostgreSQL suite and `bun run check`; keep model/provider trials opt-in. Focused proof: `bun test packages/engine/src/__tests__/retrospective-context.test.ts packages/engine/src/__tests__/retrospective-invocation.test.ts`. Invocation tests mock native count/generation HTTP, preserve exact priors and verify replay without transport. Whole-roster initialization must use verified capacity for every sealed model. Use `setupTestDB()` for DB fixtures, preserve exact types without `as any`, and call House methods directly when adding future orchestration.

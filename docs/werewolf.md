@@ -30,6 +30,47 @@ There is no cross-game strategy fallback. Empty Werewolf notes use the selected 
 
 Starting a custom game atomically freezes the eligible, published character content, its content-revision reference, its Werewolf strategy, the provider manifest, the roster, the rules version, and randomly assigned roles. Waiting lobbies freeze the rules before enrollment; roster content and role assignment freeze at start. Choose zero to the preset's seat limit of distinct owned characters; House characters fill empty seats. Duplicate display names and unavailable or archived characters are rejected. Subsequent profile edits cannot change a running game. House fill uses shared personality descriptions and Werewolf archetype defaults, with no inherited Influence strategy hints.
 
+## Pack strategy conversation (rules version 13)
+
+Fresh direct games and newly created waiting lobbies freeze v13, with or without
+the optional Hunter. Two wolves alternate at most three decisions each per night.
+Each decision combines an explicit legal target, optional pack speech/cue and
+individual private thinking. The conversation has two jobs: agree on an attack
+and prepare tomorrow's public discussion and vote. Guidance covers a voting
+objective, persuadable villagers, credible individual arguments and contingencies,
+without mandatory partner defense, sacrifice or synchronized public stories.
+Speak plans your partner needs to hear; thinking is never delivered to partners.
+
+The first matching standing targets permanently lock the attack. This leaves the
+remaining opportunities available for strategy; it does not reset the six-decision
+limit. After the locking decision, two consecutive successful silent passes close
+talk early. Speech resets this streak. Silence before agreement consumes a turn but
+does not end negotiation early or count toward the post-lock streak. A cue does not
+turn silence into speech. Later successful decisions must acknowledge the locked
+target; the exact provider schema and semantic validator reject a new target.
+Availability failures remain marked failures, never voluntary passes, and cannot
+erase agreement. Six decisions without agreement mean no attack. Other night roles
+still act. A lone wolf retains one target and one private spoken explanation.
+
+The reducer records the lock at its accepted prefix and emits one pack resolution
+when talk closes. V13's `discussion` metadata separates the agreement beat from
+the final beat and closure (`both_pass`, `turn_limit`, or `solo`). Wolf-only
+`packTurn` slot metadata freezes the actor's turn number and locked target. Current
+night speech remains in wolf observations during the following day's priority,
+discussion and ballots. The next night still starts a fresh proposal history.
+Mystery and non-wolves receive none of this context. Omniscient playback, Studio
+and fresh exports share accepted speech/thinking, skip silent passes and show one
+closure before normal night actions. Accepted events and proposals, never prose
+parsing or House narration, determine targets and agreement.
+
+V7/v8 retain sealed pack ballots; v9–v12 retain immediate termination at target
+agreement. Frozen running games and previously created lobbies retain their rules
+version. Existing sources and movies do not gain new strategy turns. To update
+rendering, prepare a fresh bundle from the same frozen selection and encode again;
+to include newly accepted live speech, explicitly refresh the selection/source.
+See the [v13 implementation plan](plans/2026-11-10-001-feat-werewolf-v13-pack-day-planning.md)
+and [presentation proof instructions](presentation-parity.md#werewolf-v13-pack-strategy-proof).
+
 ## Solo night decisions and rooms
 
 In v10, Doctor protection, Seer investigation and a lone wolf's attack return exact `{targetId, text, cue}` decisions. The target and a short spoken explanation are required; `cue` is optional/null. No separate `thinking` field is requested. The explanation has the frozen 320-byte speech allowance. Two wolves still negotiate with target proposals, optional speech and private thinking. Invalid decisions remain provider failures; an exhausted legal fallback has no fabricated speech.
@@ -44,7 +85,7 @@ Nonvisual Werewolf uses five generated environment plates: the daytime village h
 
 Werewolf has a generic item system. Ownership is a private set of short item ids per player (`WerewolfItemId`, catalog in `packages/engine/src/werewolf/items.ts`). When a game has items, every contestant's observation names the public item catalog, their own current holdings, item uses they have publicly seen, and their own uses; no contestant ever learns another player's holdings. There is no separate strategic-reflection turn in Werewolf, and like the other solo night turns the item decision has no `thinking` field: its required spoken explanation is the item reflection, prompted from that item knowledge.
 
-The first item is the **Snipe** (`snipe`), granted to the **Hunter**, a village role enabled by the `hunter` setup toggle (creation form, lobby setup, direct `POST /api/werewolf` `setup`, or the API simulator's `--village-roles hunter,doctor` / `--village-roles hunter,seer`). Hunter games freeze rules v12; all other fresh games keep v11, and v7–v11 history is unchanged. While alive and holding it, the Hunter gets their own night decision with exact JSON `{itemId, targetId, text, cue}`: `itemId: null` with `targetId: null` holds it for a later night; `itemId: "snipe"` with one legal target fires it. The required spoken `text` is an Omniscient-only private aside, never delivered to contestants, following the v10 solo night contract with no separate thinking field. A fired snipe removes its target when night resolves, together with the pack attack; Doctor protection blocks only the pack attack. A fired snipe is consumed even if the pack also kills its target; with no item left, the Hunter receives no further snipe decision. A provider-unavailable fallback always holds fire (`itemId: null`), never a random shot.
+The first item is the **Snipe** (`snipe`), granted to the **Hunter**, a village role enabled by the `hunter` setup toggle (creation form, lobby setup, direct `POST /api/werewolf` `setup`, or the API simulator's `--village-roles hunter,doctor` / `--village-roles hunter,seer`). Fresh games freeze v13; v12 introduced the Hunter, and existing v7–v12 games retain their frozen rules. While alive and holding it, the Hunter gets their own night decision with exact JSON `{itemId, targetId, text, cue}`: `itemId: null` with `targetId: null` holds it for a later night; `itemId: "snipe"` with one legal target fires it. The required spoken `text` is an Omniscient-only private aside, never delivered to contestants, following the v10 solo night contract with no separate thinking field. A fired snipe removes its target when night resolves, together with the pack attack; Doctor protection blocks only the pack attack. A fired snipe is consumed even if the pack also kills its target; with no item left, the Hunter receives no further snipe decision. A provider-unavailable fallback always holds fire (`itemId: null`), never a random shot.
 
 In replay and exports, Mystery viewers see only the public dawn deaths — never who holds what, and never the sniper. Omniscient viewers see each player's remaining items as a crosshair badge in speech/thinking bubbles, portrait-room name pills, and the cast rail, plus the Hunter's snipe stage before dawn. Hunter speech and held/fired action shots share a dedicated moonlit lodge background in the viewer, Studio Source/Selected cut, and fresh exports. Speech and action are independently selectable catalog moments. Non-narrated dawn copy includes both canonical victims (deduplicated when the pack and Hunter chose the same target). Existing MP4s and export bundles do not update; rebuild a fresh bundle/movie from the same selection to see the new beat.
 
@@ -300,7 +341,7 @@ The default report prints the watch URL, cast and rules, original speech and pas
 
 Omniscient labels every speaker with their actual role, such as `Vera [villager]: ...` and `[Pack] Echo [werewolf]: ...`, including passes. Mystery keeps dialogue role-free even during completed-game readback.
 
-Omniscient also prints each pack ballot as `Night N · ballot X/3`, with named choices and the agreement, retry, or no-attack outcome. Doctor protection and Seer checks remain visible when no attack was agreed. Up to six proposal calls and six ballot calls can occur with two wolves; agreement stops attempts immediately. A lone wolf uses one ballot call. Reporting adds no inference.
+Omniscient prints v13 pack speech as `Pack turn N`, followed by the agreement/no-attack resolution. At most six combined target-and-speech calls occur with two wolves; agreement leaves remaining strategy turns available, and two post-agreement passes can end talk early. A lone wolf uses one solo call. Doctor protection and Seer checks remain visible when no attack was agreed. V9–v12 retain their proposal labels and immediate agreement boundary; v7/v8 retain the separate `Night N · ballot X/3` report. Reporting adds no inference.
 
 Every API run saves a unique text file under `packages/engine/docs/simulations/`, appending after each poll so it can be followed with `tail -f`. `--out` selects a new file and never overwrites an existing report. Reading reports adds no model calls. The worker pays only for configured player decisions and their provider retries; no House generation occurs. Closing/timing out the CLI does not stop its server game. The printed resume command reads the same accepted conversation. Creation is never automatically retried; check `/games/type/werewolf` after an ambiguous creation error.
 
@@ -356,7 +397,7 @@ Authenticated players can enter one owned, eligible agent. Current admins, sysop
 
 **Start Werewolf** separately requires `start_game`, requires every seat to be filled, respects deployment admission, freezes each member's current approved identity and Werewolf strategy, assigns roles, and atomically commits `werewolf.started` with `in_progress`. No roles or gameplay events exist before that point. Blank Werewolf strategy uses the archetype default; Influence strategy is never substituted. The waiting page refreshes into the viewing-mode choice when the game starts. Cancelled unstarted games have no replay. The CLI's existing immediate-create-and-start API remains its explicit simulation path.
 
-Waiting lobbies adopt the rules version deployed when they start. The start transaction updates `games.config.rulesVersion` to match the frozen `werewolf.started` event while preserving unrelated config fields. Historical events and completed games are not rewritten.
+Waiting lobbies retain the rules version frozen when the lobby was created. The start transaction updates `games.config.rulesVersion` to match the frozen `werewolf.started` event while preserving unrelated config fields. Historical events and completed games are not rewritten.
 
 Migration `0107_werewolf_lobbies.sql` adds the admission table; it does not change historical game events. The House hall, icon, casting hero and agent selector are shared; Werewolf owns its admission state and rules. Waiting games in the admin list link to their casting lobby rather than attempting to render gameplay or production before any events exist.
 

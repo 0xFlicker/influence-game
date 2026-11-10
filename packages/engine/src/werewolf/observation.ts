@@ -115,7 +115,7 @@ export interface WerewolfObservation {
   packIds: string[];
   packDiscussion: Array<{ day: number; actorId: string; text: string | null; cue: string | null }>;
   packAttacks: Array<{ day: number; targetId: string | null }>;
-  packNegotiation: { attempt: number; maxAttempts: number; speakerIds: string[]; stage: "propose" | "vote" } | null;
+  packNegotiation: { attempt: number; maxAttempts: number; speakerIds: string[]; stage: "propose" | "vote" | "strategy"; packTurn?: import("./types").WerewolfPackTurn } | null;
   packVotes: Array<{ day: number; result: WerewolfPackVote }>;
   packProposals?: Array<Extract<WerewolfHistoryEntry, { kind: "proposal" }>>;
   investigations: Array<{ day: number; targetId: string; isWolf: boolean }>;
@@ -166,6 +166,10 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
     packNegotiation: role === "werewolf" && state.phase === "pack" && state.pack && !state.pack.ended ? {
       attempt: state.config.rulesVersion >= 9 ? Math.floor(state.actions.length / order.length) + 1 : state.pack.attemptsCompleted + 1, maxAttempts: WEREWOLF_PACK_ATTEMPTS, speakerIds: order,
       stage: state.config.rulesVersion >= 9 || order.length > 1 && state.actions.length < order.length ? "propose" : "vote",
+      ...(state.config.rulesVersion >= 13 && order.length > 1 ? {
+        stage: state.pack.targetId !== null ? "strategy" as const : "propose" as const,
+        packTurn: { lockedTargetId: state.pack.targetId, turn: Math.floor(state.actions.length / order.length) + 1, maxTurns: 3 as const },
+      } : {}),
     } : null,
     ...(state.config.rulesVersion >= 9 ? { packProposals: role === "werewolf" ? state.history.flatMap(e => e.kind === "proposal" && e.day === state.day ? [structuredClone(e)] : []) : [] } : {}),
     packVotes: role === "werewolf" ? state.history.flatMap((entry) => entry.kind === "pack_vote"

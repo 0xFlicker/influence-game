@@ -147,7 +147,7 @@ async function click(page: Page, label: string) {
   await page.evaluate(`Array.from(document.querySelectorAll("button")).find(b => b.textContent?.trim() === ${JSON.stringify(label)})?.click()`);
 }
 
-test("CLI creates a v10 API Werewolf game and reports the public majority ballot", async () => {
+test("CLI creates a v13 API Werewolf game and reports the public majority ballot", async () => {
   const directory = await mkdtemp(`${tmpdir()}/werewolf-cli-`);
   const output = resolve(directory, "summary.txt");
   const cli = Bun.spawn(["bun", "run", "simulate:werewolf:api", "--api-url", servers.apiUrl, "--web-url", servers.webUrl!, "--max-days", "1", "--timeout-seconds", "45", "--transcript", "--out", output], {
@@ -178,7 +178,7 @@ test("CLI creates a v10 API Werewolf game and reports the public majority ballot
     expect(games[0]!.maxPlayers).toBe(6);
     const publicView = (await (await fetch(`${servers.apiUrl}/api/werewolf/${games[0]!.slug}/presentation?audience=mystery`)).json() as { view: WerewolfPresentation["view"] }).view;
     const ballotIndex = publicView.entries.findLastIndex(entry => entry.kind === "ballot");
-    expect(publicView.rulesVersion).toBe(11);
+    expect(publicView.rulesVersion).toBe(13);
     expect(publicView.entries.filter(entry => entry.kind === "ballot")).toHaveLength(publicView.players.filter(player => player.alive || player.elimination?.kind === "vote").length);
     // Retrospective speech may follow the canonical result in completed replay.
     expect(publicView.entries.some(entry => entry.kind === "result")).toBe(true);
@@ -335,7 +335,7 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     await page.waitForSelector('button[aria-label="Remove Arden Vale from cast"]');
     const [waiting] = await database.db.select().from(schema.games).where(eq(schema.games.slug, slug));
     expect(waiting!.status).toBe("waiting");
-    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 11 });
+    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 13 });
     expect(await database.db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, waiting!.id))).toHaveLength(0);
     await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector('select[aria-label="Game type"]');
@@ -595,6 +595,50 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     throw error;
   } finally { await page.close(); }
 }, 120_000);
+
+test("v13 post-agreement pack strategy is playable on desktop and mobile and stays out of Mystery", async () => {
+  const game = await database.db.transaction(async tx=>{
+    const fixtureDb = tx as unknown as DrizzleDB;
+    const created = await createWerewolfGame(fixtureDb,admin.userId,{preset:"two_wolves",agentProfileIds:[],maxDays:1});
+    const claim = await claimWerewolfGame(fixtureDb,created.id);
+    if (!claim.ok) throw new Error(claim.error);
+    return {...created,ownerEpoch:claim.claim.ownerEpoch};
+  });
+  await runWerewolf(createWerewolfStore(database.db,game.id,game.ownerEpoch),{
+    prepareRetrospectiveCapacity:fixtureRetrospectiveCapacity,getRetrospectiveStatement:fixtureWerewolfRetrospective,
+    async decide({request}) {
+      if (request.action === "pack_propose") return {kind:"spoken_target",targetId:request.legalTargetIds[0]!,text:request.packTurn?.turn === 3 ? null : request.packTurn?.lockedTargetId ? "Tomorrow we can build separate public cases and reconsider if the attack is blocked." : "Agree on this attack, then plan tomorrow's vote.",cue:null,thinking:"Private pack choice."};
+      if ("solo" in request && request.solo) return {kind:"solo_target",targetId:request.action === "protect" ? request.actorId : request.legalTargetIds[0]!,text:"A private night choice.",cue:null};
+      if (request.action === "speaking_priority") return {kind:"speaking_priority",priority:50};
+      if (request.action === "conversation") return {kind:"conversation",text:null,cue:null,recipientId:null,replyToContributionId:null};
+      if (request.action === "public_vote") return {kind:"spoken_target",targetId:null,text:null,cue:null,thinking:"Abstain for this fixture."};
+      return {kind:"speech",text:"I will listen to the village.",cue:null};
+    },
+  });
+  const window = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=omniscient&fromCursor=1&limit=64`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+  expect(window.rulesVersion).toBe(13);
+  const strategy = window.moments.find(m=>m.entry.kind === "proposal" && m.entry.beat === 3);
+  if (!strategy) throw new Error("Missing post-agreement strategy");
+  const passes = window.moments.filter(m=>m.entry.kind === "proposal" && !m.entry.text);
+  expect(passes).toHaveLength(2);
+  expect(passes.every(m=>!window.playback.some(p=>p.cursor === m.cursor))).toBe(true);
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=omniscient`,{waitUntil:"domcontentloaded"});
+    await skipWerewolfOpening(page); await pauseWerewolf(page);
+    for (const viewport of [{width:1440,height:1000},{width:640,height:360},{width:390,height:844}]) {
+      await page.setViewport(viewport); await seekWatch(page,strategy.cursor);
+      await watchText(page,"Tomorrow we can build separate public cases");
+      await page.waitForSelector('[aria-label*="Pack conversation"]');
+      expect(await page.$$eval("[data-room-player]",nodes=>nodes.map(n=>n.getAttribute("data-room-player"))).then(ids=>ids.sort())).toEqual(strategy.snapshot.players.filter(p=>p.alive && p.role === "werewolf").map(p=>p.id).sort());
+      expect(await page.evaluate('Array.from(document.querySelectorAll("[data-werewolf-stage], [data-werewolf-stage] *")).every(node=>!["auto","scroll"].includes(getComputedStyle(node).overflowX) && !["auto","scroll"].includes(getComputedStyle(node).overflowY))')).toBe(true);
+      await page.screenshot({path:`/tmp/werewolf-v13-pack-${viewport.width}.png`});
+    }
+    const mystery = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=mystery&fromCursor=1&limit=64`)).text();
+    expect(mystery).not.toContain("Tomorrow we can build separate public cases");
+    expect(mystery).not.toContain('"proposal"');
+  } finally {await page.close();}
+},90_000);
 
 test("Werewolf without visual mode shows village and pack portrait rooms on desktop and mobile", async () => {
   const game = await createClaimedHistoricalWerewolfGame({preset: "two_wolves", agentProfileIds: [], maxDays: 1});

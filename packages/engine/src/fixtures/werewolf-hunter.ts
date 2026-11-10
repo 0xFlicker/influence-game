@@ -6,7 +6,7 @@ import { runWerewolf, type WerewolfAgent } from "../werewolf/runner";
 export async function completedHunterFixture(mode: "held" | "snipe-only" | "double" = "double") {
   const gameId = `hunter-${mode}`;
   const players = Array.from({length:8}, (_,index) => ({id:`p${index}`,name:`Player ${index}`,personality:"Fixture",backstory:"",strategy:"",avatarUrl:null}));
-  const events = [startWerewolf(gameId,players,werewolfConfig("two_wolves",1,{playerCount:8,wolves:2,seer:false,doctor:true,hunter:true}),"hunter-parity")];
+  const events = [startWerewolf(gameId,players,{...werewolfConfig("two_wolves",1,{playerCount:8,wolves:2,seer:false,doctor:true,hunter:true}),rulesVersion:12},"hunter-parity")];
   const roles = replayWerewolf(events).roles;
   const victim = players.find(p=>roles[p.id] === "villager")!.id;
   const wolf = players.find(p=>roles[p.id] === "werewolf")!.id;

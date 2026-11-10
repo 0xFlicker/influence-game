@@ -67,7 +67,7 @@ export async function completedWerewolfResultsFixture(...args: Parameters<typeof
 }
 
 /** Current public conversation/ballot contracts, including a complete retrospective. */
-export async function completedCurrentWerewolfFixture(gameId: string, rulesVersion: 9 | 10 | 11 = 9, setup?: import("../werewolf/types").WerewolfSetup) {
+export async function completedCurrentWerewolfFixture(gameId: string, rulesVersion: 9 | 10 | 11 | 12 | 13 = 9, setup?: import("../werewolf/types").WerewolfSetup) {
   const players = Array.from({ length: 6 }, (_, index) => ({ id: `${gameId}-p${index}`, name: `Player ${index}`, personality: "Fixture", backstory: "", strategy: "", avatarUrl: null }));
   const events = [startWerewolf(gameId, players, {...currentConfig("one_wolf", 1, setup), rulesVersion}, `${gameId}-seed`)];
   const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {

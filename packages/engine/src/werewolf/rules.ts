@@ -3,17 +3,17 @@ import * as legacy from "./legacy-rules";
 import * as current from "./rules-v9";
 import type { WerewolfConfig, WerewolfEvent, WerewolfEventData, WerewolfPlayer, WerewolfPreset, WerewolfSetup, WerewolfState, WerewolfRequest, WerewolfAcceptedAction } from "./types";
 export { WEREWOLF_PRESETS, WEREWOLF_MAX_RECIPIENTS, WEREWOLF_PACK_ATTEMPTS, WEREWOLF_RULES as LEGACY_WEREWOLF_RULES, werewolfDayInitiative } from "./legacy-rules";
-export { WEREWOLF_RULES_V9, WEREWOLF_RULES_V11, WEREWOLF_RULES_V12, WEREWOLF_RULES_V12 as WEREWOLF_RULES, DEFAULT_DISCUSSION_POLICY } from "./rules-v9";
+export { WEREWOLF_RULES_V9, WEREWOLF_RULES_V11, WEREWOLF_RULES_V12, WEREWOLF_RULES_V13, WEREWOLF_RULES_V13 as WEREWOLF_RULES, DEFAULT_DISCUSSION_POLICY } from "./rules-v9";
 export * from "./items";
 export const legacyWerewolfConfig = legacy.werewolfConfig;
 export class WerewolfRulesVersionError extends Error {
-  constructor() { super("This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10, v11 and v12."); }
+  constructor() { super("This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10, v11, v12 and v13."); }
 }
 export function werewolfConfig(preset: WerewolfPreset, maxDays = 10, setup?: WerewolfSetup): WerewolfConfig {
-  return { ...legacy.werewolfConfig(preset, maxDays, setup), rulesVersion: setup?.hunter ? 12 : 11, discussionPolicy: { ...current.DEFAULT_DISCUSSION_POLICY } };
+  return { ...legacy.werewolfConfig(preset, maxDays, setup), rulesVersion: 13, discussionPolicy: { ...current.DEFAULT_DISCUSSION_POLICY } };
 }
 export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: WerewolfConfig, seed: string) {
-  if (config.rulesVersion === 9 || config.rulesVersion === 10 || config.rulesVersion === 11 || config.rulesVersion === 12) return current.assignRoles(players, config, seed);
+  if (config.rulesVersion === 9 || config.rulesVersion === 10 || config.rulesVersion === 11 || config.rulesVersion === 12 || config.rulesVersion === 13) return current.assignRoles(players, config, seed);
   return legacy.assignWerewolfRoles(players, config, seed);
 }
 export function startWerewolf(gameId: string, players: WerewolfPlayer[], config: WerewolfConfig, seed: string): WerewolfEvent {
@@ -47,7 +47,7 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
     || Object.entries(houseNarrationCallIds).some(([audience, id]) => !["mystery", "omniscient"].includes(audience) || (typeof id === "string" ? !id : !id || typeof id !== "object" || Array.isArray(id) || Object.entries(id).some(([part,callId]) => !["scene","hunt","protect","investigate","snipe"].includes(part) || typeof callId !== "string" || !callId))))) throw new Error("Invalid Werewolf narration references");
   event = canonical;
   const version = previous?.config.rulesVersion ?? (event.type === "werewolf.started" ? event.payload.config.rulesVersion : null);
-  if (version === 9 || version === 10 || version === 11 || version === 12) return current.applyEvent(previous, event);
+  if (version === 9 || version === 10 || version === 11 || version === 12 || version === 13) return current.applyEvent(previous, event);
   if (version !== 7 && version !== 8) throw new WerewolfRulesVersionError();
   return legacy.applyWerewolfEvent(previous, event);
 }

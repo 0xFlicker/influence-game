@@ -13,6 +13,8 @@ import {werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-m
 import {PresentationDirector} from "../components/watch/watch-director";
 import {ActiveFormatOverlay} from "../app/games/[slug]/components/active-format-label";
 import {ProductionPreview} from "../app/admin/production/production-preview";
+import {PortraitRoom} from "../app/games/[slug]/components/portrait-room";
+import {werewolfPortraitRoom, werewolfBackdrop} from "../components/games/werewolf/werewolf-room-presentation";
 
 export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; references?:ExportCue[]; prepare?:boolean};
 
@@ -23,10 +25,13 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
   useLayoutEffect(() => {
     void (async () => {
       await document.fonts.ready;
+      // Let stage geometry and its measured text children commit before auditing
+      // the DOM. A fresh frame must not report its initial zero-width layout.
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       // Pagination is measured after mount; wait for that state before auditing.
       for (let attempt = 0; attempt < 30; attempt++) {
-        const pending = Array.from(document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy], [data-speech-bubble] [data-speech-page-copy]"))
+        const pending = Array.from(document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy], [data-speech-bubble] [data-speech-page-copy], [data-in-scene-thinking] [data-speech-page-copy]"))
           .some(page => page.getBoundingClientRect().width === 0 || page.getBoundingClientRect().bottom > page.parentElement!.getBoundingClientRect().bottom + 1);
         const stage = document.querySelector<HTMLElement>("[data-influence-stage]");
         const roomPending = !!stage && stage.clientWidth < 600 && document.querySelectorAll("[data-room-player]").length > 4
@@ -52,9 +57,15 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
           if (box.left < room.right && box.right > room.left && box.top < room.bottom && box.bottom > room.top) throw new Error("Format pill covers the room label");
         }
       }
+      for (const label of document.querySelectorAll<HTMLElement>("[data-room-player] p, [data-speech-bubble] > p")) {
+        if (label.closest<HTMLElement>("[data-speech-bubble]") && Number(getComputedStyle(label.closest<HTMLElement>("[data-speech-bubble]")!).opacity) <= .1) continue;
+        for (const text of [label,...label.querySelectorAll<HTMLElement>("span")]) {
+          if (text.scrollWidth > text.clientWidth + 1 || text.scrollHeight > text.clientHeight + 1) throw new Error(`Required player label is clipped: ${text.textContent}`);
+        }
+      }
       const names = Array.from(document.querySelectorAll<HTMLElement>("[data-room-player] > p"));
       if (names.length > 5 || document.querySelector("[data-paginated-portrait-room]")) {
-        const stage = document.querySelector<HTMLElement>("[data-influence-stage]")!.getBoundingClientRect();
+        const stage = document.querySelector<HTMLElement>("[data-influence-stage], [data-werewolf-stage]")!.getBoundingClientRect();
         const overlaps = (a:DOMRect,b:DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
         const speech = document.querySelector<HTMLElement>("[data-speech-bubble]");
         if (label && speech && Number(getComputedStyle(speech).opacity) > .1 && overlaps(label.getBoundingClientRect(),speech.getBoundingClientRect()))
@@ -112,10 +123,11 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
         if (!winnerImage || winnerImage.getBoundingClientRect().height < 24) throw new Error("Winner artwork has no readable space");
       }
       const namePage = room?.querySelector<HTMLElement>("[data-room-context-label] [data-speech-page]");
-      const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble]") ?? document.querySelector<HTMLElement>("[data-speech-bubble]");
+      const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble], [data-in-scene-thinking]") ?? document.querySelector<HTMLElement>("[data-speech-bubble], [data-in-scene-thinking]");
       const speechPage = speechBox && Number(getComputedStyle(speechBox).opacity) > .1 ? speechBox.querySelector<HTMLElement>("[data-speech-page]") : null;
       setResult(JSON.stringify({frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,
+        speechPages:Array.from(document.querySelectorAll<HTMLElement>("[data-speech-page]")).map(page=>({page:page.dataset.speechPage,text:page.textContent})),
         castMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-room-player]")).map(member=>member.dataset.roomPlayer),
         winnerMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-winner-player]")).map(member=>member.dataset.winnerPlayer)}));
       continueRender(handle);
@@ -131,6 +143,8 @@ function ViewerFrame({manifest,reference:singleReference,references}:ParityProps
   const reference = references?.[index] ?? singleReference;
   const sample = sampleTiming(manifest.timeline[index]!,time);
   const picture = reference.picture;
+  const previousPicture = references?.[index - 1]?.picture;
+  const nextPicture = references?.[index + 1]?.picture;
   const director = useMemo(() => {
     const value = new PresentationDirector({policy:werewolfWatchPolicy});
     if (picture.kind === "werewolf") value.load([picture.cue]);
@@ -152,9 +166,20 @@ function ViewerFrame({manifest,reference:singleReference,references}:ParityProps
     })().catch(cancelRender);
   },[ready]);
   const actor = manifest.cues[index]!.picture;
-  const thought = sample.thought ? {...sample.thought,speaker:actor.kind === "thinking" ? actor.actor.name : ""} : null;
+  const thought = sample.thought ? {...sample.thought,speaker:actor.kind === "thinking" ? actor.actor.name : "",
+    roleLabel:actor.kind === "thinking" ? actor.roleLabel : undefined} : null;
+  // An isolated thought omits its neighboring speech. Derive reference framing
+  // from the viewer's original source cue, independently of the export binding.
+  const thoughtRoom = actor.kind === "thinking" && picture.kind === "werewolf" ? werewolfPortraitRoom(picture.cue) : null;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black text-white">
-    {picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={manifest.reducedMotion} /> : picture.kind === "werewolf" ? <WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
+    {thoughtRoom && picture.kind === "werewolf" ? <>
+      <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
+      <div data-werewolf-stage className="relative flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
+        <PortraitRoom beat={thoughtRoom} backgroundUrl={werewolfBackdrop(picture.cue)} floorPerspective hideSpeech elapsedMs={sample.elapsedMs} readingElapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} controlsInset={0} />
+      </SceneThinkingProvider></div>
+    </> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={manifest.reducedMotion} /> : picture.kind === "werewolf" ? <WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
+      previousCue={previousPicture?.kind === "werewolf" && !previousPicture.scene ? previousPicture.cue : undefined}
+      nextCue={nextPicture?.kind === "werewolf" && !nextPicture.scene ? nextPicture.cue : undefined}
       reduced={manifest.reducedMotion} director={{manualAdvance:()=>{},setReady:()=>{},getSnapshot:()=>({...director.getSnapshot(),isPlaying:true}),getSpeechElapsedBaseMs:()=>sample.elapsedMs}}
       holding={false} contextLabel={reference.label} /> : picture.kind === "influence" && picture.beat ? <>
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
@@ -163,7 +188,7 @@ function ViewerFrame({manifest,reference:singleReference,references}:ParityProps
         <VisualPresentationFrame beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster} voteLedger={picture.ledger ?? undefined}/>
       </SceneThinkingProvider></div>
     </> : null}
-    <FormatAudit expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
+    <FormatAudit key={frame} expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
   </div>;
 }
 
@@ -172,7 +197,7 @@ function ExportFrame(props:ParityProps) {
   const cue=props.manifest.cues[cueIndexAt(props.manifest.timeline,time)]!, picture=cue.picture;
   const count=picture.kind === "thinking" ? picture.room?.players.length ?? 0 : picture.kind === "influence" && picture.beat?.kind === "portrait-room" ? picture.beat.participants.length : 0;
   const paginatable=picture.kind === "thinking" ? picture.room?.paginateLargeCast === true : picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true;
-  return <><ReplayFrame {...props} />{!props.prepare && <FormatAudit expectedFormat={cue.activeFormatId} expectedPaged={paginatable && count > 4 && (props.manifest.width < 600 || props.manifest.height < 374 || count > 8)} />}</>;
+  return <><ReplayFrame {...props} />{!props.prepare && <FormatAudit key={frame} expectedFormat={cue.activeFormatId} expectedPaged={paginatable && count > 4 && (props.manifest.width < 600 || props.manifest.height < 374 || count > 8)} />}</>;
 }
 
 /** Exercise the real Studio Player with an isolated selected moment. */

@@ -7,17 +7,25 @@ import { initialWerewolfItems, isWerewolfItemId } from "./items";
 import type { WerewolfAcceptedAction, WerewolfConfig, WerewolfEvent, WerewolfRequest, WerewolfState, WerewolfStep, WerewolfPlayer, WerewolfDayResult, WerewolfPackVote, WerewolfOutcome } from "./types";
 
 export const DEFAULT_DISCUSSION_POLICY = { bytesPerLivingPlayer: 400, messageBytes: 320, maxHandoffs: 3 };
-export const WEREWOLF_RULES_V9 = `Werewolf is a social deduction game. Win with your faction even if you die. Wolves know their partners; other roles are private until the competitive outcome. Lies and false role claims are legal speech, never verified facts.
+function rulesWithPack(packRules: string) { return `Werewolf is a social deduction game. Win with your faction even if you die. Wolves know their partners; other roles are private until the competitive outcome. Lies and false role claims are legal speech, never verified facts.
 Everyone may introduce themselves before the first night. Each night the Seer investigates exactly one other living player and learns wolf/not-wolf only when night resolves. Day N has at most N completed checks; no daytime speech or vote creates another investigation. The Doctor protects one living player, including themself, but cannot repeat the previous night's target. All night choices resolve together. Protection prevents the pack attack; a Seer killed that night still receives their check but cannot communicate it.
-Two wolves alternate combined speech plus explicit target proposals for up to three full exchanges (six individual beats). Your proposal remains a standing offer until replaced or night ends. Matching current targets immediately lock the attack, including after the first back-and-forth; there is no extra ballot. Six beats without agreement mean no attack. A lone wolf selects one target. Only living non-wolves are legal pack targets.
+${packRules}
 Day discussion has a shared UTF-8 speech byte allowance, visible in the observation. This is a ceiling, not a target to spend. Silence costs no spoken bytes. If you have nothing new or consequential to add, pass with null text; an offered turn or direct question does not require speech. Do not recap the room, repeat a position, or announce you have nothing to add. Not everyone is guaranteed a discussion opportunity. When less than one full message allowance remains, discussion ends with the unused bytes; a complete silent sweep also ends discussion. Passing does not abstain from the later vote.
 A structured recipient receives the next opportunity when handoffs remain. After three directed handoffs, if you speak, address someone other than the preceding speaker or the room; passing remains valid. References to earlier statements remain legal and do not schedule speakers. On the penultimate turn, if you speak, close your point instead of asking for a further direct answer from the final speaker. See the turn-specific instructions. Original accepted speech is published before anyone else acts; no future speech exists yet. Unspoken opportunities are private: your history contains spoken contributions only, and does not tell you who was offered a turn or chose to pass.
 After discussion, everyone votes exactly once in a published seeded order. Submit the target you want eliminated, or null to abstain, together with optional speech. A vote is against its target, never an endorsement or a vote to save them. Each voter sees all earlier votes, speeches, totals and remaining voters. Votes cannot change. More than half of ALL living players must vote for the same target to eliminate them; abstentions never lower this threshold. Everyone gets their ballot before resolution even if a majority is already secured. Otherwise no one is eliminated. The day ends either way: no plurality, runoff, trial or extra discussion.
-Death removes all gameplay speech, voting and night actions. No whispers, jury, empowerment, resurrection or death speeches. The village wins when no wolves remain; wolves win at parity or greater. Check victory after the complete night or day resolution. The day limit is a draw if neither faction has won. After the outcome all original contestants speak once in a separate retrospective which cannot change the result.`;
+Death removes all gameplay speech, voting and night actions. No whispers, jury, empowerment, resurrection or death speeches. The village wins when no wolves remain; wolves win at parity or greater. Check victory after the complete night or day resolution. The day limit is a draw if neither faction has won. After the outcome all original contestants speak once in a separate retrospective which cannot change the result.`; }
+const PACK_RULES_V9 = "Two wolves alternate combined speech plus explicit target proposals for up to three full exchanges (six individual beats). Your proposal remains a standing offer until replaced or night ends. Matching current targets immediately lock the attack, including after the first back-and-forth; there is no extra ballot. Six beats without agreement mean no attack. A lone wolf selects one target. Only living non-wolves are legal pack targets.";
+const PACK_RULES_V13 = "Two wolves privately alternate combined speech and explicit target decisions for at most three turns EACH per night (six decisions total). Their two jobs are to agree on an attack and strategize for the next day's discussion and vote. Before agreement each wolf's latest target is a standing proposal. Matching targets permanently lock the attack but do not end talk or reset the turn limit. Subsequent decisions must retain that target while optionally speaking to the pack. After agreement, two consecutive silent passes end talk early; the pass streak starts after the locking decision and resets on speech. Before agreement, passes consume turns but cannot end talk early. Six decisions without agreement mean no attack. There is no extra ballot. A lone wolf selects one target with one private explanation. Only living non-wolves are legal pack targets.";
+export const WEREWOLF_RULES_V9 = rulesWithPack(PACK_RULES_V9);
+const PRIORITY_RULES = `At the start of each day, before discussion, every living player privately submits an integer speaking priority from 1 to 100. These silent requests run independently in parallel. Higher priorities receive earlier normal speaking opportunities; tied priorities use a seeded daily order. Directed replies still work during discussion. Priorities are private scheduling data, not dialogue or evidence of anyone's role. The voting order remains independently seeded.`;
+const ITEM_RULES = `Item ownership is private: you are told which items exist, which items you currently hold, and item uses you have publicly seen, but never another living player's holdings. The Hunter is a village role and starts with one single-use Snipe (item id "snipe"). On each night while the Hunter is alive and still holds it, the Hunter privately decides to hold it or fire it at one other living player. Firing removes that player when night resolves, together with the pack attack; Doctor protection blocks only the pack attack, not a snipe. A fired snipe is consumed even if its target also dies to the pack attack. Holding it keeps it for a later night. If the Hunter has no snipe left, they receive no snipe decision. The snipe decision's spoken text is a private aside for omniscient spectators, never delivered to other contestants.`;
 export const WEREWOLF_RULES_V11 = `${WEREWOLF_RULES_V9}
-At the start of each day, before discussion, every living player privately submits an integer speaking priority from 1 to 100. These silent requests run independently in parallel. Higher priorities receive earlier normal speaking opportunities; tied priorities use a seeded daily order. Directed replies still work during discussion. Priorities are private scheduling data, not dialogue or evidence of anyone's role. The voting order remains independently seeded.`;
+${PRIORITY_RULES}`;
 export const WEREWOLF_RULES_V12 = `${WEREWOLF_RULES_V11}
-This game has items. Item ownership is private: you are told which items exist, which items you currently hold, and item uses you have publicly seen, but never another living player's holdings. The Hunter is a village role and starts with one single-use Snipe (item id "snipe"). On each night while the Hunter is alive and still holds it, the Hunter privately decides to hold it or fire it at one other living player. Firing removes that player when night resolves, together with the pack attack; Doctor protection blocks only the pack attack, not a snipe. A fired snipe is consumed even if its target also dies to the pack attack. Holding it keeps it for a later night. If the Hunter has no snipe left, they receive no snipe decision. The snipe decision's spoken text is a private aside for omniscient spectators, never delivered to other contestants.`;
+This game has items. ${ITEM_RULES}`;
+export const WEREWOLF_RULES_V13 = `${rulesWithPack(PACK_RULES_V13)}
+${PRIORITY_RULES}
+Items are optional: the frozen setup determines whether a Hunter and items exist. ${ITEM_RULES}`;
 const same = (a: unknown, b: unknown) => hashCanonicalJson(a) === hashCanonicalJson(b);
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 function shuffled(ids: string[], seed: string, purpose: string, day: number) {
@@ -46,7 +54,18 @@ function packResult(state: WerewolfState): WerewolfPackVote | null {
   if (order.length === 1 && state.actions.length) {
     const d = state.actions[0]!.decision;
     if ((d.kind !== "spoken_target" && d.kind !== "solo_target") || d.targetId === null) throw new Error("Missing lone-wolf target");
-    return { attempt: 1, ballots: [{ voterId: order[0]!, targetId: d.targetId }], targetId: d.targetId, endReason: "agreed" };
+    return { attempt: 1, ballots: [{ voterId: order[0]!, targetId: d.targetId }], targetId: d.targetId, endReason: "agreed",
+      ...(state.config.rulesVersion >= 13 ? { discussion: { beats: 1, agreementBeat: 1, endedBy: "solo" as const } } : {}) };
+  }
+  if (state.config.rulesVersion >= 13) {
+    const pack = state.pack!;
+    if (!pack.discussion) throw new Error("Missing v13 pack discussion state");
+    const bothPass = pack.targetId !== null && pack.discussion.consecutivePasses === order.length;
+    if (!bothPass && state.actions.length < order.length * 3) return null;
+    return { attempt: Math.ceil(state.actions.length / order.length),
+      ballots: pack.targetId !== null ? pack.discussion.agreementBallots : ballots,
+      targetId: pack.targetId, endReason: pack.targetId !== null ? "agreed" : "attempt_limit",
+      discussion: { beats: state.actions.length, agreementBeat: pack.discussion.agreementBeat, endedBy: bothPass ? "both_pass" : "turn_limit" } };
   }
   const agreed = ballots.length === order.length && ballots.length > 0 && ballots.every(b => b.targetId === ballots[0]!.targetId);
   if (!agreed && state.actions.length < 6) return null;
@@ -79,7 +98,12 @@ export function nextStep(state: WerewolfState): WerewolfStep {
     const result = packResult(state);
     if (result) return { kind: "event", event: { type: "werewolf.pack_vote_resolved", payload: result } };
     const order = packOrder(state);
-    request = { actorId: order[n % order.length]!, action: "pack_propose", legalTargetIds: state.aliveIds.filter(id => state.roles[id] !== "werewolf"), messageBytes: state.config.discussionPolicy!.messageBytes, targetRequired: order.length === 1, ...(state.config.rulesVersion >= 10 && order.length === 1 ? {solo: true as const} : {}) };
+    const packTurn = state.config.rulesVersion >= 13 && order.length > 1
+      ? { lockedTargetId: state.pack!.targetId, turn: Math.floor(n / order.length) + 1, maxTurns: 3 as const } : undefined;
+    request = { actorId: order[n % order.length]!, action: "pack_propose",
+      legalTargetIds: packTurn?.lockedTargetId ? [packTurn.lockedTargetId] : state.aliveIds.filter(id => state.roles[id] !== "werewolf"),
+      messageBytes: state.config.discussionPolicy!.messageBytes, targetRequired: order.length === 1,
+      ...(packTurn ? { packTurn } : {}), ...(state.config.rulesVersion >= 10 && order.length === 1 ? {solo: true as const} : {}) };
   }
   if (state.phase === "night" && !state.resolved) {
     const solo = state.config.rulesVersion >= 10 ? {solo: true as const, messageBytes: state.config.discussionPolicy!.messageBytes} : {};
@@ -156,6 +180,7 @@ export function validateAction(request: WerewolfRequest, action: WerewolfAccepte
   } else {
     if (d.kind !== "spoken_target" || !same(Object.keys(d).sort(), ["cue", "kind", "targetId", "text", "thinking"]) || typeof d.thinking !== "string" || fallback === null && !d.thinking.trim() || d.thinking.length > 2000) throw new Error("Invalid spoken target decision shape or thinking");
     if (request.action === "pack_propose" && request.targetRequired && (d.targetId === null || !request.legalTargetIds.includes(d.targetId))) throw new Error("Lone wolf proposal requires a legal target");
+    if (request.action === "pack_propose" && request.packTurn?.lockedTargetId != null && fallback === null && d.targetId !== request.packTurn.lockedTargetId) throw new Error("Pack attack target is locked");
     if (d.targetId === null ? request.action !== "public_vote" && fallback === null : !request.legalTargetIds.includes(d.targetId)) throw new Error("Spoken target is not legal for this action");
     if (request.action === "public_vote" && fallback !== null && d.targetId !== null) throw new Error("Unavailable vote must abstain");
     if (request.action === "pack_propose" && fallback !== null && !request.targetRequired && d.targetId !== null) throw new Error("Unavailable pack proposal must clear its target");
@@ -226,13 +251,28 @@ export function applyEvent(previous: WerewolfState | null, event: WerewolfEvent)
         state.history.push({ kind: "ballot", day: state.day, actorId: action.actorId, targetId: d.targetId, text: d.text, cue: d.cue, unavailable: action.fallback !== null,
           totals: result.totals, requiredVotes: result.requiredVotes!, remainingVoterIds: state.conversation!.voterIds.slice(state.actions.length) });
       } else if (action.action === "pack_propose" && (d.kind === "spoken_target" || d.kind === "solo_target")) {
+        if (state.config.rulesVersion >= 13 && packOrder(state).length > 1) {
+          const pack = state.pack!;
+          if (!pack.discussion) throw new Error("Missing v13 pack discussion state");
+          if (pack.targetId === null) {
+            const ballots = packChoices(state);
+            if (ballots.length === packOrder(state).length && ballots.every(b => b.targetId === ballots[0]!.targetId)) {
+              pack.targetId = ballots[0]!.targetId;
+              pack.discussion.agreementBeat = state.actions.length;
+              pack.discussion.agreementBallots = ballots;
+            }
+          } else {
+            pack.discussion.consecutivePasses = action.fallback === null && d.text === null ? pack.discussion.consecutivePasses + 1 : 0;
+          }
+        }
         state.history.push({ kind: "proposal", day: state.day, actorId: action.actorId, targetId: d.targetId, text: d.text, cue: d.cue, unavailable: action.fallback !== null, beat: state.actions.length });
       } else if (d.kind === "speech" && (d.text !== null || d.cue !== null)) state.history.push({ kind: "speech", day: state.day, actorId: action.actorId, text: d.text, cue: d.cue, audience: "public" });
       break;
     }
     case "werewolf.phase_started": {
       state.phase = event.payload.phase; state.day = event.payload.day; state.actions = []; state.resolved = false;
-      if (state.phase === "pack") { state.pack = { attemptsCompleted: 0, targetId: null, ended: false }; state.conversation = null; }
+      if (state.phase === "pack") { state.pack = { attemptsCompleted: 0, targetId: null, ended: false,
+        ...(state.config.rulesVersion >= 13 ? { discussion: { agreementBeat: null, agreementBallots: [], consecutivePasses: 0 } } : {}) }; state.conversation = null; }
       if (state.phase === "day") {
         state.pack = null;
         const policy = state.config.discussionPolicy!, order = shuffled(state.aliveIds, state.seed, "discussion", state.day);

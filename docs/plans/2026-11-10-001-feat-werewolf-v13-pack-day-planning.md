@@ -1,7 +1,7 @@
 ---
 title: Werewolf v13 pack discussion and next-day planning
 type: feat
-status: in_progress
+status: complete
 date: 2026-11-10
 scope: implementation authorized
 ---
@@ -267,7 +267,7 @@ is incomplete**.
 
 ### Model quality evaluation, separately authorized
 
-No paid run is part of this planning task. A later authorized evaluation should use
+No paid run is part of this implementation task. A later authorized evaluation should use
 durable localhost API games with seven/eight-player two-wolf casts, multiple seeds,
 the same models and a stated aggregate spend cap. Retain game IDs, watch URLs,
 sanitized requests/responses, structured thinking, native reasoning, attempts,
@@ -282,9 +282,45 @@ reasonably revise the plan. Track early passes, strategy turns after agreement,
 private leaks, latency and cost. More words or a higher wolf win rate alone do not
 prove better strategy; voluntary silence remains legal and no plan is enforced.
 
-## Planning validation
+## Implementation and validation
 
-This plan is grounded in the current checkout, the linked strategy source and the
-user's confirmed target-lock and post-agreement-only early-closure decisions.
-Only the pre-existing coaching changes were committed. V13 runtime, schema,
-presentation and paid-model acceptance remain future implementation work.
+The approved plan was committed as `a21fbbfb`. The implementation adds v13 reducer
+state, strict locked-target requests, both-objective coaching, next-day recall
+proof, regenerated MCP contracts and version-aware report/player labels. Existing
+versions and already frozen lobbies retain their semantics. Recovery tests cover
+owner replacement after agreement, strategy speech and a pass, including a rejected
+target followed by a journaled accepted result with no provider redispatch.
+
+Fresh visual checks also found clipped frozen names. Shared cast labels now wrap,
+speech fitting reserves the measured speaker label, and short two-person geometry
+uses the existing compact room. Taller pictures keep the circular cast. These are
+shared viewer/Studio/export changes, with an additional Influence consumer check.
+There are no intentional content differences between those surfaces.
+
+Current local validation (November 10):
+
+| Check | Outcome |
+| --- | --- |
+| `bun run test` | 3,519 passed; five skipped. |
+| Focused v13 engine/export contracts | 21 passed, including direct-prefix recovery, privacy and House Cuts. |
+| Focused typography/room/export tests | 24 passed. |
+| `bun run check` | Passed. |
+| `bun run mcp:schemas:check` | Generated contracts are current. |
+| Deterministic localhost browser tests | Three passed: v13 creation, post-agreement desktop/mobile playback, v7 historical replay. Harness servers and isolated database were cleaned up. |
+| `bun run test:postgres` | 2,621 passed; no failures. |
+| Fresh rendered/encoded matrix | Passed all nine cases at four geometries: 296 comparisons and nine fresh encoded videos. Viewer, Studio Source, Studio Selected cut and export agree, with caption-page/scroll audits, direct/reverse sampling, recorded audio, full night sequence, isolated cuts, Mystery and historical v8/v12 coverage. |
+
+Evidence is retained under
+`/Users/user/.codex/visualizations/2026/11/10/01a1c788-373b-70a2-ace1-6971897ec012/`:
+`werewolf-v13/` contains canonical source, selected cases, manifests, matched frames,
+caption-page audits and encoded clips; `werewolf-v13-browser/` contains the actual
+localhost viewer screenshots; `influence-name-wrap/` covers the shared Influence
+consumer. Refresh old bundles from the same frozen selections to capture new
+label measurements, then encode fresh movies. Old v7–v12 sources retain their
+original speech; including additional accepted live speech requires an explicit
+source/selection refresh.
+
+All inference and audio in these checks are deterministic fixtures/mocks. No paid
+model qualification, production/staging writes, deployment or historical media
+regeneration was performed. Strategic improvement remains an empirical question
+for the separately authorized API evaluation above.
