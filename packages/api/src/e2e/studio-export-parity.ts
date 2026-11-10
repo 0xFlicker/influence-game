@@ -23,7 +23,7 @@ export async function verifyStudioEncodedParity({descriptor, token, origin, outp
   await writeFile(selection,JSON.stringify(descriptor,null,2));
   const run = (binary:string,args:string[],withToken = false):Promise<void> => new Promise((accept,reject) => {
     const child = spawn(binary,args,{cwd:repoRoot,detached:true,stdio:["ignore","pipe","pipe"],
-      env:{PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,...(withToken && {INFLUENCE_API_SESSION_TOKEN:token})}});
+      env:{PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,REPLAY_BROWSER_EXECUTABLE:process.env.REPLAY_BROWSER_EXECUTABLE,...(withToken && {INFLUENCE_API_SESSION_TOKEN:token})}});
     let failure = "";
     const timer = setTimeout(()=>{if(child.pid) process.kill(-child.pid,"SIGTERM");},180_000);
     child.stdout?.on("data",data=>process.stdout.write(data));

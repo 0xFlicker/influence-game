@@ -43,7 +43,7 @@ Eliminated players stop speaking, voting, and taking night actions. There are no
 
 ## Watching and Visuals
 
-Choose **Mystery** to see public conversation, ballots, and outcomes. Choose **Omniscient** to also see roles, private pack proposals, resolved pack choices, and resolved night actions. Viewing mode stays fixed for the session. Omniscient viewers can toggle captured thinking; Mystery never receives it.
+Choose **Mystery** to see public conversation, ballots, and outcomes. Choose **Omniscient** to also see roles, private pack proposals, resolved pack choices, and resolved night actions. Switch modes in the player. Omniscient viewers can toggle captured thinking; Mystery never receives it.
 
 Visual Mode prepares village and private pack scenes during play. Presentation never changes accepted speech, votes, or outcomes. See the [versioned rules and implementation guide](https://github.com/0xFlicker/influence-game/blob/main/docs/werewolf.md) for more detail. Historical v7 and v8 games retain their original thread and sealed-ballot rules when replayed.
 

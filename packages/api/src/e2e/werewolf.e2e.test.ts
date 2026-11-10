@@ -33,7 +33,7 @@ import { closeBrowser, createAuthenticatedPage, launchBrowser, rejectOptionalAna
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
 import { cleanupE2eResources } from "./cleanup.js";
-import {checkSharedWerewolfWatch, checkConsecutiveReplies, checkInSceneThinking, checkBallotCollection, seekWatch, watchText, pauseWerewolf, skipWerewolfOpening, dismissAnalyticsNotice} from "./shared-watch-browser.js";
+import {checkSharedWerewolfWatch, checkConsecutiveReplies, checkInSceneThinking, checkBallotCollection, chooseWerewolfAudience, seekWatch, watchText, pauseWerewolf, skipWerewolfOpening, dismissAnalyticsNotice} from "./shared-watch-browser.js";
 import type {WerewolfPresentation} from "@influence/engine/werewolf/presentation";
 import type {WerewolfDecisions} from "@influence/engine/werewolf/decisions";
 import { checkAdminContinuity } from "./admin-continuity-browser.js";
@@ -673,6 +673,7 @@ test("historical v7 result opens as a completed replay without a retrospective t
   try {
     await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
     await dismissAnalyticsNotice(page);
+    await skipWerewolfOpening(page);
     await page.waitForSelector("[data-werewolf-stage][data-cursor]");
     await pauseWerewolf(page);
     expect(await page.$eval("[data-werewolf-stage]",node=>node.getAttribute("data-cursor"))).not.toBeNull();
@@ -1403,6 +1404,25 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     expect(await page.$('[data-night-role]')).toBeNull();
     expect(await page.$('[data-doctor-save]')).toBeNull();
     expect(await page.$eval('[data-werewolf-stage]',element=>element.textContent)).not.toContain("Tonight’s target");
+    await chooseWerewolfAudience(page,"omniscient");
+    await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${cursor}`);
+    expect(await page.$('[data-night-role], [data-night-hunt]')).toBeNull();
+    await seekWatch(page,cursor,0);await page.waitForSelector('[data-night-role="protect"]');
+    await page.evaluate(`(() => {
+      window.__mysteryPrivateFlash = false;
+      const observer = new MutationObserver(() => {
+        const mystery = Boolean(document.querySelector('button[aria-label="Viewing mode: Mystery"]'));
+        if (mystery && document.querySelector('[data-night-role], [data-night-hunt], [data-doctor-save]')) window.__mysteryPrivateFlash = true;
+      });
+      observer.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});
+      window.__stopMysteryFlashObserver = () => observer.disconnect();
+    })()`);
+    await chooseWerewolfAudience(page,"mystery");
+    await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) < ${dawn}`);
+    expect(await page.$('[data-night-role], [data-night-hunt], [data-doctor-save]')).toBeNull();
+    expect(await page.evaluate("window.__mysteryPrivateFlash")).toBe(false);
+    await page.evaluate("window.__stopMysteryFlashObserver()");
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
   } finally { await page.close(); }
 }, 60_000);
 
@@ -1753,7 +1773,7 @@ test("long public ballot explanations paginate inside their bubble", async () =>
       event.payload.decision.text = text;
     }
   }
-  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:JSON.stringify({visibility:"public",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",maxPlayers:6,startedAt:new Date().toISOString(),config:JSON.stringify({visibility:"public",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
   await database.db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
   const window = await (await fetch(`${servers.apiUrl}/api/werewolf/${id}/watch?audience=omniscient&limit=64`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
   const ballot = window.moments.find(moment => moment.entry.kind === "ballot")!;
@@ -1776,6 +1796,25 @@ test("long public ballot explanations paginate inside their bubble", async () =>
       expect(await fits()).toBe(true);
       expect(await page.$eval('[data-speech-bubble] blockquote', node => node.textContent)).not.toContain("today.");
       await page.screenshot({path:`/tmp/werewolf-ballot-pagination-${size.width}.png`});
+      const pageCount = await page.$eval('[data-speech-page-copy]', node => Number(node.getAttribute('data-speech-page-count')));
+      expect(pageCount).toBeGreaterThan(1);
+      for (let next = 1; next < pageCount; next++) {
+        await page.click('[data-speech-bubble]');
+        await page.waitForFunction(`Number(document.querySelector('[data-speech-page-copy]')?.getAttribute('data-speech-page')) === ${next}`);
+        expect(await page.$eval('[data-werewolf-stage]', node => Number(node.getAttribute('data-cursor')))).toBe(ballot.cursor);
+      }
+      await page.screenshot({path:`/tmp/werewolf-ballot-clicked-last-${size.width}.png`});
+      if (size.width === 700) {
+        await chooseWerewolfAudience(page,"mystery");
+        await page.waitForFunction(`document.querySelector('[data-speech-bubble] blockquote')?.textContent?.includes("today.")`,{timeout:5000});
+        const shared = new URL(page.url());
+        expect(shared.searchParams.get("audience")).toBe("mystery");
+        expect(shared.searchParams.get("cue")).toContain(":mystery:");
+        await page.reload({waitUntil:"domcontentloaded"});
+        await page.waitForFunction(`document.querySelector('[data-speech-bubble] blockquote')?.textContent?.includes("today.")`,{timeout:10000});
+        continue;
+      }
+      await seekWatch(page,ballot.cursor);
       const {visualSpeechReadingMs} = await import("@influence/engine/visual-speech");
       const lastPageFrame = Number(await page.evaluate('document.querySelector(\'input[aria-label="Replay position"]\').value')) + Math.floor(visualSpeechReadingMs(text) * .95 * 30 / 1000);
       await page.evaluate(`(() => {
@@ -1788,6 +1827,38 @@ test("long public ballot explanations paginate inside their bubble", async () =>
       await page.waitForFunction(`document.querySelector('[data-speech-bubble] blockquote')?.textContent?.includes("today.")`, {timeout:5000});
       expect(await fits()).toBe(true);
     }
+    await page.goto(`${servers.webUrl}/games`,{waitUntil:"domcontentloaded"});
+    await rejectOptionalAnalytics(page);
+    const card = `article:has(a[href="/games/${id}"])`;
+    await page.waitForSelector(card);
+    for (const width of [320,390,800,1440]) {
+      await page.setViewport({width,height:900});
+      const menu = await page.$(`${card} details`);
+      const menuVisible = menu && await menu.evaluate(node => node.ownerDocument.defaultView!.getComputedStyle(node).display !== "none");
+      if (menuVisible) await menu!.$eval("summary",node => node.dispatchEvent(new node.ownerDocument.defaultView!.MouseEvent("click",{bubbles:true})));
+      for (const audience of ["mystery","omniscient"]) {
+        const link = `${card} ${menuVisible ? "details[open]" : ".episode-watch-actions div:not(:has(details))"} a[href="/games/${id}/replay?audience=${audience}"]`;
+        const rect = await page.$eval(link,node => {const bounds=node.getBoundingClientRect();return {width:bounds.width,height:bounds.height,left:bounds.left,right:bounds.right};});
+        expect(rect.width).toBeGreaterThan(0);expect(rect.height).toBeGreaterThanOrEqual(44);
+        expect(rect.left).toBeGreaterThanOrEqual(0);expect(rect.right).toBeLessThanOrEqual(width);
+      }
+      await page.screenshot({path:`/tmp/werewolf-grid-${width}.png`});
+    }
+    await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+    await page.waitForSelector(card);
+    await page.click(`${card} .episode-card-link`);
+    await page.waitForSelector("dialog[open]");
+    await page.evaluate("Promise.all(document.querySelector('dialog[open]').getAnimations().map(animation => animation.finished))");
+    const backgrounds:string[] = [];
+    for (const audience of ["mystery","omniscient"]) {
+      const matches = await page.$$(`dialog[open] a[href="/games/${id}/replay?audience=${audience}"]`);
+      const boxes = await Promise.all(matches.map(link => link.boundingBox()));
+      const visible = boxes.findIndex(box => box && box.width > 0 && box.height >= 44);
+      expect(visible).toBeGreaterThanOrEqual(0);
+      backgrounds.push(await matches[visible]!.evaluate(node => node.ownerDocument.defaultView!.getComputedStyle(node).backgroundColor));
+    }
+    expect(backgrounds[0]).toBe(backgrounds[1]!);
+    await page.screenshot({path:"/tmp/werewolf-grid-mobile-dialog.png"});
   } finally {await page.close();}
 },120_000);
 

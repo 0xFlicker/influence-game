@@ -84,10 +84,17 @@ Fit and reflow cast, labels and names within the picture. Paginate long speech,
 thoughts and House copy using the shared presentation clock and enough reading
 time. Clipping required content, shrinking it to unreadable text, or asking the
 viewer to page manually or to use a separate required paging UI are not acceptable
-substitutes. Normal keyboard/click advancement following the established player
-transport rules remains allowed. Cropping decorative
+substitutes. Normal keyboard/click advancement follows the shared director's
+measured page schedule: a gesture advances one page before the existing exit
+and cue transition. Automatic clock-driven pagination remains complete without
+interaction. Cropping decorative
 scenery is different from hiding required cast/text content. Studio's editorial
 lists, inspectors and timeline outside the rendered picture may scroll.
+
+Narrow solo ballots reserve enough speech-bubble height for the role label,
+pagination and a complete readable line while keeping the portrait and vote
+ledger in their own space. The same solo layout and typography measurement are
+used by the viewer, Studio and freshly prepared exports.
 
 Regression coverage must inspect the actual player/stage at narrow, short and
 fullscreen geometries with large casts and long names/copy. Reject scrollable

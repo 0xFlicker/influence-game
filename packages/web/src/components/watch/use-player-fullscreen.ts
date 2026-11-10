@@ -20,7 +20,7 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>, initia
       }
       setFullscreen(false);
       setTheater(false);
-      (theater ? theaterButton : button).current?.focus();
+      (theater ? theaterButton.current ?? button.current : button.current)?.focus();
     } catch { setError("Could not exit fullscreen. Press Escape to return."); }
   }, [frame, theater]);
   const enter = useCallback(async (theaterMode = false) => {
@@ -81,7 +81,7 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>, initia
       }
     }
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !frame.current?.querySelector('[role="dialog"]')) { event.preventDefault(); void exit(); }
+      if (event.key === "Escape" && !frame.current?.querySelector('[role="dialog"], [role="menu"]')) { event.preventDefault(); void exit(); }
       if (event.key === "Tab") {
         const controls = Array.from(frame.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input') ?? []).filter((node) => node.getClientRects().length > 0);
         const first = controls[0], last = controls.at(-1);

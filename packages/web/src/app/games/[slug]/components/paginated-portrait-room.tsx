@@ -43,7 +43,7 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
     <div className="relative grid min-h-0 flex-1 grid-cols-2 gap-2 px-3 pb-2 pt-12">
       <div data-speech-bubble className="flex min-h-0 flex-col rounded-xl border border-white/25 bg-black/90 p-2 text-white" style={{opacity:thought ? thought.opacity : hideSpeech ? 0 : speechOpacity}}>
         <p className="shrink-0 break-words text-sm font-semibold leading-4">{thought ? `${speaker.name} thinks` : speaker.name}</p>
-        <TimedSpeech text={text} elapsedMs={readingElapsedMs} progress={progress} className="mt-1 text-sm leading-5" />
+        <TimedSpeech advancePart={thought ? "thinking" : "speech"} text={text} elapsedMs={readingElapsedMs} progress={progress} progressDurationMs={thought ? thought.durationMs : Math.max(1,duration - 1450)} className="mt-1 text-sm leading-5" />
       </div>
       <div className="flex min-h-0 flex-col justify-center gap-1" aria-label={`Cast page ${page + 1} of ${pages}`}>
         {visible.map(player => {

@@ -35,11 +35,17 @@ export function paginateSpeech(text: string, fits: (text: string) => boolean): s
 }
 
 export function speechPageIndex(pages: readonly string[], progress: number): number {
-  const weights = pages.map((page) => Math.max(1, page.trim().split(/\s+/u).length));
-  const position = Math.max(0, Math.min(1, progress)) * weights.reduce((a, b) => a + b, 0);
-  let end = 0;
-  for (let i = 0; i < weights.length; i++) { end += weights[i]; if (position < end) return i; }
-  return Math.max(0, pages.length - 1);
+  const starts = speechPageStarts(pages);
+  const position = Math.max(0, Math.min(1, progress));
+  return Math.max(0, starts.findLastIndex(start => start <= position));
+}
+
+/** The same word-weighted boundaries serve rendering and manual navigation. */
+export function speechPageStarts(pages: readonly string[]): number[] {
+  const weights = pages.map(page => Math.max(1, page.trim().split(/\s+/u).length));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  let position = 0;
+  return weights.map(weight => {const start = position / total; position += weight; return start;});
 }
 
 /** Clean a historical page without changing frozen pagination or audio offsets.

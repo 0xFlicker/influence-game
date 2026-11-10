@@ -8,7 +8,7 @@ import { projectWerewolfPresentation, type WerewolfPresentation } from "@influen
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import type { StoredVisualShot, VisualShot } from "@influence/engine/visual-mode";
 import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
-import { projectWerewolfWatch, type WerewolfWatchStaging } from "@influence/engine/werewolf/watch";
+import { mapWerewolfWatchCue, projectWerewolfWatch, type WerewolfWatchStaging } from "@influence/engine/werewolf/watch";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
 import { werewolfReferenceMetadata, WEREWOLF_AUTO_PUBLISHER } from "./werewolf-production.js";
@@ -141,6 +141,21 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const preferences = new Map(seats.map(seat => [seat.id, seat.modelPreference]));
   const watch = materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(config)) }, audience, publicationCutoff, rows, references);
   return { ...watch, ...(ready === 0 && {moments:[],navigation:[],playback:[],media:{},latestCursor:0,fromCursor:1,throughCursor:0}), players: watch.players.map(player => ({ ...player, ...gamePlayerModelPreference(config, player.id, preferences.get(player.id)) })) };
+}
+
+/** Resolve a position against the same authorized, audio-ready prefix as watch. */
+export async function readWerewolfWatchPosition(db: DrizzleDB, id: string, from: WerewolfAudience, to: WerewolfAudience, cursor: number, key: string) {
+  const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
+  if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
+  if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
+  const ready = await audioReadySequence(db, game.id);
+  const events = (await readWerewolfEvents(db, game.id)).filter(event => ready === null || event.sequence <= ready || ready === 0 && event.type === "werewolf.started");
+  if (ready === 0) throw new WerewolfGameError("This replay moment is not available.", 400);
+  try { return mapWerewolfWatchCue(events, from, to, cursor, key); }
+  catch (error) {
+    if (error instanceof Error && ["Invalid watch position", "Unavailable watch cue", "Unavailable watch position", "Invalid watch cue"].includes(error.message)) throw new WerewolfGameError(error.message, 400);
+    throw error;
+  }
 }
 
 /** Same media binding for live watch and fixed production prefixes. Staging and

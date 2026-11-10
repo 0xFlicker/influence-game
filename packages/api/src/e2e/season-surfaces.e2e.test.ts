@@ -34,6 +34,8 @@ import {
 } from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
 import { cleanupE2eResources } from "./cleanup.js";
+import {completedCurrentWerewolfFixture} from "@influence/engine/fixtures/werewolf-results";
+import {chooseWerewolfAudience} from "./shared-watch-browser.js";
 
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 
@@ -45,6 +47,7 @@ let adminJwt: string;
 let agentId: string;
 let gameSlug: string;
 let seasonSlug: string;
+let seasonId: string;
 
 beforeAll(async () => {
   testDb = await createIsolatedTestDb();
@@ -79,6 +82,7 @@ beforeAll(async () => {
     createdById: admin.userId,
   });
   seasonSlug = season.slug;
+  seasonId = season.id;
   const gameId = randomUUID();
   gameSlug = `browser-rated-${gameId}`;
   await testDb.db.insert(schema.games).values({
@@ -196,6 +200,33 @@ afterAll(async () => {
 }, 60_000);
 
 describe("E2E: Dual Crown season surfaces", () => {
+  test("season replay keeps the chosen audience when changing games", async () => {
+    for (const id of ["season-wolf-one","season-wolf-two"]) {
+      const events = await completedCurrentWerewolfFixture(id,10);
+      await testDb.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",trackType:"free",seasonId,maxPlayers:6,
+        startedAt:"2026-07-10T18:30:00.000Z",endedAt:"2026-07-10T19:00:00.000Z",config:JSON.stringify({visibility:"public",preset:"one_wolf"})});
+      await testDb.db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
+    }
+    const page = await createAnonymousPage(browser,servers.webUrl!);
+    const reads:string[] = [];
+    page.on("request",request=>{if (request.url().includes("/watch?")) reads.push(request.url());});
+    try {
+      await page.setViewport({width:1440,height:1000});
+      await page.goto(`${servers.webUrl}/seasons?season=${seasonSlug}`,{waitUntil:"domcontentloaded"});
+      await page.waitForFunction(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes('season-wolf-one'))`);
+      await page.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes('season-wolf-one')).click()`);
+      expect(reads).toEqual([]);
+      await page.click('[data-testid="season-player"] button[aria-label="Watch Omniscient"]');
+      await page.waitForSelector('[data-testid="season-player"][data-audience="omniscient"] button[aria-label^="Viewing mode:"]',{timeout:15000});
+      await page.waitForSelector('[data-testid="season-player"] [data-werewolf-opening]',{timeout:15000});
+      await chooseWerewolfAudience(page,"mystery");
+      await page.waitForSelector('[data-testid="season-player"][data-audience="mystery"]');
+      await page.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes('season-wolf-two')).click()`);
+      await page.waitForSelector('[data-testid="season-player"][data-audience="mystery"] button[aria-label^="Viewing mode:"]',{timeout:15000});
+      expect(page.url()).toContain(`/seasons?season=${seasonSlug}`);
+      await page.screenshot({path:"/tmp/season-replay-audience.png"});
+    } finally {await page.close();}
+  },120_000);
   test("renders public, owner, archive, receipt, and producer views at desktop and mobile widths", async () => {
     const webUrl = servers.webUrl!;
     const publicPage = await createAnonymousPage(browser, webUrl);

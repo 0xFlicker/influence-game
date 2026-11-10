@@ -4,6 +4,13 @@ import { EpisodeCard, castSlideshowFrames, episodeFallbackFrames } from "../app/
 import type { WerewolfGameSummary } from "../lib/werewolf-api";
 
 const game: WerewolfGameSummary = {id:"game-id",slug:"original-slug",gameKind:"werewolf",status:"completed",playerCount:6,joinedPlayers:6,modelLabel:"OpenAI gpt-6-luna",createdAt:"2026-10-05"};
+test("Werewolf cards provide direct watch links for both audiences", () => {
+  const html = renderToString(<EpisodeCard game={game} />);
+  expect(html).toContain('href="/games/original-slug/replay?audience=mystery"');
+  expect(html).toContain('href="/games/original-slug/replay?audience=omniscient"');
+  expect(html).toContain('aria-label="Watch Mystery"');
+  expect(html).toContain('aria-label="Watch Omniscient"');
+});
 test("old and waiting games use the same spoiler-safe village artwork", () => {
   for (const status of ["waiting","in_progress","completed"] as const) {
     const html=renderToString(<EpisodeCard game={{...game,status}} />);

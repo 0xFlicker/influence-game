@@ -55,6 +55,14 @@ test("a short embedded vote stage keeps a whole speech line above its ledger", (
   expect(bubble.left + bubble.width).toBeLessThanOrEqual(590 - 12);
 });
 
+for (const fullBody of [false,true]) test(`narrow ballot reserves a readable line with a role label (full body: ${fullBody})`, () => {
+  const {image,bubble} = layoutSoloPresentation(320,455,1024,1536,fullBody,150,440);
+  expect(bubble.height).toBeGreaterThanOrEqual(136);
+  expect(image.height).toBeGreaterThan(24);
+  expect(overlaps(image,bubble)).toBe(false);
+  expect(bubble.top + bubble.height).toBeLessThanOrEqual(305);
+});
+
 test("mobile portraits and their paged speech are centered above fullscreen controls", () => {
   const { image, bubble, beside } = layoutSoloPresentation(390, 844, 512, 512, false, 140, 1400);
   expect(beside).toBe(false);

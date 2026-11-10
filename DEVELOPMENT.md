@@ -855,7 +855,7 @@ Use the existing local MinIO bootstrap and `LINODE_PRIVATE_CONTENT_*` settings f
 
 ### Shared player thinking and entry modes
 
-Werewolf viewing mode is selected before playback (`?audience=mystery` or `?audience=omniscient`); it stays fixed for the session. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Strategy Lens remains available for reading eligible evidence.
+Werewolf replay links select an audience (`?audience=mystery` or `?audience=omniscient`); the player can also switch in place. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Strategy Lens remains available for reading eligible evidence.
 
 ### House integration verification
 

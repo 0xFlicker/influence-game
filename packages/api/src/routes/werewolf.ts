@@ -9,7 +9,7 @@ import { WerewolfRulesVersionError, replayWerewolf } from "@influence/engine/wer
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, requireRole, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfEvents, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
-import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
+import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch, readWerewolfWatchPosition } from "../services/werewolf-presentation.js";
 import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
@@ -114,6 +114,11 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       return c.json(presentation);
     });
   }
+  app.get("/api/werewolf/:id/watch-position", async c => {
+    const from = c.req.query("from"), to = c.req.query("to"), rawCursor = c.req.query("cursor"), cursor = Number(rawCursor), key = c.req.query("cue");
+    if (["from","to","cursor","cue"].some(name => c.req.queries(name)?.length !== 1) || (from !== "mystery" && from !== "omniscient") || (to !== "mystery" && to !== "omniscient") || !rawCursor || !/^[1-9]\d*$/.test(rawCursor) || !Number.isSafeInteger(cursor) || !key || key.length > 512) return c.json({error:"Invalid watch position"}, 400);
+    return c.json(await readWerewolfWatchPosition(db, c.req.param("id"), from, to, cursor, key));
+  });
   app.get("/api/werewolf/:id/watch", async c => {
     const audience = c.req.query("audience") ?? "mystery";
     if (audience !== "mystery" && audience !== "omniscient") return c.json({ error: "Choose mystery or omniscient" }, 400);

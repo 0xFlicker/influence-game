@@ -15,6 +15,10 @@ Live history extends the available range without moving a paused source position
 
 Optional thinking retains the existing on-demand authorized fetch. Its duration enters the timeline when loaded and is cached for that mounted game/audience session; the displayed total can therefore grow as previously unseen thinking is fetched. Switching the thinking preference rebuilds the timeline around the active source position. A late thought does not reset a selected speech offset. This is not an eager full-game thinking download or a fixed-duration movie.
 
+Click, tap, Enter, and ArrowRight advance one measured page at a time through multipage thoughts and speech before proceeding to the existing exit and next-cue behavior. The renderer supplies its word-weighted page boundaries to the director; the director seeks its shared clock, so pause, recorded audio offsets, direct seeking and automatic pagination remain aligned. Werewolf audience switches retain the corresponding source position and playback intent while discarding the previous audience's cached windows.
+
+The Werewolf eye icon opens the mode menu from the existing transport row. On the narrowest players, Theater moves to the existing settings menu so the controls do not add a player row.
+
 Ambient music keeps its existing seek policy. This change does not add recorded speech or claim that ambient music is synchronized to Studio's rendered audio track. Opening media continues to use the opening clock. The watch renderer also retains its immediate-cut camera policy for explicit seeks; this change shares timeline precision, not Studio's entire rendering pipeline.
 
 ## Player sampling and Safari

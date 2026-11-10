@@ -335,7 +335,7 @@ function Plea({ cue, roster, elapsedMs }: {
         </div>
       </div>
       <blockquote aria-label={`${source.name}'s final plea`} className="flex min-h-0 flex-1 flex-col break-words font-serif text-lg leading-relaxed text-white/85 md:text-xl">
-        <TimedSpeech text={cue.status === "accepted" ? `“${cue.text}”` : "No plea was received"} elapsedMs={elapsedMs} />
+        <TimedSpeech advancePart="speech" text={cue.status === "accepted" ? `“${cue.text}”` : "No plea was received"} elapsedMs={elapsedMs} />
       </blockquote>
     </div>
   );

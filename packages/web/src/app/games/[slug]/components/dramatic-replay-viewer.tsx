@@ -4,6 +4,7 @@ import {twoNamesDecisionSpeechAction} from "@influence/engine/influence-decision
 import type {PresentationCue} from "./types";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import {HouseNarration} from "@/components/watch/house-narration";
+import {WatchPageContext} from "@/components/watch/watch-page-context";
 import {RoomBackdrop} from "./stage-backdrop";
 import {resultRoom} from "./influence-rooms";
 import {influencePresentationPolicy} from "./influence-presentation-director";
@@ -831,7 +832,7 @@ function DramaticReplayTheater({
 
         </div>
         </WatchThinking>}
-        {voice.houseNarrationAvailable && !(visual?.beat?.kind === "alliance-introduction" || visual?.beat?.kind === "house-result" || visual?.beat?.kind === "house" && visual.beat.text !== null) && <WatchClock director={director}>{() => <HouseNarration readable text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock>}
+        {voice.houseNarrationAvailable && !(visual?.beat?.kind === "alliance-introduction" || visual?.beat?.kind === "house-result" || visual?.beat?.kind === "house" && visual.beat.text !== null) && <WatchPageContext.Provider value={director}><WatchClock director={director}>{() => <HouseNarration readable text={currentMessage?.text ?? ""} window={voice.getHouseNarration()} bottom={expanded ? 140 : 16} />}</WatchClock></WatchPageContext.Provider>}
         {live && isPlaying && directorSnapshot.waitingAtTail && activeCue && <WatchBuffering />}
       </div>
 

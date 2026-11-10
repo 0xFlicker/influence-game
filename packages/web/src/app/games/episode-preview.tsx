@@ -13,6 +13,7 @@ import { gameHref, gameReplayHref, gameResultsHref } from "@/lib/game-links";
 import { gameDisplayName } from "@/lib/game-identity";
 import { episodeSoundEnabled, playEpisodeVideo, rememberEpisodeSound, requestEpisodePlayback } from "@/lib/episode-media";
 import "./episodes.css";
+import {WerewolfWatchChoices} from "@/components/games/werewolf/werewolf-watch-choices";
 
 type LibraryGame = GameSummary | WerewolfGameSummary;
 const INFLUENCE_CARD_ART = "/house-highlights/generated/alliance-formation.jpg";
@@ -143,8 +144,8 @@ export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; m
   const backgroundUrl = game.episode?.coverUrl ? resolveApiUrl(game.episode.coverUrl) : werewolf ? WEREWOLF_CARD_ART : INFLUENCE_CARD_ART;
   const frames = useMemo(() => preview?.frames.length ? castSlideshowFrames(preview.frames) : episodeFallbackFrames(game), [game, preview]);
   const label = waiting ? "Casting open" : live ? "Live" : game.status === "completed" ? "Completed" : "visualPaused" in game && game.visualPaused ? "Paused" : game.status === "cancelled" ? "Cancelled" : "Failed";
-  const replayHref = gameReplayHref(game.slug, undefined, werewolf ? "mystery" : undefined);
-  const links = <><Link className="influence-button-primary" href={replayHref}>{live ? "Watch live" : "Watch replay"} ↗</Link><Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>Details</Link></>;
+  const replayHref = gameReplayHref(game.slug);
+  const links = <>{werewolf ? <div className="episode-watch-actions"><WerewolfWatchChoices slug={game.slug}/></div> : <Link className="influence-button-primary" href={replayHref}>{live ? "Watch live" : "Watch replay"} ↗</Link>}<Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>Details</Link></>;
   const actions = <>
     {waiting ? onJoin ? <button type="button" className="influence-button-primary" onClick={onJoin}>Join game</button> : <Link className="influence-button-primary" href={gameHref(game.slug)}>Join game</Link>
       : live || game.status === "completed" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Open game</Link>}

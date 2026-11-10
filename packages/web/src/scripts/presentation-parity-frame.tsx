@@ -37,7 +37,7 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
       }
       const pill = document.querySelector<HTMLElement>("[data-active-format-overlay]");
       const label = document.querySelector<HTMLElement>("[data-room-context-label]");
-      for (const node of document.querySelectorAll<HTMLElement>("[data-influence-stage], [data-influence-stage] *")) {
+      for (const node of document.querySelectorAll<HTMLElement>("[data-influence-stage], [data-influence-stage] *, [data-werewolf-stage], [data-werewolf-stage] *")) {
         const style=getComputedStyle(node);
         if ([style.overflowX,style.overflowY].some(value=>value === "auto" || value === "scroll")) throw new Error("Scrollable player content");
       }
@@ -71,7 +71,7 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
             throw new Error(`Cast names overlap: ${name.textContent}`);
         }
       }
-      for (const page of document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy], [data-paginated-portrait-room] [data-speech-page-copy]")) {
+      for (const page of document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy], [data-paginated-portrait-room] [data-speech-page-copy], [data-speech-bubble] [data-speech-page-copy]")) {
         if (page.closest<HTMLElement>("[data-speech-bubble]") && Number(getComputedStyle(page.closest<HTMLElement>("[data-speech-bubble]")!).opacity) <= .1) continue;
         const rect=page.getBoundingClientRect(), container=page.parentElement!.getBoundingClientRect();
         if (rect.left < container.left - 1 || rect.right > container.right + 1 || rect.bottom > container.bottom + 1 || parseFloat(getComputedStyle(page).fontSize) < 14)
@@ -99,7 +99,7 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
         if (!winnerImage || winnerImage.getBoundingClientRect().height < 24) throw new Error("Winner artwork has no readable space");
       }
       const namePage = room?.querySelector<HTMLElement>("[data-room-context-label] [data-speech-page]");
-      const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble]");
+      const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble]") ?? document.querySelector<HTMLElement>("[data-speech-bubble]");
       const speechPage = speechBox && Number(getComputedStyle(speechBox).opacity) > .1 ? speechBox.querySelector<HTMLElement>("[data-speech-page]") : null;
       setResult(JSON.stringify({frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,

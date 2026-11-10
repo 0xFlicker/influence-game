@@ -21,6 +21,7 @@ import { getPersonaLabel } from "@/lib/personas";
 import { agentProfileHref } from "@/components/agent-profile-link";
 import { getWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, startWerewolfLobby, stopWerewolf, type WerewolfLobbyData } from "@/lib/werewolf-api";
 import { WerewolfViewer } from "./werewolf-viewer";
+import { WerewolfWatchChoices } from "./werewolf-watch-choices";
 
 export function WerewolfEntry({ slug, audience, replay = false, startCursor }: { slug: string; audience?: WerewolfAudience; replay?: boolean; startCursor?: number }) {
   const query = useQuery({ queryKey: ["werewolf-lobby", slug], queryFn: ({ signal }) => getWerewolfLobby(slug, signal),
@@ -29,17 +30,17 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
   if (!game) return <GameSiteEntry><div className="mx-auto max-w-6xl p-8"><Link href="/games">← All games</Link>{query.error ? <p role="alert" className="mt-6">{query.error.message} <button onClick={() => void query.refetch()}>Try again</button></p> : <p role="status" className="mt-6">Opening the village…</p>}</div></GameSiteEntry>;
   if (game.status === "waiting") return <WerewolfWaitingGame game={game} refresh={async () => { const result = await query.refetch(); if (result.error) throw result.error; }} refreshError={query.error?.message} />;
   if (game.status === "cancelled" && !game.started) return <GameSiteEntry><div className="mx-auto max-w-3xl p-8"><Link href="/games">← All games</Link><h1 className="mt-8 text-3xl">This game was stopped.</h1></div></GameSiteEntry>;
-  if (replay && audience) return <WerewolfViewer key={`${slug}:${audience}:${startCursor ?? 1}`} slug={slug} title={game.episode?.title} audience={audience} startCursor={startCursor} />;
+  if (replay && audience) return <WerewolfViewer key={slug} slug={slug} title={game.episode?.title} audience={audience} startCursor={startCursor} />;
   if (!replay) return <GameSiteEntry><GameEpisode gameKind="werewolf" eyebrow={`The House / Werewolf · ${game.status === "in_progress" ? "Live" : game.status}`} title={game.episode?.title ?? game.slug}
     description={game.episode?.description ?? "A village of agents. A pack hiding in plain sight. Choose how much of the story you want to know."}
     media={game.status === "completed" ? <PostgameTrailer key={game.slug} gameId={game.slug} fallback={<WerewolfArtwork coverUrl={game.episode?.coverUrl} cast={game.episode?.cast} />} /> : <WerewolfArtwork coverUrl={game.episode?.coverUrl} cast={game.episode?.cast} />}
-    actions={<><Link className="influence-button-primary" href={gameReplayHref(game.slug, undefined, "mystery")}>Watch Mystery</Link><Link className="influence-button-secondary" href={gameReplayHref(game.slug, undefined, "omniscient")}>Watch Omniscient</Link>{game.status === "completed" && <Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>View results · Spoilers</Link>}{game.status === "completed" && <Link className="influence-button-secondary" href={gameHighlightsHref(game.slug)}>House Cuts</Link>}</>}
+    actions={<><div className="w-full max-w-sm"><WerewolfWatchChoices slug={game.slug}/></div>{game.status === "completed" && <Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>View results · Spoilers</Link>}{game.status === "completed" && <Link className="influence-button-secondary" href={gameHighlightsHref(game.slug)}>House Cuts</Link>}</>}
     information={<p>{game.playerCount} players · {game.modelLabel}</p>} /></GameSiteEntry>;
   return <GameSiteEntry><section className="mx-auto flex min-h-[80dvh] max-w-3xl flex-col justify-center px-6 py-12">
     <Link href="/games" className="mb-10 text-sm text-white/60">← All games</Link>
     <p className="text-xs uppercase tracking-[.2em] text-white/50">The House · Werewolf</p>
     <h1 className="mt-3 text-4xl font-semibold">How will you watch?</h1>
-    <p className="mt-4 text-white/65">{slug} · Your viewing mode stays fixed for this replay.</p>
+    <p className="mt-4 text-white/65">{slug}</p>
     <div className="mt-8 grid gap-4 sm:grid-cols-2">
       <Link href={gameReplayHref(game.slug, undefined, "mystery")} className="rounded-xl border border-white/20 bg-white/[.03] p-6 hover:bg-white/[.08]"><h2 className="text-xl">Watch Mystery</h2><p className="mt-3 leading-6 text-white/65">Follow the public conversation. Discover roles at the ending.</p></Link>
       <Link href={gameReplayHref(game.slug, undefined, "omniscient")} className="rounded-xl border border-white/20 bg-white/[.03] p-6 hover:bg-white/[.08]"><h2 className="text-xl">Watch Omniscient</h2><p className="mt-3 leading-6 text-white/65">Know the roles, hear the pack and optionally watch players think.</p></Link>

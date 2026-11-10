@@ -1608,7 +1608,12 @@ test.describe("format-aware game viewer", () => {
     for(const [width,height] of [[320,568],[480,480],[1280,400],[844,390]]) {
       await page.setViewportSize({width:width!,height:height!});
       for(const mode of ["inline","theater"]) {
-        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        if(mode==="theater") {
+          if(width === 320) {
+            await page.getByRole("button",{name:"Player settings",exact:true}).click();
+            await page.getByRole("dialog",{name:"Player settings"}).getByRole("button",{name:"Theater",exact:true}).click();
+          } else await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        }
         await expect(layout.locator("[data-house-message-logo]")).toBeVisible();
         await expect.poll(() => layout.evaluate(el => {
           const caption=el.querySelector<HTMLElement>("[data-house-message]")!, copy=caption.querySelector<HTMLElement>("[data-speech-page-copy]")!;
@@ -1624,7 +1629,12 @@ test.describe("format-aware game viewer", () => {
           };
         }), {message:`House caption layout at ${width}x${height} (${mode})`}).toEqual({readableHeight:true,insideFrame:true,copyFits:true,separateFromScene:true});
         await page.screenshot({path:testInfo.outputPath(`werewolf-house-${width}x${height}-${mode}.png`)});
-        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+        if(mode==="theater") {
+          if(width === 320) {
+            await page.getByRole("button",{name:"Player settings",exact:true}).click();
+            await page.getByRole("dialog",{name:"Player settings"}).getByRole("button",{name:"Exit theater",exact:true}).click();
+          } else await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+        }
       }
     }
     const slider=page.getByRole("slider",{name:"Replay position",exact:true});

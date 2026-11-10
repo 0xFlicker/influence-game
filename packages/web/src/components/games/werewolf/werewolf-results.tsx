@@ -7,7 +7,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { werewolfOutcomeReason, werewolfOutcomeTitle, type WerewolfResultRecap } from "@influence/engine/werewolf/results-contract";
 import { ApiError, getHouseGameResults, resolveApiUrl } from "@/lib/api";
-import { gameHref, gameReplayHref, werewolfMomentHref } from "@/lib/game-links";
+import { gameHref, werewolfMomentHref } from "@/lib/game-links";
+import {WerewolfWatchChoices} from "./werewolf-watch-choices";
 import { GameBanner } from "@/components/game-banner";
 import { ResultsHeader } from "../results-header";
 import styles from "./werewolf-results.module.css";
@@ -36,7 +37,7 @@ export function WerewolfResultsPage({slug}: {slug: string}) {
     <Link className="text-sm text-white/65" href={gameHref(slug)}>← Back to game</Link>
     <GameBanner gameId={game.id} />
     <ResultsHeader title={werewolfOutcomeTitle(results.outcome)} description={<><p>{werewolfOutcomeReason(results.outcome)}</p><p className="mt-2 text-white/55">{game.episode?.title ?? game.slug} · Day {results.day} · {results.players.length} players</p></>}
-      actions={<><Link className="influence-button-primary rounded-lg px-4 py-2 text-sm" href={gameReplayHref(slug, undefined, "mystery")}>Watch Mystery</Link><Link className="influence-button-secondary rounded-lg px-4 py-2 text-sm" href={gameReplayHref(slug, undefined, "omniscient")}>Watch Omniscient</Link></>} />
+      actions={<div className="w-full max-w-sm"><WerewolfWatchChoices slug={slug}/></div>} />
     {game.status !== "completed" ? <p role="status" className="text-sm text-white/65">{game.status === "suspended" ? "Retrospective paused" : "Retrospective in progress"} · {retrospective.statementCount} of {retrospective.requiredStatements} statements. The result is fixed. <Link className="underline" href={werewolfMomentHref(slug, "omniscient", results.source.cursor)}>Continue watching</Link></p> : null}
     {game.status === "suspended" ? <RetrospectiveResumeControl gameId={slug} onResumed={() => { void query.refetch(); }} /> : null}
     <OwnerLearningActivation enabled={game.status === "completed"} contextGameId={game.id} />
