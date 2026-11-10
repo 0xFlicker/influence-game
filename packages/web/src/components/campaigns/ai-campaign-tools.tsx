@@ -1,12 +1,9 @@
 "use client";
-import Link from "next/link";
 import { useRef, useState } from "react";
 import { buildMcpSetupClients, getMcpResourceUrl } from "@/lib/mcp-setup";
+import { useRuntimeConfig } from "@/lib/runtime-config";
 import { starterPrompts } from "./starter-prompts";
 import s from "./campaign.module.css";
-
-// The selector only uses client names/IDs; actual instructions remain owned by /get-mcp.
-const clients = buildMcpSetupClients(getMcpResourceUrl());
 const descriptions = {
   workshop:
     "Turn a rough idea into someone with motives, contradictions, and a voice.",
@@ -15,14 +12,31 @@ const descriptions = {
   season: "Check the character, artwork, and season before confirming entry.",
 };
 export function AiCampaignTools() {
-  const [clientId, setClientId] = useState("meta");
+  // Setup instructions are rendered inline from the shared MCP setup data;
+  // /get-mcp remains the canonical source, this page never forks its copy.
+  const runtimeConfig = useRuntimeConfig();
+  const mcpUrl = getMcpResourceUrl(
+    runtimeConfig.MCP_OAUTH_RESOURCE_URI,
+    typeof window === "undefined" ? undefined : window.location.origin,
+  );
+  const clients = buildMcpSetupClients(mcpUrl);
+  const [clientId, setClientId] = useState("muse-assistant");
   const [selected, setSelected] = useState<keyof typeof starterPrompts | null>(
     null,
   );
   const [status, setStatus] = useState("");
+  const [setupStatus, setSetupStatus] = useState("");
   const promptText = useRef<HTMLTextAreaElement>(null);
   const client = clients.find((item) => item.id === clientId)!;
   const prompt = selected ? starterPrompts[selected] : null;
+  async function copyText(text: string, done: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setSetupStatus(done);
+    } catch {
+      setSetupStatus("Clipboard unavailable. Select the text and copy it manually.");
+    }
+  }
   async function copy() {
     if (!prompt) return;
     try {
@@ -38,15 +52,27 @@ export function AiCampaignTools() {
   }
   return (
     <>
-      <section className={s.section}>
-        <div className={s.connect}>
+      <section className={s.section} id="connect">
+        <div className={s.sectionhead}>
           <div>
             <h2>Choose your AI.</h2>
+            <p className={s.aiheadcopy}>
+              Pick the client you already use and follow its setup here. You
+              approve access in your browser — no link-out needed.
+            </p>
+          </div>
+        </div>
+        <div className={s.connect}>
+          <div>
+            <h3 className={s.aiconnecttitle}>Your client</h3>
             <label htmlFor="ai-client">Your AI client</label>
             <select
               id="ai-client"
               value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
+              onChange={(event) => {
+                setClientId(event.target.value);
+                setSetupStatus("");
+              }}
             >
               {clients.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -54,28 +80,74 @@ export function AiCampaignTools() {
                 </option>
               ))}
             </select>
-            <Link className={s.textlink} href={`/get-mcp#setup-${client.id}`}>
-              Open {client.name} setup →
-            </Link>
+            <p className={s.micro}>The House MCP endpoint:</p>
+            <div className={s.aicode}>
+              <code>{mcpUrl}</code>
+              <button
+                type="button"
+                className={s.secondary}
+                onClick={() => void copyText(mcpUrl, "Endpoint copied.")}
+              >
+                Copy
+              </button>
+            </div>
+            {setupStatus && (
+              <p role="status" className={s.status}>
+                {setupStatus}
+              </p>
+            )}
           </div>
           <div>
-            <ol className={s.connectionsteps}>
-              <li>Add The House through your AI’s MCP connection flow.</li>
-              <li>Sign in and approve access in your browser.</li>
-              <li>
-                Ask your AI to list your agents, then try a starter prompt.
-              </li>
-            </ol>
+            <h3 className={s.aiconnecttitle}>Set up {client.name}</h3>
+            {client.commands.map((command) => (
+              <div className={s.aicode} key={command}>
+                <code>{command}</code>
+                <button
+                  type="button"
+                  className={s.secondary}
+                  onClick={() => void copyText(command, "Command copied. Run it, then approve access in your browser.")}
+                >
+                  Copy
+                </button>
+              </div>
+            ))}
+            {client.steps && client.steps.length > 0 && (
+              <ol className={s.connectionsteps}>
+                {client.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            )}
+            {client.prompt && (
+              <details className={s.aiprompt}>
+                <summary>{client.promptLabel ?? `Paste this into ${client.name} chat`}</summary>
+                <pre>{client.prompt}</pre>
+                <button
+                  type="button"
+                  className={s.secondary}
+                  onClick={() => void copyText(client.prompt!, "Connection prompt copied. Paste it into your AI chat.")}
+                >
+                  Copy connection prompt
+                </button>
+              </details>
+            )}
+            <p className={s.micro}>{client.authHint}</p>
             <p className={s.micro}>
-              Available connection options depend on your client and account. No
-              API keys or tokens belong in the chat.
+              Then ask your AI to list your agents, and try a starter prompt
+              below. No API keys or tokens belong in the chat.
             </p>
           </div>
         </div>
       </section>
       <section className={s.section} id="starter-prompts">
         <div className={s.sectionhead}>
-          <h2>Starter prompts</h2>
+          <div>
+            <h2>Starter prompts</h2>
+            <p className={s.aiheadcopy}>
+              Copy one into your connected AI. It asks before saving,
+              spending, or entering anything.
+            </p>
+          </div>
         </div>
         <div className={s.kit}>
           {(Object.keys(starterPrompts) as (keyof typeof starterPrompts)[]).map(
