@@ -21,6 +21,14 @@ test.each([7, 8, 9, 10, 11] as const)("audience mapping follows the accepted pub
     expect(mapWerewolfWatchCue(events, "mystery", "omniscient", silent.cursor, `${mystery.gameId}:mystery:${silent.cursor}:boundary`))
       .toEqual({cursor:preceding?.cursor ?? null,key:preceding?.keys.at(-1) ?? null,exact:false,boundaryCursor:boundary?.cursor ?? null});
   }
+  const privateSilent = omni.moments.find(moment => !omni.playback.some(row => row.cursor === moment.cursor));
+  if (privateSilent) {
+    const sourceEvent = omniEvents.find(row => row.cursor === privateSilent.cursor)!;
+    const boundary = mysteryEvents.findLast(row => row.eventSequence <= sourceEvent.eventSequence);
+    const preceding = mystery.playback.findLast(row => row.cursor <= (boundary?.cursor ?? 0));
+    expect(mapWerewolfWatchCue(events, "omniscient", "mystery", privateSilent.cursor, `${omni.gameId}:omniscient:${privateSilent.cursor}:boundary`))
+      .toEqual({cursor:preceding?.cursor ?? null,key:preceding?.keys.at(-1) ?? null,exact:false,boundaryCursor:boundary?.cursor ?? null});
+  }
   const dawn = mystery.moments.find(moment => moment.entry.kind === "night")!;
   const mysteryKey = mystery.playback.find(row => row.cursor === dawn.cursor)!.keys.at(-1)!;
   const event = mysteryEvents.find(row => row.cursor === dawn.cursor)!;

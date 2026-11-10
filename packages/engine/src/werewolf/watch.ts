@@ -22,7 +22,7 @@ export function projectWerewolfProductionWatch(events: readonly WerewolfEvent[],
   return projectWatchHistory(events, audience, 1, Number.MAX_SAFE_INTEGER, hasWolfForms, retakes);
 }
 
-function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean, retakes?: WerewolfRetrospectivePresentation) {
+function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean, retakes?: WerewolfRetrospectivePresentation, provenance?: Array<{cursor: number; eventSequence: number}>) {
   let state: WerewolfState | null = null, cursor = 0;
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
@@ -42,6 +42,7 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
     state = frame.state;
     cursor = frame.cursor;
     if (entry) {
+      provenance?.push({cursor, eventSequence:event.sequence});
       chapterId = entry.kind === "result" ? "ending" : entry.day === 0 ? "introduction" : `cycle:${entry.day}`;
       if (entry.kind === "phase") {
         if (entry.phase === "introduction") { sceneId = "introduction"; chapterId = "introduction"; }
@@ -140,14 +141,18 @@ export function projectWerewolfProductionProvenance(events: readonly WerewolfEve
  * event sequences or private reducer state to the caller. */
 export function mapWerewolfWatchCue(events: readonly WerewolfEvent[], from: WerewolfAudience, to: WerewolfAudience, cursor: number, key: string):WerewolfWatchPosition {
   if ((from !== "mystery" && from !== "omniscient") || (to !== "mystery" && to !== "omniscient") || !Number.isSafeInteger(cursor) || cursor < 1) throw new Error("Invalid watch position");
-  const source = projectWerewolfProductionWatch(events, from);
-  const destination = projectWerewolfProductionWatch(events, to);
+  // These coordinates stay server-side and are collected during the same
+  // validated walks that construct the audience projections.
+  const sourceEvents: Array<{cursor: number; eventSequence: number}> = [];
+  const destinationEvents: Array<{cursor: number; eventSequence: number}> = [];
+  const source = projectWatchHistory(events, from, 1, Number.MAX_SAFE_INTEGER, undefined, undefined, sourceEvents);
+  const destination = projectWatchHistory(events, to, 1, Number.MAX_SAFE_INTEGER, undefined, undefined, destinationEvents);
   // A live hold may follow non-playable events, after the last cue has left
   // the client cache. Map that visible boundary without returning event IDs.
   if (key === `${source.gameId}:${from}:${cursor}:boundary`) {
-    const sourceEvent = projectWerewolfProductionProvenance(events, from).find(item => item.cursor === cursor);
+    const sourceEvent = sourceEvents.find(item => item.cursor === cursor);
     if (!sourceEvent) throw new Error("Unavailable watch position");
-    const boundary = projectWerewolfProductionProvenance(events, to).findLast(item => item.eventSequence <= sourceEvent.eventSequence);
+    const boundary = destinationEvents.findLast(item => item.eventSequence <= sourceEvent.eventSequence);
     const lastCue = boundary && destination.playback.findLast(item => item.cursor <= boundary.cursor);
     return {cursor:lastCue?.cursor ?? null, key:lastCue?.keys.at(-1) ?? null, exact:false, boundaryCursor:boundary?.cursor ?? null};
   }
@@ -159,9 +164,8 @@ export function mapWerewolfWatchCue(events: readonly WerewolfEvent[], from: Were
     && sourceLast?.kind === "speech" && sourceLast.purpose === "retrospective"
     && events.some(event => event.type === "werewolf.retrospective_completed");
   if (!row?.keys.includes(key) && !reprise) throw new Error("Unavailable watch cue");
-  const sourceEvent = projectWerewolfProductionProvenance(events, from).find(item => item.cursor === cursor);
+  const sourceEvent = sourceEvents.find(item => item.cursor === cursor);
   if (!sourceEvent) throw new Error("Unavailable watch position");
-  const destinationEvents = projectWerewolfProductionProvenance(events, to);
   const matchingEvent = destinationEvents.find(item => item.eventSequence === sourceEvent.eventSequence);
   const sourcePrefix = `${source.gameId}:${from}:${cursor}`;
   const suffix = key.slice(sourcePrefix.length);
