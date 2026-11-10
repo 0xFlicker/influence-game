@@ -6,7 +6,7 @@ import type {ReplayManifest} from "../lib/replay-export/manifest";
 import {cueIndexAt} from "../lib/replay-export/manifest";
 import {sampleTiming} from "../lib/replay-export/timing";
 import type {ExportCue} from "../lib/replay-export/cues";
-import {VisualPresentationFrame} from "../app/games/[slug]/components/visual-presentation";
+import {VisualPresentationFrame, presentationBeatOwnsBackdrop} from "../app/games/[slug]/components/visual-presentation";
 import {SceneThinkingProvider} from "../components/watch/watch-thinking";
 import {SampledStageProvider} from "../components/watch/sampled-stage";
 import {exportPreviousSpeaker} from "../lib/replay-export/room-continuity";
@@ -69,7 +69,7 @@ function Viewer({manifest,references}:Props) {
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black text-white">
     <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
     <div className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden">
-      {picture.cue.resultsPresentation && <div className="absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(picture.cue.phase)} resilient /></div>}
+      {picture.cue.resultsPresentation && !presentationBeatOwnsBackdrop(picture.beat) && <div className="absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(picture.cue.phase)} resilient /></div>}
       <SceneThinkingProvider thought={thought}>
       <SampledStageProvider value={{images:{},previousScene:null,previousSpeaker:exportPreviousSpeaker(cue,manifest.cues[index-1]),firstInScene:true,
         ...(picture.beat.kind !== "alliance-introduction" && cue.alignment && cue.speech && {speech:{text:cue.speech.text,alignment:cue.alignment,elapsedMs:time-(record?.startMs ?? 0)}})}}>

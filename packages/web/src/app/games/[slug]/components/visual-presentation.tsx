@@ -5,7 +5,7 @@ import {HouseMessage} from "@/components/watch/house-message";
 
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
-import {FormatPresentation} from "./format-presentation";
+import {FormatPresentation, formatPresentationOwnsBackdrop} from "./format-presentation";
 import type {FormatPresentationCue} from "./types";
 import {sampleWatch} from "@/components/watch/watch-sampling";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
@@ -48,6 +48,38 @@ export type VisualPresentationBeat =
   | { kind: "portrait"; thinkingAllowed?: boolean; purpose: "Decision" | "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string; backgroundUrl?:string }
   | { kind: "anonymous"; speech: VisualSpeech };
+
+/**
+ * True when the beat paints its own stage background, so a stage root must
+ * not paint fallback room scenery behind it. Transparent cards, labels and
+ * anonymous speech return false and keep the root's room.
+ */
+export function presentationBeatOwnsBackdrop(beat: VisualPresentationBeat, currentStateEntry = false): boolean {
+  switch (beat.kind) {
+    case "alliance-introduction":
+    case "canonical-result":
+    case "elimination-result":
+    case "two-names-decision":
+    case "safety-chain":
+    case "nominee-selection":
+    case "safety-bounce":
+    case "portrait-room":
+    case "portrait":
+    case "scene":
+      return true;
+    case "house-result":
+      return presentationBeatOwnsBackdrop(beat.result, currentStateEntry);
+    case "format-result":
+    case "two-names-stage":
+      return formatPresentationOwnsBackdrop(beat.cue, currentStateEntry);
+    case "winner":
+      return Boolean(beat.backgroundUrl);
+    case "house":
+      return beat.text !== null || Boolean(beat.backgroundUrl);
+    case "anonymous":
+      return false;
+  }
+}
 
 /** Observe the director instead of creating an independent wall-clock speech timer. */
 export function VisualPresentation({ director, retainTail = true, ...props }: Omit<Parameters<typeof VisualPresentationFrame>[0], "elapsedMs"> & {

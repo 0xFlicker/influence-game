@@ -1668,6 +1668,29 @@ test.describe("format-aware game viewer", () => {
     }
   });
 
+  test("format selection scenery fills one stage without an inset duplicate",async({page},testInfo)=>{
+    await page.clock.install();
+    const slug="format-selection-background";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed"});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const stage=page.locator("[data-influence-stage]");
+    await advanceUntilVisible(page,stage.locator("[data-format-rules]"),"format selection rules",150);
+    for(const [width,height] of [[390,844],[1280,720],[1280,400],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(stage.locator("[data-room-backdrop]")).toHaveCount(1);
+        await expect.poll(()=>stage.evaluate(el=>{
+          const a=el.getBoundingClientRect(),b=el.querySelector("[data-room-backdrop]")!.getBoundingClientRect();
+          return Math.max(Math.abs(a.left-b.left),Math.abs(a.top-b.top),Math.abs(a.width-b.width),Math.abs(a.height-b.height));
+        })).toBeLessThanOrEqual(1);
+        await page.screenshot({path:testInfo.outputPath(`format-selection-background-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
   for(const artwork of [true,false]) test(`historical format offer stays with House speech (${artwork ? "full body" : "portrait"})`,async({page},testInfo)=>{
     await page.clock.install();
     const slug=`historical-menu-${artwork}`;
