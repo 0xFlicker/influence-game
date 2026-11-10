@@ -162,6 +162,24 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  expect(await page.$('[aria-label="Player thinking"]')).toBeNull();expect(await page.evaluate("document.body.innerText.includes('Show thinking')")).toBe(false);
  await page.setViewport({width:390,height:844});await seekWatch(page,first);await page.waitForSelector('[data-speech-bubble]');
  expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);await page.screenshot({path:"/tmp/shared-watch-mobile.png"});
+ await page.setViewport({width:320,height:568});
+ await page.waitForSelector('select[aria-label="Viewing mode"]');
+ expect(await page.evaluate(`(() => {const controls=document.querySelector('[data-replay-controls]').getBoundingClientRect();const row=document.querySelector('[data-watch-transport]').getBoundingClientRect();const mode=document.querySelector('select[aria-label="Viewing mode"]').getBoundingClientRect();const items=Array.from(document.querySelector('[data-watch-transport]').children).map(node=>node.getBoundingClientRect()).filter(box=>box.width && box.height);return row.height<=48 && items.every(box=>box.left>=controls.left && box.right<=controls.right && box.top>=row.top && box.bottom<=row.bottom) && mode.width>=100 && mode.height>=44;})()`)).toBe(true);
+ await chooseWerewolfAudience(page,"omniscient");await chooseWerewolfAudience(page,"mystery");
+ await page.click('button[aria-label="Player settings"]');await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');
+ expect(await page.$('[role="dialog"][aria-label="Player settings"] button[aria-label="Share this moment"]')).not.toBeNull();
+ await page.waitForFunction("Array.from(document.querySelectorAll('[role=dialog][aria-label=\"Player settings\"] button')).some(button=>button.textContent==='Theater')");
+ await page.click('button[aria-label="Share this moment"]');await page.waitForSelector('dialog[open] button[aria-label="Close share"]');
+ await page.click('button[aria-label="Close share"]');
+ await page.evaluate("Array.from(document.querySelectorAll('[role=dialog][aria-label=\"Player settings\"] button')).find(button=>button.textContent==='Theater').click()");
+ await page.waitForSelector('[data-player-theater]');
+ await chooseWerewolfAudience(page,"omniscient");await chooseWerewolfAudience(page,"mystery");
+ await page.click('button[aria-label="Player settings"]');await page.waitForSelector('[data-player-theater] [role="dialog"][aria-label="Player settings"]');
+ await page.evaluate("Array.from(document.querySelectorAll('[role=dialog][aria-label=\"Player settings\"] button')).find(button=>button.textContent==='Exit theater').click()");
+ await page.waitForFunction("!document.querySelector('[data-player-theater]')");
+ expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
+ await page.screenshot({path:"/tmp/shared-watch-320.png"});
+ await page.setViewport({width:390,height:844});
  const inspectors=await page.$$('button[aria-label^="Inspect "]');for(const button of inspectors){if(await button.boundingBox()){await button.click();break;}}await watchText(page,"Close player info");expect(errors).toEqual([]);
  console.log(`Shared watch proof: ${requests.length} bounded window reads; desktop/mobile, seek, audience switching, fullscreen and pause checked.`);
 }

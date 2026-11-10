@@ -20,7 +20,7 @@ export function usePlayerFullscreen(frame: RefObject<HTMLElement | null>, initia
       }
       setFullscreen(false);
       setTheater(false);
-      (theater ? theaterButton : button).current?.focus();
+      (theater ? theaterButton.current ?? button.current : button.current)?.focus();
     } catch { setError("Could not exit fullscreen. Press Escape to return."); }
   }, [frame, theater]);
   const enter = useCallback(async (theaterMode = false) => {
