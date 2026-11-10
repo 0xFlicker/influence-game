@@ -2,6 +2,7 @@ import {
   CampaignFaq,
   CampaignShell,
   CampaignStrip,
+  Portrait,
 } from "@/components/campaigns/campaign-shell";
 import { AiCampaignTools } from "@/components/campaigns/ai-campaign-tools";
 import s from "@/components/campaigns/campaign.module.css";
@@ -16,6 +17,7 @@ export default function AiCampaign() {
     <CampaignShell ai>
       <section className={`${s.hero} ${s.aihero}`}>
         <div>
+          <p className={s.aieyebrow}>Season 1 · Connect via MCP</p>
           <h1>
             Your AI.
             <br />
@@ -35,32 +37,58 @@ export default function AiCampaign() {
             </a>
           </div>
           <p className={`${s.micro} ${s.under}`}>
-            Connect through MCP. Approve access with your House account.
+            Connect through MCP. Approve access with your House account. No
+            API keys or tokens in chat.
           </p>
+          <ul className={s.aiassurances}>
+            <li>You approve every save, spend &amp; entry</li>
+            <li>Your AI coaches — the contestant plays</li>
+          </ul>
         </div>
-        <div className={s.conversation}>
-          <header>Example conversation</header>
-          <div className={s.dialogue}>
-            <div className={s.bubble}>
-              Help me build a charming schemer. Make them more interesting than
-              “win at all costs.”
+        <div className={s.aistage}>
+          <div className={s.conversation}>
+            <header>Example conversation</header>
+            <div className={s.dialogue}>
+              <div className={s.bubble}>
+                Help me build a charming schemer. Make them more interesting
+                than “win at all costs.”
+              </div>
+              <p className={s.aiauthor}>Your AI asks back</p>
+              <div className={s.assistantcopy}>
+                What would they refuse to do to win—and what could tempt them
+                to break that rule?
+              </div>
             </div>
-            <div className={s.assistantcopy}>
-              What would they refuse to do to win—and what could tempt them to
-              break that rule?
-            </div>
+          </div>
+          <div className={s.airivals}>
+            <figure className={s.airival}>
+              <Portrait name="marnie" />
+              <figcaption>Marnie Hartwell</figcaption>
+            </figure>
+            <figure className={s.airival}>
+              <Portrait name="marlow" priority />
+              <figcaption>Marlow Reed</figcaption>
+            </figure>
+            <figure className={s.airival}>
+              <Portrait name="veyra" />
+              <figcaption>Veyra Solvane</figcaption>
+            </figure>
+            <p className={s.airivalslabel}>Rivals already in the House</p>
           </div>
         </div>
       </section>
       <CampaignStrip
         items={[
           [
-            "Your AI helps you prepare.",
-            "Shape the character and test your ideas.",
+            "1 — Your AI helps you prepare.",
+            "Shape the character and test your ideas together.",
           ],
-          ["The contestant plays."],
           [
-            "You follow the outcome.",
+            "2 — The contestant plays.",
+            "Your character makes their own moves in the game.",
+          ],
+          [
+            "3 — You follow the outcome.",
             "Explore games and results with your AI.",
           ],
         ]}
@@ -83,7 +111,12 @@ export default function AiCampaign() {
         ]}
       />
       <div className={s.closing}>
-        <h2>Build someone who has a plan.</h2>
+        <div>
+          <h2>Build someone who has a plan.</h2>
+          <p className={s.micro}>
+            Connect once. Prepare every contestant with the same AI.
+          </p>
+        </div>
         <a className={s.primary} href="#ai-client">
           Connect to The House ↑
         </a>

@@ -672,3 +672,213 @@
   align-items: center;
   min-height: 44px;
 }
+
+/* --- /season-1/ai --- */
+.page .aihero {
+  position: relative;
+  isolation: isolate;
+}
+.page .aihero::before {
+  content: "";
+  position: absolute;
+  inset: 0 -24px auto;
+  height: 340px;
+  background: radial-gradient(ellipse 60% 90% at 72% 0%, #8762a52e, transparent 70%);
+  z-index: -1;
+  pointer-events: none;
+}
+.page .aieyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--purple);
+  margin-bottom: 18px;
+}
+.page .aiassurances {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.page .aiassurances li::before {
+  content: "✓  ";
+  color: var(--gold);
+  font-weight: 600;
+}
+.page .aistage {
+  display: grid;
+  gap: 14px;
+  align-content: center;
+}
+.page .aiauthor {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--purple);
+  margin-bottom: 8px;
+}
+.page .airivals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  position: relative;
+}
+.page .airival {
+  margin: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #b8a48b38;
+  background: #242028;
+  position: relative;
+}
+.page .airival img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4/5;
+  object-fit: cover;
+}
+.page .airival figcaption {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 26px 9px 8px;
+  background: linear-gradient(transparent, #101114e6);
+  font: 12.5px Georgia, serif;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.page .airival:nth-child(2) {
+  transform: translateY(-8px);
+}
+.page .airivalslabel {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+}
+.page .aiheadcopy {
+  margin-top: 9px;
+  font-size: 13.5px;
+  max-width: 520px;
+}
+.page .aiconnecttitle {
+  font: 19px/1.25 Georgia, serif;
+  margin-bottom: 14px;
+}
+.page .connectionsteps {
+  counter-reset: aistep;
+  list-style: none;
+  padding-left: 0;
+}
+.page .connectionsteps li {
+  counter-increment: aistep;
+  position: relative;
+  padding: 0 0 13px 38px;
+}
+.page .connectionsteps li::before {
+  content: counter(aistep);
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--purple);
+  border-radius: 50%;
+  color: var(--purple);
+  font-size: 12px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+.page .kit {
+  counter-reset: aikit;
+}
+.page .kit article {
+  counter-increment: aikit;
+  position: relative;
+  padding-top: 42px;
+}
+.page .kit article::before {
+  content: "0" counter(aikit);
+  position: absolute;
+  top: 14px;
+  left: 0;
+  font: 13px Georgia, serif;
+  letter-spacing: 0.14em;
+  color: var(--gold);
+}
+.page .connect select:focus-visible,
+.page .kit article button:hover {
+  border-color: var(--purple);
+}
+.page .aicode {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin: 8px 0 12px;
+}
+.page .aicode code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font: 12.5px/1.55 ui-monospace, monospace;
+  color: var(--text);
+}
+.page .aicode .secondary {
+  min-height: 40px;
+  padding: 8px 13px;
+  flex: none;
+}
+.page .aiprompt {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 12px 14px;
+  margin: 4px 0 12px;
+}
+.page .aiprompt summary {
+  font-size: 13px;
+  font-weight: 500;
+}
+.page .aiprompt pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11.5px/1.6 ui-monospace, monospace;
+  color: var(--muted);
+  margin: 12px 0;
+}
+.page .connect .micro {
+  margin-top: 10px;
+}
+@media (max-width: 700px) {
+  .page .airival figcaption {
+    font-size: 11px;
+    padding-inline: 7px;
+  }
+  .page .airivalslabel {
+    text-align: left;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .page .airival {
+    transition: transform 180ms ease;
+  }
+  .page .airival:hover {
+    transform: translateY(-4px);
+  }
+  .page .airival:nth-child(2):hover {
+    transform: translateY(-12px);
+  }
+}

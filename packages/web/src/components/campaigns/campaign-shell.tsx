@@ -18,8 +18,8 @@ export function CampaignShell({
           THE HOUSE
         </Link>
         <div className={s.navside}>
-          <Link href={ai ? "/get-mcp" : "/sign-in"}>
-            {ai ? "MCP guide" : "Sign in"}
+          <Link href={ai ? "#connect" : "/sign-in"}>
+            {ai ? "Connect your AI" : "Sign in"}
           </Link>
           <Link href={SEASON_ONE_HREF}>Season 1</Link>
         </div>
