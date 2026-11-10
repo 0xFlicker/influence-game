@@ -74,16 +74,31 @@ const museCapabilities: ModelRequestCapabilities = {
   usesMaxCompletionTokens: true, supportsTemperature: true, supportsOpenAIResponses: false,
   supportsPromptCacheRetention: false, supportsStructuredOutput: true, supportsTools: true,
 };
-export const META_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = Object.fromEntries(
-  ["muse-spark-1.1", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.3", "muse-spark-1.3-contributor", "muse-wonder-1.0"].map(id => [id, {
-    source: "https://dev.meta.ai/docs/models", checkedAt: "2026-10-23", capabilities: museCapabilities,
-    allowedReasoningEfforts: ["low", "medium", "high"], contextTokens: 1_048_576, outputTokens: null,
+const museFacts = (id: string): ProviderModelFacts => ({
+  source: "https://dev.meta.ai/docs/models", checkedAt: "2026-10-23", capabilities: museCapabilities,
+  allowedReasoningEfforts: ["low", "medium", "high"], contextTokens: 1_048_576, outputTokens: null,
+  parameters: ["reasoning_effort", "temperature", "tools", "response_format"],
+  pricing: id.includes("contributor") ? { inputPer1M: 0.10, cachedInputPer1M: 0.002, outputPer1M: 0.20 }
+    : id.startsWith("muse-wonder") ? { inputPer1M: 4, cachedInputPer1M: 0.20, outputPer1M: 20 }
+    : { inputPer1M: 1.25, cachedInputPer1M: 0.15, outputPer1M: 4.25 },
+});
+export const META_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = {
+  ...Object.fromEntries(
+    ["muse-spark-1.1", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.3", "muse-spark-1.3-contributor", "muse-wonder-1.0"].map(id => [id, museFacts(id)]),
+  ),
+  // https://dev.meta.ai/docs/muse-ember and /docs/pricing-rate-limits#muse-ember-pricing, checked 2026-11-09.
+  // Standard mode only (no Contributor variant). Requests over 200K input
+  // tokens are billed in full at the long-context tier, not only past 200K.
+  "muse-ember-1.0": {
+    source: "https://dev.meta.ai/docs/muse-ember", checkedAt: "2026-11-09", capabilities: museCapabilities,
+    allowedReasoningEfforts: ["low", "medium", "high"], contextTokens: 1_048_576, outputTokens: 524_288,
     parameters: ["reasoning_effort", "temperature", "tools", "response_format"],
-    pricing: id.includes("contributor") ? { inputPer1M: 0.10, cachedInputPer1M: 0.002, outputPer1M: 0.20 }
-      : id.startsWith("muse-wonder") ? { inputPer1M: 4, cachedInputPer1M: 0.20, outputPer1M: 20 }
-      : { inputPer1M: 1.25, cachedInputPer1M: 0.15, outputPer1M: 4.25 },
-  }]),
-);
+    pricing: {
+      inputPer1M: 0.10, cachedInputPer1M: 0.004, outputPer1M: 0.50,
+      tiers: [{ minPromptTokens: 200_001, inputPer1M: 0.30, cachedInputPer1M: 0.012, outputPer1M: 1.50 }],
+    },
+  },
+};
 
 export function providerModelFacts(provider: string, model: string): ProviderModelFacts | undefined {
   return (provider === "openai" ? OPENAI_MODEL_FACTS : provider === "katana" ? KATANA_MODEL_FACTS

@@ -205,6 +205,7 @@ Game-ready catalog entries:
 | `meta-muse:muse-spark-1.3` | Meta Muse | `muse-spark-1.3` | Standard tier; Responses with strict JSON Schema |
 | `meta-muse:muse-spark-1.3-contributor` | Meta Muse | `muse-spark-1.3-contributor` | Contributor tier (~95% cheaper; Meta may train on prompts/completions, disclosed in Privacy Policy) |
 | `meta-muse:muse-wonder-1.0` | Meta Muse | `muse-wonder-1.0` | Premium standard tier ($4/$20 per 1M); cap fallback calls |
+| `meta-muse:muse-ember-1.0` | Meta Muse | `muse-ember-1.0` | Free evaluation candidate (not gameplay-qualified); Standard tier, $0.10/$0.50 per 1M up to 200K input tokens |
 
 Known unsuitable catalog entries:
 
