@@ -19,7 +19,8 @@ const shards = jobs["api-postgres-shards"]!;
 test("required PostgreSQL gate covers every isolated serial shard", async () => {
   expect(gate.name).toBe("API / PostgreSQL tests");
   expect(gate.needs).toEqual(["api-postgres-shards"]);
-  expect(gate.if).toBe("${{ always() }}");
+  expect(gate.if).toBe("${{ always() && github.event_name != 'pull_request' }}");
+  expect(shards.if).toBe("github.event_name != 'pull_request'");
   expect(gate["continue-on-error"]).not.toBe(true);
   expect(shards["continue-on-error"]).not.toBe(true);
   expect(shards.strategy?.["fail-fast"]).toBe(false);
