@@ -170,7 +170,7 @@ export function useWerewolfWatch(slug: string, initialAudience: WerewolfAudience
         windows.current.clear(); windows.current.set(head.fromCursor, head); windows.current.set(targetWindow.fromCursor, targetWindow);
         windows.current.set(boundaryWindow.fromCursor, boundaryWindow);
         opening.current = newOpening; firstPlayable.current = werewolfCues([head])[0]?.moment.cursor ?? null;
-        awaitingInitialCue.current = false;
+        awaitingInitialCue.current = boundaryCursor === null;
         setTail(boundary ?? null); setData(boundaryWindow); setRevision(value => value + 1); setNavigationRevision(value => value + 1);
         setAudience(nextAudience); director.load(index < 0 ? [] : all); director.setThinkingEnabled(nextAudience === "omniscient" && thinking);
         if (index >= 0) director.holdAtTail(index, playIntent.current);

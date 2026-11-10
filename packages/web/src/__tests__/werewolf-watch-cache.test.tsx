@@ -73,7 +73,7 @@ test("Strict Mode effect replay reloads the initial position after cleanup", asy
   expect(view.result.current.director.getActiveCue()?.key).toBe("g:mystery:1");
 });
 
-function canonicalFixture(events: Awaited<ReturnType<typeof completedCurrentWerewolfFixture>>, waitForMapping?:Promise<void>, status = "completed") {
+function canonicalFixture(events: Awaited<ReturnType<typeof completedCurrentWerewolfFixture>>, waitForMapping?:Promise<void>, status = "completed", ready = () => true) {
   globalThis.fetch = Object.assign(async (input: string | URL | Request) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
     if (url.pathname.endsWith("/watch-position")) {
@@ -82,9 +82,22 @@ function canonicalFixture(events: Awaited<ReturnType<typeof completedCurrentWere
     }
     const audience = url.searchParams.get("audience") as "mystery" | "omniscient";
     const projection = projectWerewolfWatch(events, audience, Number(url.searchParams.get("fromCursor")), 32);
-    return Response.json({...projection, slug:"g", status, audience, publicationCutoff:"2026-10-06T00:00:00.000Z", media:{}});
+    return Response.json({...projection, ...(!ready() && {moments:[],navigation:[],playback:[],latestCursor:0,throughCursor:0}), slug:"g", status, audience, publicationCutoff:"2026-10-06T00:00:00.000Z", media:{}});
   }, {preconnect:originalFetch.preconnect}) as typeof fetch;
 }
+test("switching while audio has not published the first cue still follows it when ready", async () => {
+  const events = await completedCurrentWerewolfFixture("switch-empty",10);
+  let ready = false;
+  canonicalFixture(events,undefined,"in_progress",() => ready);
+  const view = renderHook(() => useWerewolfWatch("g","mystery","2026-10-06T00:00:00.000Z"));
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  expect(view.result.current.director.getActiveCue()).toBeNull();
+  await act(async () => {await view.result.current.switchAudience("omniscient",false);});
+  expect(view.result.current.audience).toBe("omniscient");
+  ready = true;
+  await waitFor(() => expect(view.result.current.director.getActiveCue()).not.toBeNull(),{timeout:8000});
+  expect(view.result.current.follow).toBe(true);
+});
 test.each([false,true])("switching a silent live boundary preserves its position and follow intent (following: %s)", async following => {
   const events = await completedCurrentWerewolfFixture("switch-tail", 10);
   const projection = projectWerewolfProductionWatch(events,"mystery");
