@@ -38,6 +38,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const controller = new AbortController();
   const config = JSON.parse(game.config) as Record<string, unknown>;
   const mockAgent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
+    if (request.action === "snipe") return {kind: "item_use", itemId: null, targetId: null, text: "I am holding my shot tonight for better information.", cue: null};
     if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "I choose this player for tonight.", cue: null};
     if (request.action === "speaking_priority") return { kind: "speaking_priority", priority: 50 };
     if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };

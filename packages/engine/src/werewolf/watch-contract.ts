@@ -5,6 +5,7 @@ export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: st
 export type WerewolfNightAction =
   | { kind: "protect"; actorId: string; targetId: string; speech?: {text: string; cue: string | null} }
   | { kind: "investigate"; actorId: string; targetId: string; isWolf: boolean; speech?: {text: string; cue: string | null} }
+  | { kind: "snipe"; actorId: string; targetId: string | null; killedId: string | null; itemId: string; held: boolean; speech?: {text: string; cue: string | null} }
   | { kind: "hunt"; wolfIds: string[]; targetId: string };
 export interface WerewolfWatchMoment {
   cursor: number;

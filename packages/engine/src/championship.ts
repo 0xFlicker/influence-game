@@ -7,7 +7,8 @@ export const CHAMPIONSHIP_POLICY_VERSION = "season-0-v2";
 export const ROLE_SCHEDULE_VERSION = "balanced-roles-v1";
 export const FINALIST_COUNT = 8;
 export const WEREWOLF_MATCH_COUNT = 16;
-export type RoleComposition = Record<WerewolfRole, number>;
+/** Championship lineups use the classic four roles; the Hunter item role is not part of a championship composition. */
+export type RoleComposition = Record<Exclude<WerewolfRole, "hunter">, number>;
 export type ChampionshipPolicies = {
   roleComposition: RoleComposition | null;
   points: { win: number; loss: number; draw: number } | null;
@@ -61,7 +62,7 @@ export function createBalancedRoleSchedule(agentIds: readonly string[], composit
     throw new Error("Balanced role selection requires eight distinct agents and a seed");
   }
   const ids = [...agentIds].sort();
-  const roles = (Object.keys(composition).sort() as WerewolfRole[]).flatMap(role => Array<WerewolfRole>(composition[role]).fill(role));
+  const roles = (Object.keys(composition).sort() as Array<keyof RoleComposition>).flatMap(role => Array<WerewolfRole>(composition[role]).fill(role));
   const random = seededRandom(digest([ROLE_SCHEDULE_VERSION, "selection", seed, ids, roles]));
   let best: PrivateRoleSchedule | undefined;
   let bestScore = Infinity;

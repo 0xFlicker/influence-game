@@ -175,7 +175,7 @@ export function werewolfCueMoment(cue: WerewolfWatchCue) {
   const actor = cue.moment.snapshot.players.find(player => player.id === action.actorId);
   if (!actor) throw new Error("Night decision actor is absent");
   return {...moment, house:false, actor, actorId: actor.id, speaker: actor.name, text: action.speech.text, spoken: true,
-    title: `Night ${cue.moment.snapshot.day} · ${action.kind === "protect" ? "Doctor" : "Seer"}`, details: []};
+    title: `Night ${cue.moment.snapshot.day} · ${action.kind === "protect" ? "Doctor" : action.kind === "snipe" ? "Hunter" : "Seer"}`, details: []};
 }
 
 /** Backdrop-only beats give the House the stage; character/action shots keep captions. */

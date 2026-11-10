@@ -49,14 +49,25 @@ const { values } = parseArgs({ options: {
   preset: { type: "string", default: "one_wolf" }, seed: { type: "string", default: "werewolf-evaluation-1" },
   "max-days": { type: "string", default: "10" }, "model-catalog": { type: "string" },
   "budget-usd": { type: "string" }, "budget-ledger": { type: "string" },
+  hunter: { type: "boolean", default: false }, "village-roles": { type: "string" },
   out: { type: "string" }, transcript: { type: "boolean", default: false },
   audience: { type: "string", default: "mystery" }, chatty: { type: "boolean", default: false },
 } });
 if (values.preset !== "one_wolf" && values.preset !== "two_wolves") throw new Error("--preset must be one_wolf or two_wolves");
 if (values.audience !== "mystery" && values.audience !== "omniscient") throw new Error("Invalid --audience");
 const audience = values.audience;
-const config = werewolfConfig(values.preset, Number(values["max-days"]));
-const count = WEREWOLF_PRESETS[config.preset].players;
+const presetPlayers = values.preset === "two_wolves" ? 8 : 6;
+const presetWolves = values.preset === "two_wolves" ? 2 : 1;
+let setup: import("./types").WerewolfSetup | undefined;
+if (values["village-roles"] !== undefined) {
+  const roles = values["village-roles"].split(",").map((role) => role.trim()).filter(Boolean);
+  if (!roles.length || roles.some((role) => !["seer", "doctor", "hunter"].includes(role)) || new Set(roles).size !== roles.length) throw new Error("Choose --village-roles from seer,doctor,hunter without repeats.");
+  setup = { playerCount: presetPlayers as 6 | 8, wolves: presetWolves as 1 | 2, seer: roles.includes("seer"), doctor: roles.includes("doctor"), hunter: roles.includes("hunter") };
+} else if (values.hunter) {
+  setup = { playerCount: presetPlayers as 6 | 8, wolves: presetWolves as 1 | 2, seer: true, doctor: values.preset === "two_wolves", hunter: true };
+}
+const config = werewolfConfig(values.preset, Number(values["max-days"]), setup);
+const count = config.setup?.playerCount ?? WEREWOLF_PRESETS[config.preset].players;
 const players = HOUSE_CAST.slice(0, count).map((identity, index) => ({ id: `seat-${index + 1}`, name: identity.name, gender: identity.gender,
   personaKey: identity.personality, personality: getHousePersonaDetails(identity.personality).personalityBlurb, backstory: "", strategy: defaultWerewolfStrategy(identity.personality), avatarUrl: null }));
 const events = [startWerewolf(`werewolf-${randomUUID()}`, players, config, values.seed)];
@@ -94,6 +105,7 @@ const persist = async (failure?:unknown) => {
 await persist();
 let delegate: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   const state = replayWerewolf(events);
+  if (request.action === "snipe") return {kind: "item_use", itemId: null, targetId: null, text: "I am holding my shot tonight for better information.", cue: null};
   if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "I choose this player tonight.", cue: null};
   if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0] ?? null,
     text: null, cue: null, thinking: "Scripted proposal uses the first legal target" };

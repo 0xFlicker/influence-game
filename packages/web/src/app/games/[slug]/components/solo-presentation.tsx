@@ -96,7 +96,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
       })}
       className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? portraitOpacity }} />
     </div>
-    {!thought && !hideSpeech && motion.speechOpacity > 0 && <SpeechBubble speaker={player.name} caption={beat.caption ?? beat.purpose} roleLabel={beat.roleLabel}
+    {!thought && !hideSpeech && motion.speechOpacity > 0 && <SpeechBubble speaker={player.name} caption={beat.caption ?? beat.purpose} roleLabel={beat.roleLabel} itemLabels={player.items}
       text={speech.text} box={bubble} opacity={motion.speechOpacity} typography={speechFit.typography} padding={speechFit.padding} staticSpeech={staticSpeech}
       elapsedMs={speechPresentation === "scene" ? readingElapsedMs - SCENE_SPEECH_START_MS : soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs}
       tail={{side:geometry.beside ? "left" : geometry.above ? "bottom" : "top",style:geometry.beside ? {top:Math.min(bubble.height - 16,fullBody ? geometry.tailTop : bubble.height / 2) - 8} : {left:tailLeft - 8}}}/>}

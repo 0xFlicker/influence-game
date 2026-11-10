@@ -3,6 +3,7 @@ import { seededRandom } from "../seeded-random";
 import { applyRetrospectiveRecord, type RetrospectiveRecordV1 } from "../retrospective";
 import { werewolfRetrospectiveSpeakerIds } from "./retrospective-order";
 import * as legacy from "./legacy-rules";
+import { initialWerewolfItems, isWerewolfItemId } from "./items";
 import type { WerewolfAcceptedAction, WerewolfConfig, WerewolfEvent, WerewolfRequest, WerewolfState, WerewolfStep, WerewolfPlayer, WerewolfDayResult, WerewolfPackVote, WerewolfOutcome } from "./types";
 
 export const DEFAULT_DISCUSSION_POLICY = { bytesPerLivingPlayer: 400, messageBytes: 320, maxHandoffs: 3 };
@@ -15,6 +16,8 @@ After discussion, everyone votes exactly once in a published seeded order. Submi
 Death removes all gameplay speech, voting and night actions. No whispers, jury, empowerment, resurrection or death speeches. The village wins when no wolves remain; wolves win at parity or greater. Check victory after the complete night or day resolution. The day limit is a draw if neither faction has won. After the outcome all original contestants speak once in a separate retrospective which cannot change the result.`;
 export const WEREWOLF_RULES_V11 = `${WEREWOLF_RULES_V9}
 At the start of each day, before discussion, every living player privately submits an integer speaking priority from 1 to 100. These silent requests run independently in parallel. Higher priorities receive earlier normal speaking opportunities; tied priorities use a seeded daily order. Directed replies still work during discussion. Priorities are private scheduling data, not dialogue or evidence of anyone's role. The voting order remains independently seeded.`;
+export const WEREWOLF_RULES_V12 = `${WEREWOLF_RULES_V11}
+This game has items. Item ownership is private: you are told which items exist, which items you currently hold, and item uses you have publicly seen, but never another living player's holdings. The Hunter is a village role and starts with one single-use Snipe (item id "snipe"). On each night while the Hunter is alive and still holds it, the Hunter privately decides to hold it or fire it at one other living player. Firing removes that player when night resolves, together with the pack attack; Doctor protection blocks only the pack attack, not a snipe. A fired snipe is consumed even if its target also dies to the pack attack. Holding it keeps it for a later night. If the Hunter has no snipe left, they receive no snipe decision. The snipe decision's spoken text is a private aside for omniscient spectators, never delivered to other contestants.`;
 const same = (a: unknown, b: unknown) => hashCanonicalJson(a) === hashCanonicalJson(b);
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 function shuffled(ids: string[], seed: string, purpose: string, day: number) {
@@ -81,15 +84,25 @@ export function nextStep(state: WerewolfState): WerewolfStep {
   if (state.phase === "night" && !state.resolved) {
     const solo = state.config.rulesVersion >= 10 ? {solo: true as const, messageBytes: state.config.discussionPolicy!.messageBytes} : {};
     const requests = state.aliveIds.flatMap<WerewolfRequest>(id => state.roles[id] === "doctor" ? [{ actorId: id, action: "protect" as const, ...solo, legalTargetIds: state.aliveIds.filter(x => x !== state.previousProtection) }]
-      : state.roles[id] === "seer" ? [{ actorId: id, action: "investigate" as const, ...solo, legalTargetIds: state.aliveIds.filter(x => x !== id) }] : []);
+      : state.roles[id] === "seer" ? [{ actorId: id, action: "investigate" as const, ...solo, legalTargetIds: state.aliveIds.filter(x => x !== id) }]
+      : state.config.rulesVersion >= 12 && (state.items[id]?.length ?? 0) > 0 ? [{ actorId: id, action: "snipe" as const, solo: true as const, messageBytes: state.config.discussionPolicy!.messageBytes, usableItemIds: [...(state.items[id] ?? [])], legalTargetIds: state.aliveIds.filter(x => x !== id) }] : []);
     request = requests[n];
     if (!request) {
       const protection = state.actions.find(a => a.action === "protect")?.decision;
       const investigation = state.actions.find(a => a.action === "investigate");
       const protectedId = (protection?.kind === "target" || protection?.kind === "solo_target") ? protection.targetId : null;
       const attackTargetId = state.pack!.targetId;
-      return { kind: "event", event: { type: "werewolf.night_resolved", payload: { attackTargetId, protectedId, killedId: attackTargetId === protectedId ? null : attackTargetId,
-        investigation: (investigation?.decision.kind === "target" || investigation?.decision.kind === "solo_target") && investigation.decision.targetId !== null ? { seerId: investigation.actorId, targetId: investigation.decision.targetId, isWolf: state.roles[investigation.decision.targetId] === "werewolf" } : null } } };
+      const killedId = attackTargetId === protectedId ? null : attackTargetId;
+      const snipeAction = state.actions.find(a => a.action === "snipe");
+      const snipeDecision = snipeAction?.decision.kind === "item_use" ? snipeAction.decision : null;
+      const snipe = state.config.rulesVersion >= 12
+        ? snipeAction && snipeDecision?.itemId !== null && snipeDecision?.targetId !== null && snipeDecision !== null
+          ? { actorId: snipeAction.actorId, itemId: snipeDecision.itemId, targetId: snipeDecision.targetId, killedId: snipeDecision.targetId }
+          : null
+        : undefined;
+      return { kind: "event", event: { type: "werewolf.night_resolved", payload: { attackTargetId, protectedId, killedId,
+        investigation: (investigation?.decision.kind === "target" || investigation?.decision.kind === "solo_target") && investigation.decision.targetId !== null ? { seerId: investigation.actorId, targetId: investigation.decision.targetId, isWolf: state.roles[investigation.decision.targetId] === "werewolf" } : null,
+        ...(snipe !== undefined ? { snipe } : {}) } } };
     }
   }
   if (state.phase === "day") {
@@ -120,10 +133,19 @@ export function validateAction(request: WerewolfRequest, action: WerewolfAccepte
     return;
   }
   if (!("messageBytes" in request)) throw new Error("Missing speech byte limit");
-  if (d.kind !== "conversation" && d.kind !== "spoken_target" && d.kind !== "solo_target") throw new Error("Invalid v9 decision kind");
+  if (d.kind !== "conversation" && d.kind !== "spoken_target" && d.kind !== "solo_target" && d.kind !== "item_use") throw new Error("Invalid v9 decision kind");
   if (d.text !== null && (typeof d.text !== "string" || !d.text.trim() || bytes(d.text) > request.messageBytes)) throw new Error("Speech exceeds its UTF-8 byte allowance or is blank");
   if (d.cue !== null && (typeof d.cue !== "string" || !d.cue.trim() || d.cue.length > 240)) throw new Error("Invalid production cue");
   if (fallback !== null && (d.text !== null || d.cue !== null)) throw new Error("Unavailable actors cannot speak");
+  if (request.action === "snipe") {
+    if (d.kind !== "item_use" || !same(Object.keys(d).sort(), ["cue", "itemId", "kind", "targetId", "text"])) throw new Error("Invalid snipe decision shape");
+    if (fallback === null && d.text === null) throw new Error("Snipe decision requires a spoken explanation");
+    if (fallback !== null && (d.itemId !== null || d.targetId !== null)) throw new Error("Unavailable snipe decision must hold fire");
+    if (d.itemId === null && d.targetId !== null) throw new Error("Held snipe cannot name a target");
+    if (d.itemId !== null && (!isWerewolfItemId(d.itemId) || !request.usableItemIds.includes(d.itemId))) throw new Error("Snipe item is not usable by this actor");
+    if (d.itemId !== null && (d.targetId === null || !request.legalTargetIds.includes(d.targetId))) throw new Error("Fired snipe requires a legal target");
+    return;
+  }
   if ("solo" in request && request.solo) {
     if (d.kind !== "solo_target" || !same(Object.keys(d).sort(), ["cue", "kind", "targetId", "text"])) throw new Error("Invalid solo target decision shape");
     if (d.targetId === null || !request.legalTargetIds.includes(d.targetId)) throw new Error("Solo decision requires a legal target");
@@ -146,7 +168,9 @@ export function applyEvent(previous: WerewolfState | null, event: WerewolfEvent)
     const { config, seed, players, roles } = event.payload;
     if (!same(event.payload, { config, seed, players, roles }) || !same(roles, assignRoles(players, config, seed))) throw new Error("Corrupt Werewolf setup");
     const historicalStart = legacy.startWerewolf(event.gameId, players, legacy.werewolfConfig(config.preset, config.maxDays, config.setup), seed);
-    return { ...legacy.applyWerewolfEvent(null, historicalStart), config: structuredClone(config), conversation: null };
+    const itemsEnabled = config.rulesVersion >= 12 && config.setup?.hunter === true;
+    return { ...legacy.applyWerewolfEvent(null, historicalStart), config: structuredClone(config), conversation: null,
+      items: initialWerewolfItems(players, roles, itemsEnabled), itemUses: [] };
   }
   if (event.gameId !== previous.gameId || event.sequence !== previous.sequence + 1) throw new Error("Discontinuous Werewolf event sequence");
   let record: RetrospectiveRecordV1 | null = null;
@@ -223,6 +247,12 @@ export function applyEvent(previous: WerewolfState | null, event: WerewolfEvent)
     case "werewolf.night_resolved":
       state.resolved = true; state.previousProtection = event.payload.protectedId;
       if (event.payload.killedId) state.aliveIds = state.aliveIds.filter(id => id !== event.payload.killedId);
+      if (event.payload.snipe?.killedId) state.aliveIds = state.aliveIds.filter(id => id !== event.payload.snipe!.killedId);
+      if (event.payload.snipe) {
+        const snipe = event.payload.snipe;
+        state.items[snipe.actorId] = (state.items[snipe.actorId] ?? []).filter(item => item !== snipe.itemId);
+        state.itemUses.push({ day: state.day, actorId: snipe.actorId, itemId: snipe.itemId, targetId: snipe.targetId, killedId: snipe.killedId });
+      }
       if (event.payload.investigation) state.investigations.push({ day: state.day, ...event.payload.investigation });
       state.history.push({ kind: "night", day: state.day, result: event.payload }); break;
     case "werewolf.day_vote_resolved":

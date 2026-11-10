@@ -140,7 +140,8 @@ export function ReplayFrame({
         thought={
           sample.thought
             ? { ...sample.thought, speaker: picture.kind === "thinking" ? picture.actor.name : thinkingActor?.name ?? cue.speech?.speaker ?? "",
-                roleLabel: picture.kind === "thinking" ? picture.roleLabel : picture.kind === "werewolf" && picture.cue.moment.snapshot.audience === "omniscient" ? thinkingActor?.role ?? undefined : undefined }
+                roleLabel: picture.kind === "thinking" ? picture.roleLabel : picture.kind === "werewolf" && picture.cue.moment.snapshot.audience === "omniscient" ? thinkingActor?.role ?? undefined : undefined,
+                itemLabels: picture.kind === "werewolf" && picture.cue.moment.snapshot.audience === "omniscient" ? thinkingActor?.items : undefined }
             : null
         }
       >

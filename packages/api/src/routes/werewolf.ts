@@ -36,7 +36,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     let input: Record<string, unknown>;
     try { input = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some((key) => !["audioMode", "visibility", "preset", "agentProfileIds", "providerManifest", "modelRouting", "maxDays"].includes(key))
+      || Object.keys(input).some((key) => !["audioMode", "visibility", "preset", "agentProfileIds", "providerManifest", "modelRouting", "maxDays", "setup"].includes(key))
       || (input.preset !== "one_wolf" && input.preset !== "two_wolves")
       || !Array.isArray(input.agentProfileIds) || input.agentProfileIds.some((id) => typeof id !== "string")
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || Number(input.maxDays) < 1 || Number(input.maxDays) > 20))) {
@@ -45,6 +45,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     try {
       const game = await createWerewolfGame(db, c.get("user")!.id, { audioMode: input.audioMode as boolean | undefined, visibility: input.visibility, preset: input.preset,
         agentProfileIds: input.agentProfileIds as string[], providerManifest: input.providerManifest, modelRouting: input.modelRouting,
+        ...(input.setup !== undefined ? { setup: input.setup as import("@influence/engine/werewolf/types").WerewolfSetup } : {}),
         ...(input.maxDays !== undefined ? { maxDays: Number(input.maxDays) } : {}) });
       return c.json(game, 201);
     } catch (error) {

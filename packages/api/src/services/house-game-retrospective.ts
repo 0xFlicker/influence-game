@@ -35,7 +35,7 @@ function decode(token: string): Cursor {
 interface Speaker {
   actorId: string; name: string; ordinal: number; avatarUrl: string | null;
   part: { gameKind: "influence"; won: boolean; eliminatedRound: number | null }
-    | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null };
+    | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor" | "hunter"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null };
 }
 
 /** Read-only, explicitly post-outcome disclosure; no input dossiers or provider calls. */

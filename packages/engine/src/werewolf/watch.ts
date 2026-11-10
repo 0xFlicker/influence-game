@@ -68,7 +68,7 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
         const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "conversation" ? `Day ${entry.day} · Conversation` : entry.kind === "ballot" ? `Day ${entry.day} · Public ballot` : entry.kind === "proposal" ? `Night ${entry.day} · Pack proposal` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "retrospective" ? "Retrospective" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
         for (const [step, {action}] of nightSteps.entries()) {
           if (step > 0 && nightSteps[step - 1]!.action === action) continue;
-          const roleLabel = action.kind === "protect" ? "Doctor" : action.kind === "investigate" ? "Seer" : "Hunt";
+          const roleLabel = action.kind === "protect" ? "Doctor" : action.kind === "investigate" ? "Seer" : action.kind === "snipe" ? "Snipe" : "Hunt";
           navigation.push({cursor, step, chapterId, sceneId: `${chapterId}:${action.kind}`, label: `Night ${entry.day} · ${roleLabel}`});
         }
         navigation.push({ cursor, step: nightSteps.length, chapterId, sceneId, label });
@@ -195,10 +195,20 @@ function resolvedNightActions(state: WerewolfState, entry: import("./observation
     if (!investigation) throw new Error("Resolved investigation has no accepted seer action");
     actions.push({kind: "investigate", actorId: entry.investigation.seerId, targetId: entry.investigation.targetId, isWolf: entry.investigation.isWolf, ...nightSpeech(investigation.decision)});
   }
+  const snipeAction = state.actions.find(action => action.action === "snipe" && action.decision.kind === "item_use");
+  if (snipeAction && snipeAction.decision.kind === "item_use") {
+    if (entry.snipe) {
+      if (snipeAction.actorId !== entry.snipe.actorId) throw new Error("Resolved snipe has no accepted hunter action");
+      actions.push({kind: "snipe", actorId: entry.snipe.actorId, targetId: entry.snipe.targetId, killedId: entry.snipe.killedId, itemId: entry.snipe.itemId, held: false, ...nightSpeech(snipeAction.decision)});
+    } else if (snipeAction.decision.itemId === null) {
+      // A held snipe is still the Hunter's night phase: Omniscient replay shows the decision, Mystery never does.
+      actions.push({kind: "snipe", actorId: snipeAction.actorId, targetId: null, killedId: null, itemId: "snipe", held: true, ...nightSpeech(snipeAction.decision)});
+    }
+  } else if (entry.snipe) throw new Error("Resolved snipe has no accepted hunter action");
   if (entry.attackTargetId) actions.push({kind: "hunt", wolfIds: state.aliveIds.filter(id => state.roles[id] === "werewolf"), targetId: entry.attackTargetId});
   return actions;
 }
 
 function nightSpeech(decision: import("./types").WerewolfDecision) {
-  return decision.kind === "solo_target" && decision.text !== null ? {speech: {text: decision.text, cue: decision.cue}} : {};
+  return (decision.kind === "solo_target" || decision.kind === "item_use") && decision.text !== null ? {speech: {text: decision.text, cue: decision.cue}} : {};
 }

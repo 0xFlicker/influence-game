@@ -19,6 +19,7 @@ import {werewolfMusic} from "./werewolf-music";
 import {WatchTransport} from "@/components/watch/watch-transport";
 import {usePlayerFullscreen} from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
+import {ItemBadges} from "@/components/watch/item-badges";
 import {useWatchPreferences, type WatchPreferenceScope} from "@/components/watch/use-watch-preferences";
 import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {anonymousApiFetch, apiFetch} from "@/lib/api";
@@ -122,7 +123,7 @@ function WerewolfSession({slug, title, initialAudience, onAudienceChange, cutoff
   const cast = {counts: {totalPlayers: players.length}, phaseLabel: active ? `Day ${active.snapshot.day} · ${active.snapshot.phase}` : "Preparing", players: players.map(player => {
     const frozen = data?.players.find(p => p.id === player.id);
     const avatar = {name: player.name, avatarUrl: frozen?.avatarUrl ?? undefined, personaKey: player.personaKey ?? undefined, persona: player.personaKey ?? "", modelPreference: frozen?.modelPreference};
-    return {id: player.id, name: player.name, isSelected: player.id === selectedId, statusLabel: player.alive ? "Alive" : "Out", statusClass: player.alive ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border border-rose-400/20 bg-rose-400/10 text-rose-200", portrait: <GamePlayerAvatarPreview player={avatar} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={avatar} size="6" />, tags: player.role ? <span className="text-[10px] text-white/45">{player.role}</span> : null};
+    return {id: player.id, name: player.name, isSelected: player.id === selectedId, statusLabel: player.alive ? "Alive" : "Out", statusClass: player.alive ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border border-rose-400/20 bg-rose-400/10 text-rose-200", portrait: <GamePlayerAvatarPreview player={avatar} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={avatar} size="6" />, tags: player.role || player.items?.length ? <span className="inline-flex items-center gap-1.5 text-[10px] text-white/45">{player.role}<ItemBadges items={player.items} /></span> : null};
   })};
   const header = {matchTitle: title ?? slug, roundLabel: active ? active.chapterId === "introduction" ? "Introductions" : active.chapterId === "ending" ? "Ending" : `Cycle ${active.snapshot.day}` : "Preparing", connectionLabel: data?.visualPaused ? "Paused for visuals" : data?.status === "in_progress" ? watch.follow ? "Following live" : "Live game" : data?.status ?? "Loading", counts: {alivePlayers: players.filter(p => p.alive).length, eliminatedPlayers: players.filter(p => !p.alive).length}};
   const inspect = <WatchInspector hero={identity && <div className="border-b border-white/10 p-4"><h2 className="text-xl text-white/90">{identity.name}</h2><p className="mt-1 text-xs text-white/50">{person?.role && <>{person.role} · </>}{person?.alive ? "Alive" : "Eliminated"}</p></div>} sections={[
@@ -143,7 +144,7 @@ function WerewolfSession({slug, title, initialAudience, onAudienceChange, cutoff
         <WatchClock director={director}>{elapsed => watch.openingCue ? <div className="relative min-h-0 flex-1" onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button")) director.manualAdvance();}}>
           <WerewolfOpeningFrame cue={watch.openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} playing={snapshot.isPlaying && !watch.preparing && !watch.holding} speed={snapshot.speed} reduced={snapshot.reducedMotion} browserLoading />
           <button type="button" className="absolute right-4 top-4 rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white/80" onClick={() => {music.suspend(); void watch.seek(1);}}>Skip opening</button>
-        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} roleLabel={audience === "omniscient" ? performer?.role ?? undefined : undefined} load={loadThinking}>
+        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} roleLabel={audience === "omniscient" ? performer?.role ?? undefined : undefined} itemLabels={audience === "omniscient" ? performer?.items : undefined} load={loadThinking}>
         <WerewolfWatchStage houseNarration={voice.getHouseNarration()} hideHouseCaption={voice.houseNarrationAvailable} previousCue={watch.previousCue} nextCue={watch.nextCue} navigationRevision={watch.navigationRevision} contextLabel={cue ? replayMoment({...cue.moment.snapshot, entries:[cue.moment.entry]}).title : undefined} cue={cue} scene={cue?.moment.mediaKey ? watch.media[cue.moment.mediaKey] ?? null : null} elapsed={elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>}</WatchClock>
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}

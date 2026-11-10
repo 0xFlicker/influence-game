@@ -66,7 +66,7 @@ function compileProjection(events: readonly WerewolfEvent[], projectionVersion: 
       `${event.type} ${canonicalJson(werewolfFact(event, projectionVersion))}`);
     if (event.type === "werewolf.action_accepted" && event.payload.decision.kind !== "target" && event.payload.decision.kind !== "speaking_priority" && event.payload.decision.text !== null) {
       const packOnly = event.payload.action === "pack_talk" || event.payload.action === "pack_propose";
-      const privateAside = projectionVersion === 2 && event.payload.decision.kind === "solo_target";
+      const privateAside = projectionVersion === 2 && (event.payload.decision.kind === "solo_target" || event.payload.decision.kind === "item_use");
       input.dialogue.push({ eventSequence: event.sequence, source: { kind: "canonical_event", sequence: event.sequence },
         actorId: event.payload.actorId, scope: privateAside ? "private" : packOnly ? "pack" : "public",
         audiencePlayerIds: privateAside ? [event.payload.actorId] : packOnly ? original.players.filter(player => original.roles[player.id] === "werewolf").map(player => player.id) : [],

@@ -61,6 +61,7 @@ async function advanceRetrospective(store: WerewolfStore, agent: WerewolfAgent, 
 }
 
 export function werewolfFallback(state: WerewolfState, request: WerewolfRequest): WerewolfDecision {
+  if (request.action === "snipe") return { kind: "item_use", itemId: null, targetId: null, text: null, cue: null };
   if (request.action === "speaking_priority") return { kind: "speaking_priority", priority: 1 };
   if ("solo" in request && request.solo) {
     const random = seededRandom(hashCanonicalJson({ seed: state.seed, purpose: "fallback", sequence: state.sequence + 1 }));

@@ -45,6 +45,21 @@ async function create(agentProfileIds: string[] = []) {
 }
 
 describe("Werewolf House integration", () => {
+  test("creates an 8-player Hunter game with frozen v12 snipe ownership and audience-safe views", async () => {
+    const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: manifest, maxDays: 2,
+      setup: { playerCount: 8, wolves: 2, seer: false, doctor: true, hunter: true } });
+    const state = replayWerewolf(await readWerewolfEvents(db, game.id));
+    expect(state.config.rulesVersion).toBe(12);
+    expect(Object.values(state.roles).sort()).toEqual(["doctor", "hunter", "villager", "villager", "villager", "villager", "werewolf", "werewolf"]);
+    const hunter = state.players.find((player) => state.roles[player.id] === "hunter")!;
+    expect(state.items[hunter.id]).toEqual(["snipe"]);
+    const mystery = await readWerewolfView(db, game.id, "mystery");
+    expect(JSON.stringify(mystery.players)).not.toContain("snipe");
+    const omniscient = await readWerewolfView(db, game.id, "omniscient");
+    expect(omniscient.players.find((player) => player.id === hunter.id)?.items).toEqual(["snipe"]);
+    expect(observeWerewolf(state, hunter.id).items.owned).toEqual(["snipe"]);
+  });
+
   test("resumes a planned turn from a historical roster without changing its observation hash", async () => {
     const game = await create();
     const initial = (await game.store.read())[0]!;
@@ -259,7 +274,7 @@ describe("Werewolf House integration", () => {
     await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}`);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10 and v11." });
+    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10, v11 and v12." });
     expect(await game.store.read()).toEqual([initial]);
   });
   test("one character keeps separate strategies and freezes only Werewolf into its game", async () => {

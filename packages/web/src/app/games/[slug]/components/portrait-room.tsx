@@ -13,6 +13,7 @@ import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing
 import { soloPresentationMotion } from "./solo-presentation-timing";
 import { DEFAULT_ROOM_BACKDROP, RoomBackdrop } from "./stage-backdrop";
 import {PaginatedPortraitRoom} from "./paginated-portrait-room";
+import {ItemBadges} from "@/components/watch/item-badges";
 import {portraitRoomDurationMs} from "./portrait-room-pagination";
 
 function portraitRoomTurn(count: number, index: number, speakerIndex: number, deep: boolean) {
@@ -168,7 +169,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
         <img ref={active ? activePortrait : undefined} src={source} alt={player.name}
           onLoad={() => { if (active) onImageReady?.(); }} onError={() => setFailed(previous => new Set(previous).add(saved))}
           className={`aspect-square w-full rounded-full object-cover shadow-2xl ring-2 ${active ? "ring-[#d9c9a2]" : "ring-white/20"}`} />
-        <p className={`${deep && !beside && seat.z < 0 ? "absolute bottom-full mb-3" : "mt-3"} w-max max-w-[144px] rounded-full bg-black/60 px-3 py-1 text-center text-xs ${active ? "text-white" : "text-white/65"}`}>{player.name}</p>
+        <p className={`${deep && !beside && seat.z < 0 ? "absolute bottom-full mb-3" : "mt-3"} flex w-max max-w-[144px] items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-center text-xs ${active ? "text-white" : "text-white/65"}`}><span className="truncate">{player.name}</span><ItemBadges items={player.items} compact /></p>
       </div>;
     })}
     </div>

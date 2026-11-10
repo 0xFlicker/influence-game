@@ -8,6 +8,7 @@ import {RoomBackdrop, DEFAULT_ROOM_BACKDROP} from "./stage-backdrop";
 import {TimedSpeech} from "./timed-speech";
 import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_SIZE} from "./portrait-room-pagination";
 import type {VisualPresentationBeat} from "./visual-presentation";
+import {ItemBadges} from "@/components/watch/item-badges";
 
 /** Compact crowded rooms retain every attendee on pages sampled from the shared clock. */
 export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reducedMotion, backgroundUrl, hideSpeech, onImageReady}: {
@@ -53,7 +54,7 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
             {/* eslint-disable-next-line @next/next/no-img-element -- frozen cast portrait with deterministic fallback */}
             <img ref={player.id === speaker.id ? activeImage : undefined} src={source} alt={player.name} onLoad={player.id === speaker.id ? onImageReady : undefined}
               onError={() => setFailed(previous => new Set(previous).add(saved))} className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-white/40" />
-            <p className="min-w-0 break-words text-xs leading-4 text-white">{player.name}</p>
+            <p className="flex min-w-0 items-center gap-1.5 break-words text-xs leading-4 text-white"><span className="truncate">{player.name}</span><ItemBadges items={player.items} compact /></p>
           </div>;
         })}
         <p className="text-right text-xs text-white/65" aria-label={`Cast page ${page + 1} of ${pages}`}>{page + 1} / {pages}</p>

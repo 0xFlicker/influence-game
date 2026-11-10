@@ -215,6 +215,42 @@ test("CLI creates a v10 API Werewolf game and reports the public majority ballot
   }
 }, 60_000);
 
+test("Hunter snipe badge is Omniscient-only in replay while Mystery hides holdings", async () => {
+  const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 2,
+    setup: { playerCount: 8, wolves: 2, seer: false, doctor: true, hunter: true } });
+  const claim = await claimWerewolfGame(database.db, game.id);
+  if (!claim.ok) throw new Error(claim.error);
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
+    if (request.action === "snipe") return { kind: "item_use", itemId: null, targetId: null, text: "I am holding my shot tonight for better information.", cue: null };
+    if ("solo" in request && request.solo) return { kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "I choose this player tonight.", cue: null };
+    if (request.action === "speaking_priority") return { kind: "speaking_priority", priority: 50 };
+    if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
+    if (request.action === "public_vote") return { kind: "spoken_target", targetId: null, text: null, cue: null, thinking: "Fixture abstention" };
+    if (request.action === "pack_propose") return { kind: "spoken_target", targetId: request.legalTargetIds[0]!, text: null, cue: null, thinking: "Fixture proposal" };
+    return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture" }
+      : { kind: "speech", text: "A brief introduction.", cue: null };
+  } };
+  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), agent);
+  const omniscient = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
+  const hunter = omniscient.view.players.find(player => player.role === "hunter")!;
+  expect(hunter.items).toEqual(["snipe"]);
+  const mystery = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
+  expect(mystery.view.players.every(player => player.items === undefined)).toBe(true);
+  expect(JSON.stringify(mystery.view.players)).not.toContain("snipe");
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=omniscient`, { waitUntil: "domcontentloaded" });
+    await skipWerewolfOpening(page); await pauseWerewolf(page);
+    await page.waitForSelector('[data-item-badge="snipe"]', { timeout: 25_000 });
+    await page.screenshot({ path: "/tmp/werewolf-hunter-omniscient.png" });
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`, { waitUntil: "domcontentloaded" });
+    await skipWerewolfOpening(page); await pauseWerewolf(page);
+    await page.waitForFunction(`document.body.innerText.length > 0`);
+    expect(await page.$('[data-item-badge="snipe"]')).toBeNull();
+    expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+  } finally { await page.close(); }
+}, 60_000);
+
 test("owner edits a game-specific strategy, creates Werewolf, and watches both views on desktop and mobile", async () => {
   const page = await createAuthenticatedPage(browser, admin.jwt, `${servers.webUrl}/dashboard/agents/${profileId}/edit`, { privateKey: admin.wallet.privateKey });
   const mediaWrites: Array<{action:string;requestId:string;expectedVersion:number}> = [];

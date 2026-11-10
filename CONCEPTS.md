@@ -375,7 +375,11 @@ A durable pre-game cast member: either an owned Agent Profile or a House charact
 
 ## Werewolf role and faction
 
-A match-assigned role: Werewolf, Villager, Seer, or Doctor. Wolves belong to the wolf faction; the other roles belong to the village. Victory belongs to the whole original faction, including dead teammates. Death removes all actions and never creates a juror. See the [versioned rules](docs/werewolf.md).
+A match-assigned role: Werewolf, Villager, Seer, Doctor, or Hunter. Wolves belong to the wolf faction; the other roles belong to the village. Victory belongs to the whole original faction, including dead teammates. Death removes all actions and never creates a juror. See the [versioned rules](docs/werewolf.md).
+
+## Werewolf item and Hunter snipe
+
+Starting in v12, a game may grant private items. Ownership is a set of short item ids held by one player; contestants are told which items exist, which they hold, and which uses they have publicly seen, never another player's holdings. The Hunter is a village role holding one single-use **Snipe**: each night, while alive and holding it, the Hunter privately returns `{itemId, targetId, text, cue}` — holding (`itemId: null`) or firing at one other living player. Like the other solo night turns there is no separate thinking field; the required spoken explanation is the item reflection, an Omniscient-only aside. A fired snipe removes its target at night resolution alongside the pack attack and is consumed; Doctor protection blocks only the pack attack. With no item left, the Hunter gets no snipe decision. Mystery replay hides holdings and the sniper; Omniscient replay shows remaining items as badges and the snipe beat.
 
 ## Werewolf public conversation
 

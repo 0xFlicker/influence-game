@@ -4,10 +4,11 @@ import {normalizeAudioDelivery} from "@influence/engine/audio-delivery";
 import type {BubbleTypography} from "./bubble-typography";
 import {TimedSpeech} from "@/app/games/[slug]/components/timed-speech";
 import type {SceneFrame} from "@/app/games/[slug]/components/visual-scene-layout";
+import {ItemBadges} from "./item-badges";
 
 /** Shared solo/decision speech chrome, typography, pagination, and pointer. */
-export function SpeechBubble({speaker, caption, roleLabel, text, box, opacity, typography, padding, elapsedMs, staticSpeech = false, tail}: {
-  speaker:string; caption?:string; roleLabel?:string; text:string; box:SceneFrame; opacity:number;
+export function SpeechBubble({speaker, caption, roleLabel, itemLabels, text, box, opacity, typography, padding, elapsedMs, staticSpeech = false, tail}: {
+  speaker:string; caption?:string; roleLabel?:string; itemLabels?:readonly string[]; text:string; box:SceneFrame; opacity:number;
   typography?:BubbleTypography | null; padding:number; elapsedMs:number; staticSpeech?:boolean;
   tail:{side:"left" | "top" | "bottom"; style:CSSProperties};
 }) {
@@ -16,6 +17,7 @@ export function SpeechBubble({speaker, caption, roleLabel, text, box, opacity, t
       <p className="flex h-5 items-baseline gap-x-2 overflow-hidden font-semibold">
         <span className="min-w-0 truncate">{speaker}</span>
         {roleLabel ? <span data-speaker-role className="shrink-0 text-amber-200">{roleLabel}</span> : <span className="shrink-0 font-normal text-white/50">{caption}</span>}
+        <ItemBadges items={itemLabels} />
       </p>
       {roleLabel && <p className="h-5 text-white/50">{caption}</p>}
     </div>

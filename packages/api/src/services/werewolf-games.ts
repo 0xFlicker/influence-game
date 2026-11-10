@@ -97,14 +97,17 @@ export function createWerewolfHousePlayers(existing: Array<Pick<WerewolfPlayer, 
 
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
-  audioMode?: boolean; visibility?: unknown; preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; modelRouting?: unknown; maxDays?: number;
+  audioMode?: boolean; visibility?: unknown; preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; modelRouting?: unknown; maxDays?: number; setup?: import("@influence/engine/werewolf/types").WerewolfSetup;
 }) {
   if (input.audioMode !== undefined && typeof input.audioMode !== "boolean") throw new WerewolfGameError("Audio Mode must be on or off", 400);
   let visibility;
   try { visibility = parseGameVisibility(input.visibility); } catch { throw new WerewolfGameError("Game visibility must be public or unlisted", 400); }
   if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
   if (!Object.hasOwn(WEREWOLF_PRESETS, input.preset)) throw new WerewolfGameError("Choose one_wolf or two_wolves", 400);
-  const count = WEREWOLF_PRESETS[input.preset].players;
+  let rules: ReturnType<typeof werewolfConfig>;
+  try { rules = werewolfConfig(input.preset, input.maxDays ?? 10, input.setup); }
+  catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid village configuration", 400); }
+  const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   if (!Array.isArray(input.agentProfileIds) || input.agentProfileIds.some((id) => typeof id !== "string")
     || new Set(input.agentProfileIds).size !== input.agentProfileIds.length || input.agentProfileIds.length > count) {
     throw new WerewolfGameError("Choose distinct owned characters within the seat limit", 400);
@@ -122,11 +125,10 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     const players = await freezeWerewolfRoster(tx, input.agentProfileIds.map(agentProfileId => ({ id: randomUUID(), agentProfileId })), count);
     const sealedConfig = await sealRosterModelRouting(tx, { modelRouting }, players.map(player => ({ id: player.id, agentProfileId: player.agentProfileId,
       modelPreference: profiles.find(profile => profile.id === player.agentProfileId)?.modelPreference ?? "default" })));
-    const rules = werewolfConfig(input.preset, input.maxDays ?? 10);
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
-      startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, audioMode: input.audioMode ?? false, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
+      startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, audioMode: input.audioMode ?? false, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset, ...(rules.setup ? { setup: rules.setup } : {}) }) });
     // Immediate creation has the same enrollment evidence as a lobby start.
     await tx.insert(schema.werewolfLobbySeats).values(players.map(({ id, agentProfileId, contentRevisionId: _revision, ...houseCharacter }) => ({
       id, gameId, agentProfileId: agentProfileId ?? null,

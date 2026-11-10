@@ -243,6 +243,26 @@ test("spoken public ballots retain speech and solo timing in replay exports; sil
   expect(silent.timing.baseDurationMs).toBe(2200);
 });
 
+test("omniscient snipe night expands into a Hunter decision cue and item badges render only from supplied labels", async () => {
+  const {renderToStaticMarkup} = await import("react-dom/server");
+  const {SpeechBubble} = await import("../components/watch/speech-bubble");
+  const {ItemBadges} = await import("../components/watch/item-badges");
+  const night: WerewolfWatchMoment = {...template, cursor: 9,
+    snapshot: {...template.snapshot, audience: "omniscient", day: 1, players: template.snapshot.players.map((player, index) => ({...player, role: index === 0 ? "hunter" as const : index === 1 ? "werewolf" as const : "villager" as const, items: index === 0 ? ["snipe" as const] : []}))},
+    entry: {kind: "night", day: 1, killedId: "p2", snipeKilledId: "p1", attackTargetId: "p2", protectedId: null, investigation: null, snipe: {actorId: "p0", itemId: "snipe", targetId: "p1", killedId: "p1"}},
+    night: {before: {...template.snapshot, day: 1}, actions: [{kind: "snipe", actorId: "p0", targetId: "p1", killedId: "p1", itemId: "snipe", held: false, speech: {text: "Taking the shot.", cue: null}}, {kind: "hunt", wolfIds: ["p1"], targetId: "p2"}]}};
+  const cues = werewolfMomentCues(night);
+  expect(cues.map(cue => cue.nightAction?.kind)).toEqual(["snipe", "snipe", "hunt", undefined]);
+  expect(cues[0]!.nightDecision).toBe(true);
+  expect(werewolfCueMoment(cues[0]!)).toMatchObject({title: "Night 1 · Hunter", text: "Taking the shot.", spoken: true});
+  const {createElement} = await import("react");
+  const bubble = renderToStaticMarkup(createElement(SpeechBubble, {speaker: "Player 0", roleLabel: "hunter", itemLabels: ["snipe"], text: "Taking the shot.",
+    box: {left: 0, top: 0, width: 500, height: 300}, opacity: 1, padding: 20, elapsedMs: 0, staticSpeech: true, tail: {side: "bottom", style: {}}}));
+  expect(bubble).toContain('data-item-badge="snipe"');
+  expect(renderToStaticMarkup(createElement(ItemBadges, {items: []}))).toBe("");
+  expect(renderToStaticMarkup(createElement(ItemBadges, {items: undefined}))).toBe("");
+});
+
 test("saved body changes update an overlapping moment without accepting changed game facts", () => {
   const speech: WerewolfWatchMoment = { ...template, entry: { kind: "conversation", day: 1, id: 1, actorId: "p0", text: "My accepted speech", cue: null, recipientId: null, replyToContributionId: null, unavailable: false, remainingBytes: 2000 } };
   const window: WerewolfWatchWindow = { ...projection, moments: [speech], audience: "mystery", slug: "art", status: "in_progress", publicationCutoff: "now", media: {} };

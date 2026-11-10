@@ -24,7 +24,7 @@ export function WerewolfDecisions({ gameId, slug, audience, cursor, players, act
   const target = (entry: WerewolfDecisionEntry) => players.find(player => player.id === entry.targetId)?.name ?? "Player";
   const choice = (entry: WerewolfDecisionEntry) => {
     if (!entry.targetId) return entry.unavailable ? "Choice unavailable" : entry.action === "vote" ? "Hear more" : "No target selected";
-    const verb = { vote: "Voted for", attack: "Targeted", protect: "Protected", investigate: "Investigated" }[entry.action];
+    const verb = { vote: "Voted for", attack: "Targeted", protect: "Protected", investigate: "Investigated", snipe: "Sniped" }[entry.action];
     return `${verb} ${target(entry)}`;
   };
   return <section aria-label="Player decisions" className="rounded-md border border-white/10 bg-white/[0.02] p-3">

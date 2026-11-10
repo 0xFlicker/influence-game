@@ -12,7 +12,7 @@ import {WerewolfWatchChoices} from "@/components/games/werewolf/werewolf-watch-c
 const EmbeddedReplay = dynamic(() => import("@/components/watch/embedded-replay").then(module => module.EmbeddedReplay), { ssr: false, loading: () => <p role="status">Opening the watch room…</p> });
 const InfluenceViewer = dynamic(() => import("@/app/games/[slug]/game-viewer").then(module => module.GameViewer), { loading: () => <p role="status">Loading the finale…</p> });
 const eventLabels: Record<string, string> = { draft: "In preparation", preparing: "Preparing the field", locked: "Field confirmed", running: "Under way", paused: "Intermission", final: "Complete" };
-const roles = { werewolf: "Werewolf", villager: "Villager", seer: "Seer", doctor: "Doctor" };
+const roles = { werewolf: "Werewolf", villager: "Villager", seer: "Seer", doctor: "Doctor", hunter: "Hunter" };
 const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 type Match = ChampionshipView["matches"][number];
 export function featuredChampionshipMatch(matches: Match[]) {

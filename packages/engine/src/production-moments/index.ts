@@ -36,8 +36,8 @@ export type InfluenceProductionPresentation =
   | { kind: Exclude<InfluenceProductionPresentationKind, "format_selected" | "two_names_mingle_complete" | "format_roll_call" | "endgame_ballot" | "empower_ballot" | "ballot_tally">; actorId?: string };
 
 export type ProductionMomentPart =
-  | { kind: "speech" | "scene" | "opening" | "bridge" | "tally" | "outcome" | "result" | "protect" | "investigate" | "hunt" | "pack_vote" }
-  | { kind: "night-speech"; action: "protect" | "investigate" }
+  | { kind: "speech" | "scene" | "opening" | "bridge" | "tally" | "outcome" | "result" | "protect" | "investigate" | "snipe" | "hunt" | "pack_vote" }
+  | { kind: "night-speech"; action: "protect" | "investigate" | "snipe" }
   | { kind: "thinking"; actorId?: string }
   | { kind: "ballot"; voterId: string; purpose: "day" | "pack" | "empower" | "eliminate" | "winner"; juryTiebreaker: boolean; revote: boolean }
   | { kind: "influence-presentation"; presentation: InfluenceProductionPresentation };
@@ -65,7 +65,7 @@ export type ProductionSource =
     })
   | (OrderedProductionSource & {
       kind: "werewolf-event"; eventSequence: number; entry: WerewolfPublicEntry;
-      rulesVersion?: 7 | 8 | 9 | 10 | 11;
+      rulesVersion?: 7 | 8 | 9 | 10 | 11 | 12;
       nightActions?: readonly WerewolfNightAction[];
     })
   | (OrderedProductionSource & {
@@ -160,7 +160,7 @@ function partValue(part: ProductionMomentPart): unknown[] {
     case "thinking":
       if (part.actorId !== undefined) { nonempty(part.actorId, "thinking actor ID"); return [part.kind, part.actorId]; }
       return [part.kind];
-    case "speech": case "scene": case "opening": case "bridge": case "tally": case "outcome": case "result": case "protect": case "investigate": case "hunt": case "pack_vote": return [part.kind];
+    case "speech": case "scene": case "opening": case "bridge": case "tally": case "outcome": case "result": case "protect": case "investigate": case "snipe": case "hunt": case "pack_vote": return [part.kind];
     default: throw new Error("Unsupported production semantic part");
   }
 }
