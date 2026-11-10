@@ -110,6 +110,8 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  await page.click('button[aria-label="Enter fullscreen"]');await page.waitForSelector('[data-player-fullscreen]');
  await page.click('button[aria-label^="Viewing mode:"]');await page.waitForSelector('[data-player-fullscreen] [role="menu"][aria-label="Viewing mode"]');
  expect(await page.$('[role="menuitemradio"][data-audience="mystery"][aria-checked="true"]')).not.toBeNull();
+ await page.waitForFunction("document.activeElement?.getAttribute('data-audience')==='mystery'");
+ await page.keyboard.press('ArrowDown');await page.waitForFunction("document.activeElement?.getAttribute('data-audience')==='omniscient'");
  await page.keyboard.press('Escape');await page.waitForFunction("!document.querySelector('[role=menu][aria-label=\"Viewing mode\"]')");
  expect(await page.$('[data-player-fullscreen]')).not.toBeNull();
  await chooseWerewolfAudience(page,"omniscient");
@@ -170,7 +172,7 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
  await page.screenshot({path:"/tmp/shared-watch-320.png"});
  await page.setViewport({width:390,height:844});
- const inspectors=await page.$$('button[aria-label^="Inspect "]');for(const button of inspectors){if(await button.boundingBox()){await button.click();break;}}await watchText(page,"Close player info");expect(errors).toEqual([]);
+ await page.locator('[aria-label="Cast selection"] button[aria-label^="Inspect "]').click();await watchText(page,"Close player info");expect(errors).toEqual([]);
  console.log(`Shared watch proof: ${requests.length} bounded window reads; desktop/mobile, seek, audience switching, fullscreen and pause checked.`);
 }
 

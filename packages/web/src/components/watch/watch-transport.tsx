@@ -3,7 +3,7 @@ import {ReplayScrubber} from "./replay-scrubber";
 import {ShareMoment} from "./share-moment";
 import {useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
 import type {WatchTimeline} from "./use-watch-timeline";
-import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useMergeRefs, useRole} from "@floating-ui/react";
+import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useListNavigation, useMergeRefs, useRole} from "@floating-ui/react";
 import {musicVolumeFromSlider, musicVolumeToSlider} from "./music-volume";
 import type {MusicStatus} from "./watch-music";
 const SPEED_OPTIONS = [{value: 0.5, label: "0.5×"}, {value: 1, label: "1×"}, {value: 2, label: "2×"}, {value: 4, label: "4×"}];
@@ -40,6 +40,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
  }, []);
  const [open, setOpen] = useState(false);
  const [modeOpen, setModeOpen] = useState(false);
+ const [modeIndex, setModeIndex] = useState<number | null>(null);
  const [portalRoot, setPortalRoot] = useState<HTMLElement | undefined>(undefined);
  const settingsButton = useRef<HTMLButtonElement>(null);
  const {refs:{setReference,setFloating}, floatingStyles, context} = useFloating({
@@ -50,6 +51,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
  const dismiss = useDismiss(context);
  const {getReferenceProps,getFloatingProps} = useInteractions([dismiss]);
  const modeButton = useRef<HTMLButtonElement>(null);
+ const modeItems = useRef<Array<HTMLButtonElement | null>>([]);
  const {refs:{setReference:setModeReference,setFloating:setModeFloating}, floatingStyles:modeStyles, context:modeContext} = useFloating({
   open:modeOpen,onOpenChange:setModeOpen,placement:"top-end",strategy:"fixed",whileElementsMounted:autoUpdate,
   middleware:[offset(8),flip({padding:12}),shift({padding:12})],
@@ -57,7 +59,8 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
  const modeReference = useMergeRefs([modeButton,setModeReference]);
  const modeDismiss = useDismiss(modeContext);
  const modeRole = useRole(modeContext,{role:"menu"});
- const {getReferenceProps:getModeReferenceProps,getFloatingProps:getModeFloatingProps} = useInteractions([modeDismiss,modeRole]);
+ const modeNavigation = useListNavigation(modeContext,{listRef:modeItems,activeIndex:modeIndex,onNavigate:setModeIndex,loop:true});
+ const {getReferenceProps:getModeReferenceProps,getFloatingProps:getModeFloatingProps,getItemProps:getModeItemProps} = useInteractions([modeDismiss,modeRole,modeNavigation]);
  const button = "inline-flex h-10 min-w-8 shrink-0 items-center justify-center gap-2 rounded-lg px-1 sm:min-w-10 sm:px-2 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white disabled:opacity-25 disabled:cursor-not-allowed";
  const speedControl = <fieldset className="min-w-0"><legend className="sr-only">Playback speed</legend><div className="flex items-center gap-1"><span className="mr-1 text-xs text-white/50">Speed</span>{SPEED_OPTIONS.map(option =>
   <button key={option.value} type="button" aria-pressed={speed === option.value} onClick={() => onSpeed(option.value)} className={`h-9 rounded-lg border px-2 text-xs ${speed === option.value ? "border-white/50 bg-white/15 text-white" : "border-transparent text-white/60 hover:bg-white/10"}`}>{option.label}</button>
@@ -78,7 +81,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
     </button>
     <span className={width >= 360 ? "min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" : "sr-only"} aria-label="Playback time">{formatTime(frame / fps)} / {formatTime(frameCount / fps)}</span>
     <div className="min-w-0 flex-1" />
-    {audience && <button {...getModeReferenceProps()} ref={modeReference} type="button" aria-label={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} title={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} aria-expanded={modeOpen} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"], [data-player-theater="true"]') ?? undefined);setOpen(false);setModeOpen(value => !value);}} className={button} style={{minWidth:44,minHeight:44}}>
+    {audience && <button {...getModeReferenceProps()} ref={modeReference} type="button" aria-label={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} title={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} aria-expanded={modeOpen} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"], [data-player-theater="true"]') ?? undefined);setOpen(false);setModeIndex(audience.value === "mystery" ? 0 : 1);setModeOpen(value => !value);}} className={button} style={{minWidth:44,minHeight:44}}>
       <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>}
     {capacity >= 1 && <div className="mr-3 shrink-0">{speedControl}</div>}
@@ -108,7 +111,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
   {modeOpen && audience && <FloatingPortal root={portalRoot}>
     <FloatingFocusManager context={modeContext} modal={false} returnFocus={modeButton}>
       <div {...getModeFloatingProps()} ref={setModeFloating} style={modeStyles} aria-label="Viewing mode" className="z-[200] min-w-40 rounded-xl border border-white/25 bg-zinc-950 p-1 text-sm text-white shadow-2xl" onClick={event => event.stopPropagation()}>
-        {(["mystery","omniscient"] as const).map(mode => <button key={mode} type="button" role="menuitemradio" aria-checked={audience.value === mode} data-audience={mode} onClick={() => {audience.onChange(mode);setModeOpen(false);}} className="flex min-h-11 w-full items-center justify-between gap-4 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span>{mode === "mystery" ? "Mystery" : "Omniscient"}</span>{audience.value === mode && <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6"/></svg>}</button>)}
+        {(["mystery","omniscient"] as const).map((mode,index) => <button key={mode} {...getModeItemProps()} ref={node => {modeItems.current[index]=node;}} tabIndex={modeIndex === index ? 0 : -1} type="button" role="menuitemradio" aria-checked={audience.value === mode} data-audience={mode} onClick={() => {audience.onChange(mode);setModeOpen(false);}} className="flex min-h-11 w-full items-center justify-between gap-4 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span>{mode === "mystery" ? "Mystery" : "Omniscient"}</span>{audience.value === mode && <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6"/></svg>}</button>)}
       </div>
     </FloatingFocusManager>
   </FloatingPortal>}
