@@ -974,3 +974,17 @@ House calls are used for Werewolf execution.
 Werewolf House authoring inputs use `requestedParts` plus canonical facts, never fallback
 announcement prose or previously saved House text. Phase announcements receive no
 dialogue recap. Mystery and Omniscient remain separately scoped journal calls.
+
+
+Werewolf strategy coaching now includes a small private glossary (reads, clears,
+tunneling, bussing, distancing, pocketing, counterclaims, process of elimination
+and parity). Every village role receives shared evidence evaluation and majority
+coordination guidance; wolves compare rescue, redirection, no elimination and
+sacrifice without mandatory partner defense or bussing. Role-specific guidance
+covers investigation value, protection alternatives and the risk of dying with
+an unused snipe. Character personality, owner notes and frozen archetype strategies
+remain intact; characters retain their voice while updating beliefs. No new
+provider calls, decision fields or contestant knowledge are introduced. Historical
+accepted decisions remain unchanged. Evaluate future two-wolf games over multiple
+days for faction outcomes and decision quality; glossary usage alone is not a
+success metric. No paid simulation was run for this prompt update.

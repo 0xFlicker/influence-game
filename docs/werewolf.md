@@ -451,3 +451,24 @@ Mystery and Omniscient use separate invocations built from their respective proj
 Historical events without narration references retain the existing factual House text. Reopening a completed game never generates or backfills copy. New opening narration is attached before the first contestant turn; recovery reuses journaled values. Newly accepted future boundaries in an unfinished game can receive generated narration without rewriting its earlier events. Missing or corrupt referenced copy is an integrity error, distinct from an older event with no narration.
 
 Viewer, Studio Source/Selected cut, TTS and fresh exports consume the same projected text and timing. Frozen source snapshots retain their selected copy. Existing movies do not change; rebuild a bundle from its frozen selection/source and encode again for renderer changes. To adopt narration from a newer source, explicitly refresh the selection—never silently replace pinned source content.
+
+
+Werewolf strategy coaching now includes a small private glossary (reads, clears,
+tunneling, bussing, distancing, pocketing, counterclaims, process of elimination
+and parity). Every village role receives shared evidence evaluation and majority
+coordination guidance; wolves compare rescue, redirection, no elimination and
+sacrifice without mandatory partner defense or bussing. Role-specific guidance
+covers investigation value, protection alternatives and the risk of dying with
+an unused snipe. Character personality, owner notes and frozen archetype strategies
+remain intact; characters retain their voice while updating beliefs. No new
+provider calls, decision fields or contestant knowledge are introduced. Historical
+accepted decisions remain unchanged. Evaluate future two-wolf games over multiple
+days for faction outcomes and decision quality; glossary usage alone is not a
+success metric. No paid simulation was run for this prompt update.
+
+Strategy-coaching validation (2026-11-10): `bun run test` passed 3,496 tests
+with five skips; `bun run test:postgres` passed 2,616 tests; `bun run check`
+passed. An initial provider-free run caught misplaced shebang documentation;
+the corrected full rerun passed. Archetype strategy and owner-note resolution
+were verified unchanged. These checks establish integration correctness, not
+measured improvements in model strategy; no paid evaluation was run.

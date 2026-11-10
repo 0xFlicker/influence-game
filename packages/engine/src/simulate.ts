@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/** Strategy evaluations use existing private role coaching and a concise glossary; retain character voice and distinguish claims from verified knowledge. */
 /** Visual Mode supports text-only routes using canonical room text and performance cues. */
 /** Werewolf House-summary evaluations run through simulate:werewolf:api; retain durable narration journal evidence, never infer game facts from its prose. Authoring receives canonical facts without fallback copy and requests game-show announcer delivery. */
 /** New room imagery populates distinct crops of one wide room, then harmonizes complete view sets into a verified continuous image; visible IDs never change the canonical audience. */
