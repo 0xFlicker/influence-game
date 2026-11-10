@@ -217,12 +217,12 @@ describe("E2E: Dual Crown season surfaces", () => {
       await page.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes('season-wolf-one')).click()`);
       expect(reads).toEqual([]);
       await page.click('[data-testid="season-player"] button[aria-label="Watch Omniscient"]');
-      await page.waitForSelector('[data-testid="season-player"][data-audience="omniscient"] [aria-label="Viewing mode"]',{timeout:15000});
+      await page.waitForSelector('[data-testid="season-player"][data-audience="omniscient"] button[aria-label^="Viewing mode:"]',{timeout:15000});
       await page.waitForSelector('[data-testid="season-player"] [data-werewolf-opening]',{timeout:15000});
       await chooseWerewolfAudience(page,"mystery");
       await page.waitForSelector('[data-testid="season-player"][data-audience="mystery"]');
       await page.evaluate(`Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes('season-wolf-two')).click()`);
-      await page.waitForSelector('[data-testid="season-player"][data-audience="mystery"] [aria-label="Viewing mode"]',{timeout:15000});
+      await page.waitForSelector('[data-testid="season-player"][data-audience="mystery"] button[aria-label^="Viewing mode:"]',{timeout:15000});
       expect(page.url()).toContain(`/seasons?season=${seasonSlug}`);
       await page.screenshot({path:"/tmp/season-replay-audience.png"});
     } finally {await page.close();}

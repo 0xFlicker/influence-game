@@ -1411,8 +1411,7 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     await page.evaluate(`(() => {
       window.__mysteryPrivateFlash = false;
       const observer = new MutationObserver(() => {
-        const select = document.querySelector('select[aria-label="Viewing mode"]');
-        const mystery = select ? select.value === 'mystery' : Array.from(document.querySelectorAll('fieldset[aria-label="Viewing mode"] button')).some(button => button.textContent === 'Mystery' && button.getAttribute('aria-pressed') === 'true');
+        const mystery = Boolean(document.querySelector('button[aria-label="Viewing mode: Mystery"]'));
         if (mystery && document.querySelector('[data-night-role], [data-night-hunt], [data-doctor-save]')) window.__mysteryPrivateFlash = true;
       });
       observer.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});
