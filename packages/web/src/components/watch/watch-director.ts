@@ -2,6 +2,19 @@ import {compileTiming, sampleTiming, type CompiledTiming, type TimingInput} from
 /** One shared clock; game adapters own interpretation, ordering and speech timing. */
 import {thoughtTiming, thoughtContentTime, thoughtSpeechBoundaries, sampleThought, type ThoughtTiming, type SpeechBoundaries} from "./thinking-timing";
 export type {SpeechBoundaries} from "./thinking-timing";
+export interface WatchPages {
+  cueKey: string;
+  part: "thinking" | "speech";
+  starts: readonly number[];
+  /** A newly mounted layout must finish measurement before it can be skipped. */
+  ready?: boolean;
+  /** Local rendered speech time is source content time minus this offset. */
+  contentOffsetMs: number;
+  readingDurationMs: number;
+  fadeMs: number;
+  /** Explicit progress supplied by the scene, sampled at the registered clock. */
+  progress?: {value: number; timelineMs: number; contentMs: number; durationMs: number; clock: "timeline" | "content"};
+}
 export interface WatchCue { key: string; baseDurationMs: number; minimumDurationMs?:number; readingHold?:true; minimumThinkingMs?:number; thinkingOnly?: true }
 export interface WatchPolicy<C extends WatchCue> {
   position(cue: C): number | null;
@@ -147,6 +160,11 @@ export class PresentationDirector<C extends WatchCue> {
   private cuesByKey = new Map<string, C>();
   private recordedTimings = new Map<string, {cue: C | null; recording: {speechMs?:number;thinkingMs?:number}; text: string | null; input: TimingInput; timing: CompiledTiming}>();
   private timingRevision = 0;
+  private pages = new Map<symbol, WatchPages>();
+  registerPages(owner: symbol, pages: WatchPages): () => void {
+    this.pages.set(owner, pages);
+    return () => {if (this.pages.get(owner) === pages) this.pages.delete(owner);};
+  }
   getTimingRevision(): number { return this.timingRevision; }
   private audioPending = false;
   private commentaryHeld = false;
@@ -167,6 +185,7 @@ export class PresentationDirector<C extends WatchCue> {
     for (const value of Object.values(recording)) if (!Number.isFinite(value) || value <= 0) throw new Error("Invalid recorded duration");
     const active = this.getActiveCue()?.key === key;
     const elapsed = active ? this.getTimelineElapsedBaseMs() : 0;
+    const content = active && this.contentSeekKey === key ? this.contentTime(elapsed) : null;
     if (active) { this.captureRemainingTime(); this.clearTimer(); }
     this.recordings.set(key,recording);
     if (!recording.speechMs && !recording.thinkingMs) this.recordedTimings.delete(key);
@@ -174,7 +193,10 @@ export class PresentationDirector<C extends WatchCue> {
     if (active) {
       const timing = this.recordedTiming(this.getActiveCue(),this.getThinkingText(key));
       this.thought = timing?.thought ? {key,...timing.thought} : null;
-      this.remainingBaseMs = Math.max(0,this.activeDurationMs()-elapsed); this.ensureTimer();
+      const position = content === null ? elapsed : this.timelineForContent(content);
+      this.remainingBaseMs = Math.max(0,this.activeDurationMs()-position);
+      if (content !== null) this.exactSeek = {elapsedMs:position,hadThought:this.thought !== null};
+      this.ensureTimer();
     }
     for (const listener of this.listeners) listener();
   }
@@ -223,6 +245,7 @@ export class PresentationDirector<C extends WatchCue> {
     return null;
   }
   private exactSeek: {elapsedMs: number; hadThought: boolean} | null = null;
+  private contentSeekKey: string | null = null;
 
   getThinkingText(key: string): string | null { return this.thinkingEnabled ? this.thoughts.get(key) ?? null : null; }
 
@@ -510,6 +533,7 @@ export class PresentationDirector<C extends WatchCue> {
         return;
       }
       if (elapsed < end) {
+        if (elapsed >= read && elapsed < hide && this.advancePage("thinking")) return;
         if (!this.state.isPlaying) this.transitionWhilePaused(Math.max(elapsed, hide), end);
         else if (elapsed < hide) this.positionWithinCue(hide);
         return;
@@ -527,6 +551,7 @@ export class PresentationDirector<C extends WatchCue> {
         return;
       }
       if (elapsed < speech.hiddenAtMs) {
+        if (elapsed >= speech.readAtMs && elapsed < speech.hideAtMs && this.advancePage("speech")) return;
         this.exitReadingPositionMs ??= elapsed;
         if (this.state.isPlaying) {
           if (elapsed < speech.hideAtMs) this.positionWithinCue(speech.hideAtMs);
@@ -544,6 +569,52 @@ export class PresentationDirector<C extends WatchCue> {
     this.navigationRevision++;
     this.animation.complete();
     this.advanceOne(true);
+  }
+
+  /** Use the actual measured page schedule to seek on the same sampled clock. */
+  private advancePage(part: WatchPages["part"]): boolean {
+    const cue = this.getActiveCue();
+    const pages = [...this.pages.values()].findLast(value => value.cueKey === cue?.key && value.part === part);
+    if (!cue || !pages) return false;
+    if (pages.ready === false) return true;
+    if (pages.starts.length < 2) return false;
+    const now = this.getTimelineElapsedBaseMs();
+    const thought = this.thought;
+    const speech = this.speechBoundaries();
+    let progress: number;
+    let toTimeline: (fraction: number) => number;
+    if (part === "thinking" && thought) {
+      const start = thought.insertAt + thought.readAtMs, duration = thought.hideAtMs - thought.readAtMs;
+      progress = (now - start) / duration;
+      toTimeline = fraction => start + fraction * duration;
+    } else if (part === "speech" && speech && pages.progress) {
+      const {value, timelineMs, contentMs, durationMs, clock} = pages.progress;
+      if (!(durationMs > 0)) return false;
+      const current = clock === "timeline" ? now : this.contentTime(now);
+      const initial = clock === "timeline" ? timelineMs : contentMs;
+      progress = value + (current - initial) / durationMs;
+      toTimeline = fraction => {
+        const target = current + (fraction - progress) * durationMs;
+        if (clock === "timeline") return target;
+        let low = now, high = speech.hideAtMs;
+        for (let i = 0; i < 32; i++) {const middle = (low + high) / 2; if (this.contentTime(middle) < target) low = middle; else high = middle;}
+        return high;
+      };
+    } else if (part === "speech" && speech) {
+      progress = (this.contentTime(now) - pages.contentOffsetMs - pages.fadeMs) / pages.readingDurationMs;
+      toTimeline = fraction => {
+        const target = pages.contentOffsetMs + pages.fadeMs + fraction * pages.readingDurationMs;
+        let low = now, high = speech.hideAtMs;
+        for (let i = 0; i < 32; i++) {const middle = (low + high) / 2; if (this.contentTime(middle) < target) low = middle; else high = middle;}
+        return high;
+      };
+    } else return false;
+    const page = Math.max(0, pages.starts.findLastIndex(start => start <= Math.max(0, Math.min(1, progress))));
+    const next = pages.starts[page + 1];
+    if (next === undefined) return false;
+    this.exitReadingPositionMs = null;
+    this.positionWithinCue(Math.min(this.activeDurationMs(), toTimeline(next) + 0.1));
+    return true;
   }
 
   private transitionWhilePaused(fromMs: number, stopAtMs: number, advance = false): void {
@@ -587,6 +658,17 @@ export class PresentationDirector<C extends WatchCue> {
     }
   }
 
+  /** Restore an already-consumed live boundary without replaying its last cue. */
+  holdAtTail(cursor: number, playing: boolean): void {
+    if (this.disposed || !this.state.cues.length) return;
+    this.seek(cursor, this.activeDurationMs());
+    this.clearTimer();
+    this.remainingBaseMs = 0;
+    this.apply({type:"set_follow_tail", followTail:true});
+    this.apply({type:"set_waiting_at_tail", waitingAtTail:true});
+    this.apply({type:"set_playing", isPlaying:playing});
+  }
+
   setAnimationAdapter(animation: PresentationAnimationControlAdapter): void {
     if (this.disposed) return;
     this.animation = animation;
@@ -597,6 +679,7 @@ export class PresentationDirector<C extends WatchCue> {
   seek(cursor: number, elapsedMs?: number): void {
     if (elapsedMs !== undefined && (!Number.isFinite(elapsedMs) || elapsedMs < 0)) throw new Error("Invalid seek time");
     this.exactSeek = null;
+    this.contentSeekKey = null;
     this.navigationRevision++;
     if (this.disposed || this.state.cues.length === 0) return;
     this.clearTimer();
@@ -617,6 +700,25 @@ export class PresentationDirector<C extends WatchCue> {
     this.exactSeek = {elapsedMs, hadThought: includesThinking || this.thought !== null};
     const cue = this.getActiveCue();
     if (includesThinking && cue && this.policy.speech(cue) && !this.thoughts.has(cue.key)) this.setThinkingPending(cue.key, true);
+  }
+
+  /** Seek the source picture/speech clock, preserving the position when an
+   * optional thought is already cached or arrives after the seek. */
+  seekContent(cursor: number, elapsedMs: number): void {
+    if (!Number.isFinite(elapsedMs) || elapsedMs < 0) throw new Error("Invalid seek time");
+    this.seek(cursor, 0);
+    const position = this.timelineForContent(elapsedMs);
+    this.seekTimeline(cursor, position, Boolean(this.thought));
+    this.contentSeekKey = this.getActiveCue()?.key ?? null;
+  }
+
+  private timelineForContent(elapsedMs:number): number {
+    const thought = this.thought;
+    const duration = this.activeDurationMs();
+    let low = thought && elapsedMs >= thought.insertAt ? thought.insertAt + thought.duration : 0;
+    let high = duration;
+    for (let i = 0; i < 36; i++) {const middle = (low + high) / 2; if (this.contentTime(middle) < elapsedMs) low = middle; else high = middle;}
+    return high;
   }
 
   reconnect(cues: readonly C[]): void {
@@ -756,7 +858,7 @@ export class PresentationDirector<C extends WatchCue> {
       this.timingRevision++;
     }
     if (next.cues[next.cursor]?.key !== this.state.cues[this.state.cursor]?.key) {
-      this.ready = true; this.exactSeek = null;
+      this.ready = true; this.exactSeek = null; this.contentSeekKey = null;
       const cue = next.cues[next.cursor];
       // A zero-speech thought shot must wait for its saved text before its timer
       // can advance. The view releases this fence on success, absence or error.

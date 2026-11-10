@@ -5,15 +5,17 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {WerewolfAudience} from "@influence/engine/werewolf/observation";
 import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
 import {ApiError} from "@/lib/api";
-import {getWerewolfWatch} from "@/lib/werewolf-api";
+import {getWerewolfWatch, getWerewolfWatchPosition} from "@/lib/werewolf-api";
 import {useWatchDirector} from "@/components/watch/use-watch-director";
 import {werewolfMusic} from "./werewolf-music";
 import {contiguousWerewolfWindows, consumedSilentTail, werewolfCues, werewolfMomentCues, werewolfScrubStops} from "./werewolf-watch-model";
 
 import {isOpeningCue, werewolfOpening, werewolfPlaybackPolicy, type WerewolfOpeningCue, type WerewolfPlaybackCue} from "./werewolf-opening";
 
-/** One mounted session per game/audience. Cached head data is never the active snapshot. */
-export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutoff: string, startCursor?: number, title?: string, shared?:ReplayShareState, anonymous = false, initiallyPaused = false) {
+/** One mounted session per game. Cached head data is never the active snapshot. */
+export function useWerewolfWatch(slug: string, initialAudience: WerewolfAudience, cutoff: string, startCursor?: number, title?: string, shared?:ReplayShareState, anonymous = false, initiallyPaused = false) {
+  const [audience, setAudience] = useState(initialAudience);
+  const bootCursor = useRef(startCursor).current;
   const clock = useWatchDirector(werewolfPlaybackPolicy);
   const {director} = clock;
   const opening = useRef<WerewolfOpeningCue[]>([]);
@@ -29,6 +31,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const [tail, setTail] = useState<WerewolfWatchWindow["moments"][number] | null>(null);
   const [follow, setFollow] = useState(!initiallyPaused);
   const request = useRef<AbortController | null>(null);
+  const switching = useRef(false);
   const intent = useRef(0);
   const target = useRef(startCursor ?? 1);
   const playIntent = useRef(!initiallyPaused);
@@ -53,6 +56,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     setData(value); setRevision(n => n + 1);
   }, [director]);
   const seek = useCallback(async (position: number, play = playIntent.current, previous = false, initial = false, step = 0, openingStep?: number, elapsedMs?: number, seekKey?: string) => {
+    switching.current = false;
     playIntent.current = play;
     awaitingInitialCue.current = initial;
     target.current = position;
@@ -73,7 +77,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         const start = Math.floor((next - 1) / 32) * 32 + 1;
         window = await getWerewolfWatch(slug, audience, start, controller.signal, cutoff, anonymous);
         if (controller.signal.aborted || generation !== intent.current) return;
-        if (initial && startCursor !== undefined && startCursor > window.latestCursor) throw new Error("This replay moment is not available.");
+        if (initial && bootCursor !== undefined && bootCursor > window.latestCursor) throw new Error("This replay moment is not available.");
         if (next > window.latestCursor && window.latestCursor > 0) { next = window.latestCursor; continue; }
         commitWindow(window, next);
         if (!opening.current.length && window.fromCursor === 1) opening.current = werewolfOpening(window, frozenTitle.current);
@@ -85,7 +89,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
           const offset = Math.min(step, cues.filter(cue => cue.moment.cursor === cues[selected]!.moment.cursor).length - 1);
           director.load(withOpening(cues));
           director.seek(openingStep !== undefined ? Math.max(0, Math.min(opening.current.length - 1, openingStep)) :
-            initial && startCursor === undefined ? 0 : opening.current.length + selected + offset, initial && startCursor === undefined || openingStep === 0 && play ? 0 : undefined);
+            initial && bootCursor === undefined ? 0 : opening.current.length + selected + offset, initial && bootCursor === undefined || openingStep === 0 && play ? 0 : undefined);
           if (elapsedMs !== undefined) {
             const exact = seekKey ? director.getSnapshot().cueKeys.indexOf(seekKey) : director.getSnapshot().cursor;
             if (exact < 0) throw new Error("This replay frame is no longer available.");
@@ -107,7 +111,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         if (previous && window.fromCursor > 1) {next = window.fromCursor - 1; continue;}
         if (!previous && window.throughCursor < window.latestCursor) { next = window.throughCursor + 1; continue; }
         director.load(withOpening([])); setTail(window.moments.at(-1) ?? null);
-        if (opening.current.length && (openingStep !== undefined || initial && startCursor === undefined)) {
+        if (opening.current.length && (openingStep !== undefined || initial && bootCursor === undefined)) {
           director.seek(openingStep ?? 0, play ? 0 : undefined); director.setFollowTail(true); if (playIntent.current) director.play();
         }
         break;
@@ -116,9 +120,95 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
       if (!controller.signal.aborted && cause instanceof ApiError && [401,403,404].includes(cause.status)) { playIntent.current = false; setFollow(false); director.pause(); director.load([]); windows.current.clear(); setData(null); setTail(null); }
       if (!controller.signal.aborted && generation === intent.current) setError(cause instanceof Error ? cause.message : "Could not prepare replay");
     } finally { if (!controller.signal.aborted && generation === intent.current) setPreparing(false); }
-  }, [slug, audience, cutoff, commitWindow, director, startCursor, withOpening, shared, anonymous]);
-  const cancel = useCallback(() => { intent.current++; request.current?.abort(); }, []);
-  useEffect(() => { void seek(startCursor ?? 1, playIntent.current, false, true); return cancel; }, [seek, cancel, startCursor]);
+  }, [slug, audience, cutoff, commitWindow, director, bootCursor, withOpening, shared, anonymous]);
+  const cancel = useCallback(() => { intent.current++; request.current?.abort(); switching.current = false; }, []);
+  const bootSeek = useRef(seek);
+  bootSeek.current = seek;
+  useEffect(() => {
+    void bootSeek.current(bootCursor ?? 1, playIntent.current, false, true);
+    return cancel;
+  }, [bootCursor, cancel]);
+
+  const switchAudience = useCallback(async (nextAudience: WerewolfAudience, thinking: boolean) => {
+    if (nextAudience === audience) {
+      if (switching.current) {cancel();setPreparing(false);if (playIntent.current) director.play();}
+      return false;
+    }
+    const current = director.getActiveCue();
+    const atBoundary = director.getSnapshot().waitingAtTail || !current;
+    const boundaryCursor = Math.max(tail?.cursor ?? 0, momentOf(current)?.cursor ?? 0);
+    if (!current && !data) return false;
+    const elapsed = director.getElapsedBaseMs();
+    const thought = director.getThinkingFrame() !== null;
+    const generation = ++intent.current;
+    switching.current = true;
+    request.current?.abort();
+    const controller = new AbortController(); request.current = controller;
+    director.pause(); setPreparing(true); setError(null);
+    try {
+      const position = atBoundary && boundaryCursor && data
+        ? await getWerewolfWatchPosition(slug, audience, nextAudience, boundaryCursor, `${data.gameId}:${audience}:${boundaryCursor}:boundary`, controller.signal, anonymous)
+        : current && !isOpeningCue(current) ? await getWerewolfWatchPosition(slug, audience, nextAudience, current.moment.cursor, current.key, controller.signal, anonymous) : null;
+      if (controller.signal.aborted || generation !== intent.current) return false;
+      const head = await getWerewolfWatch(slug, nextAudience, 1, controller.signal, cutoff, anonymous);
+      if (controller.signal.aborted || generation !== intent.current) return false;
+      const newOpening = werewolfOpening(head, frozenTitle.current);
+      const targetCursor = position?.cursor ?? 1;
+      const start = Math.floor((targetCursor - 1) / 32) * 32 + 1;
+      const targetWindow = start === 1 ? head : await getWerewolfWatch(slug, nextAudience, start, controller.signal, cutoff, anonymous);
+      if (controller.signal.aborted || generation !== intent.current) return false;
+      if (atBoundary) {
+        const boundaryCursor = position?.boundaryCursor ?? null;
+        const boundaryStart = boundaryCursor ? Math.floor((boundaryCursor - 1) / 32) * 32 + 1 : 1;
+        const boundaryWindow = boundaryStart === 1 ? head : boundaryStart === start ? targetWindow : await getWerewolfWatch(slug, nextAudience, boundaryStart, controller.signal, cutoff, anonymous);
+        if (controller.signal.aborted || generation !== intent.current) return false;
+        const boundary = boundaryCursor ? boundaryWindow.moments.find(moment => moment.cursor === boundaryCursor) : null;
+        if (boundaryCursor && !boundary) throw new Error("This replay moment is not available.");
+        const all = [...newOpening, ...werewolfCues([targetWindow])];
+        const index = position?.key ? all.findIndex(cue => cue.key === position.key) : -1;
+        if (position?.key && index < 0) throw new Error("This replay moment is not available.");
+        windows.current.clear(); windows.current.set(head.fromCursor, head); windows.current.set(targetWindow.fromCursor, targetWindow);
+        windows.current.set(boundaryWindow.fromCursor, boundaryWindow);
+        opening.current = newOpening; firstPlayable.current = werewolfCues([head])[0]?.moment.cursor ?? null;
+        awaitingInitialCue.current = false;
+        setTail(boundary ?? null); setData(boundaryWindow); setRevision(value => value + 1); setNavigationRevision(value => value + 1);
+        setAudience(nextAudience); director.load(index < 0 ? [] : all); director.setThinkingEnabled(nextAudience === "omniscient" && thinking);
+        if (index >= 0) director.holdAtTail(index, playIntent.current);
+        target.current = boundaryCursor ?? 1;
+        return true;
+      }
+      const cues = werewolfCues([targetWindow]);
+      const all = [...newOpening, ...cues];
+      const key = current && isOpeningCue(current) ? current.key : position?.key ?? newOpening[0]?.key;
+      const index = all.findIndex(cue => cue.key === key);
+      if (index < 0) throw new Error("This replay moment is not available.");
+      const targetCue = all[index]!;
+      const sourceLead = current && !isOpeningCue(current) ? current.transformation?.durationMs ?? 0 : 0;
+      const targetLead = !isOpeningCue(targetCue) ? targetCue.transformation?.durationMs ?? 0 : 0;
+      windows.current.clear(); windows.current.set(head.fromCursor, head); windows.current.set(targetWindow.fromCursor, targetWindow);
+      opening.current = newOpening; firstPlayable.current = werewolfCues([head])[0]?.moment.cursor ?? null;
+      setTail(null); setData(targetWindow); setRevision(value => value + 1); setNavigationRevision(value => value + 1);
+      setAudience(nextAudience);
+      director.load(all);
+      director.setThinkingEnabled(nextAudience === "omniscient" && thinking);
+      if (position && !position.exact || thought && nextAudience === "mystery") director.seek(index);
+      else director.seekContent(index, Math.max(0, elapsed - sourceLead + targetLead));
+      director.setFollowTail(true);
+      if (playIntent.current) director.play();
+      target.current = targetCursor;
+      return true;
+    } catch (cause) {
+      if (!controller.signal.aborted && generation === intent.current) {
+        if (cause instanceof ApiError && [401,403,404].includes(cause.status)) {
+          playIntent.current = false; setFollow(false); director.load([]); windows.current.clear(); setData(null); setTail(null);
+        } else {
+          if (playIntent.current) director.play();
+          setError(cause instanceof Error ? cause.message : "Could not prepare replay");
+        }
+      }
+      return false;
+    } finally { if (!controller.signal.aborted && generation === intent.current) {switching.current = false;setPreparing(false);} }
+  }, [audience, slug, cutoff, director, anonymous, cancel, data, tail]);
   const playbackCue = director.getActiveCue();
   const openingCue = isOpeningCue(playbackCue) ? playbackCue : null;
   const activeCue = playbackCue && !isOpeningCue(playbackCue) ? playbackCue : null;
@@ -220,7 +310,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     if (openingIndex >= 0) return seek(1, playIntent.current, false, false, 0, openingIndex, elapsedMs);
     if ("cursor" in stop) await seek(stop.cursor, playIntent.current, false, false, stop.step, undefined, elapsedMs, key);
   };
-  return {...clock, previousCue, nextCue, timingCues, seekTiming, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
+  return {...clock, audience, switchAudience, previousCue, nextCue, timingCues, seekTiming, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
     retry: () => void seek(target.current,playIntent.current,false,awaitingInitialCue.current),
     pause: () => {playIntent.current = false;setFollow(false);director.pause();},
     toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },

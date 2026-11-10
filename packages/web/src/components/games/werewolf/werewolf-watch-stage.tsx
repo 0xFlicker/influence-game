@@ -40,7 +40,7 @@ export function WerewolfHouseLayout({cue, elapsed, readingElapsed = elapsed, hol
   if (!showHouse) return <>{children}</>;
   return <><RoomBackdrop source={cue.moment.entry.kind === "vote" ? WEREWOLF_ROOMS.vote : werewolfBackdrop(cue)} />
     <HouseResultLayout text={moment.text} logoUrl={logoUrl} elapsedMs={Math.max(0, readingElapsed - (cue.transformation?.durationMs ?? 0))}
-      progress={narration ? narration.elapsedMs / narration.durationMs : undefined}>{children}</HouseResultLayout></>;
+      progress={narration ? narration.elapsedMs / narration.durationMs : undefined} progressDurationMs={narration?.durationMs}>{children}</HouseResultLayout></>;
 }
 
 export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, holding, status, contextLabel, navigationRevision = 0, previousCue, nextCue, houseNarration, hideHouseCaption}: Neighbors & {houseNarration?: NarrationWindow | null; cue: WerewolfWatchCue | null; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: Pick<PresentationDirector<WerewolfWatchCue>, "manualAdvance" | "setReady" | "getSpeechElapsedBaseMs" | "getSnapshot">; holding: boolean; status?: string; contextLabel?: string; navigationRevision?: number}) {

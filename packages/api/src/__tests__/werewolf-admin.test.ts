@@ -346,6 +346,29 @@ test("watch windows are bounded, private by audience and pinned to public media"
   expect((await app.request(`/api/werewolf/${g.id}/watch`)).status).toBe(404);
 });
 
+test("watch audience position maps the accepted prefix without exposing private provenance", async () => {
+  const g = await game(), app = createWerewolfRoutes(db);
+  const response = await app.request(`/api/werewolf/${g.id}/watch?audience=mystery&limit=64`);
+  const watch = await response.json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+  const dawn = watch.moments.find(moment => moment.entry.kind === "night")!;
+  const cue = watch.playback.find(row => row.cursor === dawn.cursor)!.keys.at(-1)!;
+  const query = new URLSearchParams({from:"mystery",to:"omniscient",cursor:String(dawn.cursor),cue});
+  const mapped = await app.request(`/api/werewolf/${g.slug}/watch-position?${query}`);
+  expect(mapped.status).toBe(200);
+  expect(mapped.headers.get("cache-control")).toBe("private, no-store");
+  const result = await mapped.json() as {cursor:number;key:string;exact:boolean};
+  expect(Object.keys(result).sort()).toEqual(["cursor","exact","key"]);
+  expect(result.exact).toBe(true);
+  expect(result.key).toContain(":omniscient:");
+  const reverse = new URLSearchParams({from:"omniscient",to:"mystery",cursor:String(result.cursor),cue:result.key});
+  expect(await (await app.request(`/api/werewolf/${g.id}/watch-position?${reverse}`)).json()).toEqual({cursor:dawn.cursor,key:cue,exact:true});
+  query.set("cue", "invalid");
+  expect((await app.request(`/api/werewolf/${g.id}/watch-position?${query}`)).status).toBe(400);
+  expect((await app.request(`/api/werewolf/${g.id}/watch-position?${reverse}&to=omniscient`)).status).toBe(400);
+  await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,g.id));
+  expect((await app.request(`/api/werewolf/${g.id}/watch-position?${reverse}`)).status).toBe(404);
+});
+
 test("Werewolf regeneration replans approved locations and wolf forms without changing existing publication", async () => {
   const g = await game(true, [], true);
   const originalEvents = await readWerewolfEvents(db, g.id);

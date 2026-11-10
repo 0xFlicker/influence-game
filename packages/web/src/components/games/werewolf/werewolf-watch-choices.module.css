@@ -1,0 +1,14 @@
+.container { container: werewolf-choices / inline-size; min-width: 0; width: 100%; }
+.pair { display: flex; gap: 6px; }
+.action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 9px 10px; border: 1px solid rgb(255 255 255 / .25); border-radius: 6px; background: rgb(0 0 0 / .65); color: white; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.action:hover { background: rgb(255 255 255 / .12); }
+.action:focus-visible { outline: 2px solid #ddbf87; outline-offset: 2px; }
+.menu { display: none; position: relative; }
+.menu summary { list-style: none; }
+.menu summary::-webkit-details-marker { display: none; }
+.menuItems { position: absolute; z-index: 30; bottom: calc(100% + 4px); left: 0; display: grid; min-width: 140px; padding: 4px; border: 1px solid rgb(255 255 255 / .25); border-radius: 6px; background: #17171b; box-shadow: 0 8px 24px #0009; }
+.menuItems .action { justify-content: flex-start; border: 0; background: transparent; }
+.menuItems .action:hover { background: rgb(255 255 255 / .12); }
+.noPrefix { display: none; }
+@container werewolf-choices (max-width: 300px) { .prefix { display: none; } }
+@container werewolf-choices (max-width: 190px) { .pair { display: none; } .menu { display: block; } }

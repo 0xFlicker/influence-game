@@ -7,6 +7,7 @@ import { AgentProfileLink } from "@/components/agent-profile-link";
 import { resolveApiUrl } from "@/lib/api";
 import type { ChampionshipView } from "@/lib/championship";
 import styles from "./championship.module.css";
+import {WerewolfWatchChoices} from "@/components/games/werewolf/werewolf-watch-choices";
 
 const EmbeddedReplay = dynamic(() => import("@/components/watch/embedded-replay").then(module => module.EmbeddedReplay), { ssr: false, loading: () => <p role="status">Opening the watch room…</p> });
 const InfluenceViewer = dynamic(() => import("@/app/games/[slug]/game-viewer").then(module => module.GameViewer), { loading: () => <p role="status">Loading the finale…</p> });
@@ -36,7 +37,7 @@ const number = (value: number) => String(value).padStart(2, "0");
 export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
   const [chosen, setChosen] = useState<number>();
   const [watching, setWatching] = useState(false);
-  const [audience, setAudience] = useState<"mystery" | "omniscient">("mystery");
+  const [audience, setAudience] = useState<"mystery" | "omniscient" | null>(null);
   const match = event.matches.find(item => item.ordinal === chosen) ?? featuredChampionshipMatch(event.matches);
   const desk = championshipDesk(event);
   const completed = event.matches.filter(item => item.gameKind === "werewolf" && item.status === "completed").length;
@@ -53,13 +54,13 @@ export function ChampionshipEventView({ event }: { event: ChampionshipView }) {
       <div className={styles.watchColumn}>
         <div className={styles.broadcastHeading}><span className={styles.eyebrow}>{match?.gameKind === "influence" ? "The Influence finale" : "Werewolf series"}</span><span>{match ? `Match ${number(match.ordinal)} · ${match.status}` : "Opening night awaits"}</span></div>
         <div className={styles.player} data-testid="championship-player">
-          {watching && playable && match?.gameSlug ? match.gameKind === "influence" ? <InfluenceViewer key={match.gameSlug} gameId={match.gameSlug} completedMode="replay" contained /> : <EmbeddedReplay key={`${match.gameSlug}:${audience}`} contained audience={audience} game={{id:match.gameSlug, slug:match.gameSlug, title:`${event.name} · Match ${match.ordinal}`, gameKind:match.gameKind, status:match.status === "completed" ? "completed" : "in_progress"}} /> : <div className={styles.poster} data-game-kind={match?.gameKind ?? "werewolf"}>
+          {watching && playable && match?.gameSlug && (match.gameKind === "influence" || audience) ? match.gameKind === "influence" ? <InfluenceViewer key={match.gameSlug} gameId={match.gameSlug} completedMode="replay" contained /> : audience && <EmbeddedReplay key={match.gameSlug} contained audience={audience} onAudienceChange={setAudience} game={{id:match.gameSlug, slug:match.gameSlug, title:`${event.name} · Match ${match.ordinal}`, gameKind:match.gameKind, status:match.status === "completed" ? "completed" : "in_progress"}} /> : <div className={styles.poster} data-game-kind={match?.gameKind ?? "werewolf"}>
             <span className={styles.eyebrow}>The House presents</span><h2>{match?.gameKind === "influence" ? <>One final<br /><em>act.</em></> : <>Trust is<br /><em>temporary.</em></>}</h2>
             <p>{match ? `${match.gameKind === "werewolf" ? "Werewolf" : "Influence"} · ${dateFormat.format(new Date(match.scheduledAt))} UTC` : "The opening date will be announced here."}</p>
-            {playable ? <button className={styles.play} onClick={() => setWatching(true)}><span aria-hidden="true">▶</span> {match?.status === "completed" ? "Watch replay" : "Watch match"}</button> : <p className={styles.awaiting}>{match?.gameSlug ? <Link href={`/games/${match.gameSlug}`}>Open live game →</Link> : "The curtain rises when the match begins."}</p>}
+            {playable ? match?.gameKind === "werewolf" ? <div className="mt-6 w-full max-w-sm"><WerewolfWatchChoices onWatch={mode => {setAudience(mode);setWatching(true);}} />{audience && <button className={styles.play} aria-label={`Watch ${audience === "mystery" ? "Mystery" : "Omniscient"}`} onClick={() => setWatching(true)}>▶</button>}</div> : <button className={styles.play} onClick={() => setWatching(true)}><span aria-hidden="true">▶</span> {match?.status === "completed" ? "Watch replay" : "Watch match"}</button> : <p className={styles.awaiting}>{match?.gameSlug ? <Link href={`/games/${match.gameSlug}`}>Open live game →</Link> : "The curtain rises when the match begins."}</p>}
           </div>}
         </div>
-        <div className={styles.watchCaption}><span>{watching ? "You’re watching in the championship room." : "Choose a match. Take your seat."}</span><div className={styles.viewControl}>{match?.gameKind === "werewolf" && playable ? <label>View <select aria-label="Werewolf viewing mode" value={audience} onChange={e => setAudience(e.target.value as "mystery" | "omniscient")}><option value="mystery">Mystery · roles hidden</option><option value="omniscient">Omniscient · spoilers</option></select></label> : null}</div></div>
+        <div className={styles.watchCaption}><span>{watching ? "You’re watching in the championship room." : "Choose a match. Take your seat."}</span></div>
       </div>
       <aside className={styles.desk}>
         <p className={styles.eyebrow}>At the House</p><strong className={styles.nextNumber}>{desk.ordinal ? number(desk.ordinal) : "✦"}</strong><h2>{desk.title}</h2><p>{desk.detail}</p>

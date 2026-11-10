@@ -10,7 +10,10 @@ export function layoutSoloPresentation(width: number, height: number, imageWidth
     // would leave less than one readable line after the header and ledger.
     const beside = width >= 760 || (width >= 480 && available < 320);
     const bubbleWidth = Math.max(0, Math.min(720, beside ? width * .43 : width - margin * 2));
-    const bubbleHeight = Math.max(0, Math.min(speechHeight, 440, beside ? available - 24 : available * .44));
+    // A role label, padding and page indicator still need room for a full
+    // readable line when a narrow ballot shares the stage with its ledger.
+    const minimumBubble = Math.min(150, Math.max(0, available - 84));
+    const bubbleHeight = Math.max(0, Math.min(speechHeight, 440, beside ? available - 24 : Math.max(available * .44, minimumBubble)));
     const diameter = Math.max(0, Math.min(440, width * (beside ? .32 : .68), beside ? available * .8 : available - bubbleHeight - 56));
     const groupWidth = diameter + 40 + bubbleWidth;
     const image = { width: diameter, height: diameter, left: beside ? (width - groupWidth) / 2 : (width - diameter) / 2,
@@ -25,7 +28,8 @@ export function layoutSoloPresentation(width: number, height: number, imageWidth
   const gap = 20;
   const beside = width >= 760 || (width >= 480 && available < 320);
   const textWidth = Math.max(0, beside ? Math.min(720, width * .46) : width - margin * 2);
-  const bubbleHeight = showSpeech ? Math.max(0, Math.min(speechHeight, available * (beside ? .8 : .36))) : 0;
+  const minimumBubble = Math.min(150, Math.max(0, available - 84));
+  const bubbleHeight = showSpeech ? Math.max(0, Math.min(speechHeight, beside ? available * .8 : Math.max(available * .36, minimumBubble))) : 0;
   // In portrait, speech owns the lower area. The ledger is outside both regions.
   const upperHeight = Math.max(0, available - margin * 2 - bubbleHeight - (showSpeech ? gap : 0));
   const artWidth = Math.max(0, beside ? width - margin * 2 - (textWidth + gap) * (showSpeech ? 1 : 0) : width - margin * 2);

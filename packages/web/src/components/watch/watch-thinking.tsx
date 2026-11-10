@@ -6,6 +6,7 @@ import {TimedSpeech} from "@/app/games/[slug]/components/timed-speech";
 import {visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
 import {thoughtTail} from "./thought-tail";
 import {sampleWatch} from "./watch-sampling";
+import {WatchPageContext} from "./watch-page-context";
 
 export type Thought = NonNullable<ReturnType<PresentationDirector<WatchCue>["getThinkingFrame"]>> & {speaker: string; roleLabel?: string};
 const ThinkingContext = createContext<Thought | null>(null);
@@ -40,10 +41,10 @@ export function WatchThinking<C extends WatchCue>({director, cueKey, enabled, sp
     return sampleWatch(director, () => redraw(value => value + 1));
   }, [enabled, director]);
   const thought = enabled ? director.getThinkingFrame() : null;
-  return <SceneThinkingProvider thought={thought ? {...thought, speaker, roleLabel} : null}>
+  return <WatchPageContext.Provider value={director}><SceneThinkingProvider thought={thought ? {...thought, speaker, roleLabel} : null}>
     {children}
     {enabled && error?.key === errorKey && <p role="status" className="pointer-events-none absolute right-4 top-14 z-30 rounded bg-black/90 p-2 text-xs text-white/70">{error.message}</p>}
-  </SceneThinkingProvider>;
+  </SceneThinkingProvider></WatchPageContext.Provider>;
 }
 
 /** A scene owns placement. There is no opaque lane or separate playback clock. */
@@ -69,7 +70,7 @@ export function ThoughtBubble({box, head, typography, padding = 18}: {
         <p className="truncate"><span style={{opacity: .65 + .35 * Math.sin(thought.elapsedMs / 350) ** 2}} aria-hidden="true">••• </span>{thought.speaker} thinks</p>
         {thought.roleLabel && <p data-thinking-role className="text-amber-200">{thought.roleLabel}</p>}
       </div>
-      <TimedSpeech typography={typography} text={thought.text} elapsedMs={VISUAL_SPEECH_FADE_MS + thought.elapsedMs / thought.durationMs * reading} />
+      <TimedSpeech advancePart="thinking" typography={typography} text={thought.text} elapsedMs={VISUAL_SPEECH_FADE_MS + thought.elapsedMs / thought.durationMs * reading} />
     </aside>
   </>;
 }

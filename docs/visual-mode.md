@@ -221,7 +221,7 @@ inspector, navigation and surrounding progress stay outside. Playback controls
 float over a gradient, hide after three idle seconds while playing, and remain
 available on pointer, touch, keyboard, focus or pause. Content clicks use the same
 speech staging inside and outside fullscreen. While playing, the first click when
-controls are hidden reveals controls; subsequent clicks advance the speech stage.
+controls are hidden reveals controls; subsequent clicks advance one speech page at a time before moving past the stage.
 While paused, each click shows or hides speech. Fullscreen Mingle temporarily follows the active
 speaker; leaving restores the normal pinned-room selection.
 

@@ -45,7 +45,7 @@ export function HouseNarration({text, window, logoUrl = "/logo.png", bottom = 16
     return () => {active = false; observer.disconnect();};
   }, [visible,text,centered,bottom,readable]);
   if (!window || !text.trim()) return null;
-  if (readable) return <div data-house-narration className="pointer-events-none absolute inset-x-3 z-40 mx-auto flex h-[28%] min-h-[86px] max-w-3xl" style={{bottom}}><HouseMessage text={text} progress={window.elapsedMs/window.durationMs} logoUrl={logoUrl} /></div>;
+  if (readable) return <div data-house-narration className="pointer-events-none absolute inset-x-3 z-40 mx-auto flex h-[28%] min-h-[86px] max-w-3xl" style={{bottom}}><HouseMessage text={text} progress={window.elapsedMs/window.durationMs} progressDurationMs={window.durationMs} logoUrl={logoUrl} /></div>;
   return <div ref={frame} data-house-narration data-house-layout={centered ? "center" : "caption"} className="pointer-events-none absolute inset-0 z-40" style={{background:centered ? "radial-gradient(ellipse,rgba(0,0,0,.8),rgba(0,0,0,.35))" : "linear-gradient(transparent 45%,rgba(0,0,0,.22))", containerType:"size"}}>
     <section ref={content} aria-label="The House narration" className={centered ? "absolute inset-x-0 top-1/2 mx-auto flex max-w-4xl -translate-y-1/2 flex-col items-center justify-center gap-4 p-6 text-center text-white" : "absolute inset-x-3 mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-white/25 bg-black/90 px-4 py-3 text-white shadow-2xl sm:inset-x-6"} style={centered ? undefined : {bottom}}>
       {/* eslint-disable-next-line @next/next/no-img-element -- existing bundled House logo, shared with exports */}

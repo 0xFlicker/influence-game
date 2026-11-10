@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Window } from "happy-dom";
+import {StrictMode, type ReactNode} from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useWerewolfWatch } from "../components/games/werewolf/use-werewolf-watch";
 import { setApiBase } from "../lib/api";
+import {completedCurrentWerewolfFixture} from "@influence/engine/fixtures/werewolf-results";
+import {mapWerewolfWatchCue, projectWerewolfProductionProvenance, projectWerewolfProductionWatch, projectWerewolfWatch} from "@influence/engine/werewolf/watch";
 
 const originalFetch = globalThis.fetch;
 const globals = ["window", "document", "navigator", "localStorage", "HTMLElement", "Node", "Event", "requestAnimationFrame", "cancelAnimationFrame", "matchMedia"] as const;
@@ -62,6 +65,109 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
 }
 
 const useFixtureWatch = () => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", 1);
+
+test("Strict Mode effect replay reloads the initial position after cleanup", async () => {
+  fixture([1,2],2);
+  const view = renderHook(useFixtureWatch, {wrapper:({children}:{children:ReactNode}) => <StrictMode>{children}</StrictMode>});
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  expect(view.result.current.director.getActiveCue()?.key).toBe("g:mystery:1");
+});
+
+function canonicalFixture(events: Awaited<ReturnType<typeof completedCurrentWerewolfFixture>>, waitForMapping?:Promise<void>, status = "completed") {
+  globalThis.fetch = Object.assign(async (input: string | URL | Request) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
+    if (url.pathname.endsWith("/watch-position")) {
+      if (waitForMapping) await waitForMapping;
+      return Response.json(mapWerewolfWatchCue(events, url.searchParams.get("from") as "mystery" | "omniscient", url.searchParams.get("to") as "mystery" | "omniscient", Number(url.searchParams.get("cursor")), url.searchParams.get("cue")!));
+    }
+    const audience = url.searchParams.get("audience") as "mystery" | "omniscient";
+    const projection = projectWerewolfWatch(events, audience, Number(url.searchParams.get("fromCursor")), 32);
+    return Response.json({...projection, slug:"g", status, audience, publicationCutoff:"2026-10-06T00:00:00.000Z", media:{}});
+  }, {preconnect:originalFetch.preconnect}) as typeof fetch;
+}
+test.each([false,true])("switching a silent live boundary preserves its position and follow intent (following: %s)", async following => {
+  const events = await completedCurrentWerewolfFixture("switch-tail", 10);
+  const projection = projectWerewolfProductionWatch(events,"mystery");
+  const silent = projection.moments.find(moment => moment.cursor > 1 && !projection.playback.some(row => row.cursor === moment.cursor))!;
+  const sequence = projectWerewolfProductionProvenance(events,"mystery").find(row => row.cursor === silent.cursor)!.eventSequence;
+  const prefix = events.filter(event => event.sequence <= sequence);
+  const expected = mapWerewolfWatchCue(prefix,"mystery","omniscient",silent.cursor,`switch-tail:mystery:${silent.cursor}:boundary`);
+  if (!("boundaryCursor" in expected)) throw new Error("Missing mapped boundary");
+  canonicalFixture(prefix,undefined,"in_progress");
+  const preceding = projection.playback.findLast(row => row.cursor < silent.cursor)!;
+  const view = renderHook(() => useWerewolfWatch("g","mystery","2026-10-06T00:00:00.000Z",preceding.cursor));
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  act(() => view.result.current.director.holdAtTail(view.result.current.director.getSnapshot().cursor,true));
+  await waitFor(() => expect(view.result.current.active?.cursor).toBe(silent.cursor));
+  if (!following) act(() => view.result.current.pause());
+  await act(async () => {await view.result.current.switchAudience("omniscient",false);});
+  expect(view.result.current.audience).toBe("omniscient");
+  expect(view.result.current.active?.cursor).toBe(expected.boundaryCursor ?? undefined);
+  expect(view.result.current.director.getActiveCue()?.key ?? null).toBe(expected.key);
+  expect(view.result.current.holding).toBe(true);
+  expect(view.result.current.follow).toBe(following);
+  expect(view.result.current.director.getSnapshot().isPlaying).toBe(following);
+});
+test("switching audiences retains the public dawn cue, time and paused state", async () => {
+  const events = await completedCurrentWerewolfFixture("switch-fixture", 10);
+  const mystery = projectWerewolfProductionWatch(events, "mystery");
+  const dawn = mystery.moments.find(moment => moment.entry.kind === "night")!;
+  canonicalFixture(events);
+  const view = renderHook(() => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", dawn.cursor, undefined, undefined, false, true));
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  act(() => {view.result.current.director.setSpeed(2);view.result.current.director.seekTimeline(view.result.current.director.getSnapshot().cursor, 1200);});
+  const director = view.result.current.director;
+  let changed = false;
+  await act(async () => {changed = await view.result.current.switchAudience("omniscient", false);});
+  expect(changed).toBe(true);
+  expect(view.result.current.audience).toBe("omniscient");
+  expect(view.result.current.director).toBe(director);
+  expect(director.getActiveCue()?.key).toContain(":omniscient:");
+  expect(director.getElapsedBaseMs()).toBeCloseTo(1200,3);
+  expect(director.getSnapshot().speed).toBe(2);
+  expect(director.getSnapshot().isPlaying).toBe(false);
+  await act(async () => {changed = await view.result.current.switchAudience("mystery", false);});
+  expect(changed).toBe(true);
+  expect(director.getActiveCue()?.key).toBe(`${mystery.gameId}:mystery:${dawn.cursor}`);
+  expect(director.getElapsedBaseMs()).toBeCloseTo(1200,3);
+});
+
+test("switching from a private night action lands before the public dawn", async () => {
+  const events = await completedCurrentWerewolfFixture("switch-private", 10);
+  const omni = projectWerewolfProductionWatch(events, "omniscient");
+  const dawn = omni.moments.find(moment => moment.entry.kind === "night")!;
+  const privateKey = omni.playback.find(row => row.cursor === dawn.cursor)!.keys.find(key => /:(protect|investigate|hunt)(:decision)?$/.test(key))!;
+  const expected = mapWerewolfWatchCue(events,"omniscient","mystery",dawn.cursor,privateKey);
+  expect(expected.exact).toBe(false);
+  canonicalFixture(events);
+  const view = renderHook(() => useWerewolfWatch("g", "omniscient", "2026-10-06T00:00:00.000Z", dawn.cursor, undefined, undefined, false, true));
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  await act(async () => {await view.result.current.seekTiming(privateKey,1000);});
+  await act(async () => {await view.result.current.switchAudience("mystery", false);});
+  expect(expected.key).not.toBeNull();
+  expect(view.result.current.director.getActiveCue()?.key).toBe(expected.key!);
+  expect(view.result.current.active?.snapshot.players.every(player => !player.role)).toBe(true);
+  expect(view.result.current.audience).toBe("mystery");
+});
+
+test("returning to the current audience cancels a slow in-flight switch", async () => {
+  const events = await completedCurrentWerewolfFixture("switch-cancel", 10);
+  const mystery = projectWerewolfProductionWatch(events, "mystery");
+  const dawn = mystery.moments.find(moment => moment.entry.kind === "night")!;
+  let release = () => {};
+  const pending = new Promise<void>(resolve => {release = resolve;});
+  canonicalFixture(events, pending);
+  const view = renderHook(() => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", dawn.cursor, undefined, undefined, false, true));
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  const key = view.result.current.director.getActiveCue()?.key;
+  let operation:Promise<boolean> | undefined;
+  act(() => {operation = view.result.current.switchAudience("omniscient", false);});
+  await act(async () => {await view.result.current.switchAudience("mystery", false);});
+  await act(async () => {release(); await operation;});
+  expect(view.result.current.audience).toBe("mystery");
+  expect(view.result.current.director.getActiveCue()?.key).toBe(key);
+  expect(view.result.current.preparing).toBe(false);
+});
 
 for(const status of ["in_progress","completed"])test(`operator ${status} player stays paused after hydration until Play`,async()=>{
   fixture([1,2],2,status);

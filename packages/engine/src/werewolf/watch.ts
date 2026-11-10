@@ -4,7 +4,7 @@ import { werewolfVisualStaging } from "./visual-staging";
 import { applyWerewolfEvent } from "./rules";
 import { projectWerewolfEntry, projectWerewolfSnapshot, type WerewolfAudience } from "./observation";
 import type { WerewolfEvent, WerewolfState } from "./types";
-import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity, type WerewolfWatchMoment, type WerewolfWatchIndex, type WerewolfWatchWindow} from "./watch-contract";
+import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity, type WerewolfWatchMoment, type WerewolfWatchIndex, type WerewolfWatchPosition, type WerewolfWatchWindow} from "./watch-contract";
 
 /** Server-only staging coordinates never appear in the browser DTO. */
 export type WerewolfWatchStaging = ReturnType<typeof werewolfVisualStaging>;
@@ -134,6 +134,47 @@ export function projectWerewolfProductionProvenance(events: readonly WerewolfEve
   }
   if (throughCursor !== undefined && provenance.at(-1)?.cursor !== throughCursor) throw new Error("Unavailable production source prefix");
   return provenance;
+}
+
+/** Map a playable audience-local cue through its canonical event without exposing
+ * event sequences or private reducer state to the caller. */
+export function mapWerewolfWatchCue(events: readonly WerewolfEvent[], from: WerewolfAudience, to: WerewolfAudience, cursor: number, key: string):WerewolfWatchPosition {
+  if ((from !== "mystery" && from !== "omniscient") || (to !== "mystery" && to !== "omniscient") || !Number.isSafeInteger(cursor) || cursor < 1) throw new Error("Invalid watch position");
+  const source = projectWerewolfProductionWatch(events, from);
+  const destination = projectWerewolfProductionWatch(events, to);
+  // A live hold may follow non-playable events, after the last cue has left
+  // the client cache. Map that visible boundary without returning event IDs.
+  if (key === `${source.gameId}:${from}:${cursor}:boundary`) {
+    const sourceEvent = projectWerewolfProductionProvenance(events, from).find(item => item.cursor === cursor);
+    if (!sourceEvent) throw new Error("Unavailable watch position");
+    const boundary = projectWerewolfProductionProvenance(events, to).findLast(item => item.eventSequence <= sourceEvent.eventSequence);
+    const lastCue = boundary && destination.playback.findLast(item => item.cursor <= boundary.cursor);
+    return {cursor:lastCue?.cursor ?? null, key:lastCue?.keys.at(-1) ?? null, exact:false, boundaryCursor:boundary?.cursor ?? null};
+  }
+  const row = source.playback.find(item => item.cursor === cursor);
+  const sourceLast = source.moments.at(-1)?.entry;
+  const destinationLast = destination.moments.at(-1)?.entry;
+  const reprise = key === `${source.gameId}:${from}:${cursor}:reprise`
+    && source.playback.at(-1)?.cursor === cursor
+    && sourceLast?.kind === "speech" && sourceLast.purpose === "retrospective"
+    && events.some(event => event.type === "werewolf.retrospective_completed");
+  if (!row?.keys.includes(key) && !reprise) throw new Error("Unavailable watch cue");
+  const sourceEvent = projectWerewolfProductionProvenance(events, from).find(item => item.cursor === cursor);
+  if (!sourceEvent) throw new Error("Unavailable watch position");
+  const destinationEvents = projectWerewolfProductionProvenance(events, to);
+  const matchingEvent = destinationEvents.find(item => item.eventSequence === sourceEvent.eventSequence);
+  const sourcePrefix = `${source.gameId}:${from}:${cursor}`;
+  const suffix = key.slice(sourcePrefix.length);
+  if (!key.startsWith(sourcePrefix) || suffix && !suffix.startsWith(":")) throw new Error("Invalid watch cue");
+  const target = matchingEvent && destination.playback.find(item => item.cursor === matchingEvent.cursor);
+  const mappedKey = target && `${destination.gameId}:${to}:${target.cursor}${suffix}`;
+  if (target && mappedKey && (target.keys.includes(mappedKey) || reprise && destination.playback.at(-1)?.cursor === target.cursor && destinationLast?.kind === "speech" && destinationLast.purpose === "retrospective")) return {cursor:target.cursor, key:mappedKey, exact:true};
+  const earlier = destinationEvents.filter(item => item.eventSequence < sourceEvent.eventSequence);
+  for (let index = earlier.length - 1; index >= 0; index--) {
+    const candidate = destination.playback.find(item => item.cursor === earlier[index]!.cursor);
+    if (candidate) return {cursor:candidate.cursor, key:candidate.keys.at(-1)!, exact:false};
+  }
+  return {cursor:null, key:null, exact:false};
 }
 
 /** One action list owns both scrub counts and scene expansion; public night entries remain empty. */

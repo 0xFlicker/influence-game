@@ -12,6 +12,7 @@ import {createFormatKernelViewerScenario} from "@influence/engine/fixtures/forma
 import {Phase} from "@influence/engine";
 import {completedCurrentWerewolfFixture, completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
+import {SOLO_READ_START_MS, visualSpeechReadingMs} from "@influence/engine/visual-speech";
 import type {GameWatchReplayFrame, TranscriptEntry} from "../lib/api";
 import {formatPresentationMetadata} from "@influence/engine/format-presentation-metadata";
 import {portraitRoomPageCount} from "../app/games/[slug]/components/portrait-room-pagination";
@@ -84,6 +85,9 @@ const largeThoughtCue = thinkingSegment(largeHuddleCue,"format-huddle-large-thou
 cases.push({name:"format-huddle-large-thought",reference:largeHuddleCue,cue:largeThoughtCue});
 cases.push({name:"format-huddle-large-thought-recorded",reference:largeHuddleCue,cue:{...largeThoughtCue,timing:{...largeThoughtCue.timing,recording:{assetId:"assets/format-context-voice.wav",durationMs:2000}}}});
 cases.push({name:"format-huddle-large-recorded",reference:largeHuddleCue,cue:{...largeHuddleCue,timing:{...largeHuddleCue.timing,recording:{assetId:"assets/format-context-voice.wav",durationMs:2000}}}});
+const sixPageThought = Array.from({length:10},()=>largeHuddle.thinking!).join(" ");
+const sixThoughtCue = thinkingSegment(largeHuddleCue,"format-huddle-six-thought",sixPageThought,"atlas");
+cases.push({name:"format-huddle-six-thought",reference:largeHuddleCue,cue:sixThoughtCue});
 const fiveMembers = largePlayers.slice(0,5);
 const fiveHuddle:TranscriptEntry = {...largeHuddle,id:104,entrySequence:104,toPlayerIds:fiveMembers.slice(1).map(player=>player.id),
   allianceSession:{sessionId:"five",allianceId:"five",allianceName:"The Exceptionally Long Night Shift Alliance",memberIds:fiveMembers.map(player=>player.id)}};
@@ -113,6 +117,17 @@ for (const suite of suites) for (const audience of ["mystery","omniscient"] as c
     cases.push({name:`${suite.prefix}${audience}-${kind}`,cue,reference:cue});
   }
 }
+// A long accepted ballot exercises the exact speech adapter used by manual
+// page advancement, including an isolated Studio cut with omitted neighbors.
+const pageText = "I'm voting to eliminate Kimi K3. They pushed for a four-vote majority without naming a suspect first, then only offered DeepSeek Flash after Meta Spark pressed them directly. That sequencing—demand commitment before naming—is a wolf pattern worth acting on today. I will listen to anyone who can disprove this.";
+const pageEvents = await completedCurrentWerewolfFixture("page-parity", 10);
+for (const event of pageEvents) if (event.type === "werewolf.action_accepted" && event.payload.action === "public_vote" && event.payload.decision.kind === "spoken_target") event.payload.decision.text = pageText;
+const pageProjection = projectWerewolfProductionWatch(pageEvents,"omniscient");
+for (const moment of pageProjection.moments) for (const player of moment.snapshot.players) {player.avatarUrl="/avatars/personas/strategic.png";player.fullBodyReferenceUrl="/avatars/personas/full-body-v1/strategic.webp";}
+const pageCue = buildExportCues({kind:"werewolf",windows:[{...pageProjection,audience:"omniscient",status:"completed",slug:"page-parity",publicationCutoff:"fixture",media:{}}],thoughts:[]})
+  .find(item => item.picture.kind === "werewolf" && item.picture.cue.moment.entry.kind === "ballot" && item.speech?.text === pageText);
+if (!pageCue) throw new Error("Missing long ballot pagination fixture");
+cases.push({name:"page-werewolf-ballot",cue:pageCue,reference:pageCue});
 // Optional saved, already-authorized source cases let a repair prove the actual
 // changed adapter rather than replacing its evidence with unrelated fixtures.
 const suppliedCases = process.argv[3];
@@ -154,8 +169,8 @@ try {
     const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
     const portrait = process.env.FORMAT_CONTEXT_PORTRAIT === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
-    const geometries: readonly (readonly [number, number])[] = process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
-    const geometryCases = narrow || portrait ? cases.filter(item => ["influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
+    const geometries: readonly (readonly [number, number])[] = process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
+    const geometryCases = narrow || portrait ? cases.filter(item => ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
     const selectedCases = process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
     for(const [width,height] of geometries) for(const item of selectedCases) {
@@ -196,14 +211,33 @@ try {
       const expectedCast = item.name === "format-huddle-five" ? fiveMembers : huddleMembers;
       const castPages = portraitRoomPageCount(expectedCast.length);
       const castSamples = ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
-        : item.name.startsWith("format-huddle-large-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
+        : (item.name.startsWith("format-huddle-large-thought") || item.name === "format-huddle-six-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
       let dialogueSamples:number[]=[];
       let roomSamples:number[]=[];
       let expectedDialoguePages=0, expectedRoomPages=0;
-      if(item.name.startsWith("format-huddle-large")) {
-        const text = item.name.includes("-thought") ? largeHuddle.thinking! : largeHuddle.text;
+      if (item.name === "page-werewolf-ballot") {
+        const dialoguePages = [...Object.values(pages),...Object.values(layouts).map(layout => layout.pages)].find(value => value.join("") === pageText);
+        if (!dialoguePages || dialoguePages.length < 2) throw new Error("Ballot fixture must render multiple pages");
+        if (width === 320 && dialoguePages.length < 6) throw new Error(`Expected at least six ballot pages, got ${dialoguePages.length}`);
+        expectedDialoguePages = dialoguePages.length;
+        const weights=dialoguePages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)), total=weights.reduce((a,b)=>a+b,0);
+        let prior=0;
+        dialogueSamples=weights.flatMap(weight=>{
+          const fractions=[prior/total,(prior+weight/2)/total];prior+=weight;
+          return fractions.map(fraction=>{
+            const source=SOLO_READ_START_MS+visualSpeechReadingMs(pageText)*fraction;
+            const segment=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
+            if (!segment) throw new Error("Missing ballot reading segment");
+            // The first frame at or after a click's measured page boundary.
+            return Math.ceil((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
+          });
+        });
+      }
+      if(item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought") {
+        const text = item.name === "format-huddle-six-thought" ? sixPageThought : item.name.includes("-thought") ? largeHuddle.thinking! : largeHuddle.text;
         const dialoguePages=Object.values(pages).find(value=>value.join("") === text);
         if(!dialoguePages?.length || dialoguePages.some(page=>!page.trim())) throw new Error("Huddle pagination did not retain every word");
+        if (item.name === "format-huddle-six-thought" && width === 640 && dialoguePages.length < 6) throw new Error(`Expected at least six thought pages, got ${dialoguePages.length}`);
         expectedDialoguePages = dialoguePages.length;
         const weights=dialoguePages.map(page=>page.trim().split(/\s+/u).length),total=weights.reduce((sum,value)=>sum+value,0);
         let prior=0;
@@ -252,17 +286,19 @@ try {
           if(delta>1) throw new Error(`Studio ${view} mismatch: ${item.name} ${width} frame ${frame}: ${delta}`);
         }
       }
-      if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-five") && expectedCast.some(player=>!observedCast.has(player.id))) throw new Error(`Not every huddle member appeared: ${[...observedCast].join(", ")}`);
+      if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought" || item.name === "format-huddle-five") && expectedCast.some(player=>!observedCast.has(player.id))) throw new Error(`Not every huddle member appeared: ${[...observedCast].join(", ")}`);
       if(item.name === "influence-winner" && winnerPlayers.slice(1).some(player=>!observedWinnerCast.has(player.id))) throw new Error(`Not every winner-scene cast member appeared: ${[...observedWinnerCast].join(", ")}`);
-      if(item.name.startsWith("format-huddle-large") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
+      if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
         throw new Error(`Not every huddle page appeared: room ${observedRoomPages.size}/${expectedRoomPages}, dialogue ${observedDialoguePages.size}/${expectedDialoguePages}`);
+      if (item.name === "page-werewolf-ballot" && observedDialoguePages.size !== expectedDialoguePages)
+        throw new Error(`Not every ballot page appeared: ${observedDialoguePages.size}/${expectedDialoguePages}`);
       // Verify random-access stability independently of the comparison order.
       for(const frame of samples.toReversed()) {
         const path=join(scratch,"reverse.png");
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && (suppliedCases || ["influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if(width===640 && (suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",crf:item.name === "influence-winner" ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
         for(const frame of samples) {

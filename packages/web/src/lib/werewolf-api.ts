@@ -1,6 +1,7 @@
 import type { WerewolfPresentation } from "@influence/engine/werewolf/presentation";
 import { anonymousApiFetch, apiFetch, resolveApiUrl, type GameStatus, type SavedAgent } from "./api";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
+import type { WerewolfWatchPosition } from "@influence/engine/werewolf/watch-contract";
 import type { WerewolfPreset } from "@influence/engine/werewolf/types";
 
 export interface WerewolfGameSummary { episode?: import("./api").EpisodePresentation; gameKind: "werewolf"; id: string; slug: string; status: GameStatus; playerCount: number; joinedPlayers: number; modelLabel: string; createdAt: string }
@@ -45,4 +46,9 @@ export async function getWerewolfWatch(slug: string, audience: WerewolfAudience,
   return { ...data, players: data.players.map(p => ({...p, avatarUrl: p.avatarUrl ? resolveApiUrl(p.avatarUrl) : null, fullBodyReferenceUrl: p.fullBodyReferenceUrl ? resolveApiUrl(p.fullBodyReferenceUrl) : null})),
     moments: data.moments.map(m => ({...m, snapshot: {...m.snapshot, players: m.snapshot.players.map(p => ({...p, avatarUrl: p.avatarUrl ? resolveApiUrl(p.avatarUrl) : null, fullBodyReferenceUrl: p.fullBodyReferenceUrl ? resolveApiUrl(p.fullBodyReferenceUrl) : null}))}})),
     media: Object.fromEntries(Object.entries(data.media).map(([key, scene]) => [key, {...scene, imageUrl: resolveApiUrl(scene.imageUrl), ...(scene.shots ? {shots: {...scene.shots, groups: scene.shots.groups.map(shot => ({...shot, imageUrl: resolveApiUrl(shot.imageUrl)})), overview: scene.shots.overview ? {...scene.shots.overview, imageUrl: resolveApiUrl(scene.shots.overview.imageUrl)} : null}} : {})}])) };
+}
+
+export function getWerewolfWatchPosition(slug: string, from: WerewolfAudience, to: WerewolfAudience, cursor: number, cue: string, signal: AbortSignal, anonymous = false) {
+  const query = new URLSearchParams({from, to, cursor:String(cursor), cue});
+  return (anonymous ? anonymousApiFetch : apiFetch)<WerewolfWatchPosition>(`/api/werewolf/${encodeURIComponent(slug)}/watch-position?${query}`, {cache:"no-store", signal:AbortSignal.any([signal, AbortSignal.timeout(10_000)])});
 }

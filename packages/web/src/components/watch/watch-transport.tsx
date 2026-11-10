@@ -17,16 +17,19 @@ interface WatchTransportProps {
  shareHref?: string; getShareHref?: () => string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void | Promise<void>; goToNextScene: () => void; goToEnd: () => void;
  timeline: WatchTimeline;
+ audience?: {value:"mystery" | "omniscient"; onChange:(value:"mystery" | "omniscient")=>void};
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void}; live: boolean; cursor: number; count: number;
 }
-export function WatchTransport({theater, theaterButton, toggleTheater, audio, voice, fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, timeline, thinking, settings, shareHref, getShareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
+export function WatchTransport({theater, theaterButton, toggleTheater, audio, voice, fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, timeline, thinking, audience, settings, shareHref, getShareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
  const {frameCount, fps} = timeline;
  const [frame, setFrame] = useState(timeline.getFrame);
  useEffect(() => timeline.subscribe(() => setFrame(timeline.getFrame())), [timeline]);
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
- const available = width - 90 - (shareHref || getShareHref ? 55 : 0);
+ const available = width - 90 - (shareHref || getShareHref ? 55 : 0) - (audience ? 180 : 0);
  const capacity = available >= 1020 ? 2 : available >= 780 ? 1 : 0;
+ const compactAudience = Boolean(audience && width < 600);
+ const showLabels = width >= (audience ? 800 : 520);
  useLayoutEffect(() => {
   const element = transport.current;
   if (!element) return;
@@ -52,19 +55,20 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
  const volumeControl = music && <input aria-label="Music volume" type="range" min="0" max="100" step="1" value={Math.round(musicVolumeToSlider(music.volume))} onChange={event => music.onVolume(musicVolumeFromSlider(Number(event.target.value)))} className="h-10 min-w-0 flex-1 cursor-pointer accent-white" />;
  const thinkingControl = thinking && <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-white/80"><input type="checkbox" checked={thinking.enabled} onChange={event => thinking.onChange(event.target.checked)} />Show thinking</label>;
  return <>
-  <div ref={transport} data-watch-transport className="flex min-w-0 items-center gap-0 sm:gap-1" onClick={event => event.stopPropagation()}>
+  <div ref={transport} data-watch-transport className={`flex min-w-0 items-center gap-0 sm:gap-1 ${compactAudience ? "flex-wrap" : ""}`} onClick={event => event.stopPropagation()}>
     <button type="button" aria-label={isPlaying ? "Pause replay" : "Play replay"} title={isPlaying ? "Pause (Space)" : "Play (Space)"} onClick={togglePlay} className={button}>
       <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">{isPlaying ? <path d="M6 4h4v16H6zm8 0h4v16h-4z" /> : <path d="m6 3 15 9-15 9z" />}</svg>
-      <span className={width >= 520 ? "text-xs" : "hidden"}>{isPlaying ? "Pause" : "Play"}</span>
+      <span className={showLabels ? "text-xs" : "hidden"}>{isPlaying ? "Pause" : "Play"}</span>
     </button>
     <button type="button" aria-label="Previous room or scene" title="Previous ([)" disabled={cursor === 0 || count === 0} onClick={goToPrevScene} className={button}>
-      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h3v16H4zm16 0L8 12l12 8z" /></svg><span className={width >= 520 ? "text-xs" : "hidden"}>Previous</span>
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h3v16H4zm16 0L8 12l12 8z" /></svg><span className={showLabels ? "text-xs" : "hidden"}>Previous</span>
     </button>
     <button type="button" aria-label="Next scene" title="Next (])" disabled={cursor >= count - 1} onClick={goToNextScene} className={button}>
-      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 4h3v16h-3zM4 4v16l12-8z" /></svg><span className={width >= 520 ? "text-xs" : "hidden"}>Next</span>
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 4h3v16h-3zM4 4v16l12-8z" /></svg><span className={showLabels ? "text-xs" : "hidden"}>Next</span>
     </button>
     <span className={width >= 360 ? "min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" : "sr-only"} aria-label="Playback time">{formatTime(frame / fps)} / {formatTime(frameCount / fps)}</span>
     <div className="min-w-0 flex-1" />
+    {audience && <div className={compactAudience ? "order-first flex w-full justify-end" : "shrink-0"}>{width >= 700 ? <fieldset className="flex shrink-0 items-center gap-1" aria-label="Viewing mode">{(["mystery", "omniscient"] as const).map(mode => <button key={mode} type="button" aria-pressed={audience.value === mode} onClick={() => audience.onChange(mode)} className={`h-9 rounded-lg border px-2 text-xs ${audience.value === mode ? "border-white/50 bg-white/15 text-white" : "border-transparent text-white/60 hover:bg-white/10"}`}>{mode === "mystery" ? "Mystery" : "Omniscient"}</button>)}</fieldset> : <select aria-label="Viewing mode" value={audience.value} onChange={event => audience.onChange(event.target.value as "mystery" | "omniscient")} className="h-10 max-w-32 shrink-0 rounded border border-white/20 bg-black px-1 text-xs text-white"><option value="mystery">Mystery</option><option value="omniscient">Omniscient</option></select>}</div>}
     {capacity >= 1 && <div className="mr-3 shrink-0">{speedControl}</div>}
     {capacity >= 2 && <div className="mr-3 shrink-0">{thinkingControl}</div>}
     <button type="button" className={button} onClick={audio.onMute} aria-pressed={audio.muted} aria-label={audio.muted ? "Unmute audio" : "Mute audio"} title={audio.muted ? "Unmute audio" : "Mute audio"}>
@@ -105,7 +109,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
         </div>
         <div className="mt-4 flex gap-2 border-t border-white/10 pt-4"><button type="button" onClick={() => {goToBeginning();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">Restart replay</button><button type="button" onClick={() => {goToEnd();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">{live ? "Go live" : "Go to end"}</button></div>
         <h3 className="mb-3 mt-4 font-semibold">Keyboard shortcuts</h3>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Show / hide speech, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>Slider ← / →</dt><dd>One frame while the scrubber is focused</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings, theater mode or fullscreen</dd></dl>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Next page, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>Slider ← / →</dt><dd>One frame while the scrubber is focused</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings, theater mode or fullscreen</dd></dl>
       </div>
     </FloatingFocusManager>
   </FloatingPortal>}
