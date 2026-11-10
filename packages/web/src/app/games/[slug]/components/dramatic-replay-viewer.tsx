@@ -30,7 +30,7 @@ import {getPublicWatchIntelligence} from "@/lib/api";
 import { gameReplaySequenceHref } from "@/lib/game-links";
 import { WatchTransport } from "@/components/watch/watch-transport";
 import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
-import { VisualPresentation } from "./visual-presentation";
+import { VisualPresentation, presentationBeatOwnsBackdrop } from "./visual-presentation";
 import { compileVoteLedgers } from "./vote-ledger-model";
 import { useVisualWatch } from "./use-visual-watch";
 import { visualWatchPresentation } from "./visual-watch-model";
@@ -68,7 +68,7 @@ import {
 } from "./format-presentation-model";
 import { useWatchAnalytics } from "@/components/watch/use-watch-analytics";
 import { usePresentationDirector } from "./influence-presentation-director";
-import { FormatPresentation } from "./format-presentation";
+import { FormatPresentation, formatPresentationOwnsBackdrop } from "./format-presentation";
 import { ActiveFormatOverlay } from "./active-format-label";
 import { FormatRulesDialog } from "./format-rules-dialog";
 import { findPresentationCueIndexForSequence } from "./presentation-sequence";
@@ -331,6 +331,14 @@ function DramaticReplayTheater({
   const visual = visualWatchPresentation(
     visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, replayPlayers, priorLobbyMessages, replayFrames,
   );
+  // Self-painting scenes own the sole stage backdrop; the fallback room in
+  // the stage must not render a second copy inset behind them. Computed
+  // before the memoized callbacks below as a pure read of the current beat.
+  const ownsCurrentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
+    && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
+  const ownsStageBackdrop = visual.beat
+    ? presentationBeatOwnsBackdrop(visual.beat, ownsCurrentStateEntry)
+    : formatCue ? formatPresentationOwnsBackdrop(formatCue, ownsCurrentStateEntry) : false;
   const thinkingActor = influenceThinkingActor(activeCue, visual.beat);
   const thinkingSpeaker = players.find(player => player.id === thinkingActor)?.name ?? "Player";
   const thoughtSequence = activeCue?.canonicalSequence;
@@ -368,8 +376,7 @@ function DramaticReplayTheater({
   const [masterMuted, setMasterMuted] = useState(true);
   const voice = useWatchVoice({allowTextFallback:true,suspended:houseHolding,masterMuted,director,gameId:game.id,audience:"public",thinking:preferences.thinking,live,onPause:() => setPlayRequested(false),
     coordinate:activeCue ? coordinateForCue(activeCue) : null,coordinateForCue,onSpeech:onHouseSpeech});
-  const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
-    && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
+  const currentStateEntry = ownsCurrentStateEntry;
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;
   const musicSection = influenceMusic(game.id, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage);
@@ -511,7 +518,6 @@ function DramaticReplayTheater({
   const usesFullHeightContent = Boolean(openingCue) || expanded || isEmpowerPresentation || Boolean(formatCue) || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
   const isHousePresentation = visual.beat?.kind === "house" && (visual.beat.text !== null || Boolean(visual.beat.backgroundUrl));
-  const isRoomPresentation = isHousePresentation || visual.beat?.kind === "alliance-introduction" || visual.beat?.kind === "house-result" || visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
     onPlaybackStateChange({
@@ -671,6 +677,8 @@ function DramaticReplayTheater({
     );
   }
 
+  const isRoomPresentation = isHousePresentation || ownsStageBackdrop || visual.beat?.kind === "alliance-introduction" || visual.beat?.kind === "house-result" || visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner" || visual.beat?.kind === "two-names-stage" || visual.beat?.kind === "two-names-decision";
+
   return (
     <div
       ref={animationScope}
@@ -793,7 +801,7 @@ function DramaticReplayTheater({
         } justify-center ${openingCue ? "" : expanded ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
         {activeFormatIdForSocialScene && <ActiveFormatOverlay formatId={activeFormatIdForSocialScene} onOpen={() => {pausePresentation(); setRulesFormatId(activeFormatIdForSocialScene);}} />}
-        {!openingCue && !isHousePresentation && <div className="pointer-events-none absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(activeCue?.phase ?? scene.phase)} resilient /></div>}
+        {!openingCue && !isHousePresentation && !ownsStageBackdrop && <div className="pointer-events-none absolute inset-0 -z-10"><RoomBackdrop source={resultRoom(activeCue?.phase ?? scene.phase)} resilient /></div>}
         {openingCue ? <>
           <WatchClock director={director}>{elapsed => <InfluenceOpeningFrame cue={openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} reduced={reducedMotion} playing={isPlaying} speed={speed}
             {...influenceCastArt(openingPlayer, visualData)} />}</WatchClock>
