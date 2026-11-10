@@ -27,6 +27,8 @@ import { HOUSE_CAST } from "./house-personas";
 
  * New simulations freeze root schema v3 (strict viewer coverage): Safety Bounce classifies before Mingle;
  * decision v3 preserves public chain/tiebreak speech and private House ballot explanations.
+ * Werewolf Hunter evaluation uses the localhost API: v12 item context stays private,
+ * and pre-v12 planned observation hashes retain their original serialized shape.
  * Keep direct House calls and typed evidence; no `as any` shortcuts.
 
  * Native xAI selects xai:grok-4.3/4.5/4.6 or xai:grok-4.20-multi-agent-0309

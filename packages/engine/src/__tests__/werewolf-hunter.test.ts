@@ -92,17 +92,17 @@ test("item context is public about existence, private about ownership, and seen 
   const hunter = byRole(state, "hunter");
   const villager = byRole(state, "villager");
   const hunterObservation = observeWerewolf(state, hunter.id);
-  expect(hunterObservation.itemCatalog.map((item) => item.id)).toEqual(["snipe"]);
-  expect(hunterObservation.items.owned).toEqual(["snipe"]);
-  expect(hunterObservation.items.seen).toEqual([]);
+  expect(hunterObservation.itemCatalog!.map((item) => item.id)).toEqual(["snipe"]);
+  expect(hunterObservation.items!.owned).toEqual(["snipe"]);
+  expect(hunterObservation.items!.seen).toEqual([]);
   const villagerObservation = observeWerewolf(state, villager.id);
-  expect(villagerObservation.itemCatalog.map((item) => item.id)).toEqual(["snipe"]);
-  expect(villagerObservation.items.owned).toEqual([]);
+  expect(villagerObservation.itemCatalog!.map((item) => item.id)).toEqual(["snipe"]);
+  expect(villagerObservation.items!.owned).toEqual([]);
   expect(JSON.stringify(villagerObservation.board.players)).not.toContain("snipe");
 
   const after = untilNightResolved("seen-seed", "fire-wolf");
   const survivor = after.players.find((player) => after.aliveIds.includes(player.id) && player.id !== hunter.id)!;
-  expect(observeWerewolf(after, survivor.id).items.seen).toEqual([
+  expect(observeWerewolf(after, survivor.id).items!.seen).toEqual([
     expect.objectContaining({ itemId: "snipe", day: 1 }),
   ]);
 });
@@ -227,4 +227,55 @@ test("Mystery hides holdings and the sniper while Omniscient shows remaining ite
   expect(nightMoment.night?.actions.some((action) => action.kind === "snipe")).toBe(true);
   const report = werewolfReportEntry(mysteryNight!, mystery, true);
   expect(report).not.toContain(hunter.name + " sniped");
+});
+
+test("retrospective facts retain fired item, target and snipe-only death", async () => {
+  const {completedHunterFixture} = await import("../fixtures/werewolf-hunter");
+  const {compileWerewolfRetrospective} = await import("../werewolf/retrospective");
+  const events = await completedHunterFixture("snipe-only");
+  const night = events.find(e=>e.type === "werewolf.night_resolved")!;
+  if(night.type !== "werewolf.night_resolved") throw new Error("Missing night");
+  expect(night.payload.killedId).toBeNull();
+  const input = compileWerewolfRetrospective(events).input;
+  const facts = JSON.stringify(input.sections);
+  expect(facts).toContain('\\"itemId\\":\\"snipe\\"');
+  expect(facts).toContain('\\"result\\":\\"death\\"');
+  expect(facts).toContain('\\"snipe\\":');
+  const aside = input.dialogue.find(d=>d.text.startsWith("I will fire"))!;
+  expect(aside.scope).toBe("private");
+  expect(aside.audiencePlayerIds).toEqual([night.payload.snipe!.actorId]);
+});
+
+for (const version of [7,8,9,10,11] as const) test(`v${version} observation retains the pre-item serialized contract`, () => {
+  const config = {...werewolfConfig("two_wolves"),rulesVersion:version};
+  if(version < 9) delete config.discussionPolicy;
+  const state = applyWerewolfEvent(null,startWerewolf(`historical-${version}`,players,config,"historical-items"));
+  const observation = observeWerewolf(state,state.players[0]!.id);
+  expect(Object.hasOwn(observation,"items")).toBe(false);
+  expect(Object.hasOwn(observation,"itemCatalog")).toBe(false);
+});
+
+test("already-frozen v12 retrospective keeps its original pre-item-facts input", async () => {
+  const {completedHunterFixture} = await import("../fixtures/werewolf-hunter");
+  const {compileWerewolfRetrospective} = await import("../werewolf/retrospective");
+  const {createRetrospectiveDefinition} = await import("../retrospective");
+  const {canonicalJson} = await import("@influence/prompt-lab-protocol");
+  const complete = await completedHunterFixture("snipe-only");
+  const events = complete.slice(0,complete.findIndex(e=>e.type === "werewolf.retrospective_started"));
+  const source = compileWerewolfRetrospective(events);
+  // Freeze the exact original v12 serialization, as an existing accepted record.
+  const oldInput = structuredClone(source.input);
+  for(const section of oldInput.sections) section.summary = section.summary.split("\n").map(line=>{
+    const start = line.indexOf("{");
+    const prefix = line.slice(0,start);
+    const fact = JSON.parse(line.slice(start));
+    if(prefix.includes("werewolf.action_accepted") && fact.action === "snipe") {delete fact.itemId;delete fact.targetId;}
+    if(prefix.includes("werewolf.night_resolved")) {delete fact.snipe;fact.result=fact.killedId ? "death" : fact.attackTargetId === null ? "no_attack" : fact.attackTargetId === fact.protectedId ? "doctor_save" : "no_death";}
+    return prefix+canonicalJson(fact);
+  }).join("\n");
+  const definition = createRetrospectiveDefinition(oldInput,source.speakerIds);
+  events.push(werewolfEvent(replayWerewolf(events),{type:"werewolf.retrospective_started",payload:definition}));
+  const frozen = structuredClone(events);
+  expect(compileWerewolfRetrospective(events).input).toEqual(oldInput);
+  expect(events).toEqual(frozen);
 });

@@ -26,8 +26,8 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       // Pagination is measured after mount; wait for that state before auditing.
       for (let attempt = 0; attempt < 30; attempt++) {
-        const pending = Array.from(document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy]"))
-          .some(page => page.getBoundingClientRect().bottom > page.parentElement!.getBoundingClientRect().bottom + 1);
+        const pending = Array.from(document.querySelectorAll<HTMLElement>("[data-format-rules] [data-speech-page-copy], [data-speech-bubble] [data-speech-page-copy]"))
+          .some(page => page.getBoundingClientRect().width === 0 || page.getBoundingClientRect().bottom > page.parentElement!.getBoundingClientRect().bottom + 1);
         const stage = document.querySelector<HTMLElement>("[data-influence-stage]");
         const roomPending = !!stage && stage.clientWidth < 600 && document.querySelectorAll("[data-room-player]").length > 4
           && !document.querySelector("[data-paginated-portrait-room]");
@@ -76,6 +76,19 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
         const rect=page.getBoundingClientRect(), container=page.parentElement!.getBoundingClientRect();
         if (rect.left < container.left - 1 || rect.right > container.right + 1 || rect.bottom > container.bottom + 1 || parseFloat(getComputedStyle(page).fontSize) < 14)
           throw new Error(`Format rules page does not fit at readable size: ${JSON.stringify({rect,container,font:getComputedStyle(page).fontSize,text:page.textContent})}`);
+      }
+      for (const name of document.querySelectorAll<HTMLElement>("[data-speaker-name]")) {
+        const box = name.getBoundingClientRect();
+        if (box.width > 0 && (name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > 21)) throw new Error("Item speaker name does not fit its reserved header");
+      }
+      const hunter = document.querySelector<HTMLElement>('[data-night-role="snipe"], [data-night-elimination]');
+      if (hunter) {
+        const bounds = hunter.getBoundingClientRect();
+        for (const label of hunter.querySelectorAll<HTMLElement>("h2, figcaption")) {
+          const rect = label.getBoundingClientRect();
+          if(rect.bottom > bounds.bottom+1 || rect.right > bounds.right+1 || rect.left < bounds.left-1) throw new Error(`Hunter label leaves the player picture: ${JSON.stringify({text:label.textContent,rect,bounds})}`);
+        }
+        for(const portrait of hunter.querySelectorAll("img")) if(portrait.getBoundingClientRect().height < 24) throw new Error("Hunter portrait has no readable space");
       }
       const room = document.querySelector<HTMLElement>("[data-paginated-portrait-room]");
       const winner = document.querySelector<HTMLElement>("[data-winner-scene]");
@@ -142,7 +155,7 @@ function ViewerFrame({manifest,reference:singleReference,references}:ParityProps
   const thought = sample.thought ? {...sample.thought,speaker:actor.kind === "thinking" ? actor.actor.name : ""} : null;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black text-white">
     {picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={manifest.reducedMotion} /> : picture.kind === "werewolf" ? <WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
-      reduced={manifest.reducedMotion} director={{manualAdvance:()=>{},setReady:()=>{},getSnapshot:()=>director.getSnapshot(),getSpeechElapsedBaseMs:()=>sample.elapsedMs}}
+      reduced={manifest.reducedMotion} director={{manualAdvance:()=>{},setReady:()=>{},getSnapshot:()=>({...director.getSnapshot(),isPlaying:true}),getSpeechElapsedBaseMs:()=>sample.elapsedMs}}
       holding={false} contextLabel={reference.label} /> : picture.kind === "influence" && picture.beat ? <>
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
       <div data-influence-stage className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>

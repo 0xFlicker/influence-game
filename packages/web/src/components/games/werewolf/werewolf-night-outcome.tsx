@@ -17,7 +17,7 @@ export function WerewolfNightOutcome({cue, elapsed, reduced, compact = false, hi
     <div className={`flex min-h-0 w-full flex-1 justify-center gap-4 ${victims.length > 1 ? "max-w-2xl" : "max-w-sm"}`}>
       {victims.map((victim) => <NightVictim key={victim.id} victim={victim} compact={compact} settled={frame.settled} opacity={frame.opacity} strokes={frame.strokes} />)}
     </div>
-    {(!hideCaption || compact) && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">At dawn</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victims.map((victim) => victim.name).join(" and ")} died during the night.</h2></div>}
+    {!hideCaption && <div className="shrink-0"><p className="text-xs uppercase tracking-[.2em] text-rose-200/70">At dawn</p><h2 className="mt-2 text-xl font-semibold sm:text-2xl">{victims.map((victim) => victim.name).join(" and ")} died during the night.</h2></div>}
   </section>;
 }
 

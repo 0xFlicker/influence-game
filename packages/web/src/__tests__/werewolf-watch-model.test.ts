@@ -273,3 +273,25 @@ test("saved body changes update an overlapping moment without accepting changed 
   const forged = { ...updated, moments: [{ ...updated.moments[0]!, snapshot: { ...updated.moments[0]!.snapshot, players: updated.moments[0]!.snapshot.players.map(player => ({ ...player, name: "Forged" })) } }] };
   expect(() => werewolfCues([window, forged])).toThrow("Committed Werewolf playback changed");
 });
+
+test("dawn keeps one caption owner and non-narrated copy preserves both unique victims", async () => {
+  const {renderToStaticMarkup} = await import("react-dom/server");
+  const {createElement} = await import("react");
+  const {WerewolfContentFrame} = await import("../components/games/werewolf/werewolf-watch-stage");
+  for (const [pack,shot] of [[null,"p1"],["p2","p1"],["p1","p1"],["p2",undefined]] as const) {
+    const night:WerewolfWatchMoment = {...template,entry:{kind:"night",day:1,killedId:pack,...(shot !== undefined ? {snipeKilledId:shot} : {})}};
+    const [narrated] = werewolfMomentCues(night);
+    const [silent] = werewolfMomentCues(night,false);
+    const render = (cue:NonNullable<typeof silent>) => renderToStaticMarkup(createElement(WerewolfContentFrame,{cue,scene:null,elapsed:2000,reduced:true,compactResults:true,hideHouseCaption:true}));
+    expect(render(narrated!)).not.toContain("<h2");
+    const html = render(silent!);
+    expect(html).toContain("<h2");
+    const text = werewolfCueMoment(silent!).text;
+    for(const id of new Set([pack,shot].filter(Boolean))) {
+      const name = template.snapshot.players.find(p=>p.id === id)!.name;
+      expect(text.split(name)).toHaveLength(2);
+      expect(html).toContain(name);
+    }
+    expect(text).not.toContain("Everyone survived");
+  }
+});

@@ -125,7 +125,7 @@ export async function bindWerewolfProductionPresentation(input: {
         case "ballot": return !picture.ballot?.complete && picture.ballot?.current.voterId === moment.actorId;
         case "tally": return picture.ballot?.complete === true;
         case "night-speech": return picture.nightDecision === true && picture.nightAction?.kind === moment.part.action;
-        case "protect": case "investigate": case "hunt": return !picture.nightDecision && picture.nightAction?.kind === moment.part.kind;
+        case "protect": case "investigate": case "snipe": case "hunt": return !picture.nightDecision && picture.nightAction?.kind === moment.part.kind;
         case "outcome": return !picture.nightAction && !picture.ballot && ["vote","night"].includes(picture.moment.entry.kind);
         case "pack_vote": return picture.moment.entry.kind === "pack_vote";
         case "result": return picture.moment.entry.kind === "result";

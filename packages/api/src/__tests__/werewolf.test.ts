@@ -57,7 +57,7 @@ describe("Werewolf House integration", () => {
     expect(JSON.stringify(mystery.players)).not.toContain("snipe");
     const omniscient = await readWerewolfView(db, game.id, "omniscient");
     expect(omniscient.players.find((player) => player.id === hunter.id)?.items).toEqual(["snipe"]);
-    expect(observeWerewolf(state, hunter.id).items.owned).toEqual(["snipe"]);
+    expect(observeWerewolf(state, hunter.id).items!.owned).toEqual(["snipe"]);
   });
 
   test("resumes a planned turn from a historical roster without changing its observation hash", async () => {
@@ -69,7 +69,10 @@ describe("Werewolf House integration", () => {
     const state = replayWerewolf(await game.store.read());
     const plan = werewolfActionPlans(state)[0]!;
     const observation = observeWerewolf(state, plan.request.actorId);
-    const historicalObservation = { ...observation, board: { ...observation.board,
+    expect(observation.itemCatalog).toBeUndefined();
+    expect(observation.items).toBeUndefined();
+    const {itemCatalog: _catalog, items: _items, ...preItemsObservation} = observation;
+    const historicalObservation = { ...preItemsObservation, board: { ...observation.board,
       players: observation.board.players.map(({ id, name, alive }) => ({ id, name, alive })),
     } };
     await db.insert(schema.werewolfTurns).values({ gameId: game.id, sequence: plan.sequence, request: plan.request,

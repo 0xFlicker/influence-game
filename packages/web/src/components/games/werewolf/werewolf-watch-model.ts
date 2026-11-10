@@ -15,7 +15,7 @@ export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment:
   reprise?: boolean }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   position: cue => cue.moment.cursor,
-  scrubAtMs: cue => cue.transformation ? 0 : cue.moment.entry.kind === "night" && !cue.nightAction && cue.moment.entry.killedId ? NIGHT_CLAW_MS : cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.readAtMs ?? 0,
+  scrubAtMs: cue => cue.transformation ? 0 : cue.moment.entry.kind === "night" && !cue.nightAction && (cue.moment.entry.killedId || cue.moment.entry.snipeKilledId) ? NIGHT_CLAW_MS : cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.readAtMs ?? 0,
   isCatchUp: () => false,
   acceptAtWatermark: () => false,
   reconcile: cues => cues,

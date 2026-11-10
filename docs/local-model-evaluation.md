@@ -733,3 +733,5 @@ Empower runoff now has a separate direct House summary boundary (`empower_runoff
 
 
 Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.
+
+For Hunter evaluations, use `bun run simulate:werewolf:api --help` and the `--village-roles hunter,doctor` setup through the localhost API. Inspect both the private item decision and public dawn outcome; a held shot is still an Omniscient night beat. Verify old v7–v11 durable plans without adding v12 item fields to their observations. Preserve all sanitized requests/responses and native reasoning; do not use file-only simulations for paid evaluation.

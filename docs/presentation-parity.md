@@ -184,3 +184,19 @@ An existing selection JSON can usually rebuild the same cut using current local
 code; an old bundle can retain stale layouts or omit newly required framing.
 An MP4 must be rendered again. Never silently unpin media or regenerate accepted
 history. See [refreshing an existing export](local-replay-export.md#refresh-an-existing-export-after-presentation-updates).
+
+## Hunter item proof
+
+Run `HUNTER_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts ../../.renders/hunter-parity` from `packages/web`.
+The canonical eight-player v12 fixtures cover held and fired private explanations,
+independent action selections, snipe-only and two-victim dawns, both audiences,
+long frozen names, measured caption pages, reduced motion and recorded/unrecorded
+speech. The sequence case includes speech → action → dawn handoffs. The proof
+uses the production catalog and binding adapter, the viewer stage, actual Studio
+Source/Selected cut Player, and fresh H.264 exports, with reverse-order sampling
+and geometry assertions at 1280×720, 640×360, 360×240 and 390×700.
+
+The Hunter room is included by the existing static-art snapshot writer. Reuse the
+same selection IDs and pinned source/media to prepare a fresh bundle; render a
+new MP4. Reopen/reprepare Studio previews to pick up the new room and corrected
+binding. Do not regenerate historical dialogue or alter accepted item decisions.

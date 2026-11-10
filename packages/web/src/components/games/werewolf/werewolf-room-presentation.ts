@@ -16,6 +16,6 @@ export function werewolfPortraitRoom(cue: WerewolfWatchCue): Extract<VisualPrese
 export function werewolfBackdrop(cue: WerewolfWatchCue) {
   if (cue.ballot) return WEREWOLF_ROOMS.vote;
   return cue.nightAction?.kind === "protect" ? WEREWOLF_ROOMS.doctor : cue.nightAction?.kind === "investigate" ? WEREWOLF_ROOMS.seer
-    : cue.nightAction?.kind === "snipe" ? WEREWOLF_ROOMS.village
+    : cue.nightAction?.kind === "snipe" ? WEREWOLF_ROOMS.hunter
     : werewolfCueMoment(cue).pack ? WEREWOLF_ROOMS.pack : WEREWOLF_ROOMS.village;
 }

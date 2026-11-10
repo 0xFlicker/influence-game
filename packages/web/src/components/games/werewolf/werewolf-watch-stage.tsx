@@ -113,7 +113,7 @@ export function WerewolfContentFrame({compactResults = false, cue, scene, elapse
   const previousRoomSpeakerId = previousRoomSpeech && previousMoment.pack === moment.pack && previousEntry.day === cue.moment.entry.day
     && room?.participants.some(player => player.id === previousMoment.actor?.id) ? previousMoment.actor!.id : null;
   if (cue.transformation && elapsed < lead) return <WerewolfTransformationStage cue={cue} elapsed={elapsed} reduced={reduced} onReady={onReady ?? ignoreReadiness} />;
-  if (!cue.nightAction && cue.moment.entry.kind === "night" && (cue.moment.entry.killedId || cue.moment.entry.snipeKilledId)) return <WerewolfNightOutcome compact={compactResults} cue={cue} elapsed={elapsed} reduced={reduced} hideCaption={hideHouseCaption} />;
+  if (!cue.nightAction && cue.moment.entry.kind === "night" && (cue.moment.entry.killedId || cue.moment.entry.snipeKilledId)) return <WerewolfNightOutcome compact={compactResults} cue={cue} elapsed={elapsed} reduced={reduced} hideCaption={hideHouseCaption && moment.house} />;
   if (!cue.ballot && cue.moment.entry.kind === "vote" && cue.moment.entry.result.eliminatedId) return <WerewolfVoteOutcome compact={compactResults} cue={cue} elapsed={elapsed} reduced={reduced} hideCaption={hideHouseCaption} onReady={onReady} />;
   if (cue.nightAction?.kind === "hunt") return <WerewolfHuntStage cue={cue} scene={timedOut ? null : scene} onReady={onReady ?? ignoreReadiness} />;
   if (cue.nightAction && !cue.nightDecision) return <WerewolfRoleStage action={cue.nightAction} players={cue.moment.snapshot.players} />;

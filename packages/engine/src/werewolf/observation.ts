@@ -120,10 +120,10 @@ export interface WerewolfObservation {
   packProposals?: Array<Extract<WerewolfHistoryEntry, { kind: "proposal" }>>;
   investigations: Array<{ day: number; targetId: string; isWolf: boolean }>;
   previousProtection: string | null;
-  /** Public item catalog for this game (empty when the game has no items). */
-  itemCatalog: WerewolfItemDefinition[];
+  /** v12 item catalog. Absent in earlier frozen observation contracts. */
+  itemCatalog?: WerewolfItemDefinition[];
   /** Private to this actor: current holdings, publicly seen uses, and their own uses. */
-  items: {
+  items?: {
     owned: WerewolfItemId[];
     seen: Array<{ day: number; itemId: WerewolfItemId; targetId: string; killedId: string | null }>;
     ownUses: WerewolfItemUse[];
@@ -174,12 +174,12 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
       ? [{ day: entry.day, targetId: entry.result.attackTargetId }] : []) : [],
     investigations: role === "seer" ? state.investigations.filter((i) => i.seerId === actorId).map(({ day, targetId, isWolf }) => ({ day, targetId, isWolf })) : [],
     previousProtection: role === "doctor" ? state.previousProtection : null,
-    itemCatalog: werewolfItemCatalog(state.config.rulesVersion >= 12 && state.config.setup?.hunter === true),
+    ...(state.config.rulesVersion >= 12 ? { itemCatalog: werewolfItemCatalog(state.config.setup?.hunter === true),
     items: {
       owned: [...(state.items[actorId] ?? [])],
       seen: state.history.flatMap((entry) => entry.kind === "night" && entry.result.snipe && entry.result.snipe.killedId !== entry.result.killedId
         ? [{ day: entry.day, itemId: entry.result.snipe.itemId, targetId: entry.result.snipe.targetId, killedId: entry.result.snipe.killedId }] : []),
       ownUses: state.itemUses.filter((use) => use.actorId === actorId).map((use) => ({ ...use })),
-    },
+    } } : {}),
   };
 }

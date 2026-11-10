@@ -155,7 +155,7 @@ function partValue(part: ProductionMomentPart): unknown[] {
       return [part.kind, part.voterId, part.purpose, part.juryTiebreaker, part.revote];
     case "influence-presentation": return [part.kind, ...presentationValue(part.presentation)];
     case "night-speech":
-      if (part.action !== "protect" && part.action !== "investigate") throw new Error("Invalid night speech action");
+      if (part.action !== "protect" && part.action !== "investigate" && part.action !== "snipe") throw new Error("Invalid night speech action");
       return [part.kind, part.action];
     case "thinking":
       if (part.actorId !== undefined) { nonempty(part.actorId, "thinking actor ID"); return [part.kind, part.actorId]; }
