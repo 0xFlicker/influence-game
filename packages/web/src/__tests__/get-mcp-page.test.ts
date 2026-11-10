@@ -45,7 +45,8 @@ describe("/get-mcp setup page", () => {
 
     expect(clients.map((client) => client.id)).toEqual([
       "chatgpt",
-      "meta",
+      "muse-assistant",
+      "muse-code",
       "codex",
       "claude-code",
       "grok-cli",

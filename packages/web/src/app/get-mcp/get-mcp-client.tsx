@@ -115,8 +115,8 @@ export function GetMcpSetupContent({
                   {client.prompt ? (
                     <div className="min-w-0 rounded-lg border border-border-active/50 bg-black/35 p-3">
                       <div className="mb-3 flex items-center justify-between gap-3">
-                        <span className="text-xs text-text-secondary">Paste into Muse chat</span>
-                        <CopyCommandButton command={client.prompt} title="Copy Muse connection prompt" />
+                        <span className="text-xs text-text-secondary">{client.promptLabel ?? "Paste into your AI chat"}</span>
+                        <CopyCommandButton command={client.prompt} title="Copy connection prompt" />
                       </div>
                       <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-primary"><code>{client.prompt}</code></pre>
                     </div>

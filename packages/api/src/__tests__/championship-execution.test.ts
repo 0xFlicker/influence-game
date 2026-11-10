@@ -107,7 +107,9 @@ test("sixteen real canonical Werewolf runs settle once, survive owner replacemen
   await prepareChampionshipAwards(db, event.id); await deliverChampionshipAwards(db, event.id);
   expect((await db.select().from(schema.awardGrants)).filter(row => row.definitionCode === "season-0-influence-champion")).toHaveLength(1);
 
-}, 180000);
+// Sixteen full durable games plus the adopted finale can exceed three minutes
+// on shared CI runners; the finale still has its own bounded completion wait.
+}, 360000);
 
 test("live owner edits leave a waiting championship seat pinned during start recovery", async () => {
   const { db, event, actorId, agents } = await lockedFixture();

@@ -8,7 +8,8 @@ export type McpSetupClientId =
   | "grok-cli"
   | "grok-app"
   | "chatgpt"
-  | "meta";
+  | "muse-assistant"
+  | "muse-code";
 
 export interface McpSetupClient {
   id: McpSetupClientId;
@@ -17,6 +18,8 @@ export interface McpSetupClient {
   /** Numbered UI steps for non-CLI flows (for example hosted Grok App connectors). */
   steps?: string[];
   prompt?: string;
+  /** Label shown above a paste-in prompt block (defaults to a generic label). */
+  promptLabel?: string;
   docsUrl?: string;
   authHint: string;
 }
@@ -92,6 +95,16 @@ back what you can see and do. Do not create, modify, or enter anything
 until I ask.`;
 }
 
+export function buildMuseCodeSetupPrompt(mcpUrl: string): string {
+  return `Connect The House MCP server for me.
+
+1. Add this entry under "mcpServers" in ~/.config/muse/settings.json (create the key if it is missing; keep everything else):
+"the-house": { "transport": "streamable_http", "url": "${mcpUrl}" }
+2. Run: muse mcp login the-house --scope agents:read --scope agents:write --scope games:read
+I will approve access in the browser. Never ask me to paste a token, key, or secret.
+3. Restart Muse, run /mcp to confirm the-house is connected, then call list_agents and report what you find. Do not create or change anything yet.`;
+}
+
 export function buildMcpSetupClients(
   mcpUrl: string,
   serverName = DEFAULT_MCP_SERVER_NAME,
@@ -113,15 +126,28 @@ export function buildMcpSetupClients(
       authHint: "This is a custom MCP connection; The House is not yet listed in the ChatGPT directory. Available settings depend on your account and workspace.",
     },
     {
-      id: "meta",
-      name: "Meta / Muse",
+      id: "muse-assistant",
+      name: "Muse Assistant",
       commands: [],
       steps: [
-        "Paste the prompt below into Muse chat to ask it to connect to The House.",
-        "Complete the browser login and consent yourself, then let Muse verify the connection with a read.",
+        "Paste the prompt below into Muse Assistant chat to ask it to connect to The House.",
+        "Complete the browser login and consent yourself, then let Muse Assistant verify the connection with a read.",
       ],
       prompt: buildMuseSetupPrompt(mcpUrl),
+      promptLabel: "Paste into Muse Assistant chat",
       authHint: "Use the secure connector flow. Never paste tokens, keys, or secrets into chat.",
+    },
+    {
+      id: "muse-code",
+      name: "Muse",
+      commands: [],
+      steps: [
+        "Paste the prompt below into a Muse session. It updates its own MCP settings and runs the login.",
+        "Approve access in the browser when the login opens it, then restart Muse when it tells you to.",
+      ],
+      prompt: buildMuseCodeSetupPrompt(mcpUrl),
+      promptLabel: "Paste into Muse",
+      authHint: "Muse edits ~/.config/muse/settings.json and runs muse mcp login. Approve the browser consent yourself; never paste tokens or secrets.",
     },
     {
       id: "codex",

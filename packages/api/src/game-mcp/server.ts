@@ -302,6 +302,17 @@ export class ProductionGameMcpJsonRpcServer {
       };
     }
 
+    // Clients that enumerate every capability family (even ones this
+    // server does not advertise) must get empty lists, not an error:
+    // a JSON-RPC error here makes strict clients drop the whole server.
+    if (method === "prompts/list") {
+      return { prompts: [] };
+    }
+
+    if (method === "resources/templates/list") {
+      return { resourceTemplates: [] };
+    }
+
     if (method === "resources/list") {
       const resources = canReadGames(auth)
         ? [

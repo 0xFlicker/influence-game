@@ -135,6 +135,26 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }
   });
 
+  test("unadvertised capability families return empty lists, not errors", async () => {
+    const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
+      clientScopes: GAMES_AUTH.scopes, hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
+    }));
+    const prompts = await server.handle({
+      jsonrpc: "2.0",
+      id: "prompts",
+      method: "prompts/list",
+    }, GAMES_AUTH);
+    expect(prompts?.error).toBeUndefined();
+    expect(prompts?.result).toEqual({ prompts: [] });
+    const templates = await server.handle({
+      jsonrpc: "2.0",
+      id: "templates",
+      method: "resources/templates/list",
+    }, GAMES_AUTH);
+    expect(templates?.error).toBeUndefined();
+    expect(templates?.result).toEqual({ resourceTemplates: [] });
+  });
+
   test("model routing writes require separately consented routing scope and current producer role", () => {
     const eligibility: GameMcpEligibilitySnapshot = {clientScopes: ["producer", "producer:routing"], hasProducerRole: true};
     expect(resolveGameMcpToolAccess("read_game_model_routing", PRODUCER_AUTH, eligibility).invocationAllowed).toBe(true);

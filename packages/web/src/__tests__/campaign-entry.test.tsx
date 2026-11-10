@@ -157,16 +157,20 @@ test("blocked session storage reports an actionable failure", async () => {
   );
 });
 
-test("AI selector links to the existing client setup and starter prompts remain copyable without clipboard access", async () => {
+test("AI selector shows inline client setup and starter prompts remain copyable without clipboard access", async () => {
   const { AiCampaignTools } =
     await import("../components/campaigns/ai-campaign-tools");
   const view = render(<AiCampaignTools />);
   fireEvent.change(view.getByLabelText("Your AI client"), {
     target: { value: "codex" },
   });
+  expect(view.queryByRole("link", { name: /Open .* setup/ })).toBeNull();
   expect(
-    view.getByRole("link", { name: "Open Codex setup →" }).getAttribute("href"),
-  ).toBe("/get-mcp#setup-codex");
+    view.getByText(
+      "codex mcp add the-house-influence --url http://localhost:3000/mcp",
+    ),
+  ).toBeTruthy();
+  expect(view.getByText("Set up Codex")).toBeTruthy();
   fireEvent.click(view.getAllByRole("button", { name: "Use this prompt" })[2]!);
   const prompt = view.getByRole("textbox", {
     name: "Prepare for Season 1",
