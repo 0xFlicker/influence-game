@@ -1408,9 +1408,21 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${cursor}`);
     expect(await page.$('[data-night-role], [data-night-hunt]')).toBeNull();
     await seekWatch(page,cursor,0);await page.waitForSelector('[data-night-role="protect"]');
+    await page.evaluate(`(() => {
+      window.__mysteryPrivateFlash = false;
+      const observer = new MutationObserver(() => {
+        const select = document.querySelector('select[aria-label="Viewing mode"]');
+        const mystery = select ? select.value === 'mystery' : Array.from(document.querySelectorAll('fieldset[aria-label="Viewing mode"] button')).some(button => button.textContent === 'Mystery' && button.getAttribute('aria-pressed') === 'true');
+        if (mystery && document.querySelector('[data-night-role], [data-night-hunt], [data-doctor-save]')) window.__mysteryPrivateFlash = true;
+      });
+      observer.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});
+      window.__stopMysteryFlashObserver = () => observer.disconnect();
+    })()`);
     await chooseWerewolfAudience(page,"mystery");
     await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) < ${dawn}`);
     expect(await page.$('[data-night-role], [data-night-hunt], [data-doctor-save]')).toBeNull();
+    expect(await page.evaluate("window.__mysteryPrivateFlash")).toBe(false);
+    await page.evaluate("window.__stopMysteryFlashObserver()");
     expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
   } finally { await page.close(); }
 }, 60_000);
@@ -1838,11 +1850,15 @@ test("long public ballot explanations paginate inside their bubble", async () =>
     await page.click(`${card} .episode-card-link`);
     await page.waitForSelector("dialog[open]");
     await page.evaluate("Promise.all(document.querySelector('dialog[open]').getAnimations().map(animation => animation.finished))");
+    const backgrounds:string[] = [];
     for (const audience of ["mystery","omniscient"]) {
       const matches = await page.$$(`dialog[open] a[href="/games/${id}/replay?audience=${audience}"]`);
       const boxes = await Promise.all(matches.map(link => link.boundingBox()));
-      expect(boxes.some(box => box && box.width > 0 && box.height >= 44)).toBe(true);
+      const visible = boxes.findIndex(box => box && box.width > 0 && box.height >= 44);
+      expect(visible).toBeGreaterThanOrEqual(0);
+      backgrounds.push(await matches[visible]!.evaluate(node => node.ownerDocument.defaultView!.getComputedStyle(node).backgroundColor));
     }
+    expect(backgrounds[0]).toBe(backgrounds[1]!);
     await page.screenshot({path:"/tmp/werewolf-grid-mobile-dialog.png"});
   } finally {await page.close();}
 },120_000);
