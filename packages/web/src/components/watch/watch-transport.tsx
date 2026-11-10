@@ -78,7 +78,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
     </button>
     <span className={width >= 360 ? "min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" : "sr-only"} aria-label="Playback time">{formatTime(frame / fps)} / {formatTime(frameCount / fps)}</span>
     <div className="min-w-0 flex-1" />
-    {audience && <button {...getModeReferenceProps()} ref={modeReference} type="button" aria-label={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} title={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} aria-expanded={modeOpen} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"], [data-player-theater="true"]') ?? undefined);setOpen(false);setModeOpen(value => !value);}} className={`${button} min-h-11 min-w-11`}>
+    {audience && <button {...getModeReferenceProps()} ref={modeReference} type="button" aria-label={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} title={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} aria-expanded={modeOpen} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"], [data-player-theater="true"]') ?? undefined);setOpen(false);setModeOpen(value => !value);}} className={button} style={{minWidth:44,minHeight:44}}>
       <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>}
     {capacity >= 1 && <div className="mr-3 shrink-0">{speedControl}</div>}
@@ -108,7 +108,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
   {modeOpen && audience && <FloatingPortal root={portalRoot}>
     <FloatingFocusManager context={modeContext} modal={false} returnFocus={modeButton}>
       <div {...getModeFloatingProps()} ref={setModeFloating} style={modeStyles} aria-label="Viewing mode" className="z-[200] min-w-40 rounded-xl border border-white/25 bg-zinc-950 p-1 text-sm text-white shadow-2xl" onClick={event => event.stopPropagation()}>
-        {(["mystery","omniscient"] as const).map(mode => <button key={mode} type="button" role="menuitemradio" aria-checked={audience.value === mode} data-audience={mode} onClick={() => {audience.onChange(mode);setModeOpen(false);}} className="flex min-h-11 w-full items-center justify-between gap-4 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span>{mode === "mystery" ? "Mystery" : "Omniscient"}</span>{audience.value === mode && <span aria-hidden="true">✓</span>}</button>)}
+        {(["mystery","omniscient"] as const).map(mode => <button key={mode} type="button" role="menuitemradio" aria-checked={audience.value === mode} data-audience={mode} onClick={() => {audience.onChange(mode);setModeOpen(false);}} className="flex min-h-11 w-full items-center justify-between gap-4 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span>{mode === "mystery" ? "Mystery" : "Omniscient"}</span>{audience.value === mode && <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6"/></svg>}</button>)}
       </div>
     </FloatingFocusManager>
   </FloatingPortal>}
