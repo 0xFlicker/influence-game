@@ -1,9 +1,14 @@
 import {expect, test} from "bun:test";
-import {completedCurrentWerewolfFixture, completedWerewolfResultsFixture} from "../fixtures/werewolf-results";
+import {completedCurrentWerewolfFixture, completedWerewolfResultsFixture, werewolfResultsFixture} from "../fixtures/werewolf-results";
 import {mapWerewolfWatchCue, projectWerewolfProductionProvenance, projectWerewolfProductionWatch} from "./watch";
 
-test.each([8, 9, 10] as const)("audience mapping follows the accepted public event for Werewolf v%i", async version => {
-  const events = version === 8 ? await completedWerewolfResultsFixture("saved", "map-v8") : await completedCurrentWerewolfFixture(`map-v${version}`, version);
+test.each([7, 8, 9, 10, 11] as const)("audience mapping follows the accepted public event for Werewolf v%i", async version => {
+  const events = version === 7 ? await werewolfResultsFixture("saved", "map-v7") : version === 8 ? await completedWerewolfResultsFixture("saved", "map-v8") : await completedCurrentWerewolfFixture(`map-v${version}`, version);
+  if (version === 7) {
+    const started = events[0];
+    if (!started || started.type !== "werewolf.started") throw new Error("Missing v7 fixture start");
+    events[0] = {...started,payload:{...started.payload,config:{...started.payload.config,rulesVersion:7}}};
+  }
   const mystery = projectWerewolfProductionWatch(events, "mystery");
   const omni = projectWerewolfProductionWatch(events, "omniscient");
   const mysteryEvents = projectWerewolfProductionProvenance(events, "mystery");
@@ -31,6 +36,7 @@ test.each([8, 9, 10] as const)("audience mapping follows the accepted public eve
     expect(mapped.exact).toBe(false);
   }
   expect(() => mapWerewolfWatchCue(events, "mystery", "omniscient", dawn.cursor, expected)).toThrow("Unavailable watch cue");
+  if (version === 7) return;
   const last = mystery.playback.at(-1)!;
   const lastEvent = mysteryEvents.find(row => row.cursor === last.cursor)!;
   const omniLast = omniEvents.find(row => row.eventSequence === lastEvent.eventSequence)!;
