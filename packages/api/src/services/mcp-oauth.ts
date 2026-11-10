@@ -1497,7 +1497,12 @@ async function validateMcpOAuthClientRedirect(
     };
   }
 
-  if (!client.redirectUris.includes(redirectUri)) {
+  if (
+    !client.redirectUris.includes(redirectUri) &&
+    !client.redirectUris.some((registered) =>
+      isLoopbackPortVariant(registered, redirectUri),
+    )
+  ) {
     return {
       ok: false,
       error: "invalid_request",
@@ -1626,6 +1631,35 @@ function clientRegistrationError(
   errorDescription: string,
 ): { ok: false; error: string; errorDescription: string } {
   return { ok: false, error, errorDescription };
+}
+
+/**
+ * Loopback redirect URIs may vary only by port (RFC 8252 §7.3): native
+ * clients bind an ephemeral port per login attempt, so a registered
+ * loopback URI must accept the same scheme, host, and path on any port.
+ * Every other component must match exactly.
+ */
+function isLoopbackPortVariant(registered: string, requested: string): boolean {
+  let a: URL;
+  let b: URL;
+  try {
+    a = new URL(registered);
+    b = new URL(requested);
+  } catch {
+    return false;
+  }
+  const loopback = (host: string) =>
+    host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  return (
+    a.protocol === "http:" &&
+    b.protocol === "http:" &&
+    loopback(a.hostname) &&
+    a.hostname === b.hostname &&
+    a.pathname === b.pathname &&
+    a.search === b.search &&
+    a.username === b.username &&
+    a.password === b.password
+  );
 }
 
 function isAllowedRedirectUri(redirectUri: string): boolean {

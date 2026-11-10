@@ -1320,6 +1320,48 @@ describe("MCP OAuth routes", () => {
     expect(rows).toHaveLength(0);
   });
 
+  test("accepts a loopback redirect on a different port but not a different path", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Ephemeral-port local client",
+        redirect_uris: ["http://127.0.0.1:40001/oauth/callback/nonce"],
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+        token_endpoint_auth_method: "none",
+      }),
+    });
+    expect(registration.status).toBe(201);
+    const dynamicClientId = String((await jsonObject(registration)).client_id);
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+
+    const portVariant = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        clientId: dynamicClientId,
+        redirectUri: "http://127.0.0.1:51234/oauth/callback/nonce",
+      })),
+    });
+    expect(portVariant.status).toBe(200);
+
+    const pathVariant = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        clientId: dynamicClientId,
+        redirectUri: "http://127.0.0.1:51234/oauth/callback/other",
+      })),
+    });
+    expect(pathVariant.status).toBe(400);
+    expect(await jsonObject(pathVariant)).toEqual({
+      error: "invalid_request",
+      error_description: "redirect_uri is not registered for this client",
+    });
+  });
+
   test("issues and introspects a global producer mcp token for users with the producer role", async () => {
     const { userId, token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
     const codeVerifier = "local-helper-verifier";
