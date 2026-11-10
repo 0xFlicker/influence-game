@@ -735,3 +735,21 @@ Empower runoff now has a separate direct House summary boundary (`empower_runoff
 Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.
 
 For Hunter evaluations, use `bun run simulate:werewolf:api --help` and the `--village-roles hunter,doctor` setup through the localhost API. Inspect both the private item decision and public dawn outcome; a held shot is still an Omniscient night beat. Verify old v7–v11 durable plans without adding v12 item fields to their observations. Preserve all sanitized requests/responses and native reasoning; do not use file-only simulations for paid evaluation.
+
+To evaluate generated Werewolf House narration publicly with a Hunter:
+
+```sh
+bun run simulate:werewolf:api --preset one_wolf --hunter --max-days 2 --visibility public --audience omniscient --transcript
+```
+
+Use the durable API game ID to inspect both Mystery and Omniscient watch windows
+and the `werewolf.house-summary.*` provider journal entries. Confirm the Hunter's
+shot/hold, dawn casualties and vote result agree with canonical events. Retain
+requests/responses, native reasoning, retries, usage and failures. Historical
+replays without narration references must keep their factual fallback copy.
+
+For Werewolf announcement evaluation, inspect `requestedParts` and canonical
+facts in the saved request. No fallback announcement or prior House prose should
+be present. The style prompt requests a concise game-show announcer delivery;
+phase prompts contain no dialogue recap, and Mystery calls exclude pack talk.
+Historical accepted messages are not regenerated when this prompt changes.

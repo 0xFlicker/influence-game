@@ -1,9 +1,10 @@
+import {werewolfHouseNarrationInput, werewolfHouseNarrationArtifact, houseNarrationCoordinate, type WerewolfHousePart} from "@influence/engine/werewolf/house-narration";
 import { providerRetryPending } from "./provider-game-retry.js";
 import {freezeLiveVoices} from "./audio-voices.js";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { audioReadySequence } from "./audio-frontier.js";
 import { creationModelRouting, sealRosterModelRouting } from "./game-model-routing.js";
-import { loadPayloads } from "./payload-storage.js";
+import { readJson, loadPayloads } from "./payload-storage.js";
 import type { WerewolfHouseCharacter } from "../db/werewolf-schema.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
@@ -16,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { getHousePersonaDetails, pickHouseCast, restoreHouseCast, HouseCastCapacityError, HOUSE_PERSONA_KEYS, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
 import type { ProviderLogicalCallCoordinate } from "@influence/engine";
-import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS, werewolfExecutionFinished, compileWerewolfRetrospective } from "@influence/engine/werewolf";
+import { nextWerewolfStep, werewolfEvent, applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS, werewolfExecutionFinished, compileWerewolfRetrospective } from "@influence/engine/werewolf";
 import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore, WerewolfVoteProgress } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { checkGameStartAdmissionInTransaction, checkRecoveryAdmissionInTransaction } from "./deployment-admission.js";
@@ -35,7 +36,43 @@ export async function readWerewolfEvents(db: Pick<DrizzleDB, "select">, gameId: 
   for (const row of rows) {
     if (row.event.gameId !== row.gameId || row.event.sequence !== row.sequence) throw new Error("Corrupt Werewolf event envelope");
   }
-  return rows.map((row) => row.event);
+  return rows.map(row => row.event);
+}
+
+function narrationBindings(event: WerewolfEvent,audience: WerewolfAudience): Array<{id:string;part?:WerewolfHousePart}> {
+  const refs = event.houseNarrationCallIds?.[audience];
+  if (!refs) return [];
+  if (typeof refs === "string") return [{id:refs}];
+  return Object.entries(refs).map(([part,id]) => {
+    if (!["scene","hunt","protect","investigate","snipe"].includes(part) || typeof id !== "string" || !id) throw new Error("Invalid Werewolf House narration reference");
+    return {id,part:part as WerewolfHousePart};
+  });
+}
+
+/** Presentation-only hydration. Gameplay recovery never reads narration bodies. */
+export async function readWerewolfNarratedEvents(db: Pick<DrizzleDB, "select">, gameId: string, requestedAudience?: WerewolfAudience): Promise<WerewolfEvent[]> {
+  const events = await readWerewolfEvents(db, gameId);
+  const audiences = requestedAudience ? [requestedAudience] : ["mystery", "omniscient"] as const;
+  const ids = events.flatMap(event => audiences.flatMap(audience => narrationBindings(event,audience).map(binding=>binding.id)));
+  if (!ids.length) return events;
+  const calls = await db.select({id: schema.providerLogicalCalls.id, gameId: schema.providerLogicalCalls.gameId, acceptedValue: schema.providerLogicalCalls.acceptedValue, hash: schema.providerLogicalCalls.acceptedValueSha256})
+    .from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, gameId), inArray(schema.providerLogicalCalls.id, ids)));
+  const bindings = events.flatMap((event,index) => audiences.flatMap(audience => narrationBindings(event,audience).map(({id,part}) => {
+    const input = werewolfHouseNarrationInput(events.slice(0,index+1),audience,part);
+    if (!input || providerLogicalCallId(gameId,houseNarrationCoordinate(gameId,event.sequence,audience,input.day,part)) !== id) throw new Error("Invalid Werewolf House narration binding");
+    const call = calls.find(row => row.id === id);
+    if (!call?.acceptedValue) throw new Error("Missing accepted Werewolf House narration");
+    return {event,audience,input,ref:call.acceptedValue,hash:call.hash};
+  })));
+  const copies = await Promise.all(bindings.map(async ({input,ref,hash}) => {
+    const copy = await readJson(ref);
+    if (sha256StableJson(copy) !== hash) throw new Error("Corrupt Werewolf House narration hash");
+    const decoded = werewolfHouseNarrationArtifact(input.requestedParts).decodeAcceptedValue(copy);
+    if (decoded.status !== "valid") throw new Error("Corrupt Werewolf House narration");
+    return decoded.value;
+  }));
+  bindings.forEach(({event,audience},index) => {event.houseNarration = {...event.houseNarration,[audience]:{...event.houseNarration?.[audience],...copies[index]!}};});
+  return events;
 }
 
 export function normalizeWerewolfCasting(input: { personaPool?: unknown; fillStrategy?: unknown }): { personaPool: typeof HOUSE_PERSONA_KEYS; fillStrategy: "balanced" | "random" } {
@@ -128,7 +165,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
-      startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, audioMode: input.audioMode ?? false, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset, ...(rules.setup ? { setup: rules.setup } : {}) }) });
+      startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, houseNarrationVersion: 1, audioMode: input.audioMode ?? false, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset, ...(rules.setup ? { setup: rules.setup } : {}) }) });
     // Immediate creation has the same enrollment evidence as a lobby start.
     await tx.insert(schema.werewolfLobbySeats).values(players.map(({ id, agentProfileId, contentRevisionId: _revision, ...houseCharacter }) => ({
       id, gameId, agentProfileId: agentProfileId ?? null,
@@ -230,7 +267,15 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
         if (!turn || sha256StableJson(turn.request) !== sha256StableJson(request)
           || turn.observationHash !== sha256StableJson(observeWerewolf(state, event.payload.actorId))) throw new Error("Werewolf action was not planned");
       }
-      await tx.insert(schema.werewolfEvents).values({ gameId, sequence: event.sequence, event });
+      for (const audience of ["mystery", "omniscient"] as const) for (const {id,part} of narrationBindings(event,audience)) {
+        const input = werewolfHouseNarrationInput([...(await readWerewolfEvents(tx,gameId)),event],audience,part);
+        if (!input || id !== providerLogicalCallId(gameId,houseNarrationCoordinate(gameId,event.sequence,audience,input.day,part))) throw new Error("Invalid Werewolf narration acceptance binding");
+        const [call] = await tx.select({acceptedAt:schema.providerLogicalCalls.acceptedAt}).from(schema.providerLogicalCalls)
+          .where(and(eq(schema.providerLogicalCalls.id,id),eq(schema.providerLogicalCalls.gameId,gameId)));
+        if (!call?.acceptedAt) throw new Error("Werewolf narration has not been accepted");
+      }
+      const {houseNarration: _presentation, ...storedEvent} = event;
+      await tx.insert(schema.werewolfEvents).values({ gameId, sequence: event.sequence, event: storedEvent });
       await tx.update(schema.gameRunOwners).set({ lastPersistedEventSequence: event.sequence,
         ...(werewolfExecutionFinished(next) && !deferCompletion ? { status: "closed" as const, closedAt: new Date().toISOString() } : {}) }).where(eq(schema.gameRunOwners.id, owner.id));
       if (werewolfExecutionFinished(next) && !deferCompletion) {
@@ -275,6 +320,18 @@ export async function assertWerewolfProviderTurn(tx: Tx, gameId: string, coordin
   if (game?.gameKind !== "werewolf" || game.status !== "in_progress") throw new Error("Werewolf is not running");
   const [turn] = await tx.select().from(schema.werewolfTurns).where(and(eq(schema.werewolfTurns.gameId, gameId), eq(schema.werewolfTurns.sequence, sequence)));
   const state = replayWerewolf(await readWerewolfEvents(tx, gameId));
+  if (coordinate.action.startsWith("werewolf.house-summary.")) {
+    const [audience,part,...extra] = coordinate.action.slice("werewolf.house-summary.".length).split(".");
+    if (extra.length || part !== undefined && !["scene","hunt","protect","investigate","snipe"].includes(part)) throw new Error("Invalid Werewolf House summary part");
+    const history = await readWerewolfEvents(tx, gameId);
+    const initial = sequence === 1 && state.sequence === 1;
+    const step = nextWerewolfStep(state);
+    if ((audience !== "mystery" && audience !== "omniscient") || !initial && (step.kind !== "event" || sequence !== state.sequence + 1)
+      || coordinate.actor.role !== "house" || coordinate.actor.id !== undefined || coordinate.actor.name !== "The House") throw new Error("Invalid Werewolf House summary boundary");
+    const input = werewolfHouseNarrationInput(initial ? history : step.kind === "event" ? [...history, werewolfEvent(state, step.event)] : [], audience, part as WerewolfHousePart | undefined);
+    if (!input || input.day !== coordinate.round) throw new Error("Invalid Werewolf House summary audience");
+    return;
+  }
   if (coordinate.action === "retrospective-statement") {
     const context = await readWerewolfRetrospectiveContext(tx, gameId, state);
     if (!turn || sequence !== state.sequence + 1 || sha256StableJson(turn.request) !== sha256StableJson(context.request)

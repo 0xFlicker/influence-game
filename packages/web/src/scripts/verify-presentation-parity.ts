@@ -143,6 +143,13 @@ if (process.env.HUNTER_PARITY === "1") {
   cases.length = 0;
   for (const mode of ["held","snipe-only","double"] as const) {
     const events = await completedHunterFixture(mode);
+    if (process.env.HOUSE_NARRATION_PARITY === "1") {
+      const {werewolfHouseNarrationInput} = await import("@influence/engine/werewolf/house-narration");
+      for (const [index, event] of events.entries()) for (const audience of ["mystery", "omniscient"] as const) {
+        const input = werewolfHouseNarrationInput(events.slice(0,index+1),audience);
+        if (input) event.houseNarration = {...event.houseNarration, [audience]: Object.fromEntries(input.requestedParts.map(part => [part, "The village faces another decisive moment! Watch closely as the next chapter unfolds."]))};
+      }
+    }
     for (const audience of ["omniscient","mystery"] as const) {
       const projected = projectWerewolfProductionWatch(events,audience);
       for (const moment of projected.moments) for (const player of [...moment.snapshot.players,...(moment.night?.before.players ?? [])]) {
@@ -156,7 +163,7 @@ if (process.env.HUNTER_PARITY === "1") {
       const catalog = assembleProductionCatalog({gameId:window.gameId,gameKind:"werewolf",audience,sources:buildWerewolfProductionSources({gameId:window.gameId,audience,moments:window.moments,provenance,thoughts:[],opening:true})});
       const bound = await bindWerewolfProductionPresentation({source,provenance,catalog,thoughts:[]});
       const base = buildExportCues(source);
-      if (mode === "double" && audience === "omniscient") {
+      if (mode === "double" && audience === "omniscient" && process.env.HOUSE_NARRATION_BEATS_ONLY !== "1") {
         const sequence = bound.flatMap(item=>item.segments).filter(cue=>cue.picture.kind === "werewolf" && (cue.picture.cue.nightAction?.kind === "snipe" || cue.picture.cue.moment.entry.kind === "night" && !cue.picture.cue.nightAction));
         const references = sequence.map(cue=>{const reference=base.find(item=>item.timing.key === cue.timing.key);if(!reference) throw new Error("Missing sequence reference");return reference;});
         cases.push({name:"hunter-sequence",cue:sequence[0]!,reference:references[0]!,sequence,references});
@@ -165,7 +172,11 @@ if (process.env.HUNTER_PARITY === "1") {
         const cue = bound.find(item=>item.id === moment.id)?.segments[0];
         if (!cue || cue.picture.kind !== "werewolf") continue;
         const picture = cue.picture.cue;
-        if (picture.nightAction?.kind !== "snipe" && !(picture.moment.entry.kind === "night" && !picture.nightAction)) continue;
+        if (process.env.HOUSE_NARRATION_BEATS_ONLY === "1") {
+          if (mode !== "double" || audience !== "omniscient" || picture.nightDecision || picture.nightAction?.kind === "snipe"
+            || !["scene", "pack_vote", "result", "protect", "investigate", "hunt"].includes(moment.part.kind)) continue;
+          if (cases.some(item => item.name === `hunter-${mode}-${audience}-${moment.part.kind}`)) continue;
+        } else if (picture.nightAction?.kind !== "snipe" && !(picture.moment.entry.kind === "night" && !picture.nightAction)) continue;
         // Mystery and double-death dawn, plus held/fired private speech and action.
         if (mode === "snipe-only" && audience === "omniscient" && picture.nightAction) continue;
         if (mode === "held" && !picture.nightAction) continue;

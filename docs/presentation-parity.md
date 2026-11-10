@@ -200,3 +200,19 @@ The Hunter room is included by the existing static-art snapshot writer. Reuse th
 same selection IDs and pinned source/media to prepare a fresh bundle; render a
 new MP4. Reopen/reprepare Studio previews to pick up the new room and corrected
 binding. Do not regenerate historical dialogue or alter accepted item decisions.
+
+For generated Werewolf House narration, run the Hunter matrix with saved narration
+in the projected source (both audiences, isolated cuts and the full sequence):
+
+```sh
+cd packages/web
+HUNTER_PARITY=1 HOUSE_NARRATION_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts ../../.renders/werewolf-house-narration
+```
+
+The provider-free fixture supplies deterministic authored copy; the localhost API
+simulation separately proves real House authoring and private journal persistence.
+The narration must remain identical through the viewer watch adapter, frozen
+Studio source, independent cue selection, caption timing and TTS source. Historical
+sources without references keep fixed factual narration; missing referenced copy
+must fail integrity checks rather than silently change the movie. Existing movies
+need re-encoding, and adopting newer narration requires an explicit source refresh.

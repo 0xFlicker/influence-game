@@ -175,7 +175,7 @@ export type WerewolfEventData =
   | { type: "werewolf.completed"; payload: WerewolfOutcome };
 
 /** Raw events are private authority. Serve only audience projections. */
-export type WerewolfEvent = WerewolfEventData & { gameId: string; sequence: number };
+export type WerewolfEvent = WerewolfEventData & { gameId: string; sequence: number; houseNarrationCallIds?: import("./house-narration").WerewolfHouseCallIds; /** Hydrated presentation only; never stored in the event or reduced into game state. */ houseNarration?: import("./house-narration").WerewolfHouseNarration };
 
 export interface WerewolfState {
   retrospectiveOutcomeSource: RetrospectiveOutcomeSource | null;

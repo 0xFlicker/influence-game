@@ -430,3 +430,24 @@ Reusing an existing wolf form does not enqueue historical work. This change does
 not backfill old games, regenerate their forms, or rebuild existing movies.
 
 Item observation fields are present only in v12; v7–v11 retain their exact serialized observation contracts so previously planned durable turns keep their hashes. New retrospective inputs include canonical item choices and snipe outcomes. Already-frozen retrospective inputs retain their original matching definition without rewriting history.
+
+### Generated House narration
+
+New Werewolf execution authors spectator narration through the sealed **House** model route and the durable provider journal, independently of contestant turns. The inventory is:
+
+| Boundary | Spoken summary |
+| --- | --- |
+| Opening and phase changes | Welcome, nightfall, discussion opening, voting instructions |
+| Pack resolution | Agreement, another attempt, or no attack |
+| Night actions | Hunt target, Doctor protection, Seer result, Hunter shot or hold |
+| Dawn | All deaths, survival, and audience-permitted causes/protection |
+| Public vote resolution | Elimination and tally, or no majority |
+| Completion | Winning faction, winners, and canonical outcome reason |
+
+UI labels, rules, tally boards, role labels, and silent-ballot captions remain deterministic facts. Contestants' original speech and retrospectives are not rewritten. Episode titles/descriptions use the separate existing episode-copy pipeline.
+
+Mystery and Omniscient use separate invocations built from their respective projections; each night-action summary is independently authored from its pre-resolution board, without dawn deaths or sibling choices; Mystery never receives private night choices or pack dialogue. Authoring receives canonical facts only: the current entry/action, names and living status, casualty IDs, and explicit voting rules/counts where relevant. `requestedParts` lists output keys, not required prose. Hard-coded fallback wording and previously accepted narration never enter the prompt. No recent-dialogue recap is supplied. The House writes original, concise game-show announcer copy with theatrical anticipation and an occasional dry flourish. Output is an exact strict JSON contract with short spoken summaries. Narration has no game authority and never enters contestant observations. The House route retains sanitized provider attempts, reasoning, usage, failures and accepted values using the existing private object-storage journal. Events store only accepted logical-call references; presentation readers verify those references and hydrate the copy. Canonical gameplay recovery does not fetch narration bodies.
+
+Historical events without narration references retain the existing factual House text. Reopening a completed game never generates or backfills copy. New opening narration is attached before the first contestant turn; recovery reuses journaled values. Newly accepted future boundaries in an unfinished game can receive generated narration without rewriting its earlier events. Missing or corrupt referenced copy is an integrity error, distinct from an older event with no narration.
+
+Viewer, Studio Source/Selected cut, TTS and fresh exports consume the same projected text and timing. Frozen source snapshots retain their selected copy. Existing movies do not change; rebuild a bundle from its frozen selection/source and encode again for renderer changes. To adopt narration from a newer source, explicitly refresh the selection—never silently replace pinned source content.

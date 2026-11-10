@@ -6,6 +6,7 @@ export function werewolfHouseDuration(text: string) { return Math.max(4200, scen
 type Player = {id: string; name: string};
 /** Omniscient action scenes are projected before calling this presentation helper. */
 export function werewolfNightHouseSpeech(action: WerewolfNightAction, players: readonly Player[]): string {
+  if (action.houseSpeech !== undefined) return action.houseSpeech;
   const name = (id: string) => players.find(player => player.id === id)?.name ?? "A player";
   if (action.kind === "hunt") return `The pack hunts ${name(action.targetId)}. The village holds its breath.`;
   if (action.kind === "protect") return `${name(action.actorId)}, the Doctor, protects ${action.actorId === action.targetId ? "themself" : name(action.targetId)} tonight. One life under guard.`;
@@ -14,6 +15,7 @@ export function werewolfNightHouseSpeech(action: WerewolfNightAction, players: r
 }
 /** Factual House copy from audience-permitted canonical fields only. */
 export function werewolfHouseSpeech(entry: WerewolfPublicEntry, players: readonly Player[], rulesVersion:number): string | null {
+  if (entry.houseSpeech !== undefined) return entry.houseSpeech;
   const name = (id:string) => players.find(player => player.id === id)?.name ?? "A player";
   switch (entry.kind) {
     case "phase": return entry.phase === "introduction" ? "Welcome to the village. Introduce yourselves."

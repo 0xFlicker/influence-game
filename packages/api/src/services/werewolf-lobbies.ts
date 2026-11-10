@@ -35,7 +35,7 @@ export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: 
   const slug = await generateUniqueSlug(async candidate => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   await db.insert(schema.games).values({ id, slug, gameKind: "werewolf", gameKernel: null, createdById: userId, status: "waiting", trackType: "custom", minPlayers: count, maxPlayers: count,
-    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, audioMode: input.audioMode ?? false, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, discussionPolicy: rules.discussionPolicy, modelRouting, serviceTier: "flex", visibility }) });
+    config: JSON.stringify({ houseNarrationVersion: 1, preset: input.preset, setup: rules.setup, ...casting, audioMode: input.audioMode ?? false, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, discussionPolicy: rules.discussionPolicy, modelRouting, serviceTier: "flex", visibility }) });
   return { id, slug };
 }
 

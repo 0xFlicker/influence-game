@@ -962,3 +962,15 @@ Empower runoff now has a separate direct House summary boundary (`empower_runoff
 Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.
 
 Hunter v12 item observations (`itemCatalog`, `items`) are version-scoped; they must not change v7–v11 planned-observation hashes. Hunter explanations remain private asides, independently selectable from the held/fired result in Studio. Retrospective facts retain item IDs, targets and canonical snipe deaths; already-frozen definitions remain immutable. No `as any` or direct-House-call bypass.
+
+Werewolf House summaries use `werewolf.house-summary.mystery` and
+`werewolf.house-summary.omniscient` journal actions at the canonical event boundary.
+Inspect accepted structured copy alongside sanitized attempts, available native
+reasoning, retries and usage. Mystery authoring receives only its public projection.
+Narration is spectator presentation, not contestant thinking or accepted game
+facts; never parse its prose back into authority. No `as any` or direct Influence
+House calls are used for Werewolf execution.
+
+Werewolf House authoring inputs use `requestedParts` plus canonical facts, never fallback
+announcement prose or previously saved House text. Phase announcements receive no
+dialogue recap. Mystery and Omniscient remain separately scoped journal calls.

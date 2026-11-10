@@ -41,6 +41,11 @@ export function werewolfPackOrder(state: WerewolfState) { return state.config.ru
 export function werewolfVoteMode(state: WerewolfState) { return state.config.rulesVersion >= 9 ? "majority" as const : legacy.werewolfVoteMode(state); }
 export function werewolfTurnReminder(state: WerewolfState, actorId: string) { return state.config.rulesVersion >= 9 ? null : legacy.werewolfTurnReminder(state, actorId); }
 export function applyWerewolfEvent(previous: WerewolfState | null, event: WerewolfEvent): WerewolfState {
+  // Presentation references and hydrated copy never enter a version-specific reducer.
+  const {houseNarrationCallIds, houseNarration: _copy, ...canonical} = event;
+  if (houseNarrationCallIds && (typeof houseNarrationCallIds !== "object" || Array.isArray(houseNarrationCallIds)
+    || Object.entries(houseNarrationCallIds).some(([audience, id]) => !["mystery", "omniscient"].includes(audience) || (typeof id === "string" ? !id : !id || typeof id !== "object" || Array.isArray(id) || Object.entries(id).some(([part,callId]) => !["scene","hunt","protect","investigate","snipe"].includes(part) || typeof callId !== "string" || !callId))))) throw new Error("Invalid Werewolf narration references");
+  event = canonical;
   const version = previous?.config.rulesVersion ?? (event.type === "werewolf.started" ? event.payload.config.rulesVersion : null);
   if (version === 9 || version === 10 || version === 11 || version === 12) return current.applyEvent(previous, event);
   if (version !== 7 && version !== 8) throw new WerewolfRulesVersionError();

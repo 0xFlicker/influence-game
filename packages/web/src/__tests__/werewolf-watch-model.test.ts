@@ -295,3 +295,42 @@ test("dawn keeps one caption owner and non-narrated copy preserves both unique v
     expect(text).not.toContain("Everyone survived");
   }
 });
+
+test("independent night cuts carry only their own spoken copy", () => {
+  const moment: WerewolfWatchMoment = {...template,snapshot:{...template.snapshot,audience:"omniscient"},
+    entry:{kind:"night",day:1,killedId:"p2",houseSpeech:"DAWN_ONLY_COPY"},
+    night:{before:{...template.snapshot,audience:"omniscient"},actions:[
+      {kind:"snipe",actorId:"p0",targetId:null,killedId:null,itemId:"snipe",held:true,speech:{text:"HUNTER_DECISION_ONLY",cue:null},houseSpeech:"HUNTER_HOUSE_ONLY"},
+      {kind:"hunt",wolfIds:["p1"],targetId:"p2",houseSpeech:"HUNT_ONLY_COPY"},
+    ]}};
+  const cues=werewolfMomentCues(moment);
+  const decision=JSON.stringify(cues.find(cue=>cue.nightDecision));
+  expect(decision).toContain("HUNTER_DECISION_ONLY");
+  expect(decision).not.toContain("HUNTER_HOUSE_ONLY");
+  expect(decision).not.toContain("DAWN_ONLY_COPY");
+  expect(decision).not.toContain("HUNT_ONLY_COPY");
+  const action=JSON.stringify(cues.find(cue=>cue.nightAction?.kind==="snipe"&&!cue.nightDecision));
+  expect(action).toContain("HUNTER_HOUSE_ONLY");
+  expect(action).not.toContain("HUNTER_DECISION_ONLY");
+  expect(action).not.toContain("DAWN_ONLY_COPY");
+  expect(action).not.toContain("HUNT_ONLY_COPY");
+  const dawn=JSON.stringify(cues.at(-1));
+  expect(dawn).toContain("DAWN_ONLY_COPY");
+  expect(dawn).not.toContain("HUNTER_HOUSE_ONLY");
+  expect(dawn).not.toContain("HUNTER_DECISION_ONLY");
+  expect(dawn).not.toContain("HUNT_ONLY_COPY");
+});
+
+test("a selected hunt retains the canonical Doctor-save staging without omitted copy", () => {
+  const moment: WerewolfWatchMoment={...template,snapshot:{...template.snapshot,audience:"omniscient"},
+    entry:{kind:"night",day:1,killedId:null,attackTargetId:"p1",protectedId:"p1",houseSpeech:"DAWN_COPY"},
+    night:{before:{...template.snapshot,audience:"omniscient"},actions:[
+      {kind:"protect",actorId:"p0",targetId:"p1",houseSpeech:"DOCTOR_COPY",speech:{text:"DOCTOR_ASIDE",cue:null}},
+      {kind:"hunt",wolfIds:["p2"],targetId:"p1",houseSpeech:"HUNT_COPY"},
+    ]}};
+  const hunt=werewolfMomentCues(moment).find(cue=>cue.nightAction?.kind==="hunt")!;
+  expect(werewolfDoctorSave(hunt.moment)?.doctor.id).toBe("p0");
+  expect(JSON.stringify(hunt)).not.toContain("DOCTOR_COPY");
+  expect(JSON.stringify(hunt)).not.toContain("DOCTOR_ASIDE");
+  expect(JSON.stringify(hunt)).not.toContain("DAWN_COPY");
+});

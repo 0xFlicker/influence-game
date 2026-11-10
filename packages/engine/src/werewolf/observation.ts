@@ -14,7 +14,7 @@ export interface WerewolfVoteProgress {
   voteMode: "majority" | "plurality";
   requiredVotes: number | null;
 }
-export type WerewolfPublicEntry =
+export type WerewolfPublicEntry = { houseSpeech?: string } & (
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
   | ({ kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
     & ({ purpose: "retrospective"; ordinal: number } | { purpose?: never; ordinal?: never }))
@@ -25,7 +25,7 @@ export type WerewolfPublicEntry =
   | { kind: "pack_vote"; day: number; result: WerewolfPackVote }
   | { kind: "night"; day: number; killedId: string | null; snipeKilledId?: string | null; attackTargetId?: string | null; protectedId?: string | null; investigation?: { seerId: string; targetId: string; isWolf: boolean } | null; snipe?: WerewolfSnipeResult | null }
   | { kind: "vote"; day: number; result: WerewolfDayResult }
-  | { kind: "result"; day: number; outcome: WerewolfOutcome };
+  | { kind: "result"; day: number; outcome: WerewolfOutcome });
 
 export interface WerewolfView {
   gameId: string;

@@ -38,7 +38,7 @@ export async function readWerewolfProductionThinking(db: Pick<DrizzleDB, "select
   const calls = await loadPayloads(db.select({ actorId: schema.providerLogicalCalls.actorId, action: schema.providerLogicalCalls.action,
     semantic: schema.providerLogicalCalls.semanticCoordinate, value: schema.providerLogicalCalls.acceptedValue,
     hash: schema.providerLogicalCalls.acceptedValueSha256 }).from(schema.providerLogicalCalls)
-    .where(and(eq(schema.providerLogicalCalls.gameId, game.id), isNotNull(schema.providerLogicalCalls.acceptedAttemptId))));
+    .where(and(eq(schema.providerLogicalCalls.gameId, game.id), eq(schema.providerLogicalCalls.actorRole, "player"), isNotNull(schema.providerLogicalCalls.acceptedAttemptId))));
   const bySequence = new Map<number, Hydrated<typeof calls>[number]>();
   const eligibleSequences = new Set(actions.map(action => action.event.sequence));
   for (const call of calls) {

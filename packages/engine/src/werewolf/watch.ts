@@ -59,6 +59,12 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
       else if (entry.kind === "speech") { chapterId = entry.purpose === "retrospective" ? "retrospective" : "introduction"; sceneId = chapterId; }
       const staging = before ?? state;
       const nightActions = resolvedNightActions(staging, entry, audience);
+      const narration = event.houseNarration?.[audience];
+      if (narration?.scene) entry = {...entry, houseSpeech: narration.scene};
+      for (const action of nightActions) {
+        const speech = narration?.[action.kind];
+        if (speech) action.houseSpeech = speech;
+      }
       const nightSteps = werewolfNightSteps(nightActions);
       if (entry.kind === "ballot") {
         if (ballotDay !== entry.day) {dayBallots = []; ballotDay = entry.day;}
