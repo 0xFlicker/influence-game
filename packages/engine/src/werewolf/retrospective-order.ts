@@ -5,7 +5,7 @@ import type { WerewolfState } from "./types";
 /** Dedicated local RNG; never advances the gameplay opening ring or cursor. */
 export function werewolfRetrospectiveSpeakerIds(state: WerewolfState): string[] {
   if (!state.retrospectiveOutcomeSource) throw new Error("Werewolf retrospective order requires its canonical outcome");
-  const deaths = state.history.flatMap(entry => entry.kind === "night" && entry.result.killedId ? [entry.result.killedId]
+  const deaths = state.history.flatMap(entry => entry.kind === "night" ? [entry.result.killedId, entry.result.snipe?.killedId].filter((id, index, ids): id is string => Boolean(id) && ids.indexOf(id) === index)
     : entry.kind === "vote" && entry.result.eliminatedId ? [entry.result.eliminatedId] : []);
   const survivors = [...state.aliveIds];
   const draw = seededRandom(hashCanonicalJson({ purpose: "retrospective-survivors.v1", gameId: state.gameId,

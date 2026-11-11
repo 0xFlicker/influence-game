@@ -1253,7 +1253,23 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
-  test("native fullscreen enters and exits without changing paused speech", async ({ page },testInfo) => {
+  test("fullscreen enters and exits without changing paused speech", async ({ page },testInfo) => {
+    const probe = await page.context().newPage();
+    await probe.setContent('<button>Fullscreen capability</button>');
+    await probe.locator("button").evaluate(button => button.addEventListener("click", () => {
+      void document.documentElement.requestFullscreen().then(() => { document.body.dataset.result = "granted"; }, () => { document.body.dataset.result = "rejected"; });
+    }));
+    await probe.getByRole("button", {name: "Fullscreen capability"}).click();
+    await expect.poll(() => probe.locator("body").getAttribute("data-result")).not.toBeNull();
+    const nativeAvailable = await probe.locator("body").getAttribute("data-result") === "granted";
+    await probe.close();
+    await page.addInitScript(() => {
+      const request = HTMLElement.prototype.requestFullscreen;
+      HTMLElement.prototype.requestFullscreen = async function(options) {
+        try { await request.call(this, options); document.documentElement.dataset.fullscreenRequest = "granted"; }
+        catch (error) { document.documentElement.dataset.fullscreenRequest = "rejected"; throw error; }
+      };
+    });
     await page.clock.install();
     const slug = "native-fullscreen-fixture";
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -1290,7 +1306,11 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button",{name:"Enter theater mode",exact:true})).toBeFocused();
     await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+    await expect(page.locator('[data-player-fullscreen="true"]')).toBeVisible();
+    const fullscreenRequest = await page.evaluate(() => document.documentElement.dataset.fullscreenRequest);
+    expect(["granted", "rejected"]).toContain(fullscreenRequest);
+    if (nativeAvailable) expect(fullscreenRequest).toBe("granted");
+    expect(await page.evaluate(() => Boolean(document.fullscreenElement))).toBe(fullscreenRequest === "granted");
     await expect(speech).toContainText("The same speech stays on screen.");
     await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();

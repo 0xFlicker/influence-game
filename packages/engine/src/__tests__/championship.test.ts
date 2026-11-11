@@ -29,8 +29,8 @@ describe("championship contract", () => {
       const schedule = createBalancedRoleSchedule(ids, composition, seed);
       expect(schedule.matches).toHaveLength(16);
       for (const id of ids) {
-        const counts = { werewolf: 0, seer: 0, doctor: 0, villager: 0 };
-        for (const match of schedule.matches) counts[match.roles[id]!]++;
+        const counts: Record<string, number> = { werewolf: 0, seer: 0, doctor: 0, villager: 0 };
+        for (const match of schedule.matches) counts[match.roles[id]!] = (counts[match.roles[id]!] ?? 0) + 1;
         expect(counts).toEqual({ werewolf: 4, seer: 2, doctor: 2, villager: 8 });
       }
       for (const match of schedule.matches) {

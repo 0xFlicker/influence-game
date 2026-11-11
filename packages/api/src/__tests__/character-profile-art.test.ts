@@ -54,6 +54,11 @@ async function games(agentProfileId: string) {
   const seat = await joinWerewolfLobby(db, wolf.id, context.userId, agentProfileId);
   await fillWerewolfLobby(db, wolf.id);
   await startWerewolfLobby(db, wolf.id);
+  // This art-only fixture pins a pre-narration opening. New opening publication
+  // and its waiting boundary are exercised in werewolf.test.ts.
+  const [running] = await db.select({config:schema.games.config}).from(schema.games).where(eq(schema.games.id,wolf.id));
+  const {houseNarrationVersion:_narrationRevision,...historicalConfig} = JSON.parse(running!.config);
+  await db.update(schema.games).set({config:JSON.stringify(historicalConfig)}).where(eq(schema.games.id,wolf.id));
   return { influence: id, persona: JSON.parse(frozen.seats[0]!.persona), wolf: wolf.id, player: seat.playerId };
 }
 

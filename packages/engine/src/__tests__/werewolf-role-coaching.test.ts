@@ -124,3 +124,19 @@ test.each([
   await new WerewolfModelAgent({ runtimes: [runtime] }).decide({ gameId: state.gameId, actionSlot: 1, observation,
     request: { actorId, action: "introduce", legalTargetIds: [] } });
 });
+
+
+test("strategy coaching gives every village role shared judgment without wolf objectives", () => {
+  for (const role of ["villager", "seer", "doctor", "hunter"] as const) {
+    const coaching = werewolfRoleCoaching(role);
+    expect(coaching).toContain("Build independent reads even without a credible Seer");
+    expect(coaching).toContain("committed votes and remaining voters");
+    expect(coaching).toContain("Do not assume that wolf count is known");
+    expect(coaching).toContain("Your personality shapes delivery");
+    expect(coaching).not.toContain("Pack victory does not require public solidarity");
+  }
+  const wolf = werewolfRoleCoaching("werewolf");
+  expect(wolf).toContain("neither is mandatory");
+  expect(wolf).toContain("bussing earns no guaranteed confirmation or trust");
+  expect(wolf).not.toContain("Build independent reads even without a credible Seer");
+});

@@ -3,7 +3,7 @@ import {paginateSpeech} from "@/app/games/[slug]/components/speech-pages";
 export interface BubbleTypography {
   width: number; height: number; fontSize: number; lineHeight: number; pages: string[]; footerHeight: number; headerHeight: number;
 }
-export interface BubbleBudget {width: number; height: number; chrome: number; padding: number; maxFont: number; minFont: number}
+export interface BubbleBudget {width: number; height: number; chrome: number; padding: number; maxFont: number; minFont: number; minWidth?: number}
 export type MeasureBubbleText = (text: string, width: number, fontSize: number) => number;
 
 /** Keep video text legible; paginate long passages instead of shrinking below this floor. */
@@ -25,7 +25,7 @@ export function fitBubbleText(text: string, budget: BubbleBudget, measure: Measu
   // A brief reply should not look like a full-width banner. Keep enough width
   // for the speaker label, and preserve the chosen line count while tightening.
   if (naturalHeight <= room && naturalHeight <= fontSize * lineHeight * 2 + .5 && width > 240) {
-    let low = 240, high = Math.floor(width);
+    let low = Math.min(Math.floor(width), Math.max(240,Math.ceil(budget.minWidth ?? 240))), high = Math.floor(width);
     while (low < high) {
       const mid = Math.floor((low + high) / 2);
       if (measure(text, Math.max(1, mid - padding * 2 - 2), fontSize) <= naturalHeight + .5) high = mid;

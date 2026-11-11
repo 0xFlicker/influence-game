@@ -65,7 +65,7 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
       const position = source.window.moments.find(row => row.cursor === moment.order.anchor);
       const eventSequence = "eventSequence" in moment.source ? moment.source.eventSequence : 0;
       const actionKind = moment.part.kind;
-      const action = actionKind === "protect" || actionKind === "investigate" || actionKind === "hunt"
+      const action = actionKind === "protect" || actionKind === "investigate" || actionKind === "hunt" || actionKind === "snipe"
         ? position?.night?.actions.find(action => action.kind === actionKind) : undefined;
       const house = position && (["scene", "outcome", "result", "pack_vote"].includes(actionKind) || action)
         ? action ? werewolfNightHouseSpeech(action, position.snapshot.players) : werewolfHouseSpeech(position.entry, position.snapshot.players, position.snapshot.rulesVersion) : null;

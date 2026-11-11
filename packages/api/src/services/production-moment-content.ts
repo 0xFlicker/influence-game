@@ -22,7 +22,7 @@ export function productionMomentContent(source:EditorialSource,moment:Production
     } else if (position && source.catalog.werewolfCatalogVersion !== 1) {
       speakerId=null;
       const action=position.night?.actions.find(row=>row.kind===moment.part.kind);
-      if (action && ["protect","investigate","hunt"].includes(moment.part.kind)) text=werewolfNightHouseSpeech(action,position.snapshot.players);
+      if (action && ["protect","investigate","hunt","snipe"].includes(moment.part.kind)) text=werewolfNightHouseSpeech(action,position.snapshot.players);
       else if (["scene","outcome","result","pack_vote"].includes(moment.part.kind)) text=werewolfHouseSpeech(position.entry,position.snapshot.players,position.snapshot.rulesVersion);
     }
     return {text:text?.trim() ? text:null,actorName,speakerId};

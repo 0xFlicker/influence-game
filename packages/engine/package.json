@@ -63,6 +63,8 @@
     "./werewolf/presentation": "./src/werewolf/presentation.ts",
     "./game-visibility": "./src/game-visibility.ts",
     "./game-availability": "./src/game-availability.ts",
+    "./fixtures/werewolf-hunter": "./src/fixtures/werewolf-hunter.ts",
+    "./fixtures/werewolf-pack-strategy": "./src/fixtures/werewolf-pack-strategy.ts",
     "./fixtures/werewolf-results": "./src/fixtures/werewolf-results.ts",
     "./werewolf/results-contract": "./src/werewolf/results-contract.ts",
     "./house-share-target": "./src/house-share-target.ts",
@@ -85,6 +87,7 @@
     "./model-route-metadata": "./src/model-route-metadata.ts",
     "./audio-track": "./src/audio-track.ts",
     "./audio-watch": "./src/audio-watch.ts",
+    "./werewolf/house-narration": "./src/werewolf/house-narration.ts",
     "./werewolf/house-speech": "./src/werewolf/house-speech.ts",
     "./championship": "./src/championship.ts"
   },

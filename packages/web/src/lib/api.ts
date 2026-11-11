@@ -1160,7 +1160,7 @@ export interface GameRetrospectiveResponse {
   source: { sequence: number; hash: string }; outcome: import("@influence/engine").RetrospectiveOutcomeSource;
   initialized: boolean; progress: import("@influence/engine").RetrospectiveProgress;
   speakers: Array<{ actorId: string; name: string; ordinal: number; avatarUrl: string | null; part:
-    { gameKind: "influence"; won: boolean; eliminatedRound: number | null } | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null } }>;
+    { gameKind: "influence"; won: boolean; eliminatedRound: number | null } | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor" | "hunter"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null } }>;
   statements: Array<{ actorId: string; ordinal: number; eventSequence: number; speech: string; href: string }>;
   nextCursor: string | null; pollCursor: string | null;
   recovery: { expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; reasonCode: string } | null;

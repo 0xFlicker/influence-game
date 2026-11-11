@@ -9,6 +9,7 @@ import { replayWerewolf, startWerewolf, legacyWerewolfConfig as werewolfConfig }
 import { runWerewolf, werewolfFallback } from "../werewolf/runner";
 import type { WerewolfEvent } from "../werewolf/types";
 import { werewolfReportEntry } from "../werewolf/report";
+import { completedPackStrategyFixture } from "../fixtures/werewolf-pack-strategy";
 
 const originalFetch = globalThis.fetch;
 let sessionToken: string | undefined;
@@ -64,6 +65,18 @@ function fixture(disagree = false) {
 }
 
 describe("Werewolf API simulation", () => {
+  test("v13 reports continued pack strategy rather than immediate agreement termination", async () => {
+    const final = replayWerewolf(await completedPackStrategyFixture("report-v13"));
+    globalThis.fetch = Object.assign(async () => Response.json({slug:"report-v13",status:"completed",view:projectWerewolfView(final,"omniscient")}),{preconnect:originalFetch.preconnect});
+    const {report} = await runWerewolfApiSimulation(runArgs(["--game","report-v13","--audience","omniscient"]),{log:()=>{}});
+    expect(report).toContain("three turns per wolf");
+    expect(report).toContain("plan tomorrow's vote");
+    expect(report).toContain("two consecutive passes after the lock");
+    expect(report).toContain("Pack turn 3");
+    expect(report).toContain("Tomorrow I will pressure");
+    expect(report).not.toContain("ending immediately when current targets match");
+    expect(report).not.toContain("PRIVATE_PACK_THINKING");
+  });
   test("paused retrospectives expose the actual failure and an explicit recovery command without writing", async () => {
     const { events } = fixture();
     const index = events.findIndex(event => event.type === "werewolf.retrospective_started");

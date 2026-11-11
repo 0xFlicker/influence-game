@@ -13,8 +13,9 @@
  * the last recipient redirects or passes, and may reference earlier statements.
  * One public serial vote with optional speech follows; all living voters finish,
  * strict majority eliminates, and abstentions never lower the threshold.
- * Pack speech includes a standing target, with up to three full exchanges;
- * matching proposals resolve early. Older completed rules retain their replay.
+ * V13 pack speech negotiates an attack and plans the next public vote in at most
+ * three turns per wolf. Agreement locks the target; two subsequent consecutive
+ * passes can end talk early. Older completed rules retain their own replay.
  * Paid evaluations run through this API client. Configure the server game-worker
  * with WEREWOLF_EVALUATION_BUDGET_USD and WEREWOLF_EVALUATION_BUDGET_LEDGER;
  * attempts, retries, compaction and retrospectives all reserve against that cap.
@@ -46,6 +47,7 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
     "model-catalog": { type: "string", default: DEFAULT_MODEL_CATALOG_ID },
     "reasoning-policy": { type: "string", default: "low" },
     agent: { type: "string", multiple: true, default: [] },
+    hunter: { type: "boolean", default: false }, "village-roles": { type: "string" },
     game: { type: "string" }, "resume-retrospective": { type: "boolean", default: false }, audience: { type: "string", default: "mystery" },
     transcript: { type: "boolean", default: false }, out: { type: "string" },
     "timeout-seconds": { type: "string", default: "1800" }, help: { type: "boolean", short: "h" },
@@ -54,7 +56,17 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   if (!["localhost", "127.0.0.1", "[::1]"].includes(apiUrl.hostname)) throw new Error("This local CLI requires a loopback --api-url.");
   const webUrl = requireSafeHttpBaseUrl(values["web-url"], "--web-url");
   if (values.preset !== "one_wolf" && values.preset !== "two_wolves") throw new Error("Choose --preset one_wolf or two_wolves");
-  const config = werewolfConfig(values.preset, Number(values["max-days"]));
+  const presetPlayers = values.preset === "two_wolves" ? 8 : 6;
+  const presetWolves = values.preset === "two_wolves" ? 2 : 1;
+  let setup: import("./types").WerewolfSetup | undefined;
+  if (values["village-roles"] !== undefined) {
+    const roles = values["village-roles"].split(",").map((role) => role.trim()).filter(Boolean);
+    if (!roles.length || roles.some((role) => !["seer", "doctor", "hunter"].includes(role)) || new Set(roles).size !== roles.length) throw new Error("Choose --village-roles from seer,doctor,hunter without repeats.");
+    setup = { playerCount: presetPlayers as 6 | 8, wolves: presetWolves as 1 | 2, seer: roles.includes("seer"), doctor: roles.includes("doctor"), hunter: roles.includes("hunter") };
+  } else if (values.hunter) {
+    setup = { playerCount: presetPlayers as 6 | 8, wolves: presetWolves as 1 | 2, seer: true, doctor: values.preset === "two_wolves", hunter: true };
+  }
+  const config = werewolfConfig(values.preset, Number(values["max-days"]), setup);
   if (values.agent.length > WEREWOLF_PRESETS[config.preset].players || values.agent.some(id => !id.trim()) || new Set(values.agent).size !== values.agent.length) throw new Error("Choose distinct --agent profile IDs within the preset's seat limit.");
   if (values.audience !== "mystery" && values.audience !== "omniscient") throw new Error("Choose --audience mystery or omniscient");
   if (values.game !== undefined && !values.game.trim()) throw new Error("--game requires an ID or slug");
@@ -63,7 +75,7 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) throw new Error("--timeout-seconds must be a positive number of at least one second");
   const providerManifest = normalizeProviderManifest([{ catalogId: values["model-catalog"], reasoningPolicy: values["reasoning-policy"] }]);
   resolveProviderManifest(providerManifest);
-  return { visibility: parseGameVisibility(values.visibility), apiUrl: apiUrl.origin, webUrl: webUrl.origin, preset: config.preset, maxDays: config.maxDays,
+  return { visibility: parseGameVisibility(values.visibility), apiUrl: apiUrl.origin, webUrl: webUrl.origin, preset: config.preset, maxDays: config.maxDays, setup: config.setup,
     agentProfileIds: values.agent, providerManifest, game: values.game, audience: values.audience as WerewolfAudience,
     resumeRetrospective: values["resume-retrospective"], transcript: values.transcript, out: values.out, timeoutMs, help: Boolean(values.help) };
 }
@@ -124,7 +136,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       creationRequested = true;
       const created = await apiFetch<{ id: string; slug: string }>(args.apiUrl, "/api/werewolf", {
         method: "POST", headers: authHeaders(token),
-        body: JSON.stringify({ visibility: args.visibility, preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays }),
+        body: JSON.stringify({ visibility: args.visibility, preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays, ...(args.setup ? { setup: args.setup } : {}) }),
       });
       game = created.id;
       if (!game || !created.slug) throw new Error("Invalid Werewolf creation response; check /games/type/werewolf before launching again.");
@@ -158,7 +170,9 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         if (view.rulesVersion >= 9) {
           emit("Discussion uses a shared UTF-8 byte allowance and up to three directed handoffs; the final turn redirects or passes. Remaining space does not guarantee every player a discussion opportunity.");
           emit("One public sequential ballot follows: vote with optional speech or abstain. A strict majority of all living players is required; the day then ends either way.");
-          emit("Pack speech and attack proposals are combined: up to three full exchanges, ending immediately when current targets match.");
+          emit(view.rulesVersion >= 13
+            ? "Pack speech and attack choices are combined: three turns per wolf to agree on a target and plan tomorrow's vote. Agreement locks the target while strategy talk continues; two consecutive passes after the lock end talk early."
+            : "Pack speech and attack proposals are combined: up to three full exchanges, ending immediately when current targets match.");
         } else {
         emit("After each thread, everyone votes for a target or abstains to hear more. A strict majority of all living players eliminates the target and ends the day; otherwise discussion continues. The final ballot requires a target: unique most votes wins; a tie means no village elimination.");
         emit("Each night the pack has three proposal/ballot attempts to agree unanimously. Three disagreements mean no attack.");
@@ -171,8 +185,8 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         const line = werewolfReportEntry(entry, view, args.transcript);
         if (line !== null) emit(line);
         if (entry.kind === "night" || entry.kind === "vote") {
-          const eliminated = entry.kind === "night" ? entry.killedId : entry.result.eliminatedId;
-          if (eliminated) alive.delete(eliminated);
+          const eliminated = entry.kind === "night" ? [entry.killedId, entry.snipeKilledId] : [entry.result.eliminatedId];
+          for (const id of eliminated) if (id) alive.delete(id);
           emit(`  Alive (${alive.size}): ${view.players.filter((player) => alive.has(player.id)).map((player) => player.name).join(", ")}.`);
         }
         if (entry.kind === "result") emit(`Roles revealed: ${view.players.map((player) => `${player.name} — ${player.role ?? "unknown"}${alive.has(player.id) ? "" : " (dead)"}`).join("; ")}.`);
@@ -243,6 +257,9 @@ For a short smoke test (may stop before a winner):
   bun run simulate:werewolf:api --max-days 2
 For eight characters with two wolves, a Seer and a Doctor:
   bun run simulate:werewolf:api --preset two_wolves
+For eight characters with a Hunter holding a snipe plus either a Doctor or a Seer:
+  bun run simulate:werewolf:api --preset two_wolves --village-roles hunter,doctor
+  bun run simulate:werewolf:api --preset two_wolves --village-roles hunter,seer
 Watch an existing game without creating or spending on another game:
   bun run simulate:werewolf:api --game ID_OR_SLUG --transcript --audience omniscient
 Resume a paused retrospective after restoring the provider (requires recovery permission):
@@ -252,6 +269,7 @@ Options: --api-url URL --web-url URL --model-catalog ID --reasoning-policy low|m
          --visibility public|unlisted (default public; unlisted requires this flag)
          --agent PROFILE_ID (repeatable) --out REPORT.txt --timeout-seconds 1800
          --preset one_wolf|two_wolves --max-days 1..20 --game ID_OR_SLUG
+         --hunter | --village-roles seer,doctor,hunter (custom village roles; hunter adds the snipe game)
          --audience mystery|omniscient --transcript
 Defaults: six House characters, one wolf, ten-day safety cap, ${DEFAULT_MODEL_CATALOG_ID}, low reasoning, Mystery.
 Original speech, passes, ballots and results print as accepted. --transcript adds production notes and turn positions. Openers select up to three recipients and may answer each spoken reply. Waiting updates print every 30 seconds.

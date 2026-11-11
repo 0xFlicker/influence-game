@@ -733,3 +733,55 @@ Empower runoff now has a separate direct House summary boundary (`empower_runoff
 
 
 Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.
+
+For Hunter evaluations, use `bun run simulate:werewolf:api --help` and the `--village-roles hunter,doctor` setup through the localhost API. Inspect both the private item decision and public dawn outcome; a held shot is still an Omniscient night beat. Verify old v7–v11 durable plans without adding v12 item fields to their observations. Preserve all sanitized requests/responses and native reasoning; do not use file-only simulations for paid evaluation.
+
+To evaluate generated Werewolf House narration publicly with a Hunter:
+
+```sh
+bun run simulate:werewolf:api --preset one_wolf --hunter --max-days 2 --visibility public --audience omniscient --transcript
+```
+
+Use the durable API game ID to inspect both Mystery and Omniscient watch windows
+and the `werewolf.house-summary.*` provider journal entries. Confirm the Hunter's
+shot/hold, dawn casualties and vote result agree with canonical events. Retain
+requests/responses, native reasoning, retries, usage and failures. Historical
+replays without narration references must keep their factual fallback copy.
+
+For Werewolf announcement evaluation, inspect `requestedParts` and canonical
+facts in the saved request. No fallback announcement or prior House prose should
+be present. The style prompt requests a concise game-show announcer delivery;
+phase prompts contain no dialogue recap, and Mystery calls exclude pack talk.
+Historical accepted messages are not regenerated when this prompt changes.
+
+
+Werewolf strategy coaching now includes a small private glossary (reads, clears,
+tunneling, bussing, distancing, pocketing, counterclaims, process of elimination
+and parity). Every village role receives shared evidence evaluation and majority
+coordination guidance; wolves compare rescue, redirection, no elimination and
+sacrifice without mandatory partner defense or bussing. Role-specific guidance
+covers investigation value, protection alternatives and the risk of dying with
+an unused snipe. Character personality, owner notes and frozen archetype strategies
+remain intact; characters retain their voice while updating beliefs. No new
+provider calls, decision fields or contestant knowledge are introduced. Historical
+accepted decisions remain unchanged. Evaluate future two-wolf games over multiple
+days for faction outcomes and decision quality; glossary usage alone is not a
+success metric. No paid simulation was run for this prompt update.
+
+### Werewolf v13 nighttime coordination
+
+New games use v13: three turns per wolf, a permanent first target agreement, and
+optional strategy speech until the limit or two consecutive post-agreement passes.
+Pre-agreement silence cannot end negotiation early. The prompt asks for both the
+attack and tomorrow's voting strategy; check that the wolves actually share their
+plan in speech and receive it in the following day's observation. Private thinking
+alone cannot coordinate partners. No extra planning/summary call is introduced.
+
+Run an authorized evaluation through `bun run simulate:werewolf:api -- --help`
+and the existing localhost API workflow, using two wolves and at most eight players.
+Retain the actual game ID/watch URL and sanitized provider evidence, accepted
+thinking, native reasoning, retries, failures, usage and local report. Review the
+next day's speeches and irreversible public ballots for reasonable use or revision
+of the plan; verbosity or wolf wins alone are not quality proof. Keep direct House
+calls and no `as any` in simulation work. These implementation tests use mocked
+providers; they do not establish measured strategy improvements.

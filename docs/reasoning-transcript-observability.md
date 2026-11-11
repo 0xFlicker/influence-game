@@ -960,3 +960,51 @@ Empower runoff now has a separate direct House summary boundary (`empower_runoff
 
 
 Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.
+
+Hunter v12 item observations (`itemCatalog`, `items`) are version-scoped; they must not change v7–v11 planned-observation hashes. Hunter explanations remain private asides, independently selectable from the held/fired result in Studio. Retrospective facts retain item IDs, targets and canonical snipe deaths; already-frozen definitions remain immutable. No `as any` or direct-House-call bypass.
+
+Werewolf House summaries use `werewolf.house-summary.mystery` and
+`werewolf.house-summary.omniscient` journal actions at the canonical event boundary.
+Inspect accepted structured copy alongside sanitized attempts, available native
+reasoning, retries and usage. Mystery authoring receives only its public projection.
+Narration is spectator presentation, not contestant thinking or accepted game
+facts; never parse its prose back into authority. No `as any` or direct Influence
+House calls are used for Werewolf execution.
+
+Werewolf House authoring inputs use `requestedParts` plus canonical facts, never fallback
+announcement prose or previously saved House text. Phase announcements receive no
+dialogue recap. Mystery and Omniscient remain separately scoped journal calls.
+
+
+Werewolf strategy coaching now includes a small private glossary (reads, clears,
+tunneling, bussing, distancing, pocketing, counterclaims, process of elimination
+and parity). Every village role receives shared evidence evaluation and majority
+coordination guidance; wolves compare rescue, redirection, no elimination and
+sacrifice without mandatory partner defense or bussing. Role-specific guidance
+covers investigation value, protection alternatives and the risk of dying with
+an unused snipe. Character personality, owner notes and frozen archetype strategies
+remain intact; characters retain their voice while updating beliefs. No new
+provider calls, decision fields or contestant knowledge are introduced. Historical
+accepted decisions remain unchanged. Evaluate future two-wolf games over multiple
+days for faction outcomes and decision quality; glossary usage alone is not a
+success metric. No paid simulation was run for this prompt update.
+
+### Werewolf v13 pack strategy
+
+Each multi-wolf night slot keeps exact `{targetId, text, cue, thinking}` output.
+V13 frozen requests add wolf-only `packTurn` (current actor's turn, three-turn
+maximum and locked target). Agreement locks the target immediately but only the
+later `werewolf.pack_vote_resolved` closes talk. Its `discussion` records total
+beats, agreement beat and closure reason. Each wolf has at most three turns;
+successful passes count toward early closure only after the locking decision.
+Provider failures never impersonate voluntary silence or erase the lock.
+
+Pack planning must be in accepted speech for the partner to hear it. Individual
+thinking and native reasoning remain private evidence. Verify the next day's wolf
+priority, discussion and ballot prompts contain accepted pack speech; non-wolves
+and Mystery must not. Playback and Studio omit passes even with Show thinking;
+debug APIs retain their canonical records and private evidence. Keep one durable
+provider slot per decision, complete sanitized attempts and immutable accepted
+values; recovery reuses the same slot without redispatch. Use direct House calls
+and exact types without `as any` when extending orchestration. Paid evaluations
+require their own authorization and durable localhost API game IDs.

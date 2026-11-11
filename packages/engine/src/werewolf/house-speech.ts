@@ -6,13 +6,16 @@ export function werewolfHouseDuration(text: string) { return Math.max(4200, scen
 type Player = {id: string; name: string};
 /** Omniscient action scenes are projected before calling this presentation helper. */
 export function werewolfNightHouseSpeech(action: WerewolfNightAction, players: readonly Player[]): string {
+  if (action.houseSpeech !== undefined) return action.houseSpeech;
   const name = (id: string) => players.find(player => player.id === id)?.name ?? "A player";
   if (action.kind === "hunt") return `The pack hunts ${name(action.targetId)}. The village holds its breath.`;
   if (action.kind === "protect") return `${name(action.actorId)}, the Doctor, protects ${action.actorId === action.targetId ? "themself" : name(action.targetId)} tonight. One life under guard.`;
+  if (action.kind === "snipe") return action.held || !action.targetId ? `${name(action.actorId)}, the Hunter, holds their snipe tonight. The shot remains unfired.` : `${name(action.actorId)}, the Hunter, fires a snipe at ${name(action.targetId)}. A single shot in the dark.`;
   return `${name(action.actorId)}, the Seer, investigates ${name(action.targetId)}. The result: ${action.isWolf ? "a werewolf" : "not a werewolf"}. Knowledge is powerful—if you live to use it.`;
 }
 /** Factual House copy from audience-permitted canonical fields only. */
 export function werewolfHouseSpeech(entry: WerewolfPublicEntry, players: readonly Player[], rulesVersion:number): string | null {
+  if (entry.houseSpeech !== undefined) return entry.houseSpeech;
   const name = (id:string) => players.find(player => player.id === id)?.name ?? "A player";
   switch (entry.kind) {
     case "phase": return entry.phase === "introduction" ? "Welcome to the village. Introduce yourselves."
@@ -21,7 +24,10 @@ export function werewolfHouseSpeech(entry: WerewolfPublicEntry, players: readonl
       : rulesVersion >= 9 ? "Voting begins. A majority of the living village is required to eliminate a player." : "Voting begins. Cast your ballots.";
     case "pack_vote": return entry.result.targetId ? `The pack agrees: ${name(entry.result.targetId)} is tonight’s target. The hunt is on.`
       : entry.result.endReason === "attempt_limit" ? "The pack fails to agree. No attack tonight. Even wolves can waste a night arguing." : "The pack has not agreed. Another chance to choose their prey.";
-    case "night": return entry.killedId ? `${name(entry.killedId)} did not survive the pack’s hunt. Dawn comes with one fewer voice.`
+    case "night": return entry.snipe?.killedId && entry.killedId && entry.snipe.killedId !== entry.killedId ? `${name(entry.killedId)} did not survive the pack’s hunt, and ${name(entry.snipe.killedId)} was felled by a snipe. Dawn comes with two fewer voices.`
+      : entry.snipeKilledId && entry.killedId && entry.snipeKilledId !== entry.killedId ? `${name(entry.killedId)} did not survive the night, and ${name(entry.snipeKilledId)} also died before dawn.`
+      : entry.killedId ? `${name(entry.killedId)} did not survive the pack’s hunt. Dawn comes with one fewer voice.`
+      : entry.snipeKilledId ? `${name(entry.snipeKilledId)} did not survive the night. Dawn comes with one fewer voice.`
       : entry.attackTargetId && entry.protectedId === entry.attackTargetId ? `The pack hunted ${name(entry.attackTargetId)}, but the Doctor’s protection saved them. Everyone survives the night.`
       : entry.attackTargetId === null ? "The pack made no attack. Everyone survives the night. A quiet dawn, for once."
       : "Everyone survived the night. The village gets another day—and another chance.";

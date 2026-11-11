@@ -1,3 +1,4 @@
+import {generateWerewolfHouseNarration} from "@influence/engine/werewolf/house-narration";
 import { sanitizeOwnerLearningFailureExceptionForLog } from "./owner-learning-failure-evidence.js";
 import { notifyChampionshipGameCompletion } from "./championship-runtime.js";
 import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
@@ -9,13 +10,13 @@ import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, Retrospecti
 import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
 import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createLlmProviderRuntimesFromEnv, resolveProviderManifestFromGameConfig } from "@influence/engine";
 import { runWerewolf, replayWerewolf, WerewolfModelAgent, withEvaluationBudget, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
 import { renewGameRunOwner } from "./game-ownership.js";
-import { createWerewolfStore, completeWerewolfAudioGame, releaseWerewolfOwner } from "./werewolf-games.js";
+import { lockWerewolfOwner, createWerewolfStore, completeWerewolfAudioGame, releaseWerewolfOwner } from "./werewolf-games.js";
 
 const active = new Map<string, { controller: AbortController; promise: Promise<void> }>();
 export const isWerewolfRunning = (gameId: string) => active.has(gameId);
@@ -38,6 +39,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const controller = new AbortController();
   const config = JSON.parse(game.config) as Record<string, unknown>;
   const mockAgent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
+    if (request.action === "snipe") return {kind: "item_use", itemId: null, targetId: null, text: "I am holding my shot tonight for better information.", cue: null};
     if ("solo" in request && request.solo) return {kind: "solo_target", targetId: request.legalTargetIds[0]!, text: "I choose this player for tonight.", cue: null};
     if (request.action === "speaking_priority") return { kind: "speaking_priority", priority: 50 };
     if (request.action === "conversation") return { kind: "conversation", text: null, cue: null, recipientId: null, replyToContributionId: null };
@@ -66,6 +68,36 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   }, 30_000);
   heartbeat.unref();
   const store = createWerewolfStore(db, gameId, ownerEpoch, config.audioMode === true);
+  let prepareIntroduction = async () => {};
+  if (!agentOverride && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true") {
+    const append = store.append;
+    const houseRuntimes = createLlmProviderRuntimesFromEnv(actorProviderManifest(config, {role: "house"}), process.env, runtimeOptions) ?? [];
+    const hooks = withEvaluationBudget(createApiProviderExecutionHooks(db, {gameId, ownerEpoch}), process.env);
+    prepareIntroduction = async () => {
+      const events = await store.read();
+      const event = events[0];
+      // Only newly created games author an opening; never backfill accepted replay history.
+      if (config.houseNarrationVersion !== 1 || events.length !== 1 || !event || event.houseNarrationCallIds) return;
+      const ids: import("@influence/engine/werewolf/house-narration").WerewolfHouseCallIds = {};
+      for (const audience of ["mystery", "omniscient"] as const) {
+        const generated = await generateWerewolfHouseNarration({events, audience, runtimes: houseRuntimes, hooks, ownerEpoch, signal: controller.signal});
+        if (generated) ids[audience] = generated.callIds;
+      }
+      await db.transaction(async tx => {
+        await lockWerewolfOwner(tx, gameId, ownerEpoch);
+        await tx.update(schema.werewolfEvents).set({event: {...event, houseNarrationCallIds: ids}})
+          .where(and(eq(schema.werewolfEvents.gameId, gameId), eq(schema.werewolfEvents.sequence, 1)));
+      });
+    };
+    store.append = async (event, retrospectiveInput) => {
+      const events = [...await store.read(), event];
+      for (const audience of ["mystery", "omniscient"] as const) {
+        const generated = await generateWerewolfHouseNarration({events, audience, runtimes: houseRuntimes, hooks, ownerEpoch, signal: controller.signal});
+        if (generated) event.houseNarrationCallIds = {...event.houseNarrationCallIds, [audience]: generated.callIds};
+      }
+      await append(event, retrospectiveInput);
+    };
+  }
   let recoverVisuals = async () => {};
   if (config.visualMode === true) {
     const prepareTurn = store.prepare!;
@@ -96,7 +128,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
       await ensureLiveAudio(db, gameId, ownerEpoch, controller.signal);
     };
   }
-  const promise = recoverVisuals().then(async () => {
+  const promise = prepareIntroduction().then(recoverVisuals).then(async () => {
     if (config.audioMode === true && (await store.read()).length) await ensureLiveAudio(db, gameId, ownerEpoch, controller.signal);
     return runWerewolf(store, agent, controller.signal);
   })

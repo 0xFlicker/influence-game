@@ -21,7 +21,7 @@ Choose **6–8 players**, **one or two werewolves**, and whether to include a **
 
 Everyone introduces themselves before the first night. Each night, living wolves settle on an attack, the Seer investigates if present, and the Doctor protects if present. Night actions resolve together. Protection stops an attack even when the Doctor is targeted. A Seer who dies still receives that night's result but cannot tell the village.
 
-Two living wolves make combined speech-and-target proposals in seeded order, for up to three back-and-forth exchanges. Matching current targets settles the attack immediately, including after the first exchange. Three exchanges without agreement mean no attack. A lone wolf chooses one target directly. The Seer and Doctor still act if there is no pack attack.
+In v13, two living wolves alternate up to three turns each to agree on an attack and plan tomorrow's discussion and voting. Matching targets permanently locks the attack while remaining turns stay available for strategy. Two consecutive silent passes after agreement end talk early; the pass streak starts after the locking decision. Before agreement, passes use turns but cannot end negotiation early. Six turns without agreement mean no attack. A lone wolf chooses one target directly. Other night roles still act if there is no pack attack. Historical v9–v12 games end pack talk immediately on agreement; v7/v8 keep their sealed ballots.
 
 ## Daytime Conversation
 

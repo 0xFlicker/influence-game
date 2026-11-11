@@ -376,3 +376,33 @@ test("Influence Studio returns to the canonical winner only after retrospective 
     if(completed) expect(cut.cues.at(-1)?.picture).toMatchObject({kind:"influence",cue:{source:"endgame",playerId:"b",canonicalSequence:3}});
   }
 });
+
+for (const mode of ["held","snipe-only","double"] as const) test(`Hunter ${mode} binds every source and isolated selected moment with the night backdrop`, async () => {
+  const {completedHunterFixture} = await import("@influence/engine/fixtures/werewolf-hunter");
+  const {replayMoment} = await import("../../components/games/werewolf/replay-moment");
+  const events = await completedHunterFixture(mode);
+  for (const audience of ["omniscient","mystery"] as const) {
+    const window = {...projectWerewolfWatch(events,audience,1,64),audience,slug:"hunter-proof",status:"completed",publicationCutoff:"fixture",media:{}};
+    const source = {kind:"werewolf" as const,windows:[{...window,moments:window.moments.map(({staging, ...moment}) => { void staging; return moment; })}],thoughts:[]};
+    const provenance = projectWerewolfProductionProvenance(events,audience);
+    const catalog = assembleProductionCatalog({gameId:window.gameId,gameKind:"werewolf",audience,sources:buildWerewolfProductionSources({gameId:window.gameId,audience,moments:window.moments,provenance,thoughts:[],opening:true})});
+    const bound = await bindWerewolfProductionPresentation({source,provenance,catalog,thoughts:[]});
+    const hunter = catalog.moments.filter(m=>m.part.kind === "snipe" || m.part.kind === "night-speech" && m.part.action === "snipe");
+    expect(hunter).toHaveLength(audience === "omniscient" ? 2 : 0);
+    for (const moment of hunter) {
+      const cut = compilePresentation({...settings,source:bound,selectedIds:[moment.id]});
+      expect(cut.cues).toHaveLength(1);
+      const cue = cut.cues[0]!;
+      expect(cue.picture.kind).toBe("werewolf");
+      if(cue.picture.kind !== "werewolf") throw new Error("Missing Hunter picture");
+      expect(werewolfBackdrop(cue.picture.cue)).toBe(WEREWOLF_ROOMS.hunter);
+      expect(cue.picture.cue.nightAction?.kind).toBe("snipe");
+      expect(Boolean(cue.picture.cue.nightDecision)).toBe(moment.part.kind === "night-speech");
+    }
+    const dawn = window.moments.find(m=>m.entry.kind === "night")!;
+    if (dawn.entry.kind !== "night") throw new Error("Missing dawn");
+    const text = replayMoment({...dawn.snapshot,entries:[dawn.entry]},false).text;
+    for (const id of [dawn.entry.killedId,dawn.entry.snipeKilledId].filter(Boolean)) expect(text).toContain(dawn.snapshot.players.find(p=>p.id === id)!.name);
+    expect(text).not.toContain("Everyone survived");
+  }
+});

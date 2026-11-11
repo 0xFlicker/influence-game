@@ -1,10 +1,12 @@
 /** Werewolf owns its rules and event vocabulary; Influence phases do not apply. */
 import type { RetrospectiveDefinitionV1, RetrospectiveStatementV1, RetrospectiveCompletionV1, RetrospectiveOutcomeSource, RetrospectiveStateV1 } from "../retrospective";
-export type WerewolfRole = "werewolf" | "villager" | "seer" | "doctor";
+export type WerewolfRole = "werewolf" | "villager" | "seer" | "doctor" | "hunter";
 export type WerewolfFaction = "village" | "wolves";
 export type WerewolfPreset = "one_wolf" | "two_wolves";
 export type WerewolfPhase = "introduction" | "pack" | "night" | "day" | "vote" | "retrospective" | "complete";
-export type WerewolfAction = "speaking_priority" | "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote" | "conversation" | "public_vote" | "pack_propose";
+export type WerewolfAction = "speaking_priority" | "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "snipe" | "open_thread" | "discuss" | "vote" | "conversation" | "public_vote" | "pack_propose";
+/** Short item ids. Ownership is a set of these ids; the first supported item is the Hunter's single-use snipe. */
+export type WerewolfItemId = "snipe";
 export type WerewolfVoteMode = "majority" | "plurality";
 
 export interface WerewolfPlayer {
@@ -23,10 +25,10 @@ export interface WerewolfPlayer {
   personaKey?: string | null;
 }
 
-export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean }
+export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean; hunter?: boolean }
 
 export interface WerewolfConfig {
-  rulesVersion: 7 | 8 | 9 | 10 | 11;
+  rulesVersion: 7 | 8 | 9 | 10 | 11 | 12 | 13;
   preset: WerewolfPreset;
   setup?: WerewolfSetup;
   maxDays: number;
@@ -41,7 +43,15 @@ export type WerewolfDecision =
   | { kind: "conversation"; text: string | null; cue: string | null; recipientId: string | null; replyToContributionId: number | null }
   | { kind: "spoken_target"; targetId: string | null; text: string | null; cue: string | null; thinking: string }
   | { kind: "solo_target"; targetId: string | null; text: string | null; cue: string | null }
+  | { kind: "item_use"; itemId: WerewolfItemId | null; targetId: string | null; text: string | null; cue: string | null }
   | { kind: "target"; targetId: string | null; thinking: string };
+
+/** Frozen v13 multi-wolf slot; turn is this actor's 1-based opportunity. */
+export interface WerewolfPackTurn {
+  lockedTargetId: string | null;
+  turn: number;
+  maxTurns: 3;
+}
 
 export type WerewolfRequest = {
   actorId: string;
@@ -51,9 +61,10 @@ export type WerewolfRequest = {
   | { action: "vote"; voteMode: WerewolfVoteMode }
   | { action: "conversation"; legalRecipientIds: string[]; legalReplyIds: number[]; messageBytes: number }
   | { action: "public_vote"; messageBytes: number }
-  | { action: "pack_propose"; messageBytes: number; targetRequired: boolean; solo?: true }
+  | { action: "pack_propose"; messageBytes: number; targetRequired: boolean; solo?: true; packTurn?: WerewolfPackTurn }
   | { action: "protect" | "investigate"; solo: true; messageBytes: number }
-  | { action: Exclude<WerewolfAction, "open_thread" | "vote" | "conversation" | "public_vote" | "pack_propose"> }
+  | { action: "snipe"; solo: true; messageBytes: number; usableItemIds: WerewolfItemId[] }
+  | { action: Exclude<WerewolfAction, "open_thread" | "vote" | "conversation" | "public_vote" | "pack_propose" | "snipe"> }
 );
 
 export type WerewolfAcceptedAction = WerewolfRequest & {
@@ -61,11 +72,28 @@ export type WerewolfAcceptedAction = WerewolfRequest & {
   fallback: "provider_unavailable" | null;
 }
 
+export interface WerewolfSnipeResult {
+  actorId: string;
+  itemId: WerewolfItemId;
+  targetId: string;
+  killedId: string | null;
+}
+
 export interface WerewolfNightResult {
   attackTargetId: string | null;
   protectedId: string | null;
   killedId: string | null;
   investigation: { seerId: string; targetId: string; isWolf: boolean } | null;
+  /** Present in v12+ night results. Null when no holder fired an item. */
+  snipe?: WerewolfSnipeResult | null;
+}
+
+export interface WerewolfItemUse {
+  day: number;
+  actorId: string;
+  itemId: WerewolfItemId;
+  targetId: string;
+  killedId: string | null;
 }
 
 export interface WerewolfDayResult {
@@ -83,12 +111,16 @@ export interface WerewolfPackVote {
   ballots: Array<{ voterId: string; targetId: string }>;
   targetId: string | null;
   endReason: "agreed" | "attempt_limit" | null;
+  /** Required by the v13 reducer; historical resolutions retain their exact shape. */
+  discussion?: { beats: number; agreementBeat: number | null; endedBy: "both_pass" | "turn_limit" | "solo" };
 }
 
 export interface WerewolfPackNegotiation {
   attemptsCompleted: number;
   targetId: string | null;
   ended: boolean;
+  /** V13 only. Agreement evidence is frozen before strategy acknowledgments. */
+  discussion?: { agreementBeat: number | null; agreementBallots: Array<{ voterId: string; targetId: string }>; consecutivePasses: number };
 }
 
 /** Engine-owned sequence; production cues never control the schedule. */
@@ -154,7 +186,7 @@ export type WerewolfEventData =
   | { type: "werewolf.completed"; payload: WerewolfOutcome };
 
 /** Raw events are private authority. Serve only audience projections. */
-export type WerewolfEvent = WerewolfEventData & { gameId: string; sequence: number };
+export type WerewolfEvent = WerewolfEventData & { gameId: string; sequence: number; houseNarrationCallIds?: import("./house-narration").WerewolfHouseCallIds; /** Hydrated presentation only; never stored in the event or reduced into game state. */ houseNarration?: import("./house-narration").WerewolfHouseNarration };
 
 export interface WerewolfState {
   retrospectiveOutcomeSource: RetrospectiveOutcomeSource | null;
@@ -176,6 +208,9 @@ export interface WerewolfState {
   pack: WerewolfPackNegotiation | null;
   resolved: boolean;
   previousProtection: string | null;
+  /** Remaining (unspent) items per player. Ownership is a set of short item ids. */
+  items: Record<string, WerewolfItemId[]>;
+  itemUses: WerewolfItemUse[];
   investigations: Array<{ day: number; seerId: string; targetId: string; isWolf: boolean }>;
   history: WerewolfHistoryEntry[];
   outcome: WerewolfOutcome | null;

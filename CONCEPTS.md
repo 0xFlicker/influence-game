@@ -375,7 +375,11 @@ A durable pre-game cast member: either an owned Agent Profile or a House charact
 
 ## Werewolf role and faction
 
-A match-assigned role: Werewolf, Villager, Seer, or Doctor. Wolves belong to the wolf faction; the other roles belong to the village. Victory belongs to the whole original faction, including dead teammates. Death removes all actions and never creates a juror. See the [versioned rules](docs/werewolf.md).
+A match-assigned role: Werewolf, Villager, Seer, Doctor, or Hunter. Wolves belong to the wolf faction; the other roles belong to the village. Victory belongs to the whole original faction, including dead teammates. Death removes all actions and never creates a juror. See the [versioned rules](docs/werewolf.md).
+
+## Werewolf item and Hunter snipe
+
+Starting in v12, a game may grant private items. Ownership is a set of short item ids held by one player; contestants are told which items exist, which they hold, and which uses they have publicly seen, never another player's holdings. The Hunter is a village role holding one single-use **Snipe**: each night, while alive and holding it, the Hunter privately returns `{itemId, targetId, text, cue}` — holding (`itemId: null`) or firing at one other living player. Like the other solo night turns there is no separate thinking field; the required spoken explanation is the item reflection, an Omniscient-only aside. A fired snipe removes its target at night resolution alongside the pack attack and is consumed; Doctor protection blocks only the pack attack. With no item left, the Hunter gets no snipe decision. Mystery replay hides holdings and the sniper; Omniscient replay shows remaining items as badges and the snipe beat.
 
 ## Werewolf public conversation
 
@@ -397,7 +401,7 @@ An optional opaque acting/feeling note attached to an original speech or pass, f
 
 ## Werewolf pack proposal
 
-Current v9 combines each living wolf's short speech and explicit target into a structured proposal. Wolves alternate in seeded order for up to three back-and-forth exchanges, stopping when current targets agree; this permits up to six decisions for two wolves, not a forced six. A lone wolf selects a target directly. Proposals are private to wolf observations and Omniscient replay. Historical v7/v8 retain sequential proposal plus sealed-batch unanimity.
+V13 combines each living wolf's short speech, explicit target and individual private thinking into one decision. Wolves alternate for at most three turns each to agree on an attack and plan the next day's discussion and vote. The first matching standing targets permanently lock the attack; strategy talk continues until the limit or two consecutive successful passes after the locking decision. Pre-agreement silence consumes turns without early closure. No agreement by six decisions means no attack. A lone wolf keeps one target and one private spoken explanation. Pack speech is shared with partners; thinking is not. Proposals and plans remain private to wolves and Omniscient replay. Historical v9–v12 end immediately on agreement; v7/v8 retain separate proposals and sealed-batch unanimity.
 
 ## Werewolf private observation
 

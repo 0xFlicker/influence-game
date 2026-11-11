@@ -1,5 +1,6 @@
 import { werewolfTurnReminder, WEREWOLF_PACK_ATTEMPTS, werewolfPackOrder } from "./rules";
-import type { WerewolfDayResult, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfFaction, WerewolfOutcome, WerewolfPackVote, WerewolfRole, WerewolfState, WerewolfHistoryEntry } from "./types";
+import { werewolfItemCatalog, type WerewolfItemDefinition } from "./items";
+import type { WerewolfDayResult, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfFaction, WerewolfItemId, WerewolfItemUse, WerewolfOutcome, WerewolfPackVote, WerewolfRole, WerewolfSnipeResult, WerewolfState, WerewolfHistoryEntry } from "./types";
 
 export type WerewolfAudience = "mystery" | "omniscient";
 
@@ -13,7 +14,7 @@ export interface WerewolfVoteProgress {
   voteMode: "majority" | "plurality";
   requiredVotes: number | null;
 }
-export type WerewolfPublicEntry =
+export type WerewolfPublicEntry = { houseSpeech?: string } & (
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
   | ({ kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
     & ({ purpose: "retrospective"; ordinal: number } | { purpose?: never; ordinal?: never }))
@@ -22,9 +23,9 @@ export type WerewolfPublicEntry =
   | { kind: "ballot"; day: number; actorId: string; targetId: string | null; text: string | null; cue: string | null; unavailable: boolean; totals: Record<string, number>; requiredVotes: number; remainingVoterIds: string[] }
   | { kind: "proposal"; day: number; actorId: string; targetId: string | null; text: string | null; cue: string | null; unavailable: boolean; beat: number }
   | { kind: "pack_vote"; day: number; result: WerewolfPackVote }
-  | { kind: "night"; day: number; killedId: string | null; attackTargetId?: string | null; protectedId?: string | null; investigation?: { seerId: string; targetId: string; isWolf: boolean } | null }
+  | { kind: "night"; day: number; killedId: string | null; snipeKilledId?: string | null; attackTargetId?: string | null; protectedId?: string | null; investigation?: { seerId: string; targetId: string; isWolf: boolean } | null; snipe?: WerewolfSnipeResult | null }
   | { kind: "vote"; day: number; result: WerewolfDayResult }
-  | { kind: "result"; day: number; outcome: WerewolfOutcome };
+  | { kind: "result"; day: number; outcome: WerewolfOutcome });
 
 export interface WerewolfView {
   gameId: string;
@@ -39,7 +40,7 @@ export interface WerewolfView {
   conversation?: WerewolfState["conversation"];
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;
-  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; headRectangle?: import("../character-portrait").HeadRectangle; personaKey: string | null; alive: boolean; role?: WerewolfRole; elimination?: { day: number; kind: "night" | "vote" } | null }>;
+  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; headRectangle?: import("../character-portrait").HeadRectangle; personaKey: string | null; alive: boolean; role?: WerewolfRole; items?: WerewolfItemId[]; elimination?: { day: number; kind: "night" | "vote" } | null }>;
   entries: WerewolfPublicEntry[];
   outcome: WerewolfOutcome | null;
 }
@@ -67,9 +68,11 @@ export function projectWerewolfEntry(entry: WerewolfHistoryEntry, audience: Were
       case "proposal": return omniscient ? [{ ...entry }] : [];
       case "pack_vote": return omniscient ? [{ kind: "pack_vote", day: entry.day, result: structuredClone(entry.result) }] : [];
       case "night": return [{ kind: "night", day: entry.day, killedId: entry.result.killedId,
+        ...(entry.result.snipe !== undefined ? { snipeKilledId: entry.result.snipe?.killedId ?? null } : {}),
         ...(omniscient ? {
           attackTargetId: entry.result.attackTargetId, protectedId: entry.result.protectedId,
           investigation: entry.result.investigation ? { ...entry.result.investigation } : null,
+          ...(entry.result.snipe !== undefined ? { snipe: entry.result.snipe ? { ...entry.result.snipe } : null } : {}),
         } : {}),
       }];
       case "vote": return [{ kind: "vote", day: entry.day, result: structuredClone(entry.result) }];
@@ -92,8 +95,9 @@ export function projectWerewolfSnapshot(state: WerewolfState, audience: Werewolf
     cursor,
     players: state.players.map((p) => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, alive: state.aliveIds.includes(p.id),
       ...(omniscient || state.outcome ? { role: state.roles[p.id]! } : {}),
+      ...(omniscient && state.config.rulesVersion >= 12 ? { items: [...(state.items[p.id] ?? [])] } : {}),
       ...(state.outcome ? { elimination: (() => {
-        const exit = state.history.find(entry => entry.kind === "night" && entry.result.killedId === p.id || entry.kind === "vote" && entry.result.eliminatedId === p.id);
+        const exit = state.history.find(entry => (entry.kind === "night" && (entry.result.killedId === p.id || entry.result.snipe?.killedId === p.id)) || (entry.kind === "vote" && entry.result.eliminatedId === p.id));
         return exit?.kind === "night" || exit?.kind === "vote" ? { day: exit.day, kind: exit.kind } : null;
       })() } : {}),
     })), outcome: state.outcome ? structuredClone(state.outcome) : null,
@@ -111,11 +115,19 @@ export interface WerewolfObservation {
   packIds: string[];
   packDiscussion: Array<{ day: number; actorId: string; text: string | null; cue: string | null }>;
   packAttacks: Array<{ day: number; targetId: string | null }>;
-  packNegotiation: { attempt: number; maxAttempts: number; speakerIds: string[]; stage: "propose" | "vote" } | null;
+  packNegotiation: { attempt: number; maxAttempts: number; speakerIds: string[]; stage: "propose" | "vote" | "strategy"; packTurn?: import("./types").WerewolfPackTurn } | null;
   packVotes: Array<{ day: number; result: WerewolfPackVote }>;
   packProposals?: Array<Extract<WerewolfHistoryEntry, { kind: "proposal" }>>;
   investigations: Array<{ day: number; targetId: string; isWolf: boolean }>;
   previousProtection: string | null;
+  /** v12 item catalog. Absent in earlier frozen observation contracts. */
+  itemCatalog?: WerewolfItemDefinition[];
+  /** Private to this actor: current holdings, publicly seen uses, and their own uses. */
+  items?: {
+    owned: WerewolfItemId[];
+    seen: Array<{ day: number; itemId: WerewolfItemId; targetId: string; killedId: string | null }>;
+    ownUses: WerewolfItemUse[];
+  };
 }
 
 /** Contestants never receive spectator mode selection or the raw event ledger. */
@@ -154,6 +166,10 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
     packNegotiation: role === "werewolf" && state.phase === "pack" && state.pack && !state.pack.ended ? {
       attempt: state.config.rulesVersion >= 9 ? Math.floor(state.actions.length / order.length) + 1 : state.pack.attemptsCompleted + 1, maxAttempts: WEREWOLF_PACK_ATTEMPTS, speakerIds: order,
       stage: state.config.rulesVersion >= 9 || order.length > 1 && state.actions.length < order.length ? "propose" : "vote",
+      ...(state.config.rulesVersion >= 13 && order.length > 1 ? {
+        stage: state.pack.targetId !== null ? "strategy" as const : "propose" as const,
+        packTurn: { lockedTargetId: state.pack.targetId, turn: Math.floor(state.actions.length / order.length) + 1, maxTurns: 3 as const },
+      } : {}),
     } : null,
     ...(state.config.rulesVersion >= 9 ? { packProposals: role === "werewolf" ? state.history.flatMap(e => e.kind === "proposal" && e.day === state.day ? [structuredClone(e)] : []) : [] } : {}),
     packVotes: role === "werewolf" ? state.history.flatMap((entry) => entry.kind === "pack_vote"
@@ -162,5 +178,12 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
       ? [{ day: entry.day, targetId: entry.result.attackTargetId }] : []) : [],
     investigations: role === "seer" ? state.investigations.filter((i) => i.seerId === actorId).map(({ day, targetId, isWolf }) => ({ day, targetId, isWolf })) : [],
     previousProtection: role === "doctor" ? state.previousProtection : null,
+    ...(state.config.rulesVersion >= 12 ? { itemCatalog: werewolfItemCatalog(state.config.setup?.hunter === true),
+    items: {
+      owned: [...(state.items[actorId] ?? [])],
+      seen: state.history.flatMap((entry) => entry.kind === "night" && entry.result.snipe && entry.result.snipe.killedId !== entry.result.killedId
+        ? [{ day: entry.day, itemId: entry.result.snipe.itemId, targetId: entry.result.snipe.targetId, killedId: entry.result.snipe.killedId }] : []),
+      ownUses: state.itemUses.filter((use) => use.actorId === actorId).map((use) => ({ ...use })),
+    } } : {}),
   };
 }

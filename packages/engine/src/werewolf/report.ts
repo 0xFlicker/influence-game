@@ -19,12 +19,14 @@ export function werewolfReportEntry(entry: WerewolfPublicEntry, { players, audie
     }
     case "conversation": return `${speaker(entry.actorId)}: ${entry.unavailable ? "[unavailable]" : entry.text ?? "[pass]"}${entry.recipientId ? ` → ${name(entry.recipientId)}` : ""}${entry.replyToContributionId !== null ? ` [reply to contribution ${entry.replyToContributionId}]` : ""}${transcript && entry.cue ? ` [production note: ${entry.cue}]` : ""}`;
     case "ballot": return `${speaker(entry.actorId)} votes ${entry.targetId ? name(entry.targetId) : "to abstain"}${entry.unavailable ? " [unavailable]" : ""}${entry.text ? `: ${entry.text}` : ""}${transcript && entry.cue ? ` [production note: ${entry.cue}]` : ""}\n  Totals: ${Object.entries(entry.totals).filter(([, count]) => count > 0).map(([id, count]) => `${name(id)} ${count}`).join(", ") || "none"} · ${entry.requiredVotes} required${entry.remainingVoterIds.length ? ` · Remaining: ${entry.remainingVoterIds.map(name).join(", ")}` : ""}`;
-    case "proposal": return `[Pack proposal ${entry.beat}] ${speaker(entry.actorId)}: ${entry.targetId ? `attack ${name(entry.targetId)}` : "no target"}${entry.text ? ` · ${entry.text}` : ""}${transcript && entry.cue ? ` [production note: ${entry.cue}]` : ""}`;
+    case "proposal": return `[Pack ${rulesVersion >= 13 ? "turn" : "proposal"} ${entry.beat}] ${speaker(entry.actorId)}: ${entry.targetId ? `attack ${name(entry.targetId)}` : "no target"}${entry.text ? ` · ${entry.text}` : ""}${transcript && entry.cue ? ` [production note: ${entry.cue}]` : ""}`;
     case "pack_vote": return rulesVersion >= 9
       ? `\n[Pack] Proposal result\n  ${entry.result.targetId !== null ? `The wolves agree to attack ${name(entry.result.targetId)}.` : "The wolves do not agree; no attack tonight."}`
       : `\n[Pack] Night ${entry.day} · ballot ${entry.result.attempt}/3\n  ${entry.result.ballots.map(ballot => `${name(ballot.voterId)} → ${name(ballot.targetId)}`).join("; ")}\n  ${entry.result.targetId !== null ? `Agreed: attack ${name(entry.result.targetId)}.` : entry.result.endReason === "attempt_limit" ? "Three ballots without agreement. No pack attack tonight." : "Disagreement. Swap the opening speaker and propose again."}`;
     case "night": {
-      const lines = [`Night ${entry.day}: ${entry.killedId ? `${name(entry.killedId)} died.` : "Everyone survived."}`];
+      const lines = [`Night ${entry.day}: ${entry.killedId ? `${name(entry.killedId)} died.` : entry.snipeKilledId ? `${name(entry.snipeKilledId)} died.` : "Everyone survived."}`];
+      if (entry.snipeKilledId && entry.killedId && entry.snipeKilledId !== entry.killedId) lines.push(`  ${name(entry.snipeKilledId)} also died.`);
+      if (entry.snipe) lines.push(`  ${name(entry.snipe.actorId)} sniped ${name(entry.snipe.targetId)}.`);
       if (entry.attackTargetId) lines.push(`  Pack targeted ${name(entry.attackTargetId)}.`);
       if (entry.attackTargetId === null) lines.push("  The pack failed to agree; no attack tonight.");
       if (entry.protectedId) lines.push(`  Doctor protected ${name(entry.protectedId)}.`);

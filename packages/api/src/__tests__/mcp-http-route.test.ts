@@ -1,3 +1,4 @@
+import { completedPackStrategyFixture } from "@influence/engine/fixtures/werewolf-pack-strategy";
 import { loadPayloads } from "../services/payload-storage.js";
 import {completedWerewolfResultsFixture as werewolfResultsFixture, completedCurrentWerewolfFixture} from "@influence/engine/fixtures/werewolf-results";
 import { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
@@ -785,9 +786,9 @@ describe("/mcp Streamable HTTP route", () => {
       } finally { server.stop(true); }
     });
 
-    test.each([7, 8, 9, 10, 11] as const)("real House MCP route discovers both games and reads completed v%i history without ownership", async rulesVersion => {
+    test.each([7, 8, 9, 10, 11, 12, 13] as const)("real House MCP route discovers both games and reads completed v%i history without ownership", async rulesVersion => {
       const issued = await issueMcpAccessToken(db, {walletAddress:"0xmcphttp00000000000000000000000000000402"});
-      let events = (rulesVersion === 9 || rulesVersion === 10 || rulesVersion === 11) ? await completedCurrentWerewolfFixture("mcp-wolf", rulesVersion) : await werewolfResultsFixture("village","mcp-wolf");
+      let events = rulesVersion === 13 ? await completedPackStrategyFixture("mcp-wolf") : (rulesVersion === 9 || rulesVersion === 10 || rulesVersion === 11 || rulesVersion === 12) ? await completedCurrentWerewolfFixture("mcp-wolf", rulesVersion) : await werewolfResultsFixture("village","mcp-wolf");
       if (rulesVersion === 7) {
         events = events.slice(0, events.findIndex(event => event.type === "werewolf.completed") + 1);
         const initial = events[0]!;

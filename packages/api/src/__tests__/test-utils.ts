@@ -117,11 +117,11 @@ async function truncateAll(db: DrizzleDB): Promise<void> {
 }
 
 /** Pin a generated Werewolf fixture to its intended historical reducer. */
-export async function pinWerewolfRulesVersion(db: DrizzleDB, gameId: string, version: 7 | 8) {
+export async function pinWerewolfRulesVersion(db: DrizzleDB, gameId: string, version: import("@influence/engine/werewolf").WerewolfConfig["rulesVersion"]) {
   const [row] = await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, gameId));
   if (!row || row.event.type !== "werewolf.started") throw new Error("Cannot pin a Werewolf game without its start event");
   const { preset, maxDays, setup } = row.event.payload.config;
-  const config = { ...legacyWerewolfConfig(preset, maxDays, setup), rulesVersion: version };
+  const config = { ...(version < 9 ? legacyWerewolfConfig(preset, maxDays, setup) : row.event.payload.config), rulesVersion: version };
   await db.update(schema.werewolfEvents).set({ event: { ...row.event, payload: { ...row.event.payload, config } } }).where(eq(schema.werewolfEvents.gameId, gameId));
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
   if (game) await db.update(schema.games).set({ config: JSON.stringify({ ...(JSON.parse(game.config ?? "{}") as Record<string, unknown>), rulesVersion: version }) }).where(eq(schema.games.id, gameId));
