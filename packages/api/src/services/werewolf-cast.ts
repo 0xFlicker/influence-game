@@ -32,7 +32,7 @@ export interface WerewolfCastingPlayer {
 export async function readWerewolfCastingPlayers(db: Pick<DrizzleDB, "select">, gameIds: string[]) {
   const byGame = new Map<string, WerewolfCastingPlayer[]>();
   if (!gameIds.length) return byGame;
-  const rows = await db.select({ seat: schema.werewolfLobbySeats, profile: schema.agentProfiles, ownerPublicId: schema.users.publicId })
+  const rows = await db.select({ seat: schema.werewolfLobbySeats, profile: schema.agentProfiles, ownerPublicId: schema.users.publicId, ownerDeletedAt: schema.users.deletedAt })
     .from(schema.werewolfLobbySeats)
     .leftJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.werewolfLobbySeats.agentProfileId))
     .leftJoin(schema.users, eq(schema.users.id, schema.agentProfiles.userId))
@@ -42,7 +42,7 @@ export async function readWerewolfCastingPlayers(db: Pick<DrizzleDB, "select">, 
   const characters = await readPublishedWerewolfCharacters(db, profiles);
   const byId = new Map(characters.map((character, i) => [profiles[i]!.id, character]));
   for (const row of rows) {
-    const identity = { id: row.seat.id, agentProfileId: row.seat.agentProfileId, ownerPublicId: row.ownerPublicId };
+    const identity = { id: row.seat.id, agentProfileId: row.seat.agentProfileId, ownerPublicId: row.ownerDeletedAt ? null : row.ownerPublicId };
     const character = row.seat.houseCharacter ?? (row.profile ? byId.get(row.profile.id) : undefined);
     const cast = byGame.get(row.seat.gameId) ?? [];
     cast.push(character

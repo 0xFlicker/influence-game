@@ -306,6 +306,10 @@ async function resolveInTransaction(
   tx: AuthenticationTransaction,
   input: ResolveAccountAuthenticationInput,
 ): Promise<AccountAuthenticationOutcome> {
+  const [deletion] = input.provider === "farcaster" ? [] : await tx.select({ id: schema.accountDeletionTasks.id }).from(schema.accountDeletionTasks)
+    .where(and(eq(schema.accountDeletionTasks.provider, input.provider),
+      eq(schema.accountDeletionTasks.target, input.subject), isNull(schema.accountDeletionTasks.completedAt)));
+  if (deletion) return { status: "support_blocked" };
   const credential = await findCredential(tx, input.provider, input.subject);
 
   if (credential) {
@@ -487,7 +491,7 @@ async function loadUser(
   return (await tx
     .select()
     .from(schema.users)
-    .where(eq(schema.users.id, userId)))[0] ?? null;
+    .where(and(eq(schema.users.id, userId), isNull(schema.users.deletedAt))).for("no key update"))[0] ?? null;
 }
 
 async function knownEvidenceIsConsistent(

@@ -3941,6 +3941,10 @@ export async function getProfile(): Promise<PlayerProfile> {
   return apiFetch("/api/profile");
 }
 
+export async function deleteMyAccount(): Promise<{ status: "deleted"; deletedAt: string; providerCleanup: "pending" }> {
+  return apiFetch("/api/account", { method: "DELETE", body: JSON.stringify({ confirmation: "DELETE" }) });
+}
+
 export async function updateProfile(
   displayName: string,
   handle: string,

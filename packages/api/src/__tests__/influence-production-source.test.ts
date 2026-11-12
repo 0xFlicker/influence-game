@@ -14,9 +14,26 @@ import { readViewerMedia } from "../services/visual-media-viewer.js";
 import { createCanonicalEventFixture, createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 import { sha256StableJson } from "../services/stable-hash.js";
+import { deleteAccount } from "../services/account-deletion.js";
 
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); });
+
+test("account deletion preserves accepted Influence source, dialogue, and frozen character identity", async () => {
+  const { gameId } = await fixture();
+  await db.insert(schema.users).values({ id: "character-owner", displayName: "Former owner" });
+  await db.insert(schema.agentProfiles).values({ id: "owned-character", userId: "character-owner", name: "Current Atlas", personality: "Patient" });
+  await db.update(schema.gamePlayers).set({ userId: "character-owner", agentProfileId: "owned-character" }).where(eq(schema.gamePlayers.id, "atlas"));
+  const before = await buildInfluenceProductionSourceSnapshot(db, gameId);
+  await deleteAccount(db, "character-owner");
+  const after = await buildInfluenceProductionSourceSnapshot(db, gameId, { snapshot: before.snapshot });
+  expect(after.snapshot).toEqual(before.snapshot);
+  expect(after.frames).toEqual(before.frames);
+  expect(after.messages).toEqual(before.messages);
+  expect(after.catalog).toEqual(before.catalog);
+  expect(after.visual).toEqual(before.visual);
+  expect(after.game).toEqual(before.game);
+});
 
 test("v8 adds alliance presentation without changing pinned v6/v7 source or selection identities", async () => {
   const { gameId, events } = await fixture();

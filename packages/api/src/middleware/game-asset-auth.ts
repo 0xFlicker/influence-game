@@ -32,7 +32,7 @@ export function gameAssetAuth(db: DrizzleDB) {
         id = validation.context.userId; authority = "oauth"; scope = validation.context.scope;
       }
       const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id));
-      if (!user) throw new GameAssetError("asset_unauthorized", 401, "Account is unavailable");
+      if (!user || user.deletedAt) throw new GameAssetError("asset_unauthorized", 401, "Account is unavailable");
       const permissions = (await getPermissionsForUser(db, user.id)).permissions;
       if (authority === "oauth" && !permissions.includes("manage_game_assets")) throw new GameAssetError("asset_forbidden", 403, "Game asset permission is required");
       c.set("assetActor", { id, walletAddress: user.walletAddress, permissions, authority, scope });

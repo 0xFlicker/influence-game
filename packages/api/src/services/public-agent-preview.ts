@@ -3,7 +3,7 @@ import { publicGameFilter } from "./game-visibility.js";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { eligibleAgentContent } from "./agent-content-eligibility.js";
+import { eligibleAgentContent, publiclyVisibleAgentContent } from "./agent-content-eligibility.js";
 import {
   getUserSelectableAgentArchetype,
   type AgentArchetypeKey,
@@ -50,6 +50,7 @@ interface PublicAgentProfileRow {
   avatarUrl: string | null;
   personaKey: string | null;
   ownerId?: string;
+  ownerDeletedAt?: string | null;
   ownerPublicId?: string;
   ownerHandle?: string | null;
   ownerDisplayName?: string | null;
@@ -77,7 +78,7 @@ export async function getPublicAgentPreviewsByProfileIds(
     ownerWalletAddress: schema.users.walletAddress,
   }).from(schema.agentProfiles)
     .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-    .where(and(inArray(schema.agentProfiles.id, uniqueProfileIds), eligibleAgentContent()));
+    .where(and(inArray(schema.agentProfiles.id, uniqueProfileIds), publiclyVisibleAgentContent()));
   const publicProfiles = rows.filter(
     (profile) => !isImportedSyntheticPlayer(profile.ownerWalletAddress),
   );
@@ -105,6 +106,7 @@ export async function getPublicReplayAgentPreviewsByProfileIds(
     avatarUrl: schema.agentProfiles.avatarUrl,
     personaKey: schema.agentProfiles.personaKey,
     ownerId: schema.users.id,
+    ownerDeletedAt: schema.users.deletedAt,
     ownerPublicId: schema.users.publicId,
     ownerHandle: schema.users.handle,
     ownerDisplayName: schema.users.displayName,
@@ -125,7 +127,7 @@ export async function getPublicReplayAgentPreviewsByProfileIds(
     profile.id,
     {
       ...buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id)),
-      owner: publicReplayAgentOwner(profile),
+      owner: profile.ownerDeletedAt ? null : publicReplayAgentOwner(profile),
     },
   ]));
 }
@@ -140,7 +142,7 @@ export async function getPublicPlayerCompetitionFacts(
     avatarUrl: schema.agentProfiles.avatarUrl,
     personaKey: schema.agentProfiles.personaKey,
   }).from(schema.agentProfiles)
-    .where(and(eq(schema.agentProfiles.userId, internalUserId), eligibleAgentContent()))
+    .where(and(eq(schema.agentProfiles.userId, internalUserId), publiclyVisibleAgentContent()))
     .orderBy(
       asc(sql`lower(btrim(${schema.agentProfiles.name}))`),
       asc(schema.agentProfiles.name),
@@ -206,7 +208,7 @@ function buildPublicAgentPreview(
   const gamesPlayed = aggregate?.gamesPlayed ?? 0;
   const wins = aggregate?.wins ?? 0;
   return {
-    profileHref: `/agents/${encodeURIComponent(profile.id)}`,
+    ...(profile.ownerDeletedAt ? {} : { profileHref: `/agents/${encodeURIComponent(profile.id)}` }),
     name: profile.name,
     avatarUrl: profile.avatarUrl,
     role: publicRole(profile.personaKey),

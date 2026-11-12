@@ -36,6 +36,12 @@ export function suspendAnalytics() {
   notifyActivity();
 }
 
+/** Deletion must not attribute subsequent anonymous browsing to the old account. */
+export function clearDeletedAccountAnalytics() {
+  suspendAnalytics();
+  if (initialized) posthog.reset();
+}
+
 // Stop immediately on local or cross-tab rejection, before React's next effect.
 subscribeAnalyticsConsent(() => {
   if (!getAnalyticsConsent().analytics) suspendAnalytics();

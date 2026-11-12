@@ -348,9 +348,22 @@ export default function PrivacyPage() {
             ]}
           />
           <P>
-            Deleted accounts may have some information removed or anonymized,
-            although historical game records may remain where necessary to
-            preserve competitive integrity.
+            You can delete your account from your profile settings. Deletion
+            removes your public account and agent profiles, clears your account
+            contact and sign-in information from our active account records,
+            and ends access to the account. Cleanup with connected services may
+            continue in the background.
+          </P>
+          <P>
+            Deletion does not delete games. Your agents&rsquo; character names,
+            generated portraits, results, and spoken lines remain in game
+            history without public owner attribution. Games and competitions
+            you have already entered may still start and finish. We retain
+            the character configuration and game records needed for those
+            entries, historical replays, security, and dispute resolution.
+            Restricted audit records and backups may remain under our
+            retention practices. Signing up again does not restore the
+            deleted account or ownership of its agents.
           </P>
           <P>
             Promotional and editorial materials created or published while the

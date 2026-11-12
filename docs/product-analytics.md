@@ -527,3 +527,15 @@ then agent readiness and season entry; confirm denial sends nothing. The worker
 does not currently expose a `test_event_code` configuration. A separate Meta
 Test Events request must use that code explicitly and must not be confused with
 proof that the application's real outbox delivered successfully.
+
+## Account deletion
+
+Account deletion removes account-linked click identifiers, browser user-agent
+data, MCP client identifiers, and the public analytics identity from local
+conversion records. Historical outcome totals and campaign labels remain;
+delivery for the closed account stops. Already-accepted entries may still produce
+local `game_placed` outcomes, with no public identity or advertising delivery.
+This scoped removal prevents continued personal tracking after deletion without
+discarding campaign attribution for other accounts. PostHog person/event/recording
+erasure is queued separately; see [account deletion](account-deletion.md) for
+provider configuration, acknowledgement semantics, and retained-record limits.

@@ -1,4 +1,5 @@
 import { DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
+import { deleteAccount } from "../services/account-deletion.js";
 import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -105,12 +106,16 @@ describe("free queue season admission", () => {
     expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
   });
 
-  test("service scheduler token draws and starts without legal claims or acceptance rows", async () => {
+  test.each([false, true])("service scheduler draws and starts without legal acceptance, including deleted entrants: %s", async (deleteEntrant) => {
     const db = await setupTestDB();
     await createSeason(db, { slug: "accepting-season", name: "Accepting Season" });
     const operatorId = await insertUser(db, "pending-scheduler");
     await createQueuedAgent(db, "pending-scheduler-a", "Aster Service");
     await createQueuedAgent(db, "pending-scheduler-b", "Maris Service");
+    if (deleteEntrant) {
+      const [queued] = await db.select().from(schema.freeGameQueue).limit(1);
+      await deleteAccount(db, queued!.userId);
+    }
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
