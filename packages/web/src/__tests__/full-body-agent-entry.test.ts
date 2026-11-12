@@ -20,7 +20,7 @@ test("the game picker routes Agents without body art to completion and joins rea
     mock.module("next/image", () => ({ default: () => null }));
     mock.module("@/lib/product-analytics", () => ({ analyticsActive: () => false, subscribeAnalyticsActivity: () => () => {}, captureProductEvent: () => {} }));
     mock.module("@/lib/api", () => ({ getAuthToken: () => "token", listAgents: async () => [{ id: "agent", name: "Avery", personality: "Patient", backstory: null, strategyStyle: null, personaKey: "strategic", avatarUrl: null, fullBodyReferenceUrl: body, gamesPlayed: 0, gamesWon: 0, createdAt: "2026", updatedAt: "2026" }] }));
-    mock.module("@/components/agent-avatar", () => ({ resolveAgentAvatarUrl: () => "/avatar.png" }));
+    mock.module("@/components/agent-avatar", () => ({ useAgentAvatarUrl: () => () => "/avatar.png" }));
     mock.module("@/lib/personas", () => ({ getPersonaLabel: () => "Strategist" }));
     mock.module("@/components/agent-model-label", () => ({ AgentModelLabel: () => null, agentModelLabel: () => null }));
     const { createElement } = await import("react");
