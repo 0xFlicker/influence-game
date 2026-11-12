@@ -9,7 +9,7 @@ import { assembleProductionCatalog, type ProductionCatalog } from "@influence/en
 import { buildWerewolfProductionSources } from "@influence/engine/production-moments/werewolf-source";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { isViewerGame } from "./game-visibility.js";
-import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
+import { readWerewolfNarratedEvents, WerewolfGameError } from "./werewolf-games.js";
 import { bindWerewolfScene, materializeWerewolfWatch, publishedWerewolfScenes, readWerewolfCharacter } from "./werewolf-presentation.js";
 import { werewolfReferenceMetadata } from "./werewolf-production.js";
 import { readWerewolfProductionThinking } from "./werewolf-thinking.js";
@@ -80,7 +80,8 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
   const pause = game.status === "suspended" ? await readWerewolfVisualPause(tx, game.id) : null;
   if (!acceptedLivePrefix && game.status !== "completed" && !pause && !(game.status === "suspended" && await hasLiveAudioTrack(tx,game.id))) throw new WerewolfGameError("Production preview requires a completed game or a validated visual pause");
-  const allEvents = await readWerewolfEvents(tx, game.id);
+  const allEvents = await readWerewolfNarratedEvents(tx, game.id, options.audience);
+  if (JSON.parse(game.config).houseNarrationVersion === 1 && allEvents.length === 1 && !allEvents[0]?.houseNarrationCallIds) throw new WerewolfGameError("The House is preparing the opening narration", 409);
   const accepted = replayWerewolf(allEvents);
   if (game.status === "completed" && !werewolfExecutionFinished(accepted)) throw new WerewolfGameError("Completed game has no retrospective completion proof");
   if (options.snapshot && options.snapshot.gameId !== game.id) throw new WerewolfGameError("Production snapshot belongs to another game");

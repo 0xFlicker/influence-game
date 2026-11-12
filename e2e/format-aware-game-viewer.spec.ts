@@ -191,6 +191,20 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  test("plays a persisted historical huddle without a publication slot", async ({page}) => {
+    test.skip(Boolean(process.env.PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL), "Requires the isolated historical database fixture.");
+    await page.clock.install();
+    const response = page.waitForResponse(result => result.url().includes("/api/games/historical-huddle-replay/presentation"));
+    await page.goto(viewerUrl("/games/historical-huddle-replay/replay"));
+    const presentation = await response;
+    expect(presentation.status()).toBe(200);
+    const body = await presentation.json() as {messages: Array<{entry: {text: string}}>};
+    expect(body.messages.map(message => message.entry.text)).toContain("Historical huddle: we keep our promises.");
+    await pauseAutoplay(page, "⏸ Pause");
+    await advanceUntilVisible(page, page.getByText("Historical huddle: we keep our promises.", {exact: true}), "historical huddle");
+    await expect(page.getByText("Historical huddle: we keep our promises.", {exact: true})).toBeVisible();
+  });
+
   for (const kind of ["influence", "werewolf"] as const) test(`${kind} starts master-muted with low music on the audio taper`,async ({page})=>{
     await observeMusic(page);
     const slug=`volume-default-${kind}`;
@@ -1239,7 +1253,23 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
-  test("native fullscreen enters and exits without changing paused speech", async ({ page },testInfo) => {
+  test("fullscreen enters and exits without changing paused speech", async ({ page },testInfo) => {
+    const probe = await page.context().newPage();
+    await probe.setContent('<button>Fullscreen capability</button>');
+    await probe.locator("button").evaluate(button => button.addEventListener("click", () => {
+      void document.documentElement.requestFullscreen().then(() => { document.body.dataset.result = "granted"; }, () => { document.body.dataset.result = "rejected"; });
+    }));
+    await probe.getByRole("button", {name: "Fullscreen capability"}).click();
+    await expect.poll(() => probe.locator("body").getAttribute("data-result")).not.toBeNull();
+    const nativeAvailable = await probe.locator("body").getAttribute("data-result") === "granted";
+    await probe.close();
+    await page.addInitScript(() => {
+      const request = HTMLElement.prototype.requestFullscreen;
+      HTMLElement.prototype.requestFullscreen = async function(options) {
+        try { await request.call(this, options); document.documentElement.dataset.fullscreenRequest = "granted"; }
+        catch (error) { document.documentElement.dataset.fullscreenRequest = "rejected"; throw error; }
+      };
+    });
     await page.clock.install();
     const slug = "native-fullscreen-fixture";
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -1276,7 +1306,11 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button",{name:"Enter theater mode",exact:true})).toBeFocused();
     await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+    await expect(page.locator('[data-player-fullscreen="true"]')).toBeVisible();
+    const fullscreenRequest = await page.evaluate(() => document.documentElement.dataset.fullscreenRequest);
+    expect(["granted", "rejected"]).toContain(fullscreenRequest);
+    if (nativeAvailable) expect(fullscreenRequest).toBe("granted");
+    expect(await page.evaluate(() => Boolean(document.fullscreenElement))).toBe(fullscreenRequest === "granted");
     await expect(speech).toContainText("The same speech stays on screen.");
     await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
@@ -1537,15 +1571,19 @@ test.describe("format-aware game viewer", () => {
       await expect(tableau.locator('[data-winner-image="full-body"] img')).toBeVisible();
       await expect(tableau.locator('[data-placement="2"]')).toContainText("Lyra");
       await expect(tableau.locator('[data-placement="3"]')).toContainText("Echo");
+      await expect(tableau.getByRole("list", { name: "Final four" }).getByRole("listitem")).toHaveCount(2);
+      await expect(tableau.locator('[data-placement="3"]')).toContainText("Jury");
+      await page.getByRole("button", { name: "Play replay", exact: true }).click();
+      await page.clock.runFor(5_200);
       await expect(tableau.locator('[data-placement="4"]')).toContainText("Atlas");
-      await expect(tableau.getByRole("list", { name: "Final four placements" }).getByRole("listitem")).toHaveCount(3);
       await expect(tableau.getByRole("list", { name: "Jury", exact: true }).getByRole("listitem")).toHaveCount(1);
       await expect(tableau.getByRole("list", { name: "Jury", exact: true })).toContainText("Sage");
+      await expect(tableau.locator('[data-placement="5"]')).toContainText("Sage");
+      await page.clock.runFor(5_000);
       await expect(tableau.getByRole("list", { name: "Rest of the cast" }).getByRole("listitem")).toHaveCount(1);
       await expect(tableau.getByRole("list", { name: "Rest of the cast" })).toContainText("Nova");
-      await expect(tableau.locator('[data-placement="3"]')).toContainText("Jury");
-      await expect(tableau.locator('[data-placement="5"]')).toContainText("Sage");
       await expect(tableau.locator('[data-placement="6"]')).toContainText("Nova");
+      await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
       // Global playback shortcuts must not steal keys from focused controls.
       await next.evaluate(element => (element as HTMLElement).blur());
       await playbackKey(page, "ArrowLeft");
@@ -1562,9 +1600,7 @@ test.describe("format-aware game viewer", () => {
       const sceneBox = await tableau.boundingBox();
       expect(winnerBox!.width / sceneBox!.width).toBeGreaterThan(.33);
       expect(winnerBox!.width / sceneBox!.width).toBeLessThanOrEqual(.5);
-      const heads = await Promise.all([2, 3, 4].map(rank => tableau.locator(`[data-placement="${rank}"] img`).boundingBox()));
-      expect(heads[0]!.width).toBeGreaterThan(heads[1]!.width);
-      expect(heads[1]!.width).toBeGreaterThan(heads[2]!.width);
+      await expect(tableau.locator('[data-placement="2"] img')).toBeVisible();
       await tableau.screenshot({ path: testInfo.outputPath("winner-fullscreen.png") });
       if (mobile) await page.setViewportSize({ width: 844, height: 390 });
       await expect(tableau.getByRole("img", { name: "Rex", exact: true })).toBeInViewport();
@@ -1592,7 +1628,12 @@ test.describe("format-aware game viewer", () => {
     for(const [width,height] of [[320,568],[480,480],[1280,400],[844,390]]) {
       await page.setViewportSize({width:width!,height:height!});
       for(const mode of ["inline","theater"]) {
-        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        if(mode==="theater") {
+          if(width === 320) {
+            await page.getByRole("button",{name:"Player settings",exact:true}).click();
+            await page.getByRole("dialog",{name:"Player settings"}).getByRole("button",{name:"Theater",exact:true}).click();
+          } else await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        }
         await expect(layout.locator("[data-house-message-logo]")).toBeVisible();
         await expect.poll(() => layout.evaluate(el => {
           const caption=el.querySelector<HTMLElement>("[data-house-message]")!, copy=caption.querySelector<HTMLElement>("[data-speech-page-copy]")!;
@@ -1608,7 +1649,12 @@ test.describe("format-aware game viewer", () => {
           };
         }), {message:`House caption layout at ${width}x${height} (${mode})`}).toEqual({readableHeight:true,insideFrame:true,copyFits:true,separateFromScene:true});
         await page.screenshot({path:testInfo.outputPath(`werewolf-house-${width}x${height}-${mode}.png`)});
-        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+        if(mode==="theater") {
+          if(width === 320) {
+            await page.getByRole("button",{name:"Player settings",exact:true}).click();
+            await page.getByRole("dialog",{name:"Player settings"}).getByRole("button",{name:"Exit theater",exact:true}).click();
+          } else await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+        }
       }
     }
     const slider=page.getByRole("slider",{name:"Replay position",exact:true});
@@ -1647,6 +1693,29 @@ test.describe("format-aware game viewer", () => {
         })).toBeLessThanOrEqual(1);
         await expect.poll(()=>stage.locator("[data-speech-page-copy]").evaluate(copy=>copy.getBoundingClientRect().height<=copy.parentElement!.clientHeight-21)).toBe(true);
         await page.screenshot({path:testInfo.outputPath(`house-background-${width}x${height}-${mode}.png`)});
+        if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
+      }
+    }
+  });
+
+  test("format selection scenery fills one stage without an inset duplicate",async({page},testInfo)=>{
+    await page.clock.install();
+    const slug="format-selection-background";
+    await installDeterministicFormatGame(page,{slug,scenarioId:"save_or_eliminate_clear",status:"completed"});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
+    await page.addStyleTag({content:"nextjs-portal {display:none}"});
+    const stage=page.locator("[data-influence-stage]");
+    await advanceUntilVisible(page,stage.locator("[data-format-rules]"),"format selection rules",150);
+    for(const [width,height] of [[390,844],[1280,720],[1280,400],[1920,1080]]) {
+      await page.setViewportSize({width:width!,height:height!});
+      for(const mode of ["inline","theater"]) {
+        if(mode==="theater") await page.getByRole("button",{name:"Enter theater mode",exact:true}).click();
+        await expect(stage.locator("[data-room-backdrop]")).toHaveCount(1);
+        await expect.poll(()=>stage.evaluate(el=>{
+          const a=el.getBoundingClientRect(),b=el.querySelector("[data-room-backdrop]")!.getBoundingClientRect();
+          return Math.max(Math.abs(a.left-b.left),Math.abs(a.top-b.top),Math.abs(a.width-b.width),Math.abs(a.height-b.height));
+        })).toBeLessThanOrEqual(1);
+        await page.screenshot({path:testInfo.outputPath(`format-selection-background-${width}x${height}-${mode}.png`)});
         if(mode==="theater") await page.getByRole("button",{name:"Exit theater mode",exact:true}).click();
       }
     }

@@ -6,7 +6,7 @@ import { werewolfRetrospectiveSpeakerIds } from "./retrospective-order";
 import { applyWerewolfEvent, replayWerewolf } from "./rules";
 import type { WerewolfEvent, WerewolfState } from "./types";
 
-function werewolfFact(event: WerewolfEvent, projectionVersion: 1 | 2): unknown {
+function werewolfFact(event: WerewolfEvent, projectionVersion: 1 | 2 | 3): unknown {
   switch (event.type) {
     case "werewolf.started": return { config: { rulesVersion: event.payload.config.rulesVersion, preset: event.payload.config.preset,
       maxDays: event.payload.config.maxDays, setup: event.payload.config.setup ?? null }, players: event.payload.players.map(player => ({ id: player.id, name: player.name, ...(player.gender !== undefined && { gender: player.gender }), role: event.payload.roles[player.id] })) };
@@ -14,13 +14,14 @@ function werewolfFact(event: WerewolfEvent, projectionVersion: 1 | 2): unknown {
     case "werewolf.action_accepted": {
       const { actorId, action, decision, fallback } = event.payload;
       if (decision.kind === "speaking_priority") throw new RetrospectiveContractError("Private scheduling decisions do not belong in retrospective context");
-      return { actorId, action, unavailable: fallback !== null, ...(decision.kind === "target" || decision.kind === "spoken_target" || projectionVersion === 2 && decision.kind === "solo_target" ? { targetId: decision.targetId, ...(decision.kind === "spoken_target" || decision.kind === "solo_target" ? { passed: decision.text === null } : {}) }
+      return { actorId, action, unavailable: fallback !== null, ...(projectionVersion >= 3 && decision.kind === "item_use" ? { itemId: decision.itemId, targetId: decision.targetId } : {}), ...(decision.kind === "target" || decision.kind === "spoken_target" || projectionVersion >= 2 && decision.kind === "solo_target" ? { targetId: decision.targetId, ...(decision.kind === "spoken_target" || decision.kind === "solo_target" ? { passed: decision.text === null } : {}) }
         : { passed: decision.text === null, ...(decision.kind === "opening" ? { recipientIds: decision.recipientIds } : {}), ...(decision.kind === "conversation" ? { recipientId: decision.recipientId, replyToContributionId: decision.replyToContributionId } : {}) }) };
     }
     case "werewolf.pack_vote_resolved": return { attempt: event.payload.attempt,
       ballots: event.payload.ballots.map(({ voterId, targetId }) => ({ voterId, targetId })), targetId: event.payload.targetId, endReason: event.payload.endReason };
     case "werewolf.night_resolved": return { attackTargetId: event.payload.attackTargetId, protectedId: event.payload.protectedId,
-      killedId: event.payload.killedId, result: event.payload.killedId ? "death" : event.payload.attackTargetId === null ? "no_attack"
+      ...(projectionVersion >= 3 && event.payload.snipe !== undefined ? { snipe: event.payload.snipe } : {}),
+      killedId: event.payload.killedId, result: event.payload.killedId || projectionVersion >= 3 && event.payload.snipe?.killedId ? "death" : event.payload.attackTargetId === null ? "no_attack"
         : event.payload.attackTargetId === event.payload.protectedId ? "doctor_save" : "no_death", investigation: event.payload.investigation ? {
         seerId: event.payload.investigation.seerId, targetId: event.payload.investigation.targetId, isWolf: event.payload.investigation.isWolf,
       } : null };
@@ -43,8 +44,10 @@ function werewolfFact(event: WerewolfEvent, projectionVersion: 1 | 2): unknown {
 }
 
 export function compileWerewolfRetrospective(events: readonly WerewolfEvent[]) {
-  const current = compileProjection(events, 2);
+  const current = compileProjection(events, 3);
   if (!current.definition || canonicalJson(createRetrospectiveDefinition(current.input, current.speakerIds)) === canonicalJson(current.definition)) return current;
+  const preItems = compileProjection(events, 2);
+  if (canonicalJson(createRetrospectiveDefinition(preItems.input, preItems.speakerIds)) === canonicalJson(preItems.definition)) return preItems;
   // Frozen inputs and prepared speaker contexts predate solo-target provenance.
   // Adopt that exact original contract only when its complete definition matches.
   const historical = compileProjection(events, 1);
@@ -52,7 +55,7 @@ export function compileWerewolfRetrospective(events: readonly WerewolfEvent[]) {
   throw new RetrospectiveContractError("Retrospective source/order differs from the already frozen definition");
 }
 
-function compileProjection(events: readonly WerewolfEvent[], projectionVersion: 1 | 2) {
+function compileProjection(events: readonly WerewolfEvent[], projectionVersion: 1 | 2 | 3) {
   const final = replayWerewolf(events), outcome = final.retrospectiveOutcomeSource;
   if (!outcome) throw new RetrospectiveContractError("Werewolf retrospective requires its canonical outcome");
   const prefix = events.slice(0, outcome.eventSequence), original = replayWerewolf(prefix);
@@ -66,7 +69,7 @@ function compileProjection(events: readonly WerewolfEvent[], projectionVersion: 
       `${event.type} ${canonicalJson(werewolfFact(event, projectionVersion))}`);
     if (event.type === "werewolf.action_accepted" && event.payload.decision.kind !== "target" && event.payload.decision.kind !== "speaking_priority" && event.payload.decision.text !== null) {
       const packOnly = event.payload.action === "pack_talk" || event.payload.action === "pack_propose";
-      const privateAside = projectionVersion === 2 && event.payload.decision.kind === "solo_target";
+      const privateAside = projectionVersion >= 2 && (event.payload.decision.kind === "solo_target" || event.payload.decision.kind === "item_use");
       input.dialogue.push({ eventSequence: event.sequence, source: { kind: "canonical_event", sequence: event.sequence },
         actorId: event.payload.actorId, scope: privateAside ? "private" : packOnly ? "pack" : "public",
         audiencePlayerIds: privateAside ? [event.payload.actorId] : packOnly ? original.players.filter(player => original.roles[player.id] === "werewolf").map(player => player.id) : [],
@@ -75,7 +78,7 @@ function compileProjection(events: readonly WerewolfEvent[], projectionVersion: 
   }
   return { input, speakerIds, speakers: original.players.map(player => ({
     id: player.id, name: player.name, personality: player.personality, backstory: player.backstory, strategy: player.strategy,
-    werewolfPerspective: werewolfRetrospectivePerspective(prefix, original, player.id, projectionVersion),
+    werewolfPerspective: werewolfRetrospectivePerspective(prefix, original, player.id, projectionVersion === 1 ? 1 : 2),
   })), definition: final.retrospective?.definition ?? null };
 }
 

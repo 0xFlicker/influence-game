@@ -33,15 +33,14 @@ export async function creationModelRouting(db: Pick<DrizzleDB, "select">, userId
   return policy;
 }
 
-/** Operational preference is separate from character content/moderation revisions. */
+/** Use the same immutable submission and publication path as the editor. */
 export async function saveModelPreference(db: DrizzleDB, userId: string, profileId: string, value: unknown) {
-  return db.transaction(async tx => {
-    const [profile] = await tx.select().from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id, profileId), eq(schema.agentProfiles.userId, userId))).for("update");
-    if (!profile) throw new GameModelRoutingError("Choose a character you own", 403);
-    const modelPreference = await authorizedModelPreference(tx, userId, value);
-    await tx.update(schema.agentProfiles).set({ modelPreference, updatedAt: new Date().toISOString() }).where(eq(schema.agentProfiles.id, profileId));
-    return { modelPreference };
-  });
+  const [profile] = await db.select().from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id, profileId), eq(schema.agentProfiles.userId, userId)));
+  if (!profile) throw new GameModelRoutingError("Choose a character you own", 403);
+  const modelPreference = await authorizedModelPreference(db, userId, value);
+  const { updateOwnedAgentProfile } = await import("./agent-profile-management.js");
+  const submission = await updateOwnedAgentProfile(db, { userId }, profileId, { modelPreference, expectedContentRevisionId: profile.latestContentRevisionId });
+  return { modelPreference, receipt: submission.receipt };
 }
 
 /** Caller holds the game row lock; ownership and entitlement are checked at start. */

@@ -1,5 +1,10 @@
+import {readWerewolfPresentation,readWerewolfWatch} from "../services/werewolf-presentation.js";
+import {buildWerewolfProductionSourceSnapshot} from "../services/werewolf-production-source.js";
+import {readAudioSource} from "../services/audio-source.js";
+import {generateWerewolfHouseNarration} from "@influence/engine/werewolf/house-narration";
+import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
 import { grantTestAuthority } from "./rbac-fixtures.js";
-import { loadPayloads } from "../services/payload-storage.js";
+import { storeJson, loadPayloads } from "../services/payload-storage.js";
 import { sha256StableJson } from "../services/stable-hash.js";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { completeCompetitionGame } from "../services/competition-completion.js";
@@ -13,8 +18,8 @@ import { createProviderAdapter, modelCatalogEntryById, DEFAULT_MODEL_CATALOG_ID,
 import { advanceWerewolf, werewolfFallback, defaultWerewolfStrategy, nextWerewolfStep, observeWerewolf, replayWerewolf, runWerewolf, werewolfActionPlans, werewolfEvent, WerewolfModelAgent, type WerewolfAgent, type WerewolfView, type WerewolfVoteProgress } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { pinWerewolfRulesVersion, setupTestDB } from "./test-utils.js";
-import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfLiveView, readWerewolfEvents, readWerewolfView, releaseWerewolfOwner } from "../services/werewolf-games.js";
-import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfNarratedEvents, readWerewolfLiveView, readWerewolfEvents, readWerewolfView, releaseWerewolfOwner } from "../services/werewolf-games.js";
+import { createAcceptedTestProfile as createOwnedAgentProfile, submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { createGameRoutes } from "../routes/games.js";
@@ -45,6 +50,65 @@ async function create(agentProfileIds: string[] = []) {
 }
 
 describe("Werewolf House integration", () => {
+  test("House copy replays its journaled value and hydrates only the referenced audience", async () => {
+    const created = await createWerewolfGame(db, ownerId, {preset: "two_wolves", agentProfileIds: [], providerManifest: [{catalogId: "katana:glm-5-2"}], maxDays: 2});
+    const claim = await claimWerewolfGame(db, created.id);
+    if (!claim.ok) throw new Error(claim.error);
+    const game = {...created, ...claim.claim, store: createWerewolfStore(db, created.id, claim.claim.ownerEpoch)};
+    let requests = 0;
+    const client = new OpenAI({apiKey: "fixture", baseURL: "http://fixture.invalid/v1", maxRetries: 0, fetch: async () => {
+      requests++;
+      return Response.json({id: "house-copy", object: "chat.completion", created: 0, model: "glm-5-2",
+        choices: [{index: 0, finish_reason: "stop", message: {role: "assistant", content: requests === 1 ? "{}" : JSON.stringify({scene: "Welcome, villagers. Every introduction is a first impression—and perhaps a first deception."})}}],
+        usage: {prompt_tokens: 20, completion_tokens: 20, total_tokens: 40}});
+    }});
+    const model = modelCatalogEntryById("katana:glm-5-2")!;
+    const runtime: LlmProviderRuntime = {adapter: createProviderAdapter("katana", client), catalogId: model.id, providerProfileId: "katana", modelId: model.modelId,
+      modelCapabilities: model.capabilities, reasoningPolicy: "medium", position: 0, role: "primary"};
+    const events = await game.store.read();
+    expect((await readWerewolfWatch(db,game.id,"omniscient",1,64)).latestCursor).toBe(0);
+    expect((await readWerewolfPresentation(db,game.id,"omniscient")).presentation.view.cursor).toBe(0);
+    await expect(buildWerewolfProductionSourceSnapshot(db,game.id,{audience:"omniscient",thinking:false},true)).rejects.toThrow("preparing the opening narration");
+    const options = {events, audience: "omniscient" as const, runtimes: [runtime], ownerEpoch: game.ownerEpoch,
+      hooks: createApiProviderExecutionHooks(db, {gameId: game.id, ownerEpoch: game.ownerEpoch})};
+    const first = await generateWerewolfHouseNarration(options);
+    expect(first).not.toBeNull();
+    expect(await generateWerewolfHouseNarration(options)).toEqual(first);
+    expect(requests).toBe(2);
+    await db.update(schema.werewolfEvents).set({event: {...events[0]!, houseNarrationCallIds: {omniscient: first!.callIds}}})
+      .where(eq(schema.werewolfEvents.gameId, game.id));
+    const hydrated = await readWerewolfNarratedEvents(db, game.id);
+    expect(projectWerewolfProductionWatch(hydrated, "omniscient").moments[0]!.entry.houseSpeech).toBe(first!.copy.scene!);
+    expect(projectWerewolfProductionWatch(hydrated, "mystery").moments[0]!.entry.houseSpeech).toBeUndefined();
+    const stored = await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, game.id));
+    expect(JSON.stringify(stored)).not.toContain(first!.copy.scene!);
+    expect(replayWerewolf(hydrated)).toEqual(replayWerewolf(events));
+    expect((await readWerewolfWatch(db,game.id,"omniscient",1,64)).moments[0]!.entry.houseSpeech).toBe(first!.copy.scene!);
+    const source = await buildWerewolfProductionSourceSnapshot(db,game.id,{audience:"omniscient",thinking:false},true);
+    expect(source.window.moments[0]!.entry.houseSpeech).toBe(first!.copy.scene!);
+    const audio = await readAudioSource(db,game.id,true);
+    expect(audio.lines.some(line => line.text === first!.copy.scene && line.audiences.includes("omniscient"))).toBe(true);
+    expect(audio.lines.filter(line => line.audiences.includes("mystery")).some(line => line.text === first!.copy.scene)).toBe(false);
+    await db.update(schema.providerLogicalCalls).set({acceptedValue:await storeJson({})}).where(eq(schema.providerLogicalCalls.id,first!.callIds.scene!));
+    await expect(readWerewolfNarratedEvents(db,game.id)).rejects.toThrow("Corrupt Werewolf House narration");
+    // A presentation-object outage cannot make the canonical game state unreadable.
+    expect(replayWerewolf(await readWerewolfEvents(db,game.id))).toEqual(replayWerewolf(events));
+  });
+  test("creates an 8-player Hunter game with frozen v13 snipe ownership and audience-safe views", async () => {
+    const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: manifest, maxDays: 2,
+      setup: { playerCount: 8, wolves: 2, seer: false, doctor: true, hunter: true } });
+    const state = replayWerewolf(await readWerewolfEvents(db, game.id));
+    expect(state.config.rulesVersion).toBe(13);
+    expect(Object.values(state.roles).sort()).toEqual(["doctor", "hunter", "villager", "villager", "villager", "villager", "werewolf", "werewolf"]);
+    const hunter = state.players.find((player) => state.roles[player.id] === "hunter")!;
+    expect(state.items[hunter.id]).toEqual(["snipe"]);
+    const mystery = await readWerewolfView(db, game.id, "mystery");
+    expect(JSON.stringify(mystery.players)).not.toContain("snipe");
+    const omniscient = await readWerewolfView(db, game.id, "omniscient");
+    expect(omniscient.players.find((player) => player.id === hunter.id)?.items).toEqual(["snipe"]);
+    expect(observeWerewolf(state, hunter.id).items!.owned).toEqual(["snipe"]);
+  });
+
   test("resumes a planned turn from a historical roster without changing its observation hash", async () => {
     const game = await create();
     const initial = (await game.store.read())[0]!;
@@ -54,7 +118,10 @@ describe("Werewolf House integration", () => {
     const state = replayWerewolf(await game.store.read());
     const plan = werewolfActionPlans(state)[0]!;
     const observation = observeWerewolf(state, plan.request.actorId);
-    const historicalObservation = { ...observation, board: { ...observation.board,
+    expect(observation.itemCatalog).toBeUndefined();
+    expect(observation.items).toBeUndefined();
+    const {itemCatalog: _catalog, items: _items, ...preItemsObservation} = observation;
+    const historicalObservation = { ...preItemsObservation, board: { ...observation.board,
       players: observation.board.players.map(({ id, name, alive }) => ({ id, name, alive })),
     } };
     await db.insert(schema.werewolfTurns).values({ gameId: game.id, sequence: plan.sequence, request: plan.request,
@@ -196,16 +263,17 @@ describe("Werewolf House integration", () => {
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
     const state = replayWerewolf(await store.read());
-    expect(state.config.rulesVersion).toBe(11);
+    expect(state.config.rulesVersion).toBe(13);
     const view = await readWerewolfView(db, game.id, "mystery");
-    expect(view).toMatchObject({ rulesVersion: 11, phase: "introduction", conversation: null });
+    expect(view).toMatchObject({ rulesVersion: 13, phase: "introduction", conversation: null });
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}/presentation?audience=mystery`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ view: { rulesVersion: 11, phase: "introduction", conversation: null } });
+    expect(await response.json()).toMatchObject({ view: { rulesVersion: 13, phase: "introduction", conversation: null } });
   });
 
   test("accepted v10 pack proposals survive owner loss before commit without a second provider call", async () => {
     const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
+    await pinWerewolfRulesVersion(db, game.id, 10);
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
@@ -259,7 +327,7 @@ describe("Werewolf House integration", () => {
     await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}`);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10 and v11." });
+    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10, v11, v12 and v13." });
     expect(await game.store.read()).toEqual([initial]);
   });
   test("one character keeps separate strategies and freezes only Werewolf into its game", async () => {

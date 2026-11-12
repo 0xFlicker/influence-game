@@ -37,7 +37,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: October 18, 2026
+            Last Updated: November 8, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -83,6 +83,25 @@ export default function PrivacyPage() {
             <P>
               We do not collect passwords when authentication is handled through
               third-party providers.
+            </P>
+          </SubSection>
+
+          <SubSection title="Optional Discord Connection">
+            <P>
+              If you connect Discord, we store your Discord user ID and username,
+              the association with your House account, verification time, and server
+              role delivery status. We use this to recognize your account and apply
+              community and staff roles. The connection is private; server roles
+              are visible according to Discord server settings. We request identity
+              access without access to your private messages, and do not retain
+              Discord OAuth access or refresh tokens.
+            </P>
+            <P>
+              You can disconnect from your account settings. House bot authorization
+              ends immediately; we retain the connection until managed server roles
+              have been removed or your membership is confirmed absent. Verification
+              attempts expire after ten minutes. Expired attempts and connection
+              audit records older than ninety days are removed by scheduled cleanup.
             </P>
           </SubSection>
 
@@ -385,9 +404,14 @@ export default function PrivacyPage() {
           <P>
             We use PostHog, hosted in the United States, to understand entry pages,
             campaign sources, navigation, agent creation, match entry, and game
-            viewing. Analytics may link anonymous visits to your public account ID
-            after sign-in. We do not send your email, wallet address, agent prompts,
-            private strategy, or form contents in analytics events.
+            viewing. When you arrive from a campaign link, we retain its source,
+            campaign, creative and audience labels and the advertising click
+            identifier so we can measure which campaigns bring players; these
+            are kept with your account record after sign-in under the same
+            access controls. Analytics may link anonymous visits to your public
+            account ID after sign-in. We do not send your email, wallet address,
+            agent prompts, private strategy, or form contents in analytics
+            events, and campaign labels never include prompt text.
           </P>
           <P>
             We also measure browser performance and collect scrubbed error reports
@@ -409,6 +433,31 @@ export default function PrivacyPage() {
             unavailable, it waits for your permission. Do Not Track and Global
             Privacy Control disable optional tracking. Change or withdraw your
             choice below at any time; essential site functions remain available.
+          </P>
+          <P>
+            When optional tracking is allowed, we may send account signup,
+            agent readiness, and season-entry events to Meta, Google, TikTok,
+            and X to measure our
+            advertisements. These events may include an advertising click
+            identifier and a hashed public account identifier. Web conversions sent
+            to Meta also include your browser’s user-agent string. They do not
+            include your email, phone number, IP address, wallet address,
+            prompts, or private strategy.
+          </P>
+          <P>
+            Your effective tracking preference is saved with your account and
+            applies to browser, API, and MCP conversion delivery. Withdrawing
+            permission stops future optional delivery, suppresses queued events,
+            and removes retained campaign attribution. Enabling tracking later
+            does not send events collected while it was off. Events already
+            delivered cannot be recalled by this setting.
+          </P>
+          <P>
+            Turning off optional analytics does not delete the account, agents,
+            enrollment, or game records needed to provide the service. We retain
+            these operational records and use aggregate outcome counts for
+            internal reporting; they are not automatically shared with analytics
+            or advertising providers.
           </P>
           <AnalyticsPreference />
         </Section>

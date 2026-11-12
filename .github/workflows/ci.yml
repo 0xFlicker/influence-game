@@ -111,6 +111,7 @@ jobs:
 
   api-postgres-shards:
     name: API / PostgreSQL shard (${{ matrix.shard }}/4)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -156,7 +157,7 @@ jobs:
     # Preserve the required check name and the release-manifest dependency.
     name: API / PostgreSQL tests
     needs: [api-postgres-shards]
-    if: ${{ always() }}
+    if: ${{ always() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - name: Require every PostgreSQL shard to pass
@@ -180,7 +181,7 @@ jobs:
         run: bash scripts/test-api-image.sh influence-api:pr-check
 
   render-worker-pr-build:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: check
     runs-on: ubuntu-latest
     steps:

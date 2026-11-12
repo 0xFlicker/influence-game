@@ -35,8 +35,8 @@ export function werewolfConfig(preset: WerewolfPreset, maxDays = 10, setup?: Wer
   if (!Object.hasOwn(WEREWOLF_PRESETS, preset)) throw new Error("Unknown Werewolf preset");
   if (!Number.isInteger(maxDays) || maxDays < 1 || maxDays > 20) throw new Error("Werewolf maxDays must be an integer from 1 to 20");
   if (setup !== undefined && (!setup || typeof setup !== "object" || Array.isArray(setup)
-    || Object.keys(setup).length !== 4 || ![6, 7, 8].includes(setup.playerCount) || ![1, 2].includes(setup.wolves)
-    || typeof setup.seer !== "boolean" || typeof setup.doctor !== "boolean")) throw new Error("Choose 6–8 players, 1–2 wolves, and Seer/Doctor toggles");
+    || !(Object.keys(setup).length === 4 || Object.keys(setup).length === 5 && Object.hasOwn(setup, "hunter")) || ![6, 7, 8].includes(setup.playerCount) || ![1, 2].includes(setup.wolves)
+    || typeof setup.seer !== "boolean" || typeof setup.doctor !== "boolean" || setup.hunter !== undefined && typeof setup.hunter !== "boolean")) throw new Error("Choose 6–8 players, 1–2 wolves, and Seer/Doctor/Hunter toggles");
   if (setup && (setup.wolves === 1 ? "one_wolf" : "two_wolves") !== preset) throw new Error("Werewolf preset must match the selected wolf count");
   return { rulesVersion: 8, preset, maxDays, ...(setup ? { setup: { ...setup } } : {}) };
 }
@@ -70,8 +70,8 @@ export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: 
   }
   const roles: readonly WerewolfRole[] = config.setup ? [
     ...Array<WerewolfRole>(config.setup.wolves).fill("werewolf"),
-    ...(config.setup.seer ? ["seer" as const] : []), ...(config.setup.doctor ? ["doctor" as const] : []),
-    ...Array<WerewolfRole>(config.setup.playerCount - config.setup.wolves - Number(config.setup.seer) - Number(config.setup.doctor)).fill("villager"),
+    ...(config.setup.seer ? ["seer" as const] : []), ...(config.setup.doctor ? ["doctor" as const] : []), ...(config.setup.hunter ? ["hunter" as const] : []),
+    ...Array<WerewolfRole>(config.setup.playerCount - config.setup.wolves - Number(config.setup.seer) - Number(config.setup.doctor) - Number(config.setup.hunter ?? false)).fill("villager"),
   ] : WEREWOLF_PRESETS[config.preset].roles;
   return Object.fromEntries(ids.map((id, i) => [id, roles[i]!])) as Record<string, WerewolfRole>;
 }
@@ -323,6 +323,7 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
       players: structuredClone(players), roles: { ...roles }, aliveIds: players.map((p) => p.id),
       openingOrderIds: shuffled(players.map(p => p.id), seed, "opening_order"), openingCursor: 0,
       phase: "introduction", day: 0, actions: [], discussion: null, pack: null, resolved: false, previousProtection: null,
+      items: Object.fromEntries(players.map((player) => [player.id, [] as string[]])) as WerewolfState["items"], itemUses: [],
       investigations: [], history: [{ kind: "phase", day: 0, phase: "introduction" }], outcome: null,
       retrospectiveOutcomeSource: null, retrospective: null,
     };

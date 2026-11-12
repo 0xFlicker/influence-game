@@ -32,12 +32,13 @@ describe("provider model inventory", () => {
     ]);
     expect(inventory.models.some(model => model.catalogId === "katana:deepseek-v4-flash")).toBe(true);
   });
-  test("ordinary users receive free Haiku alongside existing choices, without premium Claude or GLM", async () => {
+  test("ordinary users receive free Haiku and Ember alongside existing choices, without premium Claude or GLM", async () => {
     const inventory = await providerModelInventory({ ANTHROPIC_API_KEY: "fixture", OPENAI_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture", META_MUSE_API_KEY: "fixture" }, false,
-      async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-5-5"] : provider === "openai" ? ["gpt-6-luna"] : provider === "katana" ? ["glm-5-3-flash-private", "deepseek-v4-flash"] : ["muse-spark-1.3-contributor"]);
+      async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-5-5"] : provider === "openai" ? ["gpt-6-luna"] : provider === "katana" ? ["glm-5-3-flash-private", "deepseek-v4-flash"] : ["muse-spark-1.3-contributor", "muse-ember-1.0"]);
     expect(inventory.models.map(model => model.catalogId).sort()).toEqual([
-      "anthropic:claude-haiku-5-5", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-6-luna",
+      "anthropic:claude-haiku-5-5", "katana:deepseek-v4-flash", "meta-muse:muse-ember-1.0", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-6-luna",
     ]);
+    expect(inventory.models.find(model => model.catalogId === "meta-muse:muse-ember-1.0")).toMatchObject({ configured: true, available: true, experimental: true });
     expect(inventory.models.find(model => model.catalogId === "anthropic:claude-haiku-5-5")).toMatchObject({ configured: true, available: true, metadata: { rateCard: { rates: { inputPer1M: 0.1, outputPer1M: 0.5 } } } });
   });
 
@@ -150,7 +151,7 @@ describe("provider model inventory", () => {
       {
         async listModelIds(providerProfileId) {
           if (providerProfileId !== "meta-muse") throw new Error("unexpected provider");
-          return ["muse-wonder-1.0", "sam-3.1", "muse-spark-1.3-contributor", "muse-voice-transcribe-1.0", "muse-spark-1.3", "muse-image-1.0", "muse-spark-1.2"];
+          return ["muse-wonder-1.0", "sam-3.1", "muse-spark-1.3-contributor", "muse-voice-transcribe-1.0", "muse-spark-1.3", "muse-image-1.0", "muse-spark-1.2", "muse-ember-1.0"];
         },
       },
     ));
@@ -164,13 +165,21 @@ describe("provider model inventory", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       status: string;
-      models: Array<{ catalogId: string; configured: boolean; available: boolean | null }>;
+      models: Array<{ catalogId: string; configured: boolean; available: boolean | null; experimental?: boolean;
+        capabilityEvidence?: string; displayName?: string;
+        metadata?: { rateCard: { version: string; rates: { inputPer1M: number; cachedInputPer1M: number; outputPer1M: number } } | null;
+          documented: { checkedAt: string; contextTokens: number | null; outputTokens: number | null } | null } }>;
     };
     expect(body.status).toBe("complete");
     expect(body.models.find((model) => model.catalogId === "meta-muse:muse-spark-1.3-contributor"))
       .toMatchObject({ configured: true, available: true });
     expect(body.models.find((model) => model.catalogId === "meta-muse:muse-wonder-1.0"))
       .toMatchObject({ configured: true, available: true });
+    expect(body.models.find((model) => model.catalogId === "meta-muse:muse-ember-1.0"))
+      .toMatchObject({ configured: true, available: true, experimental: true, capabilityEvidence: "documented",
+        displayName: "Meta Muse Ember 1.0",
+        metadata: { rateCard: { version: "2026-11-09", rates: { inputPer1M: 0.10, cachedInputPer1M: 0.004, outputPer1M: 0.50 } },
+          documented: { checkedAt: "2026-11-09", contextTokens: 1_048_576, outputTokens: 524_288 } } });
     expect(body.models.some((model) => model.catalogId === "meta-muse:muse-image-1.0")).toBe(false);
     expect(body.models.some((model) => model.catalogId === "meta-muse:sam-3.1")).toBe(false);
     expect(body.models.some((model) => model.catalogId === "meta-muse:muse-voice-transcribe-1.0")).toBe(false);

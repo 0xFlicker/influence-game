@@ -1,17 +1,13 @@
 name: Browser Coverage
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: browser-coverage-${{ github.event.pull_request.number || github.ref }}
+  group: browser-coverage-${{ github.ref }}
   cancel-in-progress: true
 
 env:

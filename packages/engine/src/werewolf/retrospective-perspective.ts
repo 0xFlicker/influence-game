@@ -27,7 +27,7 @@ export interface WerewolfRetrospectivePerspective {
 const named = { type: "object", additionalProperties: false, required: ["id", "name"], properties: {
   id: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1 },
 } };
-const roleSchema = { enum: ["villager", "seer", "doctor", "werewolf"] };
+const roleSchema = { enum: ["villager", "seer", "doctor", "werewolf", "hunter"] };
 const revealedPlayer = { ...named, required: [...named.required, "role"], properties: { ...named.properties, role: roleSchema } };
 const sequence = { type: "integer", minimum: 1 };
 const day = { type: "integer", minimum: 0 };
@@ -40,7 +40,7 @@ const schema = { type: "object", additionalProperties: false, required: ["knownD
     } } },
   } },
   ownRecordedActions: { type: "array", items: { type: "object", additionalProperties: false, required: ["eventSequence", "day", "action", "target", "unavailable"], properties: {
-    eventSequence: sequence, day, action: { enum: ["vote", "public_vote", "attack", "pack_propose", "investigate", "protect"] },
+    eventSequence: sequence, day, action: { enum: ["vote", "public_vote", "attack", "pack_propose", "investigate", "protect", "snipe"] },
     target: { anyOf: [named, { type: "null" }] }, unavailable: { type: "boolean" },
   } } },
   eliminatedAtEventSequence: { anyOf: [sequence, { type: "null" }] },
@@ -95,13 +95,14 @@ export function werewolfRetrospectivePerspective(events: readonly WerewolfEvent[
     if (event.type === "werewolf.phase_started") day = event.payload.day;
     if (event.type === "werewolf.action_accepted" && event.payload.actorId === actorId) {
       const { decision, action, fallback } = event.payload;
-      if (decision.kind === "target" || decision.kind === "spoken_target" || projectionVersion === 2 && decision.kind === "solo_target") perspective.ownRecordedActions.push({
+      if (decision.kind === "target" || decision.kind === "spoken_target" || projectionVersion === 2 && decision.kind === "solo_target" || decision.kind === "item_use") perspective.ownRecordedActions.push({
         eventSequence: event.sequence, day, action, target: decision.targetId === null ? null : player(decision.targetId), unavailable: fallback !== null,
       });
     }
     if (event.type === "werewolf.night_resolved") {
       if (event.payload.killedId) perspective.revealedAfterGame.eliminations.push({ eventSequence: event.sequence, day, cause: "night", player: revealed(event.payload.killedId) });
-      if (event.payload.killedId === actorId) perspective.eliminatedAtEventSequence = event.sequence;
+      if (event.payload.snipe?.killedId && event.payload.snipe.killedId !== event.payload.killedId) perspective.revealedAfterGame.eliminations.push({ eventSequence: event.sequence, day, cause: "night", player: revealed(event.payload.snipe.killedId) });
+      if (event.payload.killedId === actorId || event.payload.snipe?.killedId === actorId) perspective.eliminatedAtEventSequence = event.sequence;
       const result = event.payload.investigation;
       // A check resolving on the Seer's death night was never available for a later gameplay decision.
       if (result?.seerId === actorId && perspective.eliminatedAtEventSequence === null) perspective.knownDuringPlay.investigations.push({

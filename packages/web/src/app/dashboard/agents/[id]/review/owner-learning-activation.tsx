@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AgentAvatar } from "@/components/agent-avatar";
 import "./owner-learning-review.css";
 import {
   dismissOwnerLearningPrompt,
@@ -9,6 +10,7 @@ import {
   getOwnerLearningEligibleInputs,
   recordOwnerLearningPromptImpression,
   type OwnerLearningEligibleInputs,
+  type SavedAgent,
 } from "@/lib/api";
 import { formatAvailabilityTimestamp, reviewEntryPath, reviewPath } from "./owner-learning-model";
 
@@ -16,21 +18,24 @@ export function OwnerLearningActivationView({
   eligible,
   contextAgentId,
   contextGameId,
+  agents = [],
   onDismiss,
 }: {
   eligible: OwnerLearningEligibleInputs;
   contextAgentId?: string;
   contextGameId?: string;
+  agents?: SavedAgent[];
   onDismiss?: () => void;
 }) {
   const profiles = contextGameId ? eligible.profiles.filter(profile => profile.games.some(game => game.gameId === contextGameId)) : eligible.profiles;
   if (contextGameId && !profiles.length) return null;
   if (eligible.openReview) {
     const profile = eligible.profiles.find((entry) => entry.agentProfileId === eligible.openReview?.agentProfileId);
+    const agent = agents.find(entry => entry.id === eligible.openReview?.agentProfileId);
     return (
       <section className="olm-activation" data-variant="resume" data-testid="owner-learning-activation">
-        <div><p>Owner review in progress</p><h2>Return to {profile?.name ?? "your open agent review"}</h2>
-          <span>Your saved stage and game evidence are waiting. One owner review stays open at a time.</span></div>
+        <div className="olm-activation-copy">{agent && <AgentAvatar avatarUrl={agent.avatarUrl} personaKey={agent.personaKey} persona={agent.personaKey ?? "strategic"} name={agent.name} size="12" />}<div><p>Owner review in progress</p><h2>Return to {profile?.name ?? "your open agent review"}</h2>
+          <span>Your saved stage and game evidence are waiting. One owner review stays open at a time.</span></div></div>
         <Link href={reviewPath(eligible.openReview.agentProfileId, eligible.openReview.id)}>Resume review →</Link>
       </section>
     );
@@ -44,18 +49,22 @@ export function OwnerLearningActivationView({
     && !eligible.credit.nextAvailableAt)) return null;
   const prominent = eligible.prompt.prominent && !eligible.prompt.suppressedByDismissal;
   const availability = activationAvailability(eligible);
+  const agent = agents.find(entry => entry.id === profile.agentProfileId);
   return (
     <section
       className="olm-activation"
       data-variant={prominent ? "prominent" : "subtle"}
       data-testid="owner-learning-activation"
     >
-      <div>
+      <div className="olm-activation-copy">
+        {agent && <AgentAvatar avatarUrl={agent.avatarUrl} personaKey={agent.personaKey} persona={agent.personaKey ?? "strategic"} name={agent.name} size="12" />}
+        <div>
         <p>{prominent ? "Three-game pattern ready" : availability.label}</p>
         <h2>{prominent ? `The room has more to say about ${profile.name}.` : `Review ${profile.name}'s latest game.`}</h2>
         <span>{prominent
           ? "Compare accepted actions and counterplay across the latest eligible games."
           : availability.detail}</span>
+        </div>
       </div>
       <div className="olm-activation-actions">
         {onDismiss && <button type="button" onClick={onDismiss}>Not now</button>}
@@ -69,10 +78,12 @@ export function OwnerLearningActivation({
   enabled,
   contextAgentId,
   contextGameId,
+  agents,
 }: {
   enabled: boolean;
   contextAgentId?: string;
   contextGameId?: string;
+  agents?: SavedAgent[];
 }) {
   const [eligible, setEligible] = useState<OwnerLearningEligibleInputs | null>(null);
   const impressedWatermark = useRef<string | null>(null);
@@ -128,6 +139,7 @@ export function OwnerLearningActivation({
       eligible={eligible}
       contextAgentId={contextAgentId}
       contextGameId={contextGameId}
+      agents={agents}
       onDismiss={
         !contextGameId && !contextAgentId
         && eligible.prompt.threshold

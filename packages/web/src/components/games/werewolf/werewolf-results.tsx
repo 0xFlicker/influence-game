@@ -7,7 +7,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { werewolfOutcomeReason, werewolfOutcomeTitle, type WerewolfResultRecap } from "@influence/engine/werewolf/results-contract";
 import { ApiError, getHouseGameResults, resolveApiUrl } from "@/lib/api";
-import { gameHref, gameReplayHref, werewolfMomentHref } from "@/lib/game-links";
+import { gameHref, werewolfMomentHref } from "@/lib/game-links";
+import {WerewolfWatchChoices} from "./werewolf-watch-choices";
 import { GameBanner } from "@/components/game-banner";
 import { ResultsHeader } from "../results-header";
 import styles from "./werewolf-results.module.css";
@@ -36,7 +37,7 @@ export function WerewolfResultsPage({slug}: {slug: string}) {
     <Link className="text-sm text-white/65" href={gameHref(slug)}>← Back to game</Link>
     <GameBanner gameId={game.id} />
     <ResultsHeader title={werewolfOutcomeTitle(results.outcome)} description={<><p>{werewolfOutcomeReason(results.outcome)}</p><p className="mt-2 text-white/55">{game.episode?.title ?? game.slug} · Day {results.day} · {results.players.length} players</p></>}
-      actions={<><Link className="influence-button-primary rounded-lg px-4 py-2 text-sm" href={gameReplayHref(slug, undefined, "mystery")}>Watch Mystery</Link><Link className="influence-button-secondary rounded-lg px-4 py-2 text-sm" href={gameReplayHref(slug, undefined, "omniscient")}>Watch Omniscient</Link></>} />
+      actions={<div className="w-full max-w-sm"><WerewolfWatchChoices slug={slug}/></div>} />
     {game.status !== "completed" ? <p role="status" className="text-sm text-white/65">{game.status === "suspended" ? "Retrospective paused" : "Retrospective in progress"} · {retrospective.statementCount} of {retrospective.requiredStatements} statements. The result is fixed. <Link className="underline" href={werewolfMomentHref(slug, "omniscient", results.source.cursor)}>Continue watching</Link></p> : null}
     {game.status === "suspended" ? <RetrospectiveResumeControl gameId={slug} onResumed={() => { void query.refetch(); }} /> : null}
     <OwnerLearningActivation enabled={game.status === "completed"} contextGameId={game.id} />
@@ -67,10 +68,10 @@ function Portrait({src,name}: {src: string; name: string}) {
   return <div className={styles.portrait}>{failed ? <span aria-label={`${name}, portrait unavailable`}>{name.slice(0,1)}</span> : <Image unoptimized width={56} height={56} src={resolveApiUrl(src)} alt={name} loading="lazy" onError={() => setFailed(true)} />}</div>;
 }
 
-function RecapItem({item,name,slug,rulesVersion}: {item: WerewolfResultRecap; name: (id: string) => string; slug: string; rulesVersion: 7 | 8 | 9 | 10 | 11}) {
+function RecapItem({item,name,slug,rulesVersion}: {item: WerewolfResultRecap; name: (id: string) => string; slug: string; rulesVersion: 7 | 8 | 9 | 10 | 11 | 12 | 13}) {
   const label = item.kind === "night" ? `Night ${item.day}` : rulesVersion >= 9 ? `Day ${item.day} · Public vote` : item.result.voteMode === "plurality" ? `Day ${item.day} · Final vote` : `Day ${item.day} · Vote after thread ${item.result.thread}`;
   const outcome = item.kind === "night"
-    ? item.result.killedId ? `${name(item.result.killedId)} was eliminated` : item.result.attackTargetId && item.result.attackTargetId === item.result.protectedId ? `${name(item.result.attackTargetId)} was protected` : item.noAttackReason === "no_agreement" ? "The pack did not agree. No attack." : "No attack. Nobody was eliminated."
+    ? item.result.snipe?.killedId && item.result.killedId && item.result.snipe.killedId !== item.result.killedId ? `${name(item.result.killedId)} was eliminated · ${name(item.result.snipe.killedId)} was sniped` : item.result.snipe?.killedId && !item.result.killedId ? `${name(item.result.snipe.killedId)} was sniped` : item.result.killedId ? `${name(item.result.killedId)} was eliminated` : item.result.attackTargetId && item.result.attackTargetId === item.result.protectedId ? `${name(item.result.attackTargetId)} was protected` : item.noAttackReason === "no_agreement" ? "The pack did not agree. No attack." : "No attack. Nobody was eliminated."
     : item.result.eliminatedId ? `${name(item.result.eliminatedId)} was eliminated` : rulesVersion >= 9 ? "No majority. Nobody was eliminated." : item.result.dayEnded ? Object.keys(item.result.totals).length ? "Final vote tied. Nobody was eliminated." : "No available votes. Nobody was eliminated." : "No majority. Discussion continued.";
   return <details id={item.id} className={styles.moment}>
     <summary><span className="text-xs text-white/55">{label}</span><span className="block pt-1 font-medium text-white">{outcome}</span></summary>
@@ -79,6 +80,7 @@ function RecapItem({item,name,slug,rulesVersion}: {item: WerewolfResultRecap; na
         <dt>Pack target</dt><dd>{item.result.attackTargetId ? name(item.result.attackTargetId) : "No attack"}</dd>
         <dt>Doctor protection</dt><dd>{item.result.protectedId ? name(item.result.protectedId) : "None recorded"}</dd>
         <dt>Seer investigation</dt><dd>{item.result.investigation ? `${name(item.result.investigation.seerId)} investigated ${name(item.result.investigation.targetId)}: ${item.result.investigation.isWolf ? "wolf" : "not a wolf"}` : "None recorded"}</dd>
+        {item.result.snipe && <><dt>Hunter snipe</dt><dd>{`${name(item.result.snipe.actorId)} sniped ${name(item.result.snipe.targetId)}`}</dd></>}
       </dl> : <>
         <p className="mb-4 text-sm text-white/70">{item.result.voteMode === "plurality" ? "Final vote: a unique highest tally eliminates. A tie eliminates nobody." : `Majority required: ${item.result.requiredVotes} of ${item.result.ballots.length} living players.`}</p>
         <div className="overflow-x-auto"><table className={styles.ballots}><caption className="sr-only">{label} ballots</caption><thead><tr><th>Player</th><th>Ballot</th></tr></thead><tbody>{item.result.ballots.map(ballot => <tr key={ballot.voterId}><td>{name(ballot.voterId)}</td><td>{ballot.targetId ? name(ballot.targetId) : ballot.unavailable ? "Abstain · unavailable" : rulesVersion >= 9 ? "Abstain" : "Abstain · hear more"}</td></tr>)}</tbody></table></div>

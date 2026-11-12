@@ -7,7 +7,7 @@ import {HouseMessage} from "@/components/watch/house-message";
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
-import {FormatPresentation} from "./format-presentation";
+import {FormatPresentation, formatPresentationOwnsBackdrop} from "./format-presentation";
 import type {FormatPresentationCue} from "./types";
 import {sampleWatch} from "@/components/watch/watch-sampling";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
@@ -45,11 +45,43 @@ export type VisualPresentationBeat =
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
-  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; paginateLargeCast?: true; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null}>; speech: VisualSpeech }
+  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; paginateLargeCast?: true; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null; items?: readonly string[]}>; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; roomLabel?: string; speechDurationMs?: number; speech: VisualSpeech | null }
-  | { kind: "portrait"; thinkingAllowed?: boolean; purpose: "Decision" | "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
+  | { kind: "portrait"; thinkingAllowed?: boolean; purpose: "Decision" | "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null; items?: readonly string[] }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string; backgroundUrl?:string }
   | { kind: "anonymous"; speech: VisualSpeech };
+
+/**
+ * True when the beat paints its own stage background, so a stage root must
+ * not paint fallback room scenery behind it. Transparent cards, labels and
+ * anonymous speech return false and keep the root's room.
+ */
+export function presentationBeatOwnsBackdrop(beat: VisualPresentationBeat, currentStateEntry = false): boolean {
+  switch (beat.kind) {
+    case "alliance-introduction":
+    case "canonical-result":
+    case "elimination-result":
+    case "two-names-decision":
+    case "safety-chain":
+    case "nominee-selection":
+    case "safety-bounce":
+    case "portrait-room":
+    case "portrait":
+    case "scene":
+      return true;
+    case "house-result":
+      return presentationBeatOwnsBackdrop(beat.result, currentStateEntry);
+    case "format-result":
+    case "two-names-stage":
+      return formatPresentationOwnsBackdrop(beat.cue, currentStateEntry);
+    case "winner":
+      return Boolean(beat.backgroundUrl);
+    case "house":
+      return beat.text !== null || Boolean(beat.backgroundUrl);
+    case "anonymous":
+      return false;
+  }
+}
 
 /** Observe the director instead of creating an independent wall-clock speech timer. */
 export function VisualPresentation({ director, retainTail = true, ...props }: Omit<Parameters<typeof VisualPresentationFrame>[0], "elapsedMs"> & {
@@ -120,7 +152,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
       : <div className="flex min-h-0 flex-1 flex-col gap-3" style={{paddingBottom:fullscreen ? controlsInset : 0}} data-house-result>
         {result}
         {hideHouseNarration ? <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />
-          : <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
+          : <div className="relative flex shrink-0 flex-col rounded-xl border border-white/20 bg-black/85 p-3" style={{height:"clamp(56px, 20vh, 120px)"}} aria-label="House summary"><TimedSpeech advancePart="speech" text={beat.text} elapsedMs={readingElapsedMs} className="text-base leading-relaxed sm:text-lg" /></div>}
       </div>;
   } else if (beat.kind === "canonical-result") {
     content = <ResultStage compactCast={naturalHouseMessages} players={beat.players}><h2 className="text-center text-2xl">{beat.headline}</h2><p className="mt-3 text-center text-sm">{beat.detail}</p></ResultStage>;
@@ -135,7 +167,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   } else if (beat.kind === "nominee-selection") {
     content = <NomineeSelection beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} />;
   } else if (beat.kind === "winner") {
-    content = <WinnerScene beat={beat} fullscreen={fullscreen} controlsInset={controlsInset} />;
+    content = <WinnerScene beat={beat} elapsedMs={clockElapsedMs} />;
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {
@@ -146,7 +178,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
       : <SoloPresentation backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "anonymous") {
     const opacity = sceneSpeechOpacity(beat.speech.text, clockElapsedMs, reducedMotion);
-    content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
+    content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech advancePart="speech" text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     const segment = hideHouseNarration && beat.text !== null ? null : <HouseSegment logoUrl={houseLogoUrl} fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
     content = naturalHouseMessages && beat.text !== null ? <div style={{paddingBottom:fullscreen ? controlsInset + 8 : 8}} className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-hidden p-2"><RoomBackdrop source={beat.backgroundUrl ?? INFLUENCE_ROOMS.lobby} resilient /><div className="h-1/3 min-h-[90px] shrink-0"><HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} /></div></div> : beat.backgroundUrl ? <div className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><RoomBackdrop source={beat.backgroundUrl} resilient />{segment}</div> : segment;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeModelPreference } from "../game-model-routing";
+import { assertModelEntitlement, FREE_MODEL_CATALOG_IDS, normalizeModelPreference } from "../game-model-routing";
 import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_CATALOG_ID,
@@ -165,6 +165,26 @@ describe("model catalog", () => {
     }
     const profile = PROVIDER_PROFILES["meta-muse"];
     expect(profile.baseURL).toBe("https://api.meta.ai/v1");
+    // Ember is a free evaluation candidate, not a game-ready choice.
+    const ember = modelCatalogEntryById("meta-muse:muse-ember-1.0");
+    expect(ember?.displayName).toBe("Meta Muse Ember 1.0");
+    expect(ember?.evaluationStatus).toBe("evaluation-candidate");
+    expect(ember?.capabilityEvidence).toBe("documented");
+    expect(ember?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
+    expect(ember?.capabilities).toMatchObject({ supportsImageInput: true, supportsStructuredOutput: true,
+      supportsTools: true, supportsReasoningEffort: true, supportsOpenAIResponses: false, supportsTemperature: true });
+    expect(ember?.metadata.documented).toMatchObject({ source: "https://dev.meta.ai/docs/muse-ember",
+      checkedAt: "2026-11-09", contextTokens: 1_048_576, outputTokens: 524_288 });
+    expect(ember?.metadata.rateCard).toMatchObject({ version: "2026-11-09",
+      source: "https://dev.meta.ai/docs/pricing-rate-limits",
+      rates: { inputPer1M: 0.10, cachedInputPer1M: 0.004, outputPer1M: 0.50,
+        tiers: [{ minPromptTokens: 200_001, inputPer1M: 0.30, cachedInputPer1M: 0.012, outputPer1M: 1.50 }] } });
+    expect(gameReadyCatalogEntries().map((entry) => entry.id)).not.toContain("meta-muse:muse-ember-1.0");
+    expect(FREE_MODEL_CATALOG_IDS).toContain("meta-muse:muse-ember-1.0");
+    expect(() => assertModelEntitlement(normalizeModelPreference({ catalogId: "meta-muse:muse-ember-1.0" }), false)).not.toThrow();
+    expect(() => normalizeProviderManifest([{ catalogId: "meta-muse:muse-ember-1.0", reasoningPolicy: "high" }])).not.toThrow();
+    // Older Muse facts keep their original audit date, not Ember's.
+    expect(modelCatalogEntryById("meta-muse:muse-spark-1.3")?.metadata.documented?.checkedAt).toBe("2026-10-23");
     // Non-text Meta models never become game LLMs through dynamic inference.
     expect(modelCatalogEntryById("meta-muse:muse-image-1.0")).toBeUndefined();
     expect(modelCatalogEntryById("meta-muse:sam-3.1")).toBeUndefined();

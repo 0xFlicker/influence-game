@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   EDGE_SMOKE_DUSK_EXPECTED,
   EDGE_SMOKE_DUSK_PLAYERS,
   GameState,
+  Phase,
   createEdgeSmokeDuskEvents,
   type CanonicalGameEvent,
   type LaunchFormatId,
 } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { appendGameEvents } from "../services/game-events.js";
+import { storeJson } from "../services/payload-storage.js";
 import { withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "../__tests__/durable-run-test-utils.js";
 import {computeVoteBombTallies,resolveVoteBomb,computeMajorityEliminationTallies,resolveMajorityElimination} from "@influence/engine/format-rules";
 
@@ -33,6 +35,7 @@ export async function seedFormatAwareGameViewerFixtures(db: DrizzleDB, firstRetr
   for (const fixture of FORMAT_FIXTURES) {
     await insertFormatFixture(db, fixture.slug, fixture.formats, firstRetrospectiveDialogueSequence);
   }
+  await insertFormatFixture(db, "historical-huddle-replay", ALL_FORMATS, 2, true);
   await insertClassicFixture(db, firstRetrospectiveDialogueSequence);
 }
 
@@ -41,6 +44,7 @@ async function insertFormatFixture(
   slug: string,
   formats: readonly LaunchFormatId[],
   firstRetrospectiveDialogueSequence: number,
+  historicalHuddle = false,
 ): Promise<void> {
   const gameId = `e2e-${slug}`;
   const players = fixturePlayers(gameId);
@@ -82,6 +86,24 @@ async function insertFormatFixture(
   });
   await persistEvents(db, gameId, events);
   await insertRetrospectiveTranscriptFixture(db, events);
+
+  if (historicalHuddle) {
+    // Reproduce an accepted completed game whose spectator huddle predates
+    // transcript publication slots, while other dialogue has a ledger.
+    const turnId = randomUUID();
+    const ownerEpoch = `fixture-owner-${gameId}`;
+    const object = JSON.stringify(await storeJson({}));
+    const hash = `sha256:${"1".repeat(64)}`;
+    await db.execute(sql`INSERT INTO game_turns (id,game_id,turn_sequence,status,planned_owner_epoch,committed_owner_epoch,base_event_sequence,base_dialogue_sequence,base_publication_sequence,intent_object,intent_hash,effect_hash,commit_result_object,committed_at)
+      VALUES (${turnId},${gameId},1,'committed',${ownerEpoch},${ownerEpoch},0,0,0,${object}::jsonb,${hash},${hash},${object}::jsonb,now()::text)`);
+    const dialogue = await db.select().from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId));
+    for (const [index, row] of dialogue.entries()) {
+      const ordinal = index + 2;
+      await db.update(schema.transcripts).set({gameTurnId: turnId, gameTurnTranscriptOrdinal: ordinal}).where(eq(schema.transcripts.id, row.id));
+      await db.insert(schema.gamePublications).values({gameId, turnId, turnSequence: 1, turnPublicationOrdinal: index + 1, publicationSequence: index + 1, kind: "transcript_entry", payload: {version: 1, kind: "transcript_entry", turnId, transcriptOrdinal: ordinal}, availableAt: FIXTURE_TIME});
+    }
+    await db.insert(schema.transcripts).values({gameId, round: 1, phase: Phase.FORMAT_MINGLE, fromPlayerId: players[0]!.id, speakerPlayerId: players[0]!.id, scope: "huddle", text: "Historical huddle: we keep our promises.", timestamp: Date.parse(FIXTURE_TIME), entrySequence: 1, firstDurableEventSequence: events[0]!.sequence, audiencePlayerIds: [players[0]!.id, players[1]!.id], captureVersion: 1, dialogueKind: "huddle_speech", safeContext: {version: 1, sessionId: "historical-huddle", sessionAudiencePlayerIds: [players[0]!.id, players[1]!.id]}, gameTurnId: turnId, gameTurnTranscriptOrdinal: 1});
+  }
 
   // Keep the local construction honest: the fixture must contain real canonical
   // events rather than a browser-only results payload.

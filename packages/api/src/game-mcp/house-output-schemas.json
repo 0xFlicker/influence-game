@@ -111,6 +111,7 @@
                         "role": {
                           "enum": [
                             "doctor",
+                            "hunter",
                             "seer",
                             "villager",
                             "werewolf"
@@ -155,32 +156,6 @@
                       "vote"
                     ],
                     "type": "string"
-                  },
-                  "conversation": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/definitions/WerewolfConversationState"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "setup": {
-                    "$ref": "#/definitions/WerewolfSetup"
-                  },
-                  "gameId": {
-                    "type": "string"
-                  },
-                  "outcome": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/definitions/WerewolfOutcome"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
                   },
                   "discussion": {
                     "anyOf": [
@@ -239,6 +214,32 @@
                       }
                     ]
                   },
+                  "conversation": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/WerewolfConversationState"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "setup": {
+                    "$ref": "#/definitions/WerewolfSetup"
+                  },
+                  "gameId": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/definitions/WerewolfOutcome"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "audience": {
                     "$ref": "#/definitions/WerewolfAudience"
                   },
@@ -250,6 +251,8 @@
                     "enum": [
                       10,
                       11,
+                      12,
+                      13,
                       7,
                       8,
                       9
@@ -346,6 +349,7 @@
                           "role": {
                             "enum": [
                               "doctor",
+                              "hunter",
                               "seer",
                               "villager",
                               "werewolf"
@@ -390,32 +394,6 @@
                         "vote"
                       ],
                       "type": "string"
-                    },
-                    "conversation": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/definitions/WerewolfConversationState"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "setup": {
-                      "$ref": "#/definitions/WerewolfSetup"
-                    },
-                    "gameId": {
-                      "type": "string"
-                    },
-                    "outcome": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/definitions/WerewolfOutcome"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
                     },
                     "discussion": {
                       "anyOf": [
@@ -474,6 +452,32 @@
                         }
                       ]
                     },
+                    "conversation": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/WerewolfConversationState"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "setup": {
+                      "$ref": "#/definitions/WerewolfSetup"
+                    },
+                    "gameId": {
+                      "type": "string"
+                    },
+                    "outcome": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/definitions/WerewolfOutcome"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "audience": {
                       "$ref": "#/definitions/WerewolfAudience"
                     },
@@ -485,6 +489,8 @@
                       "enum": [
                         10,
                         11,
+                        12,
+                        13,
                         7,
                         8,
                         9
@@ -2123,6 +2129,9 @@
           },
           "doctor": {
             "type": "boolean"
+          },
+          "hunter": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -2182,8 +2191,12 @@
       "WerewolfPublicEntry": {
         "anyOf": [
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "phase"
@@ -2201,7 +2214,6 @@
                 "type": "string"
               }
             },
-            "additionalProperties": false,
             "required": [
               "day",
               "kind",
@@ -2212,6 +2224,9 @@
             "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "speech"
@@ -2264,6 +2279,9 @@
             "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "speech"
@@ -2304,8 +2322,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "discussion"
@@ -2317,7 +2339,6 @@
                 "$ref": "#/definitions/WerewolfDiscussionTurn"
               }
             },
-            "additionalProperties": false,
             "required": [
               "contribution",
               "day",
@@ -2325,8 +2346,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "conversation"
@@ -2371,7 +2396,6 @@
                 "type": "number"
               }
             },
-            "additionalProperties": false,
             "required": [
               "actorId",
               "cue",
@@ -2386,8 +2410,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "ballot"
@@ -2432,7 +2460,6 @@
                 }
               }
             },
-            "additionalProperties": false,
             "required": [
               "actorId",
               "cue",
@@ -2447,8 +2474,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "proposal"
@@ -2484,7 +2515,6 @@
                 "type": "number"
               }
             },
-            "additionalProperties": false,
             "required": [
               "actorId",
               "beat",
@@ -2497,8 +2527,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "pack_vote"
@@ -2510,7 +2544,6 @@
                 "$ref": "#/definitions/WerewolfPackVote"
               }
             },
-            "additionalProperties": false,
             "required": [
               "day",
               "kind",
@@ -2518,8 +2551,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "night"
@@ -2528,6 +2565,12 @@
                 "type": "number"
               },
               "killedId": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "snipeKilledId": {
                 "type": [
                   "null",
                   "string"
@@ -2571,9 +2614,18 @@
                     "type": "null"
                   }
                 ]
+              },
+              "snipe": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/WerewolfSnipeResult"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
-            "additionalProperties": false,
             "required": [
               "day",
               "killedId",
@@ -2581,8 +2633,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "vote"
@@ -2594,7 +2650,6 @@
                 "$ref": "#/definitions/WerewolfDayResult"
               }
             },
-            "additionalProperties": false,
             "required": [
               "day",
               "kind",
@@ -2602,8 +2657,12 @@
             ]
           },
           {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
+              "houseSpeech": {
+                "type": "string"
+              },
               "kind": {
                 "type": "string",
                 "const": "result"
@@ -2615,7 +2674,6 @@
                 "$ref": "#/definitions/WerewolfOutcome"
               }
             },
-            "additionalProperties": false,
             "required": [
               "day",
               "kind",
@@ -2744,6 +2802,35 @@
                 "type": "null"
               }
             ]
+          },
+          "discussion": {
+            "description": "Required by the v13 reducer; historical resolutions retain their exact shape.",
+            "type": "object",
+            "properties": {
+              "beats": {
+                "type": "number"
+              },
+              "agreementBeat": {
+                "type": [
+                  "null",
+                  "number"
+                ]
+              },
+              "endedBy": {
+                "enum": [
+                  "both_pass",
+                  "solo",
+                  "turn_limit"
+                ],
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "agreementBeat",
+              "beats",
+              "endedBy"
+            ]
           }
         },
         "additionalProperties": false,
@@ -2751,6 +2838,35 @@
           "attempt",
           "ballots",
           "endReason",
+          "targetId"
+        ]
+      },
+      "WerewolfSnipeResult": {
+        "type": "object",
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Short item ids. Ownership is a set of these ids; the first supported item is the Hunter's single-use snipe.",
+            "type": "string",
+            "const": "snipe"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "killedId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "actorId",
+          "itemId",
+          "killedId",
           "targetId"
         ]
       },
@@ -6753,6 +6869,7 @@
           "pack_talk",
           "protect",
           "public_vote",
+          "snipe",
           "speaking_priority",
           "vote"
         ],
@@ -7104,6 +7221,8 @@
                         "enum": [
                           10,
                           11,
+                          12,
+                          13,
                           7,
                           8,
                           9
@@ -9940,6 +10059,7 @@
       "WerewolfRole": {
         "enum": [
           "doctor",
+          "hunter",
           "seer",
           "villager",
           "werewolf"
@@ -10129,6 +10249,17 @@
                 "type": "null"
               }
             ]
+          },
+          "snipe": {
+            "description": "Present in v12+ night results. Null when no holder fired an item.",
+            "anyOf": [
+              {
+                "$ref": "#/definitions/WerewolfSnipeResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -10137,6 +10268,35 @@
           "investigation",
           "killedId",
           "protectedId"
+        ]
+      },
+      "WerewolfSnipeResult": {
+        "type": "object",
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "itemId": {
+            "description": "Short item ids. Ownership is a set of these ids; the first supported item is the Hunter's single-use snipe.",
+            "type": "string",
+            "const": "snipe"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "killedId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "actorId",
+          "itemId",
+          "killedId",
+          "targetId"
         ]
       },
       "WerewolfDayResult": {
@@ -10600,6 +10760,7 @@
                   "role": {
                     "enum": [
                       "doctor",
+                      "hunter",
                       "seer",
                       "villager",
                       "werewolf"

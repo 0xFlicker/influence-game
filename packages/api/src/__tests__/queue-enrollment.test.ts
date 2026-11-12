@@ -1,3 +1,4 @@
+import {submitAcceptedTestProfile as updateOwnedAgentProfile} from "./test-utils.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
@@ -14,7 +15,6 @@ import {
 } from "../services/queue-enrollment.js";
 import {
   AgentProfileManagementError,
-  updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
   ensureActiveAgentRevision,
@@ -25,6 +25,9 @@ import { setupTestDB } from "./test-utils.js";
 import { createSeason, closeSeason, getActiveSeason } from "../services/seasons.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
+import { contentImageFixture } from "./content-image-fixture.js";
+import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
+import { randomUUID } from "node:crypto";
 
 const USER_A_ID = "queue-user-a";
 const USER_B_ID = "queue-user-b";
@@ -254,6 +257,36 @@ describe("queue enrollment service", () => {
         temperature: persistedConfig.temperature,
       }),
     ));
+  });
+
+  test("new game and Daily Free entries require full-body art without removing existing entries", async () => {
+    await insertAgent(db, { id: "body-gate", userId: USER_A_ID, name: "Body Gate" });
+    await insertAgent(db, { id: "body-switch", userId: USER_A_ID, name: "Body Switch" });
+    await insertGame(db, { id: "body-game", slug: "body-game", status: "waiting", maxPlayers: 4 });
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: null }).where(eq(schema.agentProfiles.id, "body-gate"));
+    await expect(joinQueue(db, { userId: USER_A_ID }, { queueType: "daily-free", agentId: "body-gate" }))
+      .rejects.toMatchObject({ code: "full_body_required", statusCode: 409 });
+    await expect(joinQueue(db, { userId: USER_A_ID }, { queueType: "open-game", agentId: "body-gate", gameIdOrSlug: "body-game" }))
+      .rejects.toMatchObject({ code: "full_body_required", statusCode: 409 });
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+    expect(await db.select().from(schema.gamePlayers)).toHaveLength(0);
+
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "/api/uploads/local?key=ready-body.png" }).where(eq(schema.agentProfiles.id, "body-gate"));
+    await joinQueue(db, { userId: USER_A_ID }, { queueType: "daily-free", agentId: "body-gate" });
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: null }).where(eq(schema.agentProfiles.id, "body-gate"));
+    expect((await joinQueue(db, { userId: USER_A_ID }, { queueType: "daily-free", agentId: "body-gate" })).queue.status).toBe("already-queued");
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: null }).where(eq(schema.agentProfiles.id, "body-switch"));
+    await expect(joinQueue(db, { userId: USER_A_ID }, { queueType: "daily-free", agentId: "body-switch" }))
+      .rejects.toMatchObject({ code: "full_body_required", statusCode: 409 });
+    expect((await db.select().from(schema.freeGameQueue))[0]!.agentProfileId).toBe("body-gate");
+    await insertGame(db, { id: "legacy-draw", slug: "legacy-draw", status: "waiting", trackType: "free", maxPlayers: 4 });
+    await expect(db.transaction(tx => admitOwnedSeatInTransaction(tx, {
+      gameId: "legacy-draw", userId: USER_A_ID, agentProfileId: "body-switch",
+    }))).rejects.toMatchObject({ reason: "full_body_required" });
+    const draw = await db.transaction(tx => admitOwnedSeatInTransaction(tx, {
+      gameId: "legacy-draw", userId: USER_A_ID, agentProfileId: "body-gate",
+    }));
+    expect(draw.seat.agentProfileId).toBe("body-gate");
   });
 
   test("MCP and REST share the same per-owner limit for open games", async () => {
@@ -623,6 +656,7 @@ async function insertAgent(
     strategyStyle: null,
     personaKey: "strategic",
     avatarUrl: null,
+    fullBodyReferenceUrl: await contentImageFixture(`pfp/generated/${randomUUID()}.png`),
     gamesPlayed: 0,
     gamesWon: 0,
     createdAt: "2026-06-30T00:00:00.000Z",

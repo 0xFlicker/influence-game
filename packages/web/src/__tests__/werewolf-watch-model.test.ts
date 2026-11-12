@@ -243,6 +243,26 @@ test("spoken public ballots retain speech and solo timing in replay exports; sil
   expect(silent.timing.baseDurationMs).toBe(2200);
 });
 
+test("omniscient snipe night expands into a Hunter decision cue and item badges render only from supplied labels", async () => {
+  const {renderToStaticMarkup} = await import("react-dom/server");
+  const {SpeechBubble} = await import("../components/watch/speech-bubble");
+  const {ItemBadges} = await import("../components/watch/item-badges");
+  const night: WerewolfWatchMoment = {...template, cursor: 9,
+    snapshot: {...template.snapshot, audience: "omniscient", day: 1, players: template.snapshot.players.map((player, index) => ({...player, role: index === 0 ? "hunter" as const : index === 1 ? "werewolf" as const : "villager" as const, items: index === 0 ? ["snipe" as const] : []}))},
+    entry: {kind: "night", day: 1, killedId: "p2", snipeKilledId: "p1", attackTargetId: "p2", protectedId: null, investigation: null, snipe: {actorId: "p0", itemId: "snipe", targetId: "p1", killedId: "p1"}},
+    night: {before: {...template.snapshot, day: 1}, actions: [{kind: "snipe", actorId: "p0", targetId: "p1", killedId: "p1", itemId: "snipe", held: false, speech: {text: "Taking the shot.", cue: null}}, {kind: "hunt", wolfIds: ["p1"], targetId: "p2"}]}};
+  const cues = werewolfMomentCues(night);
+  expect(cues.map(cue => cue.nightAction?.kind)).toEqual(["snipe", "snipe", "hunt", undefined]);
+  expect(cues[0]!.nightDecision).toBe(true);
+  expect(werewolfCueMoment(cues[0]!)).toMatchObject({title: "Night 1 · Hunter", text: "Taking the shot.", spoken: true});
+  const {createElement} = await import("react");
+  const bubble = renderToStaticMarkup(createElement(SpeechBubble, {speaker: "Player 0", roleLabel: "hunter", itemLabels: ["snipe"], text: "Taking the shot.",
+    box: {left: 0, top: 0, width: 500, height: 300}, opacity: 1, padding: 20, elapsedMs: 0, staticSpeech: true, tail: {side: "bottom", style: {}}}));
+  expect(bubble).toContain('data-item-badge="snipe"');
+  expect(renderToStaticMarkup(createElement(ItemBadges, {items: []}))).toBe("");
+  expect(renderToStaticMarkup(createElement(ItemBadges, {items: undefined}))).toBe("");
+});
+
 test("saved body changes update an overlapping moment without accepting changed game facts", () => {
   const speech: WerewolfWatchMoment = { ...template, entry: { kind: "conversation", day: 1, id: 1, actorId: "p0", text: "My accepted speech", cue: null, recipientId: null, replyToContributionId: null, unavailable: false, remainingBytes: 2000 } };
   const window: WerewolfWatchWindow = { ...projection, moments: [speech], audience: "mystery", slug: "art", status: "in_progress", publicationCutoff: "now", media: {} };
@@ -252,4 +272,65 @@ test("saved body changes update an overlapping moment without accepting changed 
   expect(cues[0]!.moment.snapshot.players[0]!.fullBodyReferenceUrl).toBe("/characters/transparent.png");
   const forged = { ...updated, moments: [{ ...updated.moments[0]!, snapshot: { ...updated.moments[0]!.snapshot, players: updated.moments[0]!.snapshot.players.map(player => ({ ...player, name: "Forged" })) } }] };
   expect(() => werewolfCues([window, forged])).toThrow("Committed Werewolf playback changed");
+});
+
+test("dawn keeps one caption owner and non-narrated copy preserves both unique victims", async () => {
+  const {renderToStaticMarkup} = await import("react-dom/server");
+  const {createElement} = await import("react");
+  const {WerewolfContentFrame} = await import("../components/games/werewolf/werewolf-watch-stage");
+  for (const [pack,shot] of [[null,"p1"],["p2","p1"],["p1","p1"],["p2",undefined]] as const) {
+    const night:WerewolfWatchMoment = {...template,entry:{kind:"night",day:1,killedId:pack,...(shot !== undefined ? {snipeKilledId:shot} : {})}};
+    const [narrated] = werewolfMomentCues(night);
+    const [silent] = werewolfMomentCues(night,false);
+    const render = (cue:NonNullable<typeof silent>) => renderToStaticMarkup(createElement(WerewolfContentFrame,{cue,scene:null,elapsed:2000,reduced:true,compactResults:true,hideHouseCaption:true}));
+    expect(render(narrated!)).not.toContain("<h2");
+    const html = render(silent!);
+    expect(html).toContain("<h2");
+    const text = werewolfCueMoment(silent!).text;
+    for(const id of new Set([pack,shot].filter(Boolean))) {
+      const name = template.snapshot.players.find(p=>p.id === id)!.name;
+      expect(text.split(name)).toHaveLength(2);
+      expect(html).toContain(name);
+    }
+    expect(text).not.toContain("Everyone survived");
+  }
+});
+
+test("independent night cuts carry only their own spoken copy", () => {
+  const moment: WerewolfWatchMoment = {...template,snapshot:{...template.snapshot,audience:"omniscient"},
+    entry:{kind:"night",day:1,killedId:"p2",houseSpeech:"DAWN_ONLY_COPY"},
+    night:{before:{...template.snapshot,audience:"omniscient"},actions:[
+      {kind:"snipe",actorId:"p0",targetId:null,killedId:null,itemId:"snipe",held:true,speech:{text:"HUNTER_DECISION_ONLY",cue:null},houseSpeech:"HUNTER_HOUSE_ONLY"},
+      {kind:"hunt",wolfIds:["p1"],targetId:"p2",houseSpeech:"HUNT_ONLY_COPY"},
+    ]}};
+  const cues=werewolfMomentCues(moment);
+  const decision=JSON.stringify(cues.find(cue=>cue.nightDecision));
+  expect(decision).toContain("HUNTER_DECISION_ONLY");
+  expect(decision).not.toContain("HUNTER_HOUSE_ONLY");
+  expect(decision).not.toContain("DAWN_ONLY_COPY");
+  expect(decision).not.toContain("HUNT_ONLY_COPY");
+  const action=JSON.stringify(cues.find(cue=>cue.nightAction?.kind==="snipe"&&!cue.nightDecision));
+  expect(action).toContain("HUNTER_HOUSE_ONLY");
+  expect(action).not.toContain("HUNTER_DECISION_ONLY");
+  expect(action).not.toContain("DAWN_ONLY_COPY");
+  expect(action).not.toContain("HUNT_ONLY_COPY");
+  const dawn=JSON.stringify(cues.at(-1));
+  expect(dawn).toContain("DAWN_ONLY_COPY");
+  expect(dawn).not.toContain("HUNTER_HOUSE_ONLY");
+  expect(dawn).not.toContain("HUNTER_DECISION_ONLY");
+  expect(dawn).not.toContain("HUNT_ONLY_COPY");
+});
+
+test("a selected hunt retains the canonical Doctor-save staging without omitted copy", () => {
+  const moment: WerewolfWatchMoment={...template,snapshot:{...template.snapshot,audience:"omniscient"},
+    entry:{kind:"night",day:1,killedId:null,attackTargetId:"p1",protectedId:"p1",houseSpeech:"DAWN_COPY"},
+    night:{before:{...template.snapshot,audience:"omniscient"},actions:[
+      {kind:"protect",actorId:"p0",targetId:"p1",houseSpeech:"DOCTOR_COPY",speech:{text:"DOCTOR_ASIDE",cue:null}},
+      {kind:"hunt",wolfIds:["p2"],targetId:"p1",houseSpeech:"HUNT_COPY"},
+    ]}};
+  const hunt=werewolfMomentCues(moment).find(cue=>cue.nightAction?.kind==="hunt")!;
+  expect(werewolfDoctorSave(hunt.moment)?.doctor.id).toBe("p0");
+  expect(JSON.stringify(hunt)).not.toContain("DOCTOR_COPY");
+  expect(JSON.stringify(hunt)).not.toContain("DOCTOR_ASIDE");
+  expect(JSON.stringify(hunt)).not.toContain("DAWN_COPY");
 });

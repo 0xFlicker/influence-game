@@ -12,11 +12,13 @@ Linode approval receivers may be enabled only after these conditions hold:
 
 1. Merge the approval broker into `influence-game/main`.
 2. Keep repository ruleset `20924439` active and targeting `main`. Its internal rules are controlled by the repository operator and are not interpreted as deployment authority.
-3. Create the `production` environment with required reviewer `0xFlicker`, prevent self-review enabled, administrator bypass disabled, and no environment secrets. The broker independently requires the designated active `main` ruleset and exact current `main` workflow revision, so environment branch filters are not approval authority.
+3. Create the `production` environment with required reviewer `0xFlicker`, prevent self-review enabled, administrator bypass disabled, and no environment secrets. The broker independently requires the designated active `main` ruleset, so environment branch filters are not approval authority.
 4. Preserve the successful sole-maintainer proof evidence from [run `31999647070`, attempt 1](https://github.com/0xFlicker/influence-game/actions/runs/31999647070): App actor `flick-ai-dev[bot]` ID `270169057`, reviewer `0xFlicker`, current `main`, no callback, and no host authority.
 5. Keep the temporary proof workflow removed; production approval is available only through the repository-dispatch broker.
 
 The broker itself accepts only `repository_dispatch`; it does not expose a human `workflow_dispatch` entrypoint. GitHub reruns retain the original repository-dispatch provenance and are accepted when the exact rerun attempt succeeds.
+
+When removing the current-`main` check, update Linode's verifier first and then the Influence broker. Runs started under the old broker retain its old code on rerun; request a fresh qualified candidate after both changes are in place. The Linode controller change can itself invalidate older pending requests under the separate controller-drift check.
 
 ## Approval flow
 
@@ -24,7 +26,7 @@ Linode uploads one immutable `production-approval-request.json` per attempt and 
 
 The protected job repeats the download and validation after approval, rechecks the current environment and designated active `main` ruleset, verifies approval history against user ID `97764360`, and uploads `production-approval.json`. Its callback again contains only artifact locators and a digest.
 
-Linode independently repeats the proof, compares the embedded request with the original private artifact, rejects controller drift, and writes a private one-time consumption marker before production credentials become available.
+Linode independently repeats the proof, compares the embedded request with the original private artifact, rejects production controller drift, and writes a private one-time consumption marker before production credentials become available. The approval run remains bound to its recorded workflow revision, but an unrelated update to Influence `main` or a Markdown or `docs/` HTML documentation-only update to Linode does not invalidate it.
 
 Supported operations are:
 

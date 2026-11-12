@@ -33,6 +33,19 @@ afterEach(async () => {
 });
 
 describe("new game form", () => {
+  test("offers at most sixteen rounds for a new Influence game", async () => {
+    installDom();
+    globalThis.fetch = (async (request: RequestInfo | URL) => {
+      expect(String(request)).toEndWith("/api/provider-models");
+      return jsonResponse(providerInventory());
+    }) as typeof fetch;
+    const mounted = render(<CreateGameForm />);
+    await waitFor(() => expect(mounted.getByRole("combobox", { name: "Fallback 1 model" })).not.toBeNull());
+    const rounds = mounted.getByPlaceholderText("e.g. 9") as HTMLInputElement;
+    expect(rounds.min).toBe("5");
+    expect(rounds.max).toBe("16");
+  });
+
   test("selects allowed models with checkboxes and submits only unchecked exclusions", async () => {
     installDom();
     const bodies: Array<Record<string, unknown>> = [];

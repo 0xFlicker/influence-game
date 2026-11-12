@@ -1,3 +1,4 @@
+import {createAcceptedTestProfile as createOwnedAgentProfile} from "./test-utils.js";
 import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 /**
@@ -15,7 +16,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import {
@@ -29,9 +30,10 @@ import {
   acquireDeploymentAdmissionLease,
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
-import { GameState, Phase, getHousePortraitGender, HOUSE_CAST, type CanonicalGameEvent } from "@influence/engine";
+import { GameState, Phase, getHousePortraitGender, HOUSE_CAST, MAX_NEW_GAME_ROUNDS, MIN_NEW_GAME_ROUNDS, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
   createCompletedCanonicalEventFixture,
@@ -146,11 +148,15 @@ async function grantTestOwnerRole(db: DrizzleDB, roleName: string): Promise<stri
 }
 
 async function createAdditionalTestAgent(db: DrizzleDB, name: string): Promise<string> {
+  const fullBodyReferenceUrl = await contentImageFixture(`pfp/additional-${name.replaceAll(" ", "-")}.png`);
   const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
     name,
     personality: "A distinct saved competitor.",
     personaKey: "strategic",
+    fullBodyReferenceUrl,
+    headPosition: await headPositionFixture(fullBodyReferenceUrl),
   });
+  await acceptTestAgent(db,created.profile.id);
   return created.profile.id;
 }
 
@@ -236,12 +242,18 @@ async function joinTestPlayer(
       eq(schema.agentProfiles.name, savedName),
     )))[0];
   if (!profile) {
+    const image = await contentImageFixture(`pfp/generated/${randomUUID()}.png`);
     const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
       name: savedName,
       personality,
       strategyStyle: `${savedName} strategy`,
       personaKey: "honest",
+      fullBodyReferenceUrl: image,
+      avatarUrl: image,
+      headPosition: await headPositionFixture(image),
+      portraitCrop: { sourceUrl: image, x: 0, y: 0, width: 1, height: 1 },
     });
+  await acceptTestAgent(db,created.profile.id);
     profile = { id: created.profile.id };
   }
   const res = await app.request(
@@ -461,10 +473,13 @@ describe("Game REST API", () => {
       expect(created.status).toBe(201);
       const { id } = await created.json() as { id: string };
       for (let i = 0; i < 6; i++) {
+        const fullBodyReferenceUrl = await contentImageFixture(`pfp/text-competitor-${i}.png`);
         const profile = await createOwnedAgentProfile(db, { userId: ADMIN_USER_ID }, {
           name: `Text Competitor ${i}`, personality: "A distinct saved competitor.", personaKey: "strategic",
           modelPreference: { catalogId: "katana:deepseek-v4-flash" },
+          fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl),
         });
+  await acceptTestAgent(db,profile.profile.id);
         const joined = await app.request(`/api/games/${id}/join`, json({ agentProfileId: profile.profile.id }, adminToken));
         expect([200, 201]).toContain(joined.status);
       }
@@ -589,6 +604,42 @@ describe("Game REST API", () => {
         expect(await res.json()).toEqual({
           error: "playerCount must be an integer between 6 and 12",
         });
+      }
+    });
+
+    test("rejects invalid custom round limits before creating a game", async () => {
+      for (const maxRounds of [
+        null, false, "7", "auto ", 0, 17, 30, 5.5, -1, {}, [], Number.MAX_SAFE_INTEGER,
+      ]) {
+        const res = await app.request(
+          "/api/games",
+          json({ playerCount: 6, maxRounds }, adminToken),
+        );
+        expect(res.status, JSON.stringify(maxRounds)).toBe(400);
+        expect(await res.json()).toEqual({
+          error: `maxRounds must be "auto" or an integer between ${MIN_NEW_GAME_ROUNDS} and ${MAX_NEW_GAME_ROUNDS}`,
+        });
+      }
+
+      const nonFinite = await app.request("/api/games", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: '{"playerCount":6,"maxRounds":1e999}',
+      });
+      expect(nonFinite.status).toBe(400);
+      expect(await db.select({ id: schema.games.id }).from(schema.games)).toHaveLength(0);
+    });
+
+    test("accepts the custom round-limit boundaries", async () => {
+      for (const maxRounds of [MIN_NEW_GAME_ROUNDS, MAX_NEW_GAME_ROUNDS]) {
+        const res = await app.request(
+          "/api/games",
+          json({ playerCount: 6, maxRounds }, adminToken),
+        );
+        expect(res.status).toBe(201);
+        const { id } = (await res.json()) as { id: string };
+        const [game] = await db.select({ config: schema.games.config }).from(schema.games).where(eq(schema.games.id, id));
+        expect(JSON.parse(game!.config).maxRounds).toBe(maxRounds);
       }
     });
 
@@ -1941,6 +1992,7 @@ describe("Game REST API", () => {
         strategyStyle: "Join only when capacity is available.",
         personaKey: "honest",
       });
+  await acceptTestAgent(db,waitingAgent.profile.id);
 
       const res = await app.request(
         `/api/games/${id}/join`,
@@ -1975,6 +2027,7 @@ describe("Game REST API", () => {
         name: "Admin Agent",
         personality: "Owned by the admin",
       });
+  await acceptTestAgent(db,foreignProfile.profile.id);
 
       const res = await app.request(
         `/api/games/${id}/join`,
@@ -3141,13 +3194,16 @@ describe("Game REST API", () => {
 
     test("POST /api/games/:id/join linearizes concurrent identical joins to one seat", async () => {
       const { id } = await createTestGame(app, adminToken);
+      const fullBodyReferenceUrl = await contentImageFixture("pfp/concurrent-rowan.png");
       const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
         name: "Concurrent Rowan",
         personality: "Retries one request without multiplying it.",
         strategyStyle: "Choose one seat.",
         personaKey: "strategic",
         gender: "non-binary",
+        fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl),
       });
+  await acceptTestAgent(db,created.profile.id);
 
       const responses = await Promise.all([
         app.request(`/api/games/${id}/join`, json({ agentProfileId: created.profile.id }, userToken)),

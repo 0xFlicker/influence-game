@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 
@@ -19,7 +19,7 @@ const originalFetch = globalThis.fetch;
 const envKeys = ["OPENAI_API_KEY", "XAI_API_KEY", "INFLUENCE_LOCAL_UPLOAD_DIR", "LINODE_OBJ_ENDPOINT", "LINODE_OBJ_BUCKET", "LINODE_OBJ_ACCESS_KEY", "LINODE_OBJ_SECRET_KEY", "INFLUENCE_AVATAR_GENERATION_FREE_QUOTA", "INFLUENCE_AVATAR_GENERATION_DAILY_LIMIT"] as const;
 const savedEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
 const userId = "character-owner";
-const input = () => ({ requestId: randomUUID(), name: "Mira Vale", personaKey: "diplomat", avatarUrl: null, performanceInstructions: "Measured gestures", visualDesign: "Dark curls, green coat and black boots" });
+const input = () => ({ operation:"create", requestId: randomUUID(), name: "Mira Vale", personaKey: "diplomat", avatarUrl: null, performanceInstructions: "Measured gestures", visualDesign: "Dark curls, green coat and black boots" });
 beforeEach(async () => {
   db = await setupTestDB();
   await db.insert(schema.users).values({ id: userId, walletAddress: "character-wallet" });
@@ -27,7 +27,7 @@ beforeEach(async () => {
   for (const key of envKeys) delete process.env[key];
   process.env.OPENAI_API_KEY = "test-key";
   process.env.INFLUENCE_LOCAL_UPLOAD_DIR = directory;
-  image = await sharp({ create: { width: 1024, height: 1536, channels: 3, background: "#447755" } }).png().toBuffer();
+  image = await sharp({ create: { width: 1024, height: 1536, channels: 4, background: {r:0,g:0,b:0,alpha:0} } }).composite([{input:await sharp({create:{width:300,height:1000,channels:4,background:"#447755"}}).png().toBuffer(),top:200,left:350}]).png().toBuffer();
   calls = [];
   globalThis.fetch = (async (url: string | URL | Request) => {
     const target = String(url); calls.push(target);
@@ -44,40 +44,43 @@ afterEach(async () => {
 describe("complete character image drafts", () => {
   test("one generated full-body image produces a cropped portrait, with exact paid-request replay", async () => {
     const args = input();
-    const result = await generateVisualProfileReference(db, userId, args, "http://localhost");
+    const result = await generateVisualProfileReference(db, userId, args);
     expect(result.cropWarning).toBeNull();
     expect(result.headSuggestion).toMatchObject({ sourceUrl: result.fullBodyReferenceUrl, sourceWidth: 1024, sourceHeight: 1536, rect: { x: .4, y: .07, width: .2, height: .15 } });
     expect(result.headSuggestion?.confirmation).toBeUndefined();
     expect(result.portraitCrop?.sourceUrl).toBe(result.fullBodyReferenceUrl);
     expect(calls.filter((url) => url.includes("/images/"))).toHaveLength(1);
-    const portrait = await readVisualProfileImage(result.avatarUrl!, { name: "", personaKey: "" });
+    const portrait = await readVisualProfileImage(result.avatarUrl!, { name: "", personaKey: "" },{db,userId});
     expect(await sharp(portrait).metadata()).toMatchObject({ width: 512, height: 512 });
-    expect(await generateVisualProfileReference(db, userId, args, "http://localhost")).toEqual(result);
+    expect(await generateVisualProfileReference(db, userId, args)).toEqual(result);
     expect(calls).toHaveLength(2);
     expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
     expect(await loadPayloads(db.select().from(schema.visualRenderAttempts))).toHaveLength(2);
-    const manual = await exportCharacterPortrait({ sourceUrl: result.fullBodyReferenceUrl, x: 0.25, y: 0, width: 0.5, height: 1 / 3 }, "http://localhost");
+    const manual = await exportCharacterPortrait({ sourceUrl: result.fullBodyReferenceUrl, x: 0.25, y: 0, width: 0.5, height: 1 / 3 }, {db,userId});
     expect(manual.portraitCrop).not.toEqual(result.portraitCrop);
     expect(manual.avatarUrl).toBeTruthy();
     expect(calls).toHaveLength(2);
     const context = { userId, publicBaseUrl: "http://localhost" };
     const created = await createOwnedAgentProfile(db, context, { name: args.name, personaKey: args.personaKey, personality: "Observant", gender: "non-binary", creationRequestId: randomUUID() });
-    const saved = await updateOwnedAgentProfile(db, context, created.profile.id, {
-      submissionId: randomUUID(), expectedContentRevisionId: created.profile.contentRevisionId,
+    const saved=await updateOwnedAgentProfile(db, context, created.profile.id, {
+      submissionId: randomUUID(), expectedContentRevisionId: created.profile.latestContentRevisionId,
       headPosition: result.headSuggestion, fullBodyReferenceUrl: result.fullBodyReferenceUrl, avatarUrl: result.avatarUrl, portraitCrop: result.portraitCrop,
       visualDesign: args.visualDesign, performanceInstructions: args.performanceInstructions,
     });
-    expect(saved.profile.headPosition?.confirmation?.userId).toBe(userId);
-    expect(saved.profile.headPosition?.sourceHash).toBe(result.headSuggestion?.sourceHash);
-    expect(saved.profile.avatarUrl).toBe(result.avatarUrl);
-    expect(saved.profile.fullBodyReferenceUrl).toBe(result.fullBodyReferenceUrl);
+    await acceptTestAgent(db,created.profile.id);
+    const [accepted]=await db.select().from(schema.agentProfiles).where((await import("drizzle-orm")).eq(schema.agentProfiles.id,created.profile.id));
+    expect(accepted!.headPosition?.confirmation?.userId).toBe(userId);
+    expect(accepted!.headPosition?.sourceHash).toBe(result.headSuggestion?.sourceHash);
+    expect(accepted!.avatarUrl).toBe(result.avatarUrl);
+    expect(accepted!.fullBodyReferenceUrl).toBe(result.fullBodyReferenceUrl);
     expect(saved.receipt.moderationRecordId).toBeTruthy();
     const recropped = await updateOwnedAgentProfile(db, context, created.profile.id, {
-      submissionId: randomUUID(), expectedContentRevisionId: saved.profile.contentRevisionId,
+      submissionId: randomUUID(), expectedContentRevisionId: saved.profile.latestContentRevisionId,
       avatarUrl: manual.avatarUrl, portraitCrop: manual.portraitCrop,
     });
-    expect(recropped.profile.headPosition).toEqual(saved.profile.headPosition);
-    expect(recropped.profile.portraitCrop).toEqual(manual.portraitCrop);
+    expect(recropped.profile.headPosition).toEqual(accepted!.headPosition);
+    const [recropDraft]=await loadPayloads(db.select().from(schema.agentContentRevisions).where((await import("drizzle-orm")).eq(schema.agentContentRevisions.id,recropped.receipt.contentRevisionId!)));
+    expect(recropDraft!.snapshot.portraitCrop).toEqual(manual.portraitCrop);
     expect(calls).toHaveLength(2);
   });
   test("uncertain paid transport is recorded and the same request cannot redispatch", async () => {
@@ -116,9 +119,9 @@ describe("complete character image drafts", () => {
     const sourceUrl = "/api/uploads/local?key=pfp%2Foriented.jpg";
     const crop = { sourceUrl, x: 0, y: 0, width: .6, height: .4 };
     const head = { x: .1, y: .1, width: .2, height: .2 };
-    const confirmed = await exportCharacterPortrait(crop, "http://localhost", head);
+    const confirmed = await exportCharacterPortrait(crop, {db,userId}, head);
     expect(confirmed.headPosition).toMatchObject({ sourceWidth: 400, sourceHeight: 600, rect: head });
-    await expect(exportCharacterPortrait({ ...crop, x: .2 }, "http://localhost", head)).rejects.toThrow("entire head");
+    await expect(exportCharacterPortrait({ ...crop, x: .2 }, {db,userId}, head)).rejects.toThrow("entire head");
     expect(calls).toHaveLength(0);
   });
 });

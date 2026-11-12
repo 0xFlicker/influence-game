@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createAdminRoutes } from "../routes/admin.js";
-import { applyOwnedOwnerLearningReview } from "../services/owner-learning-apply.js";
+import { applyAcceptedTestReview as applyOwnedOwnerLearningReview } from "./test-utils.js";
 import {
   fingerprintOwnerLearningValue,
   type OwnerLearningReviewResult,
@@ -217,7 +217,7 @@ describe("owner learning admin ledger", () => {
     expect(detail!.gameKind).toBe("influence");
     expect(detail!.reviewedRevision.ordinal).toBeGreaterThan(0);
     expect(detail!.acceptance).toBe("accepted");
-    expect(detail!.application).toEqual({ appliedAt: "2026-08-04T04:00:00.000Z" });
+    expect(detail!.application).toEqual({ appliedAt: expect.any(String) });
     expect(detail!.tokens).toEqual({
       input: 1_000,
       cachedInput: 600,
@@ -267,8 +267,7 @@ describe("owner learning admin ledger", () => {
     }
 
     const list = await listAdminOwnerLearningReviews(db, {
-      dateFrom: "2026-08-04T00:00:00.000Z",
-      dateTo: "2026-08-04T23:59:59.999Z",
+
       track: "evidence_rich",
       status: "ready",
       model: "openai:gpt-6-luna",

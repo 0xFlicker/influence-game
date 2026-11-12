@@ -28,6 +28,8 @@ export function projectWerewolfPresentation(events: readonly WerewolfEvent[], au
     if (view.cursor !== latestCursor + 1) throw new Error("Replay event requires explicit multi-entry staging");
     latestCursor = view.cursor;
     if (selected && cursor !== undefined && latestCursor > cursor) continue;
+    const narration = event.houseNarration?.[audience]?.scene;
+    if (narration) view.entries = view.entries.map((entry,index) => index === view.entries.length - 1 ? {...entry,houseSpeech:narration} : entry);
     const entry = view.entries.at(-1)!;
     selected = { view, staging: werewolfVisualStaging(before ?? state, event, entry) };
   }

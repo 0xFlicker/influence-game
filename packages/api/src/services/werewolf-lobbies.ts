@@ -15,7 +15,7 @@ import { generateUniqueSlug } from "../lib/slug.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { checkGameStartAdmissionInTransaction } from "./deployment-admission.js";
 import { readPublishedWerewolfCharacters, readWerewolfCastingPlayers } from "./werewolf-cast.js";
-import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
+import { hasEligibleAgentContent, hasFullBodyAgentArt } from "./agent-content-eligibility.js";
 import { createWerewolfHousePlayers, freezeWerewolfRoster, WerewolfGameError } from "./werewolf-games.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
@@ -35,7 +35,7 @@ export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: 
   const slug = await generateUniqueSlug(async candidate => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   await db.insert(schema.games).values({ id, slug, gameKind: "werewolf", gameKernel: null, createdById: userId, status: "waiting", trackType: "custom", minPlayers: count, maxPlayers: count,
-    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, audioMode: input.audioMode ?? false, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, discussionPolicy: rules.discussionPolicy, modelRouting, serviceTier: "flex", visibility }) });
+    config: JSON.stringify({ houseNarrationVersion: 1, preset: input.preset, setup: rules.setup, ...casting, audioMode: input.audioMode ?? false, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, discussionPolicy: rules.discussionPolicy, modelRouting, serviceTier: "flex", visibility }) });
   return { id, slug };
 }
 
@@ -56,6 +56,7 @@ export async function joinWerewolfLobby(db: DrizzleDB, id: string, userId: strin
     const seats = (await readWerewolfCastingPlayers(tx, [game.id])).get(game.id) ?? [];
     const existing = seats.find(seat => seat.agentProfileId === agentProfileId);
     if (existing) return { playerId: existing.id };
+    if (!hasFullBodyAgentArt(profile)) throw new WerewolfGameError("Add a full-body image to this agent before joining a game.", 409);
     if (seats.length >= game.maxPlayers) throw new WerewolfGameError("The village is full.");
     const [owner] = await tx.select({ publicId: schema.users.publicId }).from(schema.users).where(eq(schema.users.id, userId));
     if (seats.some(seat => seat.ownerPublicId === owner!.publicId) && !await userHasAnyRole(tx, userId, ["admin", "sysop", "producer"])) throw new WerewolfGameError("You already have an agent in this game.", 403);
@@ -99,7 +100,7 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     const config = JSON.parse(game.config);
 
     const rules = werewolfConfig(config.preset, config.maxDays, config.setup);
-    if (![7, 8, 9, 10, 11].includes(config.rulesVersion)) throw new WerewolfGameError("Unsupported frozen Werewolf rules version");
+    if (![7, 8, 9, 10, 11, 12, 13].includes(config.rulesVersion)) throw new WerewolfGameError("Unsupported frozen Werewolf rules version");
     rules.rulesVersion = config.rulesVersion;
     if (config.rulesVersion < 9) delete rules.discussionPolicy;
     else if (config.discussionPolicy) rules.discussionPolicy = config.discussionPolicy;

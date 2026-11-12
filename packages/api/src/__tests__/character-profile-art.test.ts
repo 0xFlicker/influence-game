@@ -10,7 +10,7 @@ import { setupTestDB } from "./test-utils.js";
 import { createOpaqueAvatarStorageKey } from "../lib/avatar-storage-keys.js";
 import { storePublicAvatarImage } from "../lib/storage.js";
 import { exportCharacterPortrait } from "../services/visual-profile-generation.js";
-import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { createAcceptedTestProfile as createOwnedAgentProfile, submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { freezeWaitingRosterInTransaction } from "../services/roster-freeze.js";
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
@@ -41,7 +41,7 @@ afterEach(async () => {
 
 async function upload(bytes: Buffer, crop: { x: number; y: number; width: number; height: number }, head: typeof crop) {
   const stored = await storePublicAvatarImage(createOpaqueAvatarStorageKey("uploaded", "png"), "image/png", new Uint8Array(bytes).buffer, context.publicBaseUrl);
-  return { fullBodyReferenceUrl: stored.publicUrl, ...await exportCharacterPortrait({ sourceUrl: stored.publicUrl, x: crop.x, y: crop.y, width: crop.width, height: crop.height }, context.publicBaseUrl, head) };
+  return { fullBodyReferenceUrl: stored.publicUrl, ...await exportCharacterPortrait({ sourceUrl: stored.publicUrl, x: crop.x, y: crop.y, width: crop.width, height: crop.height }, {db,userId:context.userId}, head) };
 }
 
 async function games(agentProfileId: string) {
@@ -54,6 +54,11 @@ async function games(agentProfileId: string) {
   const seat = await joinWerewolfLobby(db, wolf.id, context.userId, agentProfileId);
   await fillWerewolfLobby(db, wolf.id);
   await startWerewolfLobby(db, wolf.id);
+  // This art-only fixture pins a pre-narration opening. New opening publication
+  // and its waiting boundary are exercised in werewolf.test.ts.
+  const [running] = await db.select({config:schema.games.config}).from(schema.games).where(eq(schema.games.id,wolf.id));
+  const {houseNarrationVersion:_narrationRevision,...historicalConfig} = JSON.parse(running!.config);
+  await db.update(schema.games).set({config:JSON.stringify(historicalConfig)}).where(eq(schema.games.id,wolf.id));
   return { influence: id, persona: JSON.parse(frozen.seats[0]!.persona), wolf: wolf.id, player: seat.playerId };
 }
 

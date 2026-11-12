@@ -1,3 +1,10 @@
+import {
+  conversionDeliveryEnvFromProcess,
+  reconcileSignupConversions,
+  deliverPendingConversions,
+} from "./services/campaign-conversions.js";
+import { createDiscordRoutes } from "./routes/discord.js";
+import { startCharacterReferenceWorker } from "./services/character-reference-jobs.js";
 import { restoreLocalChampionshipSchedules, stopLocalChampionshipTimers } from "./services/championship-scheduling.js";
 import { createGameRetryRoutes } from "./routes/game-retry.js";
 import { processChampionshipArtwork } from "./services/championship-artwork.js";
@@ -55,6 +62,7 @@ import {configureLocalRenderJobs} from "./services/render-jobs.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
+import { createCampaignAttributionRoutes } from "./routes/campaign-attribution.js";
 import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
 import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
@@ -460,6 +468,7 @@ async function finishBackgroundRuntimeStartup(
     ? null
     : await startProviderHealthProbeRuntime(db);
   const houseCutWorker = gameExecutionWorker && !localEvaluation ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
+  const characterReferenceWorker = gameExecutionWorker && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true" ? startCharacterReferenceWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const characterCutoutDispatcher = gameExecutionWorker ? startCharacterCutoutDispatcher(db, () => runtimeActivation.canClaimWork()) : null;
   const audioWorker = gameExecutionWorker ? startAudioWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
@@ -522,6 +531,20 @@ async function finishBackgroundRuntimeStartup(
     }, 2_000)
     : null;
   executionScanTimer?.unref();
+  // Conversion delivery is post-commit and best-effort: pending rows retry
+  // here, never inside a product mutation. Unconfigured destinations are
+  // recorded on the row instead of being reported as delivered.
+  let conversionDeliveryWork: Promise<unknown> | null = null;
+  const conversionDeliveryTimer = gameExecutionWorker
+    ? setInterval(() => {
+      if (stopping || conversionDeliveryWork || !gameExecutionWorker.canClaimGames()) return;
+      conversionDeliveryWork = reconcileSignupConversions(db)
+        .then(() => deliverPendingConversions(db, conversionDeliveryEnvFromProcess()))
+        .catch(() => console.warn("[campaign-conversions] Delivery deferred"))
+        .finally(() => { conversionDeliveryWork = null; });
+    }, 60_000)
+    : null;
+  conversionDeliveryTimer?.unref();
   // Restore explicit development schedules once. Production authority is EventBridge.
   if (!gameExecutionWorker) await restoreLocalChampionshipSchedules(db);
   let championshipArtworkWork: Promise<unknown> | null = null;
@@ -544,12 +567,15 @@ async function finishBackgroundRuntimeStartup(
       await renderWakeDispatcher?.stop();
       await audioWorker?.stop();
       await houseCutWorker?.stop();
+      await characterReferenceWorker?.stop();
       await characterCutoutDispatcher?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();
       await agentScreeningWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
+      if (conversionDeliveryTimer) clearInterval(conversionDeliveryTimer);
+      if (conversionDeliveryWork) await conversionDeliveryWork;
       stopLocalChampionshipTimers();
       if (championshipArtworkTimer) clearInterval(championshipArtworkTimer);
       if (championshipArtworkWork) await championshipArtworkWork;
@@ -705,6 +731,8 @@ const adminRoutes = createAdminRoutes(db);
 app.route("/", adminRoutes);
 
 // Free game queue routes
+app.route("/", createCampaignAttributionRoutes(db));
+
 const freeQueueRoutes = createFreeQueueRoutes(db);
 app.route("/", freeQueueRoutes);
 
@@ -726,6 +754,7 @@ app.route("/", uploadRoutes);
 
 const profileRoutes = createProfileRoutes(db);
 app.route("/", profileRoutes);
+app.route("/", createDiscordRoutes(db));
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support

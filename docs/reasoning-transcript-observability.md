@@ -103,7 +103,7 @@ New shared model invocations request primarily English speech, thinking, explana
 
 ## Playback evidence boundaries
 
-Both games reuse the House watch shell and scheduler. Werewolf Thinking requests are opt-in, Omniscient-only and bound to the consumed audience cursor and selected player. Prefetched entries and the live head cannot supply current thinking or cast state. Discussion passes have no playback cues, scrub stops, thinking shots or speech holds, even when Thinking is enabled. Their saved thinking remains available through the debugging API/MCP. Audience switches clear pending reads and restart paused.
+Both games reuse the House watch shell and scheduler. Werewolf Thinking requests are opt-in, Omniscient-only and bound to the consumed audience cursor and selected player. Prefetched entries and the live head cannot supply current thinking or cast state. Discussion passes have no playback cues, scrub stops, thinking shots or speech holds, even when Thinking is enabled. Their saved thinking remains available through the debugging API/MCP. Audience switches clear pending reads and retain playback intent at the mapped position.
 
 Contestant observations exclude silent discussion entries and scheduler bookkeeping, including order, offer counts, silent/unavailable IDs, previous/next scheduled actors and end reasons. Their history cursor and contribution references count only visible speech; provider schemas use those references and validated decisions map back to canonical IDs before journaling. Current-turn redirection instructions and the shared byte allowance remain available. Public ballot order and abstentions remain visible. Canonical pass events, raw provider responses and private thinking are unchanged and remain accessible for debugging through API/MCP.
 
@@ -798,7 +798,7 @@ Influence Production Studio anchors captured empowered tie-break thinking to the
 
 The live/replay player uses the tie-break cue’s empowered actor and exact `format-tiebreak` or `format-two-names-tiebreak` action. Other voting cues exclude those actions, and the deciding-vote cue does not repeat the thought. The shared director holds the unselected nominee scene while the captured thought plays, then continues to the choice without a model call.
 
-Werewolf viewing mode is selected before playback (`?audience=mystery` or `?audience=omniscient`); it stays fixed for the session. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Influence retains its Strategy Lens. Werewolf uses a Decisions inspector: resolved public ballots for Mystery; resolved ballots, night choices and expandable captured decision thinking for Omniscient. The inspector does not depend on the stage thinking toggle. Reads are bounded to the selected player and current audience-local cursor; Mystery never receives thinking or night decisions, including at completion. It reads existing accepted evidence without generating analysis or exposing provider-native reasoning.
+Werewolf replay links select an audience (`?audience=mystery` or `?audience=omniscient`), which can also be switched in the player. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Influence retains its Strategy Lens. Werewolf uses a Decisions inspector: resolved public ballots for Mystery; resolved ballots, night choices and expandable captured decision thinking for Omniscient. The inspector does not depend on the stage thinking toggle. Reads are bounded to the selected player and current audience-local cursor; Mystery never receives thinking or night decisions, including at completion. It reads existing accepted evidence without generating analysis or exposing provider-native reasoning.
 
 The shared watch thought bubble is rendered within the scene canvas, above speech, with secondary text and a circle tail toward the actor. In Thinking first mode, it stays anchored when speech is measured and remains visible until both bubbles share the speech exit, including manual dismissal. It does not change raw transcripts or generate new words. Werewolf day-vote abstentions animate silently into the Hear more ledger bucket; unavailable ballots remain distinct.
 
@@ -960,3 +960,51 @@ Empower runoff now has a separate direct House summary boundary (`empower_runoff
 
 
 Format-menu MC checks: the `format_menu` boundary supplies canonical `format.menu_offered` facts (Empowered player and both offered formats). Review facts plus one grounded sentence without implying the unresolved selection. Playback retains the menu during the saved summary, including historical summaries recovered from their exact committing turn. Use the localhost API for paid review, retain strict schemas and native/provider evidence, and never fabricate or regenerate historical speech.
+
+Hunter v12 item observations (`itemCatalog`, `items`) are version-scoped; they must not change v7–v11 planned-observation hashes. Hunter explanations remain private asides, independently selectable from the held/fired result in Studio. Retrospective facts retain item IDs, targets and canonical snipe deaths; already-frozen definitions remain immutable. No `as any` or direct-House-call bypass.
+
+Werewolf House summaries use `werewolf.house-summary.mystery` and
+`werewolf.house-summary.omniscient` journal actions at the canonical event boundary.
+Inspect accepted structured copy alongside sanitized attempts, available native
+reasoning, retries and usage. Mystery authoring receives only its public projection.
+Narration is spectator presentation, not contestant thinking or accepted game
+facts; never parse its prose back into authority. No `as any` or direct Influence
+House calls are used for Werewolf execution.
+
+Werewolf House authoring inputs use `requestedParts` plus canonical facts, never fallback
+announcement prose or previously saved House text. Phase announcements receive no
+dialogue recap. Mystery and Omniscient remain separately scoped journal calls.
+
+
+Werewolf strategy coaching now includes a small private glossary (reads, clears,
+tunneling, bussing, distancing, pocketing, counterclaims, process of elimination
+and parity). Every village role receives shared evidence evaluation and majority
+coordination guidance; wolves compare rescue, redirection, no elimination and
+sacrifice without mandatory partner defense or bussing. Role-specific guidance
+covers investigation value, protection alternatives and the risk of dying with
+an unused snipe. Character personality, owner notes and frozen archetype strategies
+remain intact; characters retain their voice while updating beliefs. No new
+provider calls, decision fields or contestant knowledge are introduced. Historical
+accepted decisions remain unchanged. Evaluate future two-wolf games over multiple
+days for faction outcomes and decision quality; glossary usage alone is not a
+success metric. No paid simulation was run for this prompt update.
+
+### Werewolf v13 pack strategy
+
+Each multi-wolf night slot keeps exact `{targetId, text, cue, thinking}` output.
+V13 frozen requests add wolf-only `packTurn` (current actor's turn, three-turn
+maximum and locked target). Agreement locks the target immediately but only the
+later `werewolf.pack_vote_resolved` closes talk. Its `discussion` records total
+beats, agreement beat and closure reason. Each wolf has at most three turns;
+successful passes count toward early closure only after the locking decision.
+Provider failures never impersonate voluntary silence or erase the lock.
+
+Pack planning must be in accepted speech for the partner to hear it. Individual
+thinking and native reasoning remain private evidence. Verify the next day's wolf
+priority, discussion and ballot prompts contain accepted pack speech; non-wolves
+and Mystery must not. Playback and Studio omit passes even with Show thinking;
+debug APIs retain their canonical records and private evidence. Keep one durable
+provider slot per decision, complete sanitized attempts and immutable accepted
+values; recovery reuses the same slot without redispatch. Use direct House calls
+and exact types without `as any` when extending orchestration. Paid evaluations
+require their own authorization and durable localhost API game IDs.

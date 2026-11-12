@@ -8,6 +8,7 @@ import {RoomBackdrop, DEFAULT_ROOM_BACKDROP} from "./stage-backdrop";
 import {TimedSpeech} from "./timed-speech";
 import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_SIZE} from "./portrait-room-pagination";
 import type {VisualPresentationBeat} from "./visual-presentation";
+import {ItemBadges} from "@/components/watch/item-badges";
 
 /** Compact crowded rooms retain every attendee on pages sampled from the shared clock. */
 export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reducedMotion, backgroundUrl, hideSpeech, onImageReady}: {
@@ -42,8 +43,9 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
     </div>
     <div className="relative grid min-h-0 flex-1 grid-cols-2 gap-2 px-3 pb-2 pt-12">
       <div data-speech-bubble className="flex min-h-0 flex-col rounded-xl border border-white/25 bg-black/90 p-2 text-white" style={{opacity:thought ? thought.opacity : hideSpeech ? 0 : speechOpacity}}>
-        <p className="shrink-0 break-words text-sm font-semibold leading-4">{thought ? `${speaker.name} thinks` : speaker.name}</p>
-        <TimedSpeech text={text} elapsedMs={readingElapsedMs} progress={progress} className="mt-1 text-sm leading-5" />
+        <p className="shrink-0 break-words text-sm font-semibold leading-4">{thought ? `${speaker.name} thinks` : beat.speech.speaker}</p>
+        {thought?.roleLabel && <p data-thinking-role className="shrink-0 text-sm leading-4 text-amber-200">{thought.roleLabel}</p>}
+        <TimedSpeech advancePart={thought ? "thinking" : "speech"} text={text} elapsedMs={readingElapsedMs} progress={progress} progressDurationMs={thought ? thought.durationMs : Math.max(1,duration - 1450)} className="mt-1 text-sm leading-5" />
       </div>
       <div className="flex min-h-0 flex-col justify-center gap-1" aria-label={`Cast page ${page + 1} of ${pages}`}>
         {visible.map(player => {
@@ -53,7 +55,7 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
             {/* eslint-disable-next-line @next/next/no-img-element -- frozen cast portrait with deterministic fallback */}
             <img ref={player.id === speaker.id ? activeImage : undefined} src={source} alt={player.name} onLoad={player.id === speaker.id ? onImageReady : undefined}
               onError={() => setFailed(previous => new Set(previous).add(saved))} className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-white/40" />
-            <p className="min-w-0 break-words text-xs leading-4 text-white">{player.name}</p>
+            <p className="flex min-w-0 items-center gap-1.5 break-words text-xs leading-4 text-white"><span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">{player.name}</span><ItemBadges items={player.items} compact /></p>
           </div>;
         })}
         <p className="text-right text-xs text-white/65" aria-label={`Cast page ${page + 1} of ${pages}`}>{page + 1} / {pages}</p>

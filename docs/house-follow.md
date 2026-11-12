@@ -55,7 +55,7 @@ In the Mac `house-host` checkout:
 bun scripts/tunnel-game-to-pc.mjs
 ```
 
-The helper uses the existing `borg-pc-1:2222` SSH connection and loopback-only WSL forwards: Windows `http://localhost:3001` → Mac web, Windows `http://localhost:3000` → Mac API. Keep it running. This preserves the localhost secure context required by Privy. The House still runs on the PC. Occupied listening ports produce an error; no service is replaced or permanent proxy installed.
+The helper uses the existing `borg-pc-1:22` SSH connection and loopback-only WSL forwards: Windows `http://localhost:3001` → Mac web, Windows `http://localhost:3000` → Mac API. Keep it running. This preserves the localhost secure context required by Privy. The House still runs on the PC. Occupied listening ports produce an error; no service is replaced or permanent proxy installed.
 
 Use `http://localhost:3001` in Windows. Allow local-network access if Chrome asks. The bridge accepts the normal localhost development origin, The House production origin, and existing staging origin. Remote HTTPS-to-localhost behavior is not qualified by the local test.
 
@@ -83,3 +83,5 @@ The correction passed ten Strict Mode browser cases plus a cross-project smoke u
 The paired player publishes a separate commentary boundary from its canonical cues and the existing recorded playback clock. A night-resolution screen is kept together with the following daytime announcement; quiet gaps between these screens do not release buffered House audio. Announcements, including the result reveal, reserve the floor until their narration/read window finishes. This does not widen or otherwise change the Mystery/Omniscient knowledge projection.
 
 After the retrospective reaches the closing results reprise, the player explicitly reports concluded playback. House Studio sends one acknowledged game-finished update and asks for a closing take followed by discussion with the operator. Buffering and the automatic microphone gate end at that boundary; manual microphone/House mute selections remain authoritative. The winner's first reveal is not the end-of-game conversation trigger.
+
+Werewolf transformation entrances do not release the upcoming pack contribution. Follow context waits for the speech read boundary, independently of the scrub position (which remains at the transformation start). Pending House commentary stays held through the entrance and the contribution, including recorded speech duration.

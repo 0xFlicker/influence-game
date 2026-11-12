@@ -221,7 +221,7 @@ inspector, navigation and surrounding progress stay outside. Playback controls
 float over a gradient, hide after three idle seconds while playing, and remain
 available on pointer, touch, keyboard, focus or pause. Content clicks use the same
 speech staging inside and outside fullscreen. While playing, the first click when
-controls are hidden reveals controls; subsequent clicks advance the speech stage.
+controls are hidden reveals controls; subsequent clicks advance one speech page at a time before moving past the stage.
 While paused, each click shows or hides speech. Fullscreen Mingle temporarily follows the active
 speaker; leaving restores the normal pinned-room selection.
 
@@ -459,3 +459,9 @@ Music always runs at 1×, including Influence and Werewolf opening tracks. Chang
 ## Text-only contestant models
 
 Visual Mode does not restrict contestant admission or remove recovery models. Text-only models receive canonical room participants, observable cues, and performance instructions; image-capable models also receive the scene image. Adaptation happens per provider attempt without rewriting sealed assignments or frozen context authority. Private provider evidence records the actual request. Required image inputs outside this optional scene contract still fail validation when unsupported.
+
+## Image provider policy
+
+All new Visual Mode image calls explicitly choose a semantic operation: new composition uses `gpt-image-2.6-flare`, targeted edit uses `gpt-image-2.6-sunburst`. Both use medium quality. References do not determine intent: a new cast-referenced scene is still a composition. Rooms, panoramas and composed scenes remain opaque; character bodies and variants request native alpha and validate the source pixels before resize/padding. An opaque OpenAI response is a failed alpha contract, not successful transparency.
+
+The existing xAI availability fallback retains its source and receipt, then uses our source-hash background-removal pipeline for transparent character output. Removal or final preparation failure reuses that source; no new image dispatch is permitted merely because a later stage failed. Native alpha and verified existing derivatives skip removal. Historical accepted rooms, bodies, variants and frozen game assets are reused without regeneration. See [deployment and qualification](deployment/agent-workspace.md).

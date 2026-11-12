@@ -73,7 +73,7 @@ export function InviteCodesSection({
   copiedCode: string | null;
   onCopy: (code: string) => void;
 }) {
-  if (!inviteCodes || inviteCodes.available.length === 0) return null;
+  if (!inviteCodes?.enabled || inviteCodes.available.length === 0) return null;
 
   return (
     <section className="influence-panel rounded-xl p-6">
@@ -169,7 +169,7 @@ export function LoginMethodsSection({
   );
 }
 
-export function ProfileContent() {
+export function ProfileContent({ onAuthAction }: { onAuthAction?: () => void } = {}) {
   const { account } = useAuth();
   const runtimeConfig = useRuntimeConfig();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
@@ -192,6 +192,7 @@ export function ProfileContent() {
   // Invite codes
   const [inviteCodes, setInviteCodes] = useState<InviteCodesResponse | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   useEffect(() => {
     function fetchProfile() {
@@ -213,8 +214,8 @@ export function ProfileContent() {
         .finally(() => setLoading(false));
 
       getMyInviteCodes()
-        .then(setInviteCodes)
-        .catch(() => {});
+        .then((codes) => { setInviteCodes(codes); setInviteError(null); })
+        .catch(() => setInviteError("Could not load invite codes."));
     }
 
     fetchProfile();
@@ -282,14 +283,7 @@ export function ProfileContent() {
     && handleInput.trim().toLowerCase() !== profile.handle.toLowerCase();
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="influence-phase-title text-3xl font-bold mb-1">Profile</h1>
-        <p className="influence-copy text-sm">
-          Your account settings and Influence ELO rating.
-        </p>
-      </div>
-
+    <div className="space-y-0">
       {/* Public identity */}
       <section className="influence-panel rounded-xl p-6">
         <h2 className="influence-section-title mb-4">
@@ -424,43 +418,6 @@ export function ProfileContent() {
         )}
       </section>
 
-      <ProfileAwards profile={profile} />
-
-      {/* Account rating stats */}
-      <section className="influence-panel rounded-xl p-6">
-        <h2 className="influence-section-title mb-4">
-          Influence Free-Track Rating
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-          <div>
-            <p className="text-3xl font-bold text-text-primary font-mono">
-              {profile.rating}
-            </p>
-            <p className="influence-copy-muted text-xs mt-1">Current Account ELO</p>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-text-primary/65 font-mono">
-              {profile.peakRating}
-            </p>
-            <p className="influence-copy-muted text-xs mt-1">Peak Account ELO</p>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-text-primary font-mono">
-              {profile.gamesPlayed}
-            </p>
-            <p className="influence-copy-muted text-xs mt-1">Games Played</p>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-yellow-400 font-mono">
-              {profile.gamesPlayed > 0 ? `${winRate}%` : "-"}
-            </p>
-            <p className="influence-copy-muted text-xs mt-1">
-              Win Rate ({profile.gamesWon}W)
-            </p>
-          </div>
-        </div>
-      </section>
-
       {/* Account Info */}
       <section className="influence-panel rounded-xl p-6">
         <h2 className="influence-section-title mb-4">
@@ -501,11 +458,13 @@ export function ProfileContent() {
           emailPassword: false,
         }}
         onAddPassword={() => {
+          onAuthAction?.();
           window.dispatchEvent(new CustomEvent("auth:open-link-password", {
             detail: { email: account?.email ?? profile.email ?? "" },
           }));
         }}
         onResetPassword={() => {
+          onAuthAction?.();
           window.dispatchEvent(new CustomEvent("auth:open-reset-password", {
             detail: { email: account?.email ?? profile.email ?? "" },
           }));
@@ -518,11 +477,58 @@ export function ProfileContent() {
         inviteCodes={inviteCodes}
         copiedCode={copiedCode}
         onCopy={(code) => {
-          navigator.clipboard.writeText(code);
-          setCopiedCode(code);
-          setTimeout(() => setCopiedCode(null), 2000);
+          if (!navigator.clipboard) { setInviteError("Clipboard access is unavailable."); return; }
+          void navigator.clipboard.writeText(code).then(() => {
+            setInviteError(null);
+            setCopiedCode(code);
+            setTimeout(() => setCopiedCode(null), 2000);
+          }).catch(() => setInviteError("Could not copy the invite code."));
         }}
       />
+      {inviteError && <p role="alert" className="text-sm text-red-300">{inviteError}</p>}
+
+      <ProfileAwards profile={profile} />
+      <section className="influence-panel space-y-3 rounded-xl p-6">
+        <h2 className="influence-section-title">Discord</h2>
+        <p className="influence-copy">Connect your Discord account and manage your House server roles.</p>
+        <Link className="influence-link inline-block py-2" href="/discord/verify">Manage Discord connection</Link>
+      </section>
+
+      {/* Account rating stats */}
+      <section className="influence-panel rounded-xl p-6">
+        <h2 className="influence-section-title mb-4">
+          Influence Free-Track Rating
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+          <div>
+            <p className="text-3xl font-bold text-text-primary font-mono">
+              {profile.rating}
+            </p>
+            <p className="influence-copy-muted text-xs mt-1">Current Account ELO</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-text-primary/65 font-mono">
+              {profile.peakRating}
+            </p>
+            <p className="influence-copy-muted text-xs mt-1">Peak Account ELO</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-text-primary font-mono">
+              {profile.gamesPlayed}
+            </p>
+            <p className="influence-copy-muted text-xs mt-1">Games Played</p>
+          </div>
+          <div>
+            <p className="text-3xl font-bold text-yellow-400 font-mono">
+              {profile.gamesPlayed > 0 ? `${winRate}%` : "-"}
+            </p>
+            <p className="influence-copy-muted text-xs mt-1">
+              Win Rate ({profile.gamesWon}W)
+            </p>
+          </div>
+        </div>
+      </section>
+
 
       {/* Link to leaderboard */}
       <div className="text-center">

@@ -153,7 +153,7 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
         {(imageFailed || !anchor && !pointer) && speech.playerId && <div data-headshot-fallback><AgentAvatar {...speech.portrait} persona={speech.portrait?.persona ?? ""} name={speech.speaker} size="12" /></div>}
         <p className="truncate text-base font-semibold text-white/80">{speech.playerId === null ? "Anonymous" : speech.speaker}</p>
       </div>
-      <TimedSpeech typography={speechFit.typography} text={speech.text} elapsedMs={speechPresentation === "solo" ? soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs : readingElapsedMs - SCENE_SPEECH_START_MS}
+      <TimedSpeech advancePart="speech" typography={speechFit.typography} text={speech.text} elapsedMs={speechPresentation === "solo" ? soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs : readingElapsedMs - SCENE_SPEECH_START_MS} progressDurationMs={speechDurationMs !== undefined ? Math.max(1,speechDurationMs - 1450) : undefined}
         progress={speechDurationMs !== undefined && sampled?.speech?.text !== speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,speechDurationMs - 1450)) : undefined} className="text-sm leading-relaxed" />
       {head && <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/20 bg-black/90 ${bubble.below ? "border-t border-l" : "border-b border-r"}`} style={{ left: bubble.arrowLeft, top: bubble.below ? -8 : undefined, bottom: bubble.below ? undefined : -8 }} />}
     </div>}

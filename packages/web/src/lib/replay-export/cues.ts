@@ -141,7 +141,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
             : null,
         },
         source: { kind: "werewolf", cursor: cue.moment.cursor },
-        label: line.title,
+        label: cue.nightAction?.kind === "snipe" ? `Night ${cue.moment.snapshot.day} · Hunter · Snipe` : line.title,
         speech: spoken
           ? {
               messageId: cue.key,

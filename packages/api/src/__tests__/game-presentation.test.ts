@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { Hono } from "hono";
+import { and, eq, sql } from "drizzle-orm";
 import { GameState, Phase, projectViewerDecisionEvent } from "@influence/engine";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
@@ -8,6 +9,7 @@ import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { appendGameEvents } from "../services/game-events.js";
 import { storeJson } from "../services/payload-storage.js";
 import { readGamePresentation } from "../services/game-presentation.js";
+import { createGameRoutes } from "../routes/games.js";
 
 test("live delivery holds an entire phase, then matches replay with stable speech identities", async () => {
   const db = await setupTestDB();
@@ -97,8 +99,24 @@ test("live delivery holds an entire phase, then matches replay with stable speec
   const heldForAudio = await readGamePresentation(db,gameId);
   expect(heldForAudio?.throughSequence).toBe(0);
   expect(heldForAudio?.messages).toEqual([]);
+  // Historical huddle speech was committed before it gained publication slots.
+  // It must remain fenced during live play and until the completed prefix is due.
+  await db.insert(schema.transcripts).values({gameId,round:1,phase:Phase.FORMAT_MINGLE,fromPlayerId:"a",speakerPlayerId:"a",scope:"huddle",text:"A private huddle contribution",timestamp:Date.now()+3,entrySequence:4,firstDurableEventSequence:before.at(-1)!.sequence,audiencePlayerIds:["a","b"],captureVersion:1,dialogueKind:"huddle_speech",safeContext:{version:1,sessionId:"session-ab",sessionAudiencePlayerIds:["a","b"]},gameTurnId:turnId,gameTurnTranscriptOrdinal:4});
+  await db.update(schema.games).set({config:game!.config}).where(eq(schema.games.id,gameId));
+  await expect(readGamePresentation(db,gameId)).rejects.toThrow("no durable publication");
   await db.update(schema.games).set({config:game!.config,status:"completed"}).where(eq(schema.games.id,gameId));
+  await db.update(schema.gamePublications).set({availableAt:null}).where(and(eq(schema.gamePublications.gameId,gameId),eq(schema.gamePublications.publicationSequence,1)));
+  const notDue = await readGamePresentation(db,gameId);
+  expect(notDue?.messages).toEqual([]);
+  expect(notDue?.finished).toBe(false);
+  await db.update(schema.gamePublications).set({availableAt:"2026-01-01T00:00:00Z"}).where(and(eq(schema.gamePublications.gameId,gameId),eq(schema.gamePublications.publicationSequence,1)));
   expect((await readGamePresentation(db,gameId))?.finished).toBe(true);
+  expect((await readGamePresentation(db,gameId))?.messages.map(row=>row.entry.text)).toContain("A private huddle contribution");
+  const app = new Hono().route("/", createGameRoutes(db));
+  const replay = await app.request(`/api/games/${gameId}/presentation?afterSequence=0`);
+  expect(replay.status).toBe(200);
+  const replayBody = await replay.json() as {messages: Array<{entry: {text: string}}>};
+  expect(replayBody.messages.map(row => row.entry.text)).toContain("A private huddle contribution");
   await db.insert(schema.transcripts).values({gameId,round:0,phase:Phase.INTRODUCTION,fromPlayerId:"a",scope:"public",text:"Historical unanchored speech",timestamp:1,captureVersion:null});
   await db.update(schema.games).set({status:"in_progress"}).where(eq(schema.games.id,gameId));
   expect((await readGamePresentation(db,gameId))?.throughSequence).toBe(0);
@@ -111,6 +129,15 @@ test("live delivery holds an entire phase, then matches replay with stable speec
   const historical = await readGamePresentation(db,gameId);
   expect(historical?.messages).toEqual(oldComplete?.messages);
   expect(historical?.finished).toBe(true);
+  // Pre-ledger games can have an event anchor without a durable turn identity.
+  await db.insert(schema.transcripts).values({gameId,round:1,phase:Phase.FORMAT_MINGLE,fromPlayerId:"a",speakerPlayerId:"a",scope:"huddle",text:"Pre-ledger huddle",timestamp:Date.now()+4,entrySequence:5,firstDurableEventSequence:before.at(-1)!.sequence,audiencePlayerIds:["a","b"],captureVersion:1,dialogueKind:"huddle_speech",safeContext:{version:1,sessionId:"legacy-session-ab",sessionAudiencePlayerIds:["a","b"]}});
+  const preLedger = await readGamePresentation(db,gameId);
+  expect(preLedger?.finished).toBe(true);
+  expect(preLedger?.messages.map(row=>row.entry.text)).toContain("Pre-ledger huddle");
+  const legacyReplay = await app.request(`/api/games/${gameId}/presentation?afterSequence=0`);
+  expect(legacyReplay.status).toBe(200);
+  const legacyBody = await legacyReplay.json() as {messages: Array<{entry: {text: string}}>};
+  expect(legacyBody.messages.map(row => row.entry.text)).toContain("Pre-ledger huddle");
   await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,gameId));
   expect(await readGamePresentation(db,gameId)).toBeNull();
 });

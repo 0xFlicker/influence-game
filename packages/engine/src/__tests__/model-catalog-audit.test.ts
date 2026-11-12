@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import inventory from "./fixtures/model-inventory-2026-10-23.json";
 import { modelCatalogEntryById, normalizeProviderManifest } from "../model-catalog";
 import { providerModelFacts } from "../provider-model-facts";
-import { modelRateCard } from "../model-route-metadata";
+import { estimateRouteCost, modelRateCard } from "../model-route-metadata";
 import { MODEL_PRICING } from "../token-tracker";
 
 test("Terra uses documented Responses capabilities and its own Standard and Flex rates", () => {
@@ -67,6 +67,17 @@ test("known input, tool, sampling and reasoning restrictions supersede family gu
   for (const id of ["openai:gpt-4o-2024-05-13", "openai:gpt-5.4-pro", "openai:o3-deep-research", "katana:qwen3-coder-480b-a35b-private"]) {
     expect(() => normalizeProviderManifest([{ catalogId: id }])).toThrow("incompatible");
   }
+});
+
+test("Muse Ember long-context tier applies in full only above 200K input tokens", () => {
+  const card = modelRateCard("meta-muse:muse-ember-1.0")!;
+  expect(card.version).toBe("2026-11-09");
+  const usage = { cachedTokens: 10_000, completionTokens: 10_000, reasoningTokens: 0 };
+  // 190K uncached + 10K cached input, 10K output at base rates.
+  expect(estimateRouteCost({ ...usage, promptTokens: 200_000 }, card)).toBeCloseTo(0.02404, 10);
+  // One more input token bills the whole request at long-context rates.
+  expect(estimateRouteCost({ ...usage, promptTokens: 200_001 }, card)).toBeCloseTo(0.0721203, 10);
+  expect(providerModelFacts("meta-muse", "muse-ember-1.0-contributor")).toBeUndefined();
 });
 
 test("published cached-token discounts are retained instead of charging the uncached rate", () => {

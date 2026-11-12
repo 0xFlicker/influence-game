@@ -1,4 +1,4 @@
-import React,{useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
+import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {OperatorFollowAccess} from '../../app/admin/follow/operator-follow';
 import {useGamePlayback,useIsFollowPlayer} from '../../components/watch/game-playback';
@@ -10,7 +10,8 @@ import {speechMusicVolume} from '../../components/watch/watch-music';
 import {setApiBase} from '../../lib/api';
 import type {GameFollowPosition} from '@influence/engine/game-follow';
 import type {AudioWatchCoordinate} from '@influence/engine/audio-watch';
-import {werewolfCommentaryReady,werewolfPlaybackConcluded} from '../../components/games/werewolf/werewolf-follow-position';
+import {werewolfCommentaryReady,werewolfFollowRevealAtMs,werewolfPlaybackConcluded} from '../../components/games/werewolf/werewolf-follow-position';
+import {WerewolfTransformationStage} from '../../components/games/werewolf/werewolf-transformation-stage';
 import {werewolfPlaybackPolicy,type WerewolfPlaybackCue} from '../../components/games/werewolf/werewolf-opening';
 interface Cue extends WatchCue {position:GameFollowPosition;coordinate:AudioWatchCoordinate;name:string;text:string;thinking:string|null;canonical?:WerewolfPlaybackCue}
 declare global {interface Window {replayData:{game:{id:string;slug:string;kind:'werewolf'};cues:Cue[];names:{id:string;name:string}[];thinking:boolean};replayState:unknown;holdCommentaryBoundary?:(held:boolean)=>void;isSpeechComplete?:()=>boolean;setBufferedHouseSpeaking?:(speaking:boolean)=>void}}
@@ -24,10 +25,12 @@ function Replay(){
  });
  const [snapshot,setSnapshot]=useState(()=>director.getSnapshot());
  useEffect(()=>{const off=director.subscribe(()=>setSnapshot(director.getSnapshot()));return()=>{off();director.dispose();};},[director]);
+ const [elapsed,setElapsed]=useState(0);
+ useEffect(()=>{const timer=setInterval(()=>setElapsed(director.getElapsedBaseMs()),30);return()=>clearInterval(timer);},[director]);
  const cue=director.getActiveCue();
- const commentaryReady=useCallback(()=>!director.getActiveCue()?.canonical||werewolfCommentaryReady({getActiveCue:()=>director.getActiveCue()?.canonical??null,getSnapshot:()=>director.getSnapshot(),getElapsedBaseMs:()=>director.getElapsedBaseMs()}),[director]);
- const concluded=useCallback(()=>werewolfPlaybackConcluded(director.getActiveCue()?.canonical??null,'completed'),[director]);
- const follow=useGamePlayback(data.game,cue?.position??null,data.names,{director,revealAtMs:0,commentaryReady,concluded});
+ const [commentaryReady]=useState(()=>()=>!director.getActiveCue()?.canonical||werewolfCommentaryReady({getActiveCue:()=>director.getActiveCue()?.canonical??null,getSnapshot:()=>director.getSnapshot(),getElapsedBaseMs:()=>director.getElapsedBaseMs()}));
+ const [concluded]=useState(()=>()=>werewolfPlaybackConcluded(director.getActiveCue()?.canonical??null,'completed'));
+ const follow=useGamePlayback(data.game,cue?.position??null,data.names,{director,revealAtMs:werewolfFollowRevealAtMs(cue?.canonical),commentaryReady,concluded});
  const [boundaryHeld,setBoundaryHeld]=useState(false);
  const [bufferedHouseSpeaking,setBufferedHouseSpeaking]=useState(false);
  useEffect(()=>{window.setBufferedHouseSpeaking=setBufferedHouseSpeaking;return()=>{delete window.setBufferedHouseSpeaking;};},[]);
@@ -36,6 +39,6 @@ function Replay(){
  const volume=speechMusicVolume(.4,voice.speaking,follow.houseSpeaking||bufferedHouseSpeaking);
  const music=useWatchMusic({section:{key:'test',src:'/background.wav',title:'Replay background',repeat:true},playing:snapshot.isPlaying,muted:false,volume,preparing:false,holding:false,live:false,navigationRevision:director.getNavigationRevision()});
  useEffect(()=>{const sample=()=>{window.replayState={held:follow.houseHolding,boundaryHeld,bufferedHouseSpeaking,playing:director.getSnapshot().isPlaying,key:director.getActiveCue()?.key,elapsed:director.getTimelineElapsedBaseMs(),music:music.status,volume};};sample();const t=setInterval(sample,50);return()=>clearInterval(t);},[director,follow.houseHolding,boundaryHeld,bufferedHouseSpeaking,music.status,volume]);
- return <main ref={frame} data-player-theater={fullscreen.theater||undefined} style={fullscreen.expanded?{position:'fixed',inset:0,width:'100vw',height:'100dvh',margin:0}:undefined}><h1>House replay commentary experiment</h1><button onClick={()=>{voice.resume();music.unlock(false);director.play();}}>Play</button><button onClick={()=>director.pause()}>Pause</button><p role="status">{follow.houseHolding?'House speaking — game held':snapshot.isPlaying?'Playing':'Paused'}</p><h2>{cue?.name}</h2><p>{cue?.text}</p><output aria-label="Music state">{music.status}</output><output aria-label="Music gain">{volume.toFixed(2)}</output>{voice.error&&<p role="alert">{voice.error}</p>}</main>;
+ return <main ref={frame} data-player-theater={fullscreen.theater||undefined} style={fullscreen.expanded?{position:'fixed',inset:0,width:'100vw',height:'100dvh',margin:0}:undefined}><h1>House replay commentary experiment</h1><button onClick={()=>{voice.resume();music.unlock(false);director.play();}}>Play</button><button onClick={()=>director.pause()}>Pause</button><p role="status">{follow.houseHolding?'House speaking — game held':snapshot.isPlaying?'Playing':'Paused'}</p>{cue?.canonical&&'transformation' in cue.canonical&&cue.canonical.transformation&&elapsed<cue.canonical.transformation.durationMs?<WerewolfTransformationStage cue={cue.canonical} elapsed={elapsed} reduced={false} onReady={()=>{}}/>:<h2>{cue?.name}</h2>}<p>{cue?.text}</p><output aria-label="Music state">{music.status}</output><output aria-label="Music gain">{volume.toFixed(2)}</output>{voice.error&&<p role="alert">{voice.error}</p>}</main>;
 }
 createRoot(document.getElementById('root')!).render(<OperatorFollowAccess loading={false} roles={['producer']}><Replay/></OperatorFollowAccess>);

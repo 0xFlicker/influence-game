@@ -3,7 +3,7 @@ import {ReplayScrubber} from "./replay-scrubber";
 import {ShareMoment} from "./share-moment";
 import {useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
 import type {WatchTimeline} from "./use-watch-timeline";
-import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useMergeRefs} from "@floating-ui/react";
+import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useListNavigation, useMergeRefs, useRole} from "@floating-ui/react";
 import {musicVolumeFromSlider, musicVolumeToSlider} from "./music-volume";
 import type {MusicStatus} from "./watch-music";
 const SPEED_OPTIONS = [{value: 0.5, label: "0.5×"}, {value: 1, label: "1×"}, {value: 2, label: "2×"}, {value: 4, label: "4×"}];
@@ -17,16 +17,19 @@ interface WatchTransportProps {
  shareHref?: string; getShareHref?: () => string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void | Promise<void>; goToNextScene: () => void; goToEnd: () => void;
  timeline: WatchTimeline;
+ audience?: {value:"mystery" | "omniscient"; onChange:(value:"mystery" | "omniscient")=>void};
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void}; live: boolean; cursor: number; count: number;
 }
-export function WatchTransport({theater, theaterButton, toggleTheater, audio, voice, fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, timeline, thinking, settings, shareHref, getShareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
+export function WatchTransport({theater, theaterButton, toggleTheater, audio, voice, fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, timeline, thinking, audience, settings, shareHref, getShareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
  const {frameCount, fps} = timeline;
  const [frame, setFrame] = useState(timeline.getFrame);
  useEffect(() => timeline.subscribe(() => setFrame(timeline.getFrame())), [timeline]);
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
- const available = width - 90 - (shareHref || getShareHref ? 55 : 0);
+ const available = width - 90 - (shareHref || getShareHref ? 55 : 0) - (audience ? 44 : 0);
  const capacity = available >= 1020 ? 2 : available >= 780 ? 1 : 0;
+ const compactAudience = Boolean(audience && width < 360);
+ const showLabels = width >= (audience ? 800 : 520);
  useLayoutEffect(() => {
   const element = transport.current;
   if (!element) return;
@@ -36,6 +39,8 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
   return () => observer.disconnect();
  }, []);
  const [open, setOpen] = useState(false);
+ const [modeOpen, setModeOpen] = useState(false);
+ const [modeIndex, setModeIndex] = useState<number | null>(null);
  const [portalRoot, setPortalRoot] = useState<HTMLElement | undefined>(undefined);
  const settingsButton = useRef<HTMLButtonElement>(null);
  const {refs:{setReference,setFloating}, floatingStyles, context} = useFloating({
@@ -45,6 +50,17 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
  const referenceRef = useMergeRefs([settingsButton, setReference]);
  const dismiss = useDismiss(context);
  const {getReferenceProps,getFloatingProps} = useInteractions([dismiss]);
+ const modeButton = useRef<HTMLButtonElement>(null);
+ const modeItems = useRef<Array<HTMLButtonElement | null>>([]);
+ const {refs:{setReference:setModeReference,setFloating:setModeFloating}, floatingStyles:modeStyles, context:modeContext} = useFloating({
+  open:modeOpen,onOpenChange:setModeOpen,placement:"top-end",strategy:"fixed",whileElementsMounted:autoUpdate,
+  middleware:[offset(8),flip({padding:12}),shift({padding:12})],
+ });
+ const modeReference = useMergeRefs([modeButton,setModeReference]);
+ const modeDismiss = useDismiss(modeContext);
+ const modeRole = useRole(modeContext,{role:"menu"});
+ const modeNavigation = useListNavigation(modeContext,{listRef:modeItems,activeIndex:modeIndex,onNavigate:setModeIndex,loop:true});
+ const {getReferenceProps:getModeReferenceProps,getFloatingProps:getModeFloatingProps,getItemProps:getModeItemProps} = useInteractions([modeDismiss,modeRole,modeNavigation]);
  const button = "inline-flex h-10 min-w-8 shrink-0 items-center justify-center gap-2 rounded-lg px-1 sm:min-w-10 sm:px-2 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white disabled:opacity-25 disabled:cursor-not-allowed";
  const speedControl = <fieldset className="min-w-0"><legend className="sr-only">Playback speed</legend><div className="flex items-center gap-1"><span className="mr-1 text-xs text-white/50">Speed</span>{SPEED_OPTIONS.map(option =>
   <button key={option.value} type="button" aria-pressed={speed === option.value} onClick={() => onSpeed(option.value)} className={`h-9 rounded-lg border px-2 text-xs ${speed === option.value ? "border-white/50 bg-white/15 text-white" : "border-transparent text-white/60 hover:bg-white/10"}`}>{option.label}</button>
@@ -55,16 +71,19 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
   <div ref={transport} data-watch-transport className="flex min-w-0 items-center gap-0 sm:gap-1" onClick={event => event.stopPropagation()}>
     <button type="button" aria-label={isPlaying ? "Pause replay" : "Play replay"} title={isPlaying ? "Pause (Space)" : "Play (Space)"} onClick={togglePlay} className={button}>
       <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">{isPlaying ? <path d="M6 4h4v16H6zm8 0h4v16h-4z" /> : <path d="m6 3 15 9-15 9z" />}</svg>
-      <span className={width >= 520 ? "text-xs" : "hidden"}>{isPlaying ? "Pause" : "Play"}</span>
+      <span className={showLabels ? "text-xs" : "hidden"}>{isPlaying ? "Pause" : "Play"}</span>
     </button>
     <button type="button" aria-label="Previous room or scene" title="Previous ([)" disabled={cursor === 0 || count === 0} onClick={goToPrevScene} className={button}>
-      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h3v16H4zm16 0L8 12l12 8z" /></svg><span className={width >= 520 ? "text-xs" : "hidden"}>Previous</span>
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h3v16H4zm16 0L8 12l12 8z" /></svg><span className={showLabels ? "text-xs" : "hidden"}>Previous</span>
     </button>
     <button type="button" aria-label="Next scene" title="Next (])" disabled={cursor >= count - 1} onClick={goToNextScene} className={button}>
-      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 4h3v16h-3zM4 4v16l12-8z" /></svg><span className={width >= 520 ? "text-xs" : "hidden"}>Next</span>
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 4h3v16h-3zM4 4v16l12-8z" /></svg><span className={showLabels ? "text-xs" : "hidden"}>Next</span>
     </button>
     <span className={width >= 360 ? "min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" : "sr-only"} aria-label="Playback time">{formatTime(frame / fps)} / {formatTime(frameCount / fps)}</span>
     <div className="min-w-0 flex-1" />
+    {audience && <button {...getModeReferenceProps()} ref={modeReference} type="button" aria-label={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} title={`Viewing mode: ${audience.value === "mystery" ? "Mystery" : "Omniscient"}`} aria-expanded={modeOpen} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"], [data-player-theater="true"]') ?? undefined);setOpen(false);setModeIndex(audience.value === "mystery" ? 0 : 1);setModeOpen(value => !value);}} className={button} style={{minWidth:44,minHeight:44}}>
+      <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>}
     {capacity >= 1 && <div className="mr-3 shrink-0">{speedControl}</div>}
     {capacity >= 2 && <div className="mr-3 shrink-0">{thinkingControl}</div>}
     <button type="button" className={button} onClick={audio.onMute} aria-pressed={audio.muted} aria-label={audio.muted ? "Unmute audio" : "Mute audio"} title={audio.muted ? "Unmute audio" : "Mute audio"}>
@@ -72,12 +91,12 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
     </button>
     {live && width >= 520 && <button type="button" aria-label="Go live" title="Go live" onClick={goToEnd} className={`${button} text-[10px] uppercase tracking-wider`}><span className="size-1.5 rounded-full bg-red-400" aria-hidden="true" /><span className={width >= 520 ? "" : "sr-only"}>Live</span></button>}
     {(shareHref || getShareHref) && <ShareMoment href={shareHref} getHref={getShareHref} />}
-    <button {...getReferenceProps()} ref={referenceRef} type="button" aria-label="Player settings" title="Player settings" aria-expanded={open} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"], [data-player-theater="true"]') ?? undefined);setOpen(value => !value);}} className={button}>
+    <button {...getReferenceProps()} ref={referenceRef} type="button" aria-label="Player settings" title="Player settings" aria-expanded={open} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"], [data-player-theater="true"]') ?? undefined);setModeOpen(false);setOpen(value => !value);}} className={button}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m10 3-1 3-3 1-2 3 2 2-1 3 2 3 3-1 2 3 3-1 1-3 3-1 1-3-2-2 1-3-3-2-3 1-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>
-    <button ref={theaterButton} type="button" aria-label={theater ? "Exit theater mode" : "Enter theater mode"} title={theater ? "Exit theater mode" : "Enter theater mode"} aria-pressed={theater} onClick={() => void toggleTheater()} className={button}>
+    {!compactAudience && <button ref={theaterButton} type="button" aria-label={theater ? "Exit theater mode" : "Enter theater mode"} title={theater ? "Exit theater mode" : "Enter theater mode"} aria-pressed={theater} onClick={() => void toggleTheater()} className={button}>
       <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="5" width="20" height="14" rx="1" />{theater && <path d="M6 8h12v8H6z" />}</svg>
-    </button>
+    </button>}
     <button ref={fullscreenButton} type="button" aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={() => void toggleFullscreen()} className={button}>
       <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d={fullscreen ? "M9 3v6H3m12-6v6h6M3 15h6v6m12-6h-6v6" : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"} /></svg>
     </button>
@@ -89,6 +108,13 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
     setFrame(timeline.getFrame());
   }} onScrubStart={onScrubStart} onScrubEnd={onScrubEnd} />
   {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
+  {modeOpen && audience && <FloatingPortal root={portalRoot}>
+    <FloatingFocusManager context={modeContext} modal={false} returnFocus={modeButton}>
+      <div {...getModeFloatingProps()} ref={setModeFloating} style={modeStyles} aria-label="Viewing mode" className="z-[200] min-w-40 rounded-xl border border-white/25 bg-zinc-950 p-1 text-sm text-white shadow-2xl" onClick={event => event.stopPropagation()}>
+        {(["mystery","omniscient"] as const).map((mode,index) => <button key={mode} {...getModeItemProps()} ref={node => {modeItems.current[index]=node;}} tabIndex={modeIndex === index ? 0 : -1} type="button" role="menuitemradio" aria-checked={audience.value === mode} data-audience={mode} onClick={() => {audience.onChange(mode);setModeOpen(false);}} className="flex min-h-11 w-full items-center justify-between gap-4 rounded-lg px-3 text-left hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"><span>{mode === "mystery" ? "Mystery" : "Omniscient"}</span>{audience.value === mode && <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4 4L19 6"/></svg>}</button>)}
+      </div>
+    </FloatingFocusManager>
+  </FloatingPortal>}
   {open && <FloatingPortal root={portalRoot}>
     <FloatingFocusManager context={context} modal={false} returnFocus={settingsButton}>
       <div {...getFloatingProps()} onClick={event => event.stopPropagation()} ref={setFloating} tabIndex={-1} role="dialog" aria-label="Player settings" style={floatingStyles} className="z-[200] w-[min(22rem,85vw)] overflow-y-auto rounded-xl border border-white/25 bg-zinc-950 p-5 text-sm text-white shadow-2xl">
@@ -97,6 +123,9 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
         {music?.status === "loading" && <p role="status" className="mb-4 text-white/60">Loading music…</p>}
         {header}
         {settings && <div className="mb-4 border-b border-white/10 pb-4" onClick={event => {if (event.target instanceof Element && event.target.closest("button")) setOpen(false);}}>{settings}</div>}
+        {compactAudience && <div className="mb-4 flex items-center gap-3 border-b border-white/10 pb-4">
+          <button ref={theaterButton} type="button" aria-pressed={theater} onClick={() => {setOpen(false);void toggleTheater();}} className="rounded-lg border border-white/20 px-3 py-2">{theater ? "Exit theater" : "Theater"}</button>
+        </div>}
         <div className="space-y-4">
           {music && <div className="space-y-2"><label className="flex items-center gap-2"><input type="checkbox" checked={!music.muted} onChange={music.onMute} />Music</label><label className="flex items-center gap-3 text-white/80"><span className="w-24 shrink-0">Music volume</span>{volumeControl}</label>{music.status === "blocked" && <button type="button" onClick={music.retry}>Enable music playback</button>}{music.status === "unavailable" && <button type="button" onClick={music.retry}>Music unavailable. Retry</button>}</div>}
           {voice && <div className="space-y-2"><label className="flex items-center gap-2"><input type="checkbox" checked={!voice.muted} onChange={voice.onMute} />Voice</label><label className="flex items-center gap-3 text-white/80"><span className="w-24 shrink-0">Voice volume</span><input className="h-10 min-w-0 flex-1 cursor-pointer accent-white" aria-label="Voice volume" type="range" min="0" max="1" step="0.05" value={voice.volume} onChange={event => voice.onVolume(Number(event.target.value))} /></label></div>}
@@ -105,7 +134,7 @@ export function WatchTransport({theater, theaterButton, toggleTheater, audio, vo
         </div>
         <div className="mt-4 flex gap-2 border-t border-white/10 pt-4"><button type="button" onClick={() => {goToBeginning();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">Restart replay</button><button type="button" onClick={() => {goToEnd();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">{live ? "Go live" : "Go to end"}</button></div>
         <h3 className="mb-3 mt-4 font-semibold">Keyboard shortcuts</h3>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Show / hide speech, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>Slider ← / →</dt><dd>One frame while the scrubber is focused</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings, theater mode or fullscreen</dd></dl>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Next page, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>Slider ← / →</dt><dd>One frame while the scrubber is focused</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings, theater mode or fullscreen</dd></dl>
       </div>
     </FloatingFocusManager>
   </FloatingPortal>}

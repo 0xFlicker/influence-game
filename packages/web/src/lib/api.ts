@@ -1,6 +1,8 @@
+import { getAnalyticsConsent } from "./analytics-consent";
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
 import { analyticsOperation, measureProductRequest } from "@/lib/product-analytics";
+import { getStoredCampaignAttribution } from "@/lib/campaign-attribution";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
@@ -1158,7 +1160,7 @@ export interface GameRetrospectiveResponse {
   source: { sequence: number; hash: string }; outcome: import("@influence/engine").RetrospectiveOutcomeSource;
   initialized: boolean; progress: import("@influence/engine").RetrospectiveProgress;
   speakers: Array<{ actorId: string; name: string; ordinal: number; avatarUrl: string | null; part:
-    { gameKind: "influence"; won: boolean; eliminatedRound: number | null } | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null } }>;
+    { gameKind: "influence"; won: boolean; eliminatedRound: number | null } | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor" | "hunter"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null } }>;
   statements: Array<{ actorId: string; ordinal: number; eventSequence: number; speech: string; href: string }>;
   nextCursor: string | null; pollCursor: string | null;
   recovery: { expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; reasonCode: string } | null;
@@ -1795,10 +1797,17 @@ export async function loginWithPrivyToken(
     body: JSON.stringify({
       token: privyToken,
       intent: request.intent,
+      analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+      analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
       ...(request.intent === "create_account"
         ? {
           ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
           ...request.legalAcceptance,
+          // First-touch campaign attribution (identities only, never prompt
+          // text). The server re-validates every field; absent stays unknown.
+          ...(permittedCampaignAttribution().firstTouch
+            ? { attribution: permittedCampaignAttribution().firstTouch }
+            : {}),
         }
         : {}),
     }),
@@ -1849,7 +1858,29 @@ export async function createManagedAuthentication(
       token,
       ...(inviteCode ? { inviteCode } : {}),
       ...PRESENTED_LEGAL_ACCEPTANCE,
+      analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+      analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
+      ...(permittedCampaignAttribution().firstTouch
+        ? { attribution: permittedCampaignAttribution().firstTouch }
+        : {}),
     }),
+  });
+}
+
+function permittedCampaignAttribution() {
+  const consent = getAnalyticsConsent();
+  return consent.ready && consent.analytics ? getStoredCampaignAttribution() : { firstTouch: null, lastNonDirectTouch: null };
+}
+
+/** Sync even denials and empty attribution. Capture the session before starting the request. */
+export async function retainCampaignAttribution(explicitChoice = false, expectedVersion?: string): Promise<{ analytics: boolean; version: string }> {
+  const consent = getAnalyticsConsent();
+  const stored = permittedCampaignAttribution();
+  return apiFetch("/api/attribution/retain", {
+    method: "POST",
+    signal: AbortSignal.timeout(5000),
+    body: JSON.stringify({ analytics: consent.ready && consent.analytics, analyticsExplicit: consent.choice?.analytics === true, explicitChoice, expectedVersion,
+      firstTouch: stored.firstTouch, lastTouch: stored.lastNonDirectTouch }),
   });
 }
 
@@ -1991,6 +2022,7 @@ export async function authorizeMcpOAuth(
 // ---------------------------------------------------------------------------
 
 export interface InviteCodesResponse {
+  enabled: boolean;
   available: { code: string; createdAt: string }[];
   used: { code: string; usedAt: string | null }[];
   totalAvailable: number;
@@ -2084,12 +2116,20 @@ export async function getPlayerGamesPage(cursor?: string, limit = 20, game: "all
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
-export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
+export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition" | "modelPreference">;
 
 export interface SavedAgent {
   transparentBodyUrl?: string | null;
+  reviewState?: "accepted" | "reviewing" | "held";
+  voiceId?: string | null;
+  entryIntent?: import("./agent-entry").AgentEntryIntent | null;
+  visualActivity?: {id?:string;status:string;stage:string;message?:string|null}|null;
   modelPreference?: ModelPreference;
   ownerContent?: {
+    entryIntent?: import("./agent-entry").AgentEntryIntent | null;
+    reviewMessage?:string|null;
+    reviewState?: "accepted" | "reviewing" | "held";
+    voiceId?: string | null;
     published: AgentContentSnapshot | null;
     submitted: { revisionId: string; content: AgentContentSnapshot; disposition: "allowed" | "rejected" | null; held: boolean; status: string | null } | null;
     availability: "archived" | "withheld" | "available";
@@ -2124,7 +2164,7 @@ export interface SavedAgent {
 export interface AgentMutationReceipt {
   contentRevisionId?: string;
   moderationRecordId?: string;
-  publication?: "published" | "held";
+  publication?: "published" | "reviewing" | "held";
   schemaVersion: 1;
   operation: "created" | "updated";
   agent: {
@@ -2157,6 +2197,8 @@ export interface AgentMutationReceipt {
 }
 
 export interface AgentProfileWriteParams {
+  entryIntent?: Exclude<import("./agent-entry").AgentEntryIntent,{flow:"update"}>;
+  voiceId?: string | null;
   modelPreference?: ModelPreference;
   submissionId?: string;
   expectedContentRevisionId?: string | null;
@@ -2215,6 +2257,7 @@ export type OwnerLearningResolution =
 export type OwnerLearningApplyDisposition =
   | "not_ready"
   | "awaiting_owner"
+  | "submitted"
   | "available"
   | "applied"
   | "manual_update"
@@ -2342,11 +2385,11 @@ export interface OwnerLearningReview {
   application: null | {
     sourceRecommendationIds: string[];
     priorRevisionId: string;
-    resultingRevisionId: string;
+    resultingRevisionId: string | null;
     priorStrategyStyle: string;
     resultingStrategyStyle: string;
     mutationReceipt: Record<string, unknown>;
-    appliedAt: string;
+    appliedAt: string | null;
   };
   createdAt: string;
   updatedAt: string;
@@ -2419,11 +2462,11 @@ export interface OwnerLearningApplyResult {
   proposalFingerprint: string;
   sourceRecommendationIds: string[];
   priorRevisionId: string;
-  resultingRevisionId: string;
+  resultingRevisionId: string | null;
   priorStrategyStyle: string;
   resultingStrategyStyle: string;
   receipt: AgentMutationReceipt;
-  appliedAt: string;
+  appliedAt: string | null;
   replayed: boolean;
 }
 
@@ -2438,6 +2481,7 @@ export interface AvatarCompletion {
 }
 
 export interface CharacterImageDraft {
+  basedOn?: { name:string;personaKey:string;visualDesign:string;performanceInstructions:string };
   requestId: string; fullBodyReferenceUrl: string; width: number; height: number;
   headSuggestion?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
@@ -2485,12 +2529,12 @@ export interface GeneratePersonalityResult {
 // Saved agent profile API calls
 // ---------------------------------------------------------------------------
 
-export async function listAgents(): Promise<SavedAgent[]> {
-  return apiFetch("/api/agent-profiles");
+export async function listAgents(signal?: AbortSignal): Promise<SavedAgent[]> {
+  return apiFetch("/api/agent-profiles", { cache: "no-store",signal });
 }
 
 export async function getAgent(id: string): Promise<SavedAgent> {
-  return apiFetch(`/api/agent-profiles/${id}`);
+  return apiFetch(`/api/agent-profiles/${id}`, { cache: "no-store" });
 }
 
 export async function getAgentByCreationRequestId(creationRequestId: string): Promise<SavedAgent | null> {
@@ -3003,6 +3047,7 @@ export type AdminOwnerLearningAcceptance = "accepted" | "not_accepted" | "not_ap
 export type AdminOwnerLearningDisposition =
   | "not_ready"
   | "awaiting_owner"
+  | "submitted"
   | "applied"
   | "manual_update"
   | "declined"
@@ -3171,7 +3216,7 @@ export interface AdminOwnerLearningReviewDetail {
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   application: null | {
-    appliedAt: string;
+    appliedAt: string | null;
   };
 }
 
@@ -3261,6 +3306,7 @@ export async function getAdminOwnerLearningFailureContent(
 export interface AdminAgent {
   modelPreference?: ModelPreference;
   id: string;
+  publicProfileAvailable: boolean;
   userId: string;
   name: string;
   backstory: string | null;
@@ -3308,6 +3354,7 @@ export interface UserRoleAssignment {
 
 export interface AdminUser {
   id: string;
+  publicProfileId: string | null;
   walletAddress: string | null;
   email: string | null;
   displayName: string | null;
@@ -3797,10 +3844,6 @@ export async function leaveFreeQueue(expectedSeasonId?: string): Promise<void> {
   await apiFetch(`/api/free-queue/leave${expectedSeasonId ? `?expectedSeasonId=${encodeURIComponent(expectedSeasonId)}` : ""}`, { method: "DELETE" });
 }
 
-export async function maybeLaterFreeQueue(): Promise<void> {
-  await apiFetch("/api/free-queue/maybe-later", { method: "POST" });
-}
-
 export async function getFreeQueueLeaderboard(): Promise<LeaderboardEntry[]> {
   return apiFetch("/api/free-queue/leaderboard");
 }
@@ -3921,3 +3964,9 @@ export interface AgentVisualUpdate {
 }
 export function getAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`); }
 export function startAgentVisualUpdate(id:string) { return apiFetch<AgentVisualUpdate>(`/api/agent-profiles/${encodeURIComponent(id)}/visual-update`, {method:"POST"}); }
+
+/** Clear only the completed target; another tab may have selected a new destination. */
+export async function clearAgentEntryIntent(id:string,intent:import("./agent-entry").AgentEntryIntent) {
+  if(intent.flow==="update" || intent.flow==="daily_free"&&!intent.seasonId)return;
+  await apiFetch(`/api/agent-profiles/${encodeURIComponent(id)}/entry-intent`,{method:"DELETE",body:JSON.stringify(intent)});
+}

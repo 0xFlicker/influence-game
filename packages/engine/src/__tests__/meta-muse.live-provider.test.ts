@@ -102,6 +102,7 @@ describe("Meta Muse adapter (live provider)", () => {
     expect(listed).toContain("muse-spark-1.3");
     expect(listed).toContain("muse-spark-1.3-contributor");
     expect(listed).toContain("muse-wonder-1.0");
+    expect(listed).toContain("muse-ember-1.0");
   }, 30_000);
 
   it("returns text through the Responses adapter", async () => {

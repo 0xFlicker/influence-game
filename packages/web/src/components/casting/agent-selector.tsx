@@ -8,6 +8,7 @@ import { getAuthToken, listAgents, type SavedAgent } from "@/lib/api";
 import { useAgentAvatarUrl } from "@/components/agent-avatar";
 import { getPersonaLabel } from "@/lib/personas";
 import { AgentModelLabel, agentModelLabel } from "@/components/agent-model-label";
+import { agentEditForEntryHref, agentPreparationHref, hasFullBodyAgentArt, type AgentEntryIntent } from "@/lib/agent-entry";
 import "./agent-selector.css";
 
 interface AgentSelectorProps {
@@ -19,9 +20,10 @@ interface AgentSelectorProps {
   gameKind?: "influence" | "werewolf";
   submitLabel: string;
   pendingLabel: string;
+  intent: AgentEntryIntent;
 }
 
-export function AgentSelector({ description, createHref, onClose, onSelect, excludedIds = [], gameKind = "influence", submitLabel, pendingLabel }: AgentSelectorProps) {
+export function AgentSelector({ description, createHref, onClose, onSelect, excludedIds = [], gameKind = "influence", submitLabel, pendingLabel, intent }: AgentSelectorProps) {
   const router = useRouter();
   const resolveAgentAvatarUrl = useAgentAvatarUrl();
   const analyticsEnabled = useSyncExternalStore(subscribeAnalyticsActivity, analyticsActive, () => false);
@@ -92,6 +94,10 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedAgent || submitPending.current) return;
+    if (!hasFullBodyAgentArt(selectedAgent)) {
+      router.push(agentPreparationHref(selectedAgent.id, intent));
+      return;
+    }
     captureProductEvent("join_agent_selected", { game_kind: gameKind });
     submitPending.current = true;
     setSubmitting(true);
@@ -135,7 +141,7 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
                       {visibleAgents.map(agent => <label key={agent.id} className="agent-selector-card" data-selected={selectedAgentId === agent.id}>
                         <input type="radio" name="agent" value={agent.id} checked={selectedAgentId === agent.id} aria-label={agent.name} disabled={excludedIds.includes(agent.id)} onChange={() => { setSelectedAgentId(agent.id); setError(null); }} />
                         <span className="agent-selector-portrait"><Image src={resolveAgentAvatarUrl(agent.avatarUrl, agent.personaKey ?? "", agent.name, agent.personaKey)} alt="" fill sizes="(max-width: 639px) 42vw, 190px" unoptimized /><span className="agent-selector-check" aria-hidden="true">{selectedAgentId === agent.id ? "✓" : "＋"}</span></span>
-                        <span className="agent-selector-card-copy"><span className="agent-selector-role">{getPersonaLabel(agent.personaKey)}</span><strong>{agent.name}</strong><AgentModelLabel preference={agent.modelPreference} className="text-xs text-text-secondary break-all" /><span className="agent-selector-record">{excludedIds.includes(agent.id) ? "Already in your cast" : gameKind === "werewolf" ? (agent.werewolfStrategyStyle?.trim() ? "Werewolf strategy ready" : "Werewolf archetype strategy") : agent.gamesPlayed ? `${agent.gamesWon} ${agent.gamesWon === 1 ? "win" : "wins"} / ${agent.gamesPlayed} ${agent.gamesPlayed === 1 ? "game" : "games"}` : "First appearance"}</span></span>
+                        <span className="agent-selector-card-copy"><span className="agent-selector-role">{getPersonaLabel(agent.personaKey)}</span><strong>{agent.name}</strong><AgentModelLabel preference={agent.modelPreference} className="text-xs text-text-secondary break-all" /><span className="agent-selector-record">{excludedIds.includes(agent.id) ? "Already in your cast" : !hasFullBodyAgentArt(agent) ? "Full-body image needed" : gameKind === "werewolf" ? (agent.werewolfStrategyStyle?.trim() ? "Werewolf strategy ready" : "Werewolf archetype strategy") : agent.gamesPlayed ? `${agent.gamesWon} ${agent.gamesWon === 1 ? "win" : "wins"} / ${agent.gamesPlayed} ${agent.gamesPlayed === 1 ? "game" : "games"}` : "First appearance"}</span></span>
                       </label>)}
                     </div>}
                 </fieldset>}
@@ -143,7 +149,7 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
 
         <footer className="agent-selector-footer">
           {error && <p role="alert" className="agent-selector-error">{error}</p>}
-          <div className="agent-selector-submit-row"><p aria-live="polite">{selectedAgent ? <><span>Taking the next seat</span><strong>{selectedAgent.name}</strong></> : "Choose an agent to take the next seat."}</p><button type="submit" className="agent-selector-submit" disabled={loading || !!fetchError || submitting || !selectedAgent}>{submitting ? pendingLabel : submitLabel}<span aria-hidden="true">↗</span></button></div>
+          <div className="agent-selector-submit-row"><p aria-live="polite">{selectedAgent ? <><span>{hasFullBodyAgentArt(selectedAgent) ? "Taking the next seat" : "Needs a full-body image before joining"}</span><strong>{selectedAgent.name}</strong>{!hasFullBodyAgentArt(selectedAgent) && <a href={agentEditForEntryHref(selectedAgent.id, intent)} className="underline">Edit Agent</a>}</> : "Choose an agent to take the next seat."}</p><button type="submit" className="agent-selector-submit" disabled={loading || !!fetchError || submitting || !selectedAgent}>{submitting ? pendingLabel : selectedAgent && !hasFullBodyAgentArt(selectedAgent) ? "Complete & join" : submitLabel}<span aria-hidden="true">↗</span></button></div>
         </footer>
       </form>
     </dialog>

@@ -7,11 +7,12 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import {
   AgentProfileManagementError,
   createOwnedAgent,
+  getOwnedAgent,
   listOwnedAgents,
   searchOwnedAgents,
   updateOwnedAgent,
 } from "../services/agent-profile-management.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 
 const USER_A_ID = "agent-mgmt-user-a";
 const USER_B_ID = "agent-mgmt-user-b";
@@ -350,7 +351,7 @@ describe("agent profile management service", () => {
       gamesWon: 2,
     });
 
-    const read = await updateOwnedAgent(db, {
+    const submitted = await updateOwnedAgent(db, {
       userId: USER_A_ID,
     }, {
       agentId: "agent-update",
@@ -359,7 +360,9 @@ describe("agent profile management service", () => {
       personalityPrompt: "A little more aggressive, but still socially precise.",
     });
 
-    expect(read.message).toBe("Agent updated.");
+    expect(submitted.receipt.publication).toBe("reviewing");
+    await acceptTestAgent(db,"agent-update");
+    const read=await getOwnedAgent(db,{userId:USER_A_ID,agentId:"agent-update"});
     expect(read.agent.archetype).toBe("provocateur");
     expect(read.agent.personalityPrompt).toBe("A little more aggressive, but still socially precise.");
     expect(read.agent.gender).toBe("male");
@@ -381,7 +384,7 @@ describe("agent profile management service", () => {
       avatarUrl: legacyAvatarUrl,
     });
 
-    const read = await updateOwnedAgent(db, {
+    await updateOwnedAgent(db, {
       userId: USER_A_ID,
       publicBaseUrl: "https://influence.test",
     }, {
@@ -390,6 +393,8 @@ describe("agent profile management service", () => {
       avatarUrl: legacyAvatarUrl,
     });
 
+    await acceptTestAgent(db,"agent-legacy-avatar");
+    const read=await getOwnedAgent(db,{userId:USER_A_ID,agentId:"agent-legacy-avatar"});
     expect(read.agent.avatarUrl).toBe(legacyAvatarUrl);
     expect(read.agent.personalityPrompt).toBe("Patient, observant, and newly decisive.");
   });

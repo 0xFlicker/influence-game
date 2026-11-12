@@ -15,7 +15,7 @@ import { TemplateHouseInterviewer } from "../house-interviewer";
 import type { HouseMingleAssignmentContext, HouseMingleAssignmentResult } from "../house-interviewer";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
-import { Phase, PlayerStatus } from "../types";
+import { MAX_NEW_GAME_ROUNDS, Phase, PlayerStatus } from "../types";
 import type { GameConfig, RoomAllocation } from "../types";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { MockAgent } from "./mock-agent";
@@ -1704,6 +1704,30 @@ describe("GameEventBus - action collection", () => {
 // ---------------------------------------------------------------------------
 
 describe("Phase machine - state transitions", () => {
+  it("ends at the largest admitted custom round limit", () => {
+    const actor = createActor(createPhaseMachine(), {
+      input: {
+        gameId: createUUID(),
+        playerIds: Array.from({ length: 6 }, () => createUUID()),
+        maxRounds: MAX_NEW_GAME_ROUNDS,
+      },
+    });
+    actor.start();
+    actor.send({ type: "PHASE_COMPLETE" }); // init -> introduction
+    actor.send({ type: "PHASE_COMPLETE" }); // introduction -> lobby, round 1
+
+    for (let round = 1; round <= MAX_NEW_GAME_ROUNDS; round++) {
+      expect(actor.getSnapshot().context.round).toBe(round);
+      for (let phase = 0; phase < 6; phase++) actor.send({ type: "PHASE_COMPLETE" });
+      if (round < MAX_NEW_GAME_ROUNDS) expect(actor.getSnapshot().value).toBe("lobby");
+    }
+
+    expect(actor.getSnapshot().status).toBe("done");
+    expect(actor.getSnapshot().context.round).toBe(MAX_NEW_GAME_ROUNDS);
+    expect(actor.getSnapshot().context.gameOverReason).toBe("max_rounds");
+    actor.stop();
+  });
+
   it("transitions from init through introduction to lobby", async () => {
     const machine = createPhaseMachine();
     const actor = createActor(machine, {

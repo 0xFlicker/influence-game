@@ -51,6 +51,12 @@ describe("site footer", () => {
     expect(shouldShowSiteFooter("/games/cold-navy-horn/highlights")).toBe(true);
   });
 
+  it("keeps the account linker focused without affecting other account pages", () => {
+    expect(shouldShowSiteFooter("/discord/verify")).toBe(false);
+    expect(shouldShowSiteFooter("/discord/verify/")).toBe(false);
+    expect(shouldShowSiteFooter("/dashboard")).toBe(true);
+  });
+
   it("publishes the approved House destinations", () => {
     const links = SITE_FOOTER_SECTIONS.flatMap((section) => section.links);
 

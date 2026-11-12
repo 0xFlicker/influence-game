@@ -1,7 +1,15 @@
+import { recordAgentCreationStarted } from "../services/campaign-conversions.js";
+import { listAgentGenerations, cancelAgentGeneration } from "../services/agent-generations.js";
+import { AgentDraftImageUnavailable, readAgentDraftImage } from "../services/agent-draft-images.js";
+import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
 import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
 import { readAgentVisualUpdate, requestAgentVisualUpdate, resumeAgentVisualUpdate } from "../services/agent-visual-updates.js";
 import {readAgentVoice} from "../services/audio-voices.js";
-import {assignPlayerVoice,isPlayerVoiceId,PLAYER_VOICES} from "@influence/engine/voice-catalog";
+import { readAgentDraft, saveAgentDraft, deleteAgentDraft, AgentDraftConflict } from "../services/agent-editor-drafts.js";
+import { voiceSampleId } from "../services/voice-samples.js";
+import { readPayload } from "../services/payload-storage.js";
+import { agentCollectionActivity } from "../services/agent-collection-activity.js";
+import {isPlayerVoiceId,PLAYER_VOICES,VOICE_AUDITION_VERSION} from "@influence/engine/voice-catalog";
 import { generationContacts } from "../services/generation-admission-error.js";
 import { randomUUID } from "node:crypto";
 import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
@@ -14,7 +22,7 @@ import { selectCharacterEdit, selectCreationTurn } from "../services/agent-creat
 import { buildAgentProfileGenerationSystemPrompt } from "../services/character-profile-prompt.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
-import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
+import { exportCharacterPortrait } from "../services/visual-profile-generation.js";
 /**
  * Agent Profile REST API routes.
  *
@@ -28,7 +36,7 @@ import { exportCharacterPortrait, generateVisualProfileReference } from "../serv
  */
 
 import { Hono, type Context } from "hono";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, asc, desc, isNull, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import { describeAgentCreationTraits, isAgentCreationTraitId, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import type { DrizzleDB } from "../db/index.js";
@@ -83,26 +91,64 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     try {
       const userId = c.get("user").id, agentId = c.req.param("id");
       const result = await (method === "post" ? requestAgentVisualUpdate : readAgentVisualUpdate)(db,userId,agentId);
-      if (result.job && ["queued","processing"].includes(result.job.status)) (options.resumeVisualUpdate ?? resumeAgentVisualUpdate)(db,userId,agentId,new URL(c.req.url).origin);
+      if (method === "post" && result.job && ["queued","processing"].includes(result.job.status)) (options.resumeVisualUpdate ?? resumeAgentVisualUpdate)(db,userId,agentId,new URL(c.req.url).origin);
       return c.json(result);
     } catch (error) {
       if (error instanceof AgentProfileManagementError) return agentProfileErrorResponse(c,error);
       throw error;
     }
   });
+  app.get("/api/agent-profiles/images/:hash",async(c,next)=>{
+    const [asset]=await db.select({isPublic:schema.agentContentAssets.isPublic}).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash,c.req.param("hash")));
+    if(!asset)return c.json({error:"Image not found"},404);
+    if(asset.isPublic)return next();
+    return requireAuth(db)(c,next);
+  },async c=>{
+    try{const bytes=await readAgentDraftImage(db,c.req.param("hash"),c.get("user")?.id);c.header("Content-Type","image/webp");c.header("Cache-Control","private, no-store");return c.body(new Uint8Array(bytes));}
+    catch(error){if(error instanceof AgentDraftImageUnavailable)return c.json({error:"Image not found"},404);throw error;}
+  });
+  app.get("/api/agent-profiles/voice-samples/:version/:voice", async c => {
+    const voice = c.req.param("voice");
+    if (c.req.param("version")!==VOICE_AUDITION_VERSION || !isPlayerVoiceId(voice)) return c.json({error:"Voice not found"},404);
+    const [sample] = await db.select().from(schema.voiceSamples).where(eq(schema.voiceSamples.id,voiceSampleId(voice)));
+    if (!sample?.audio || sample.status !== "ready") return c.json({error:"Sample unavailable"},404);
+    c.header("Content-Type","audio/mpeg");c.header("Cache-Control","public, max-age=31536000, immutable");
+    return c.body(new Uint8Array(await readPayload(sample.audio)));
+  });
+  app.get("/api/agent-profiles/generations",requireAuth(db),async c=>c.json(await listAgentGenerations(db,c.get("user").id)));
+  app.post("/api/agent-profiles/generations/:id/cancel",requireAuth(db),async c=>{
+    const body=await parseJsonBody(c,"Cancel image request");
+    if(!body || typeof body.source !== "string" || !["reference","avatar","preparation","reservation"].includes(body.source)) return c.json({error:"Choose an image request"},400);
+    await cancelAgentGeneration(db,c.get("user").id,c.req.param("id"),body.source as "reference"|"avatar"|"preparation"|"reservation");
+    return c.json({ok:true});
+  });
+  app.get("/api/agent-profiles/drafts",requireAuth(db),async c => {
+    return c.json(await db.select({scope:schema.agentEditorDrafts.scope,name:schema.agentEditorDrafts.name,updatedAt:schema.agentEditorDrafts.updatedAt}).from(schema.agentEditorDrafts).where(eq(schema.agentEditorDrafts.userId,c.get("user").id)));
+  });
+  app.get("/api/agent-profiles/drafts/:scope",requireAuth(db),async c => c.json(await readAgentDraft(db,c.get("user").id,c.req.param("scope"))));
+  app.put("/api/agent-profiles/drafts/:scope",requireAuth(db),async c => {
+    const body = await parseJsonBody(c,"PUT draft");
+    if (!body || !body.document || typeof body.document !== "object" || Array.isArray(body.document) || !(body.version === null || typeof body.version === "string" && body.version.length < 100)) return c.json({error:"Invalid draft"},400);
+    try { return c.json({version:await saveAgentDraft(db,c.get("user").id,c.req.param("scope"),body.version as string|null,body.document as Record<string,unknown>)}); }
+    catch(error) {if(error instanceof AgentDraftConflict)return c.json({error:"Draft changed in another tab.",code:"draft_conflict"},409);throw error;}
+  });
+  app.delete("/api/agent-profiles/drafts/:scope",requireAuth(db),async c => {
+    const body=await parseJsonBody(c,"DELETE draft");
+    if(!body || !(body.version === null || typeof body.version === "string" && body.version.length < 100))return c.json({error:"A draft version is required"},400);
+    try { await deleteAgentDraft(db,c.get("user").id,c.req.param("scope"),body.version as string|null);return c.json({ok:true}); }
+    catch(error){if(error instanceof AgentDraftConflict)return c.json({error:"Draft changed in another tab.",code:"draft_conflict"},409);throw error;}
+  });
+  app.delete("/api/agent-profiles/:id/entry-intent",requireAuth(db),async c=>{
+    const body=await parseJsonBody(c,"Completed entry destination");
+    if(!body || !(body.flow==="join_game"&&typeof body.gameId==="string" || body.flow==="daily_free"&&typeof body.seasonId==="string"))return c.json({error:"A specific completed destination is required"},400);
+    const target=body.flow==="join_game"?sql`${schema.agentEntryIntents.intent}->>'gameId' = ${body.gameId}`:sql`${schema.agentEntryIntents.intent}->>'seasonId' = ${body.seasonId}`;
+    await db.delete(schema.agentEntryIntents).where(and(eq(schema.agentEntryIntents.agentId,c.req.param("id")),eq(schema.agentEntryIntents.userId,c.get("user").id),sql`${schema.agentEntryIntents.intent}->>'flow' = ${body.flow}`,target));
+    return c.json({ok:true});
+  });
   app.get("/api/agent-profiles/:id/voice",requireAuth(db),async c => {
     const [agent] = await db.select({id:schema.agentProfiles.id}).from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id,c.req.param("id")),eq(schema.agentProfiles.userId,c.get("user").id)));
     if (!agent) return c.json({error:"Agent not found"},404);
     return c.json({assignment:await readAgentVoice(db,agent.id),voices:PLAYER_VOICES});
-  });
-  app.put("/api/agent-profiles/:id/voice",requireAuth(db),async c => {
-    const body = await parseJsonBody(c,"PUT /api/agent-profiles/:id/voice");
-    if (!body || Object.keys(body).length !== 1 || !isPlayerVoiceId(body.voiceId)) return c.json({error:"Choose a player stock voice"},400);
-    const [agent] = await db.select().from(schema.agentProfiles).where(and(eq(schema.agentProfiles.id,c.req.param("id")),eq(schema.agentProfiles.userId,c.get("user").id)));
-    if (!agent) return c.json({error:"Agent not found"},404);
-    const assignment = assignPlayerVoice(agent.id,agent.gender ?? null,body.voiceId);
-    await db.insert(schema.agentVoices).values({agentProfileId:agent.id,assignment}).onConflictDoUpdate({target:schema.agentVoices.agentProfileId,set:{assignment,updatedAt:new Date()}});
-    return c.json({assignment});
   });
   app.post("/api/agent-profiles/edit-assistant", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/edit-assistant");
@@ -112,15 +158,16 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     const context = body.context as Record<string, unknown>;
     if (Object.keys(context).length !== CHARACTER_FIELDS.length + 1 || typeof context.hasFullBody !== "boolean"
       || CHARACTER_FIELDS.some(field => typeof context[field] !== "string" || (context[field] as string).length > 12000)) return c.json({ error: "Invalid character context" }, 400);
+    const requestId = c.req.header("Idempotency-Key") ?? randomUUID();
     try {
-      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
         record => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, record)));
     } catch (error) {
-      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts }, error.status);
-      console.error("[edit-assistant] Turn failed", error);
-      if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again." }, 504);
-      return c.json({ error: "The character assistant could not complete this turn. Your draft is unchanged." }, 502);
+      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts, requestId }, error.status);
+      console.error("[edit-assistant] Turn failed", {requestId,error});
+      if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again.", requestId }, 504);
+      return c.json({ error: "The character assistant could not complete this turn. Your draft is unchanged.", requestId }, 502);
     }
   });
 
@@ -133,32 +180,50 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       || CHARACTER_FIELDS.some(field => typeof body.draft[field] !== "string" || body.draft[field].length > 12000)) {
       return c.json({ error: "Invalid creation assistant turn" }, 400);
     }
+    const requestId = c.req.header("Idempotency-Key") ?? randomUUID();
     try {
       const stage = body.stage;
       const message = body.message;
-      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+      const turn = await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
-        record => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, record)));
+        record => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, record));
+      // Meaningful creation start: first successful assistant turn per
+      // account. The deterministic ID makes retries/replays count once.
+      await recordAgentCreationStarted(db, { userId: c.get("user").id, channel: "web" });
+      return c.json(turn);
     } catch (error) {
-      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts:generationContacts }, error.status);
-      console.error("[creation-assistant] Turn failed", error);
-      if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again." }, 504);
-      return c.json({ error: "The assistant could not complete this turn. Try again or use Advanced create." }, 502);
+      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts:generationContacts, requestId }, error.status);
+      console.error("[creation-assistant] Turn failed", {requestId,error});
+      if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again.", requestId }, 504);
+      return c.json({ error: "The assistant could not complete this turn. Try again or use Advanced create.", requestId }, 502);
     }
   });
   app.post("/api/agent-profiles/portrait-crop", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/portrait-crop");
     if (!body) return c.json({ error: "A portrait crop is required" }, 400);
     const { headRectangle, ...crop } = body;
-    try { return c.json(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, new URL(c.req.url).origin, headRectangle)); }
+    try { return c.json(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, {db,userId:c.get("user").id}, headRectangle)); }
     catch (error) { return c.json({ error: error instanceof Error ? error.message : "Portrait export failed" }, 400); }
+  });
+  app.get("/api/agent-profiles/visual-references/:requestId",requireAuth(db),async c => {
+    const result=await readCharacterReference(db,c.get("user").id,c.req.param("requestId"));return result?c.json(result):c.json({error:"Image request not found"},404);
+  });
+  app.post("/api/agent-profiles/visual-references/:requestId/retry",requireAuth(db),async c=>{
+    try{return c.json(await retryCharacterReference(db,c.get("user").id,c.req.param("requestId")),202);}catch(error){if(error instanceof GenerationAdmissionError){if(error.code === "generation_pending") return c.json({error:error.message,code:error.code,blockedBy:(await listAgentGenerations(db,c.get("user").id)).find(row=>row.blocksGeneration)},409);throw error;}return c.json({error:"Image request changed.",code:"artwork_changed"},409);}
+  });
+  app.post("/api/agent-profiles/visual-references/:requestId/decision",requireAuth(db),async c=>{
+    const body=await parseJsonBody(c,"Artwork decision");if(body?.decision!=="selected"&&body?.decision!=="discarded")return c.json({error:"Choose Select or Discard"},400);
+    try{await decideCharacterReference(db,c.get("user").id,c.req.param("requestId"),body.decision);return c.json({ok:true});}catch(error){if(error instanceof GenerationAdmissionError)throw error;return c.json({error:"Artwork changed in another tab.",code:"artwork_changed"},409);}
   });
   app.post("/api/agent-profiles/visual-reference", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/visual-reference");
     if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
     try {
-      return c.json(await generateVisualProfileReference(db, c.get("user").id, body as Record<string, unknown>, new URL(c.req.url).origin));
-    } catch (error) { if(error instanceof GenerationAdmissionError) throw error; return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
+      return c.json(await requestCharacterReference(db, c.get("user").id, body as Record<string, unknown>, new URL(c.req.url).origin), 202);
+    } catch (error) { if(error instanceof GenerationAdmissionError) {
+      if(error.code === "generation_pending") return c.json({error:error.message,code:error.code,blockedBy:(await listAgentGenerations(db,c.get("user").id)).find(row=>row.blocksGeneration)},409);
+      throw error;
+    } return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
   });
 
   // -------------------------------------------------------------------------
@@ -277,7 +342,8 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       : USER_SELECTABLE_AGENT_ARCHETYPE_KEYS;
     const requestedGender = isAgentGender(gender)
       ? gender
-      : isAgentGender(existingProfile?.gender) ? existingProfile.gender : undefined;
+      : editFields && !editFields.includes("gender") && isAgentGender(existingProfile?.gender)
+        ? existingProfile.gender : undefined;
 
     const systemPrompt = buildAgentProfileGenerationSystemPrompt(isRefine, allowedPersonaKeys);
 
@@ -303,12 +369,14 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     if (backstoryIdea) userParts.push(`Backstory idea: ${backstoryIdea}`);
     if (archetype) userParts.push(`Preferred archetype: ${archetype}`);
     if (requestedGender) userParts.push(`Required gender: ${requestedGender}. Do not change it.`);
+    else if (isAgentGender(existingProfile?.gender)) userParts.push(`Keep the current gender unless the user asks to change it. A requested gender change must be returned in the structured gender field.`);
 
+    const requestId = c.req.header("Idempotency-Key") ?? randomUUID();
     try {
       const needsReference = !selectedFields?.length || selectedFields.some(field => VISUAL_FIELDS.includes(field));
       const sourceUrl = needsReference ? existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl : null;
       const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
-      const result = await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+      const result = await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body }, async record => {
       const response = await openai.chat.completions.create({
         model: llmConfig.modelId,
@@ -381,10 +449,10 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       });
       return c.json(result);
     } catch (err) {
-      if (err instanceof GenerationAdmissionError) return c.json({ error: err.message, code: err.code, contacts:generationContacts }, err.status);
-      console.error("[agent-profiles] AI generation failed:", err);
-      if (err instanceof APIConnectionTimeoutError) return c.json({ error: "Character generation took too long. Your draft is unchanged—please try again." }, 504);
-      return c.json({ error: "AI generation failed" }, 502);
+      if (err instanceof GenerationAdmissionError) return c.json({ error: err.message, code: err.code, contacts:generationContacts, requestId }, err.status);
+      console.error("[agent-profiles] AI generation failed:", {requestId,error:err});
+      if (err instanceof APIConnectionTimeoutError) return c.json({ error: "Character generation took too long. Your draft is unchanged—please try again.", requestId }, 504);
+      return c.json({ error: "AI generation failed", requestId }, 502);
     }
   });
 
@@ -414,6 +482,8 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
         ...(avatarGenerationRequestId && { avatarGenerationRequestId }),
       }, {
         modelPreference: body.modelPreference,
+        voiceId: body.voiceId,
+        entryIntent: body.entryIntent,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,
@@ -536,7 +606,8 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     const profiles = await db
       .select()
       .from(schema.agentProfiles)
-      .where(and(eq(schema.agentProfiles.userId, user.id), isNull(schema.agentProfiles.archivedAt)));
+      .where(and(eq(schema.agentProfiles.userId, user.id), isNull(schema.agentProfiles.archivedAt)))
+      .orderBy(desc(schema.agentProfiles.createdAt), asc(schema.agentProfiles.id));
 
     const completions = await latestAvatarCompletionsByAgentProfileId(
       db,
@@ -545,9 +616,11 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     );
 
     const transparentBodies = await readAgentTransparentBodies(db, profiles);
+    const activity = await agentCollectionActivity(db, profiles);
     return c.json(profiles.map((profile) => ({
       transparentBodyUrl: transparentBodies.get(profile.id) ?? null,
       ...playerSafeAgentProfile(profile),
+      ...activity.get(profile.id),
       avatarCompletion: completions.get(profile.id),
     })));
   });
@@ -596,6 +669,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     const avatarCompletion = await latestAvatarCompletion(db, user.id, profile.id) ?? undefined;
     return c.json({
       ...playerSafeAgentProfile(profile),
+      transparentBodyUrl: (await readAgentTransparentBodies(db, [profile])).get(profile.id) ?? null,
       ownerContent: await readOwnerContent(db, profile),
       ...(avatarCompletion && { avatarCompletion }),
     });
@@ -624,6 +698,8 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
         }),
       }, profileId, {
         modelPreference: body.modelPreference,
+        voiceId: body.voiceId,
+        entryIntent: body.entryIntent,
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,

@@ -42,7 +42,9 @@ export function assertMysteryWindow(window: WerewolfWatchWindow) {
       (moment.entry.kind === "night" &&
         (moment.entry.attackTargetId !== undefined ||
           moment.entry.protectedId !== undefined ||
-          moment.entry.investigation !== undefined)) ||
+          moment.entry.investigation !== undefined ||
+          moment.entry.snipe !== undefined)) ||
+      moment.snapshot.players.some((p) => p.items?.length) ||
       (!moment.snapshot.outcome &&
         moment.snapshot.players.some((p) => p.role !== undefined))
     )

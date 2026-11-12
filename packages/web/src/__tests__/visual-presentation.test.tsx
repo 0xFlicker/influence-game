@@ -6,7 +6,7 @@ import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import { soloPresentationDurationMs, SOLO_READ_START_MS, SOLO_EXIT_MS, SOLO_SPEECH_FADE_MS } from "../app/games/[slug]/components/solo-presentation-timing";
 import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "../app/games/[slug]/components/scene-speech-timing";
 import {INFLUENCE_ROOMS} from "../app/games/[slug]/components/influence-rooms";
-import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
+import { VisualPresentationFrame, presentationBeatOwnsBackdrop, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 import { VisualSceneView } from "../app/games/[slug]/components/visual-scene-view";
 import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/components/stage-backdrop";
 import { PortraitRoom, portraitRoomSeats, portraitRoomTransitionSeats } from "../app/games/[slug]/components/portrait-room";
@@ -445,6 +445,23 @@ test("a confirmed 404 allows a full-body fallback, but a reload selects transpar
   view.unmount();
   const reloaded = render(<VisualPresentationFrame beat={solo} rooms={[]} elapsedMs={SOLO_READ_START_MS} paused />);
   expect(reloaded.getByRole("img").getAttribute("src")).toBe("/characters/saved.png");
+});
+
+test("self-painting beats own the stage backdrop while transparent beats keep the root room", () => {
+  const player = { id: "p1", name: "Arden", persona: "social" };
+  const owns = (beat: VisualPresentationBeat) => presentationBeatOwnsBackdrop(beat);
+  expect(owns({ kind: "canonical-result", headline: "Done", detail: "Detail", players: [player] })).toBe(true);
+  expect(owns({ kind: "elimination-result", player })).toBe(true);
+  expect(owns({ kind: "house-result", text: "House", result: { kind: "elimination-result", player } })).toBe(true);
+  expect(owns({ kind: "portrait-room", roomNumber: null, participants: [player], speech })).toBe(true);
+  expect(owns({ kind: "portrait", purpose: "Introduction", player, speech })).toBe(true);
+  expect(owns({ kind: "house", text: "House" })).toBe(true);
+  expect(owns({ kind: "house", text: null, backgroundUrl: "/room.jpg" })).toBe(true);
+  expect(owns({ kind: "house", text: null })).toBe(false);
+  expect(owns({ kind: "anonymous", speech })).toBe(false);
+  // A composed result stage still contains exactly one room backdrop.
+  const view = render(<VisualPresentationFrame beat={{ kind: "canonical-result", headline: "Done", detail: "Detail", players: [player] }} rooms={[]} elapsedMs={0} reducedMotion />);
+  expect(view.container.querySelectorAll("[data-room-backdrop]")).toHaveLength(1);
 });
 
 test("recorded House captions never remove the result, affected cast, or scenery", () => {

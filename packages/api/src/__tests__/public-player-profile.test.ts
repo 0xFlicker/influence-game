@@ -1,3 +1,4 @@
+import {createAcceptedTestProfile as createOwnedAgentProfile} from "./test-utils.js";
 import { grantAward, revokeAward } from "../services/awards.js";
 import { assertPublicPlayerProfileEnvelope } from "../game-mcp/public-player-tool-schema.js";
 import { contentImageFixture } from "./content-image-fixture.js";
@@ -10,7 +11,7 @@ import type { GameMcpAuthContext } from "../game-mcp/auth.js";
 import { ProductionGameMcpReadModel } from "../game-mcp/read-model.js";
 import { ProductionGameMcpJsonRpcServer } from "../game-mcp/server.js";
 import { createPublicPlayerRoutes } from "../routes/public-players.js";
-import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+
 import { getPublicAgentPreviewsByProfileIds } from "../services/public-agent-preview.js";
 import {
   getPublicPlayerProfile,

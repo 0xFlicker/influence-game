@@ -39,7 +39,7 @@ A single `join_game` agent-creation flow resolves identity before joining throug
 
 - Influence: `/games/:slug/replay/:sequence`, using the active cue's canonical event sequence.
 - Werewolf: `/games/:slug/replay?audience=mystery|omniscient&cursor=N`, using the active source entry's audience-local cursor.
-- Never put a cue-array index, pagination page or elapsed animation time into the link. Werewolf requires an explicit valid audience with a cursor; repeated/invalid parameters are rejected. A cursor in one audience cannot be reused for the other.
+- Use the stable source coordinate and semantic cue key rather than a cue-array index or pagination page. Share links can also retain the local playback time. Werewolf requires an explicit valid audience with a cursor; repeated/invalid parameters are rejected. A cursor in one audience cannot be reused for the other. See [audience-local replay and measured pages](audience-local-replay-and-measured-pages.md) for in-player switching.
 - The common transport offers **Share this moment** in settings. It reuses native sharing/clipboard feedback and does not seek or pause. Moments with no stable source anchor have no share action.
 - Resolve the initial position before loading/autoplaying the director. Werewolf starts in the target 32-entry window, preserving saved thinking/order and audience restrictions. Later fetches must not overwrite a seek or unpause a paused viewer.
 - Influence retains its existing sequence resolver: exact first cue, otherwise next available cue, otherwise last cue. This is deliberately distinct from Werewolf's rejected out-of-range initial cursor. Tightening historical Influence clamping is a follow-up, not an invented cross-game equivalence.

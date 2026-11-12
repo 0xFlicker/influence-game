@@ -1,8 +1,7 @@
 "use client";
 import type {AudioWatchCoordinate} from "@influence/engine/audio-watch";
 import type {WerewolfPlaybackCue} from "./werewolf-opening";
-import {werewolfPlaybackPolicy} from "./werewolf-opening";
-import {werewolfFollowPosition,werewolfCommentaryReady,werewolfPlaybackConcluded} from "./werewolf-follow-position";
+import {werewolfFollowPosition,werewolfFollowRevealAtMs,werewolfCommentaryReady,werewolfPlaybackConcluded} from "./werewolf-follow-position";
 import {useGamePlayback,useIsFollowPlayer} from "@/components/watch/game-playback";
 import {useWatchVoice} from "@/components/watch/use-watch-voice";
 import {WatchClock} from "@/components/watch/watch-clock";
@@ -20,6 +19,7 @@ import {werewolfMusic} from "./werewolf-music";
 import {WatchTransport} from "@/components/watch/watch-transport";
 import {usePlayerFullscreen} from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
+import {ItemBadges} from "@/components/watch/item-badges";
 import {useWatchPreferences, type WatchPreferenceScope} from "@/components/watch/use-watch-preferences";
 import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {anonymousApiFetch, apiFetch} from "@/lib/api";
@@ -42,17 +42,24 @@ import {useOpeningAudio} from "./use-opening-audio";
 import {werewolfCueMoment} from "./werewolf-watch-model";
 import {replayMoment} from "./replay-moment";
 
-export function WerewolfViewer({slug, title, audience, preferenceScope = "viewer", startCursor, embedded = false, contained = false}: {slug: string; title?: string; audience: WerewolfAudience; preferenceScope?: WatchPreferenceScope; startCursor?: number; embedded?:boolean; contained?:boolean}) {
-  const shared = useReplayShare(preferenceScope !== "production");
-  const preferences = useWatchPreferences(preferenceScope, shared.state, embedded);
-  const [publication] = useState(() => new Date().toISOString());
-  if (shared.error) return <p role="alert">{shared.error}</p>;
-  if (!shared.ready || !preferences.ready) return <WatchWaiting label="Preparing the player…" />;
-  return <WerewolfSession contained={contained} embedded={embedded} shared={shared.state} startCursor={startCursor} preferences={preferences} key={`${slug}:${audience}`} slug={slug} title={title} audience={audience} cutoff={publication} />;
+type WerewolfViewerProps = {slug: string; title?: string; audience: WerewolfAudience; onAudienceChange?: (audience:WerewolfAudience)=>void; preferenceScope?: WatchPreferenceScope; startCursor?: number; embedded?:boolean; contained?:boolean};
+export function WerewolfViewer(props:WerewolfViewerProps) {
+  const shared = useReplayShare(props.preferenceScope !== "production");
+  if (!shared.ready) return <WatchWaiting label="Preparing the player…" />;
+  return <WerewolfPrepared key={props.slug} {...props} share={{state:shared.state,error:shared.error}} />;
 }
-function WerewolfSession({slug, title, audience, cutoff, preferences, startCursor, embedded, contained, shared}: {slug: string; title?: string; audience: WerewolfAudience; cutoff: string; preferences: ReturnType<typeof useWatchPreferences>; startCursor?:number; embedded:boolean; contained:boolean; shared?:ReplayShareState}) {
+function WerewolfPrepared({slug, title, audience, onAudienceChange, preferenceScope = "viewer", startCursor, embedded = false, contained = false, share}:WerewolfViewerProps & {share:{state?:ReplayShareState;error?:string}}) {
+  const [initialShare] = useState(() => share);
+  const preferences = useWatchPreferences(preferenceScope, initialShare.state, embedded);
+  const [publication] = useState(() => new Date().toISOString());
+  if (initialShare.error) return <p role="alert">{initialShare.error}</p>;
+  if (!preferences.ready) return <WatchWaiting label="Preparing the player…" />;
+  return <WerewolfSession contained={contained} embedded={embedded} shared={initialShare.state} startCursor={startCursor} preferences={preferences} slug={slug} title={title} initialAudience={audience} onAudienceChange={onAudienceChange} cutoff={publication} />;
+}
+function WerewolfSession({slug, title, initialAudience, onAudienceChange, cutoff, preferences, startCursor, embedded, contained, shared}: {slug: string; title?: string; initialAudience: WerewolfAudience; onAudienceChange?: (audience:WerewolfAudience)=>void; cutoff: string; preferences: ReturnType<typeof useWatchPreferences>; startCursor?:number; embedded:boolean; contained:boolean; shared?:ReplayShareState}) {
   const followed=useIsFollowPlayer();
-  const watch = useWerewolfWatch(slug, audience, cutoff, startCursor, title, shared, embedded, followed);
+  const watch = useWerewolfWatch(slug, initialAudience, cutoff, startCursor, title, shared, embedded, followed);
+  const {audience} = watch;
   const {director, snapshot, data, active} = watch;
   const frame = useRef<HTMLDivElement>(null);
   const fullscreen = usePlayerFullscreen(frame,followed);
@@ -79,7 +86,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
     return werewolfPlaybackConcluded(director.getActiveCue(),data?.status);
   },[director,data?.status]);
   const commentaryReady=useCallback(()=>werewolfCommentaryReady(director),[director]);
-  const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding}=useGamePlayback({id:data?.gameId ?? "",slug,kind:"werewolf"},()=>werewolfFollowPosition(playbackCue,audience),data?.players ?? [],{director,commentaryReady,concluded,revealAtMs:playbackCue?werewolfPlaybackPolicy.scrubAtMs?.(playbackCue)??0:0});
+  const {onSpeech:onHouseSpeech,houseSpeaking,houseHolding}=useGamePlayback({id:data?.gameId ?? "",slug,kind:"werewolf"},()=>werewolfFollowPosition(playbackCue,audience),data?.players ?? [],{director,commentaryReady,concluded,revealAtMs:werewolfFollowRevealAtMs(playbackCue)});
   const [masterMuted, setMasterMuted] = useState(true);
   const voice = useWatchVoice({suspended:houseHolding,masterMuted,director,gameId:data?.gameId ?? "",audience,thinking:audience === "omniscient" && thinking,live:data?.status === "in_progress",onPause:watch.pause,
     coordinate:playbackCue ? coordinateForCue(playbackCue) : null,coordinateForCue,onSpeech:onHouseSpeech});
@@ -116,7 +123,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   const cast = {counts: {totalPlayers: players.length}, phaseLabel: active ? `Day ${active.snapshot.day} · ${active.snapshot.phase}` : "Preparing", players: players.map(player => {
     const frozen = data?.players.find(p => p.id === player.id);
     const avatar = {name: player.name, avatarUrl: frozen?.avatarUrl ?? undefined, personaKey: player.personaKey ?? undefined, persona: player.personaKey ?? "", modelPreference: frozen?.modelPreference};
-    return {id: player.id, name: player.name, isSelected: player.id === selectedId, statusLabel: player.alive ? "Alive" : "Out", statusClass: player.alive ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border border-rose-400/20 bg-rose-400/10 text-rose-200", portrait: <GamePlayerAvatarPreview player={avatar} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={avatar} size="6" />, tags: player.role ? <span className="text-[10px] text-white/45">{player.role}</span> : null};
+    return {id: player.id, name: player.name, isSelected: player.id === selectedId, statusLabel: player.alive ? "Alive" : "Out", statusClass: player.alive ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border border-rose-400/20 bg-rose-400/10 text-rose-200", portrait: <GamePlayerAvatarPreview player={avatar} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={avatar} size="6" />, tags: player.role || player.items?.length ? <span className="inline-flex items-center gap-1.5 text-[10px] text-white/45">{player.role}<ItemBadges items={player.items} /></span> : null};
   })};
   const header = {matchTitle: title ?? slug, roundLabel: active ? active.chapterId === "introduction" ? "Introductions" : active.chapterId === "ending" ? "Ending" : `Cycle ${active.snapshot.day}` : "Preparing", connectionLabel: data?.visualPaused ? "Paused for visuals" : data?.status === "in_progress" ? watch.follow ? "Following live" : "Live game" : data?.status ?? "Loading", counts: {alivePlayers: players.filter(p => p.alive).length, eliminatedPlayers: players.filter(p => !p.alive).length}};
   const inspect = <WatchInspector hero={identity && <div className="border-b border-white/10 p-4"><h2 className="text-xl text-white/90">{identity.name}</h2><p className="mt-1 text-xs text-white/50">{person?.role && <>{person.role} · </>}{person?.alive ? "Alive" : "Eliminated"}</p></div>} sections={[
@@ -137,20 +144,30 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
         <WatchClock director={director}>{elapsed => watch.openingCue ? <div className="relative min-h-0 flex-1" onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button")) director.manualAdvance();}}>
           <WerewolfOpeningFrame cue={watch.openingCue} elapsedMs={elapsed} navigationRevision={director.getNavigationRevision()} playing={snapshot.isPlaying && !watch.preparing && !watch.holding} speed={snapshot.speed} reduced={snapshot.reducedMotion} browserLoading />
           <button type="button" className="absolute right-4 top-4 rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white/80" onClick={() => {music.suspend(); void watch.seek(1);}}>Skip opening</button>
-        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} roleLabel={audience === "omniscient" ? performer?.role ?? undefined : undefined} load={loadThinking}>
+        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} roleLabel={audience === "omniscient" ? performer?.role ?? undefined : undefined} itemLabels={audience === "omniscient" ? performer?.items : undefined} load={loadThinking}>
         <WerewolfWatchStage houseNarration={voice.getHouseNarration()} hideHouseCaption={voice.houseNarrationAvailable} previousCue={watch.previousCue} nextCue={watch.nextCue} navigationRevision={watch.navigationRevision} contextLabel={cue ? replayMoment({...cue.moment.snapshot, entries:[cue.moment.entry]}).title : undefined} cue={cue} scene={cue?.moment.mediaKey ? watch.media[cue.moment.mediaKey] ?? null : null} elapsed={elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>}</WatchClock>
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}
         {!embedded && active?.entry.kind === "result" && <Link className="self-center rounded-lg border border-white/20 px-4 py-2 text-sm text-white" href={gameResultsHref(slug)}>View final results</Link>}
         <div data-replay-controls className="shrink-0 border-t border-white/5 bg-black/70 px-1 py-2 sm:px-3">
-          <WatchTransport getShareHref={() => {
+          <WatchTransport audience={data ? {value:audience,onChange:next => {setTranscript(false);setInspecting(false);void watch.switchAudience(next,thinking).then(changed => {
+            if (!changed) return;
+            onAudienceChange?.(next);
+            if (!embedded) {
+              const current = director.getActiveCue();
+              const href = current && !isOpeningCue(current) ? werewolfMomentHref(slug,next,current.moment.cursor) : gameReplayHref(slug,undefined,next);
+              const target = current ? replayShareHref(href,current.key,director.getTimelineElapsedBaseMs(),director.getSnapshot().speed,{...preferences,thinking:next === "omniscient" && thinking}) : href;
+              const updated = new URL(target, window.location.origin), prior = new URL(window.location.href);
+              for (const [name,value] of prior.searchParams) if (!["audience","cursor","cue","t","speed","thinking","muted","volume"].includes(name)) updated.searchParams.append(name,value);
+              window.history.replaceState(window.history.state,"",`${updated.pathname}${updated.search}${updated.hash}`);
+            }
+          });}} : undefined} getShareHref={() => {
             const current = director.getActiveCue();
             const href = current && !isOpeningCue(current) ? werewolfMomentHref(slug,audience,current.moment.cursor) : gameReplayHref(slug,undefined,audience);
             return current ? replayShareHref(href,current.key,director.getTimelineElapsedBaseMs(),director.getSnapshot().speed,{...preferences,thinking:audience === "omniscient" && thinking}) : href;
           }} fullscreen={fullscreen.fullscreen} theater={fullscreen.theater} theaterButton={fullscreen.theaterButton} toggleTheater={fullscreen.toggleTheater} fullscreenButton={fullscreen.button} toggleFullscreen={fullscreen.toggle} fullscreenError={fullscreen.error} isPlaying={watch.follow} togglePlay={toggle} audio={{muted:masterMuted,onMute:() => {setMasterMuted(!masterMuted);unlockMusic(!masterMuted || preferences.musicMuted);}}}
           voice={voice.available ? {muted:voice.muted,volume:voice.volume,onMute:() => voice.setMuted(!voice.muted),onVolume:voice.setVolume} : undefined}
           music={{muted:preferences.musicMuted,volume:preferences.musicVolume,status:music.status,onMute:() => {preferences.setMusicMuted(!preferences.musicMuted);unlockMusic(masterMuted || !preferences.musicMuted);},onVolume:preferences.setMusicVolume,retry:() => unlockMusic(masterMuted || preferences.musicMuted)}} onScrubStart={() => {ambient.beginScrub(); openingAudio.beginScrub();}} onScrubEnd={() => {ambient.endScrub(); openingAudio.endScrub();}} speed={snapshot.speed} onSpeed={value => director.setSpeed(value)} goToBeginning={() => {music.restart(); void watch.seekOpening(0);}} goToPrevScene={() => adjacent(-1,"scene")} onSeek={frame => {const target = timeline.target(frame); if (target) {music.suspend();return watch.seekTiming(target.key, target.elapsedMs);}}} timeline={timeline} goToNextScene={() => adjacent(1,"scene")} goToEnd={() => {music.suspend(); if (data?.status === "in_progress") watch.goLive(); else seek(data?.latestCursor ?? 1);}} live={data?.status === "in_progress"} cursor={watch.scrubPosition} count={watch.scrubCount} settings={!embedded && <div className="flex flex-col items-start gap-3 text-sm text-white/80">
-        <span className="text-xs text-white/50" aria-label="Viewing mode">Viewing mode: {audience === "omniscient" ? "Omniscient" : "Mystery"}</span>
         {active?.snapshot.outcome ? <Link href={gameResultsHref(slug)}>View results · Spoilers</Link> : null}
         <button onClick={() => setTranscript(value => !value)}>Transcript</button>
         {data?.status === "in_progress" && <WerewolfOperator busy={stopping} onStop={async () => {

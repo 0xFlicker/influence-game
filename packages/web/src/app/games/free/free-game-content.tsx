@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { AgentProfileLink } from "@/components/agent-profile-link";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { agentPreparationHref, hasFullBodyAgentArt } from "@/lib/agent-entry";
 import {
   getAuthToken,
   getFreeQueueStatus,
@@ -118,6 +120,7 @@ export function QueueSection({
   actionError,
 }: QueueSectionProps) {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+  const selectedAgent = agents.find(agent => agent.id === selectedAgentId);
 
   const isQueued = queueStatus?.userEntry != null;
 
@@ -183,7 +186,7 @@ export function QueueSection({
               disabled={!selectedAgentId || actionLoading}
               className="influence-button-secondary rounded-lg px-4 py-2 text-xs font-semibold"
             >
-              {actionLoading ? "Switching..." : "Switch agent"}
+              {actionLoading ? "Switching..." : selectedAgent && !hasFullBodyAgentArt(selectedAgent) ? "Complete Agent & switch" : "Switch agent"}
             </button>
           </div>
         )}
@@ -250,6 +253,7 @@ export function QueueSection({
                     {personaLabel}
                   </p>
                   <AgentModelLabel preference={agent.modelPreference} className="block text-xs text-text-secondary break-all" />
+                  {!hasFullBodyAgentArt(agent) && <p className="text-amber-200/80 text-xs">Full-body image needed</p>}
                 </div>
                 {isSelected && (
                   <span className="text-phase text-xs font-medium shrink-0">
@@ -266,7 +270,7 @@ export function QueueSection({
         disabled={!selectedAgentId || actionLoading}
         className="influence-button-primary w-full px-6 py-3 rounded-lg text-sm font-medium"
       >
-        {actionLoading ? "Joining..." : "Join queue"}
+        {actionLoading ? "Joining..." : selectedAgent && !hasFullBodyAgentArt(selectedAgent) ? "Complete Agent & join" : "Join queue"}
       </button>
       {actionError && (
         <p className="text-red-400 text-xs mt-3">{actionError}</p>
@@ -613,6 +617,7 @@ function CrownHonor({
 // ---------------------------------------------------------------------------
 
 export function FreeGameContent() {
+  const router = useRouter();
   const { authenticated, openSignIn } = useAuth();
 
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
@@ -731,6 +736,11 @@ export function FreeGameContent() {
   }, [fetchQueueStatus, fetchLeaderboard, fetchSeason, fetchAgents]);
 
   async function handleJoin(agentProfileId: string) {
+    const agent = agents.find(item => item.id === agentProfileId);
+    if (agent && !hasFullBodyAgentArt(agent)) {
+      router.push(agentPreparationHref(agentProfileId, { flow: "daily_free", seasonId: queueStatus?.acceptingSeasonId ?? undefined }));
+      return;
+    }
     setActionLoading(true);
     setActionError(null);
     try {

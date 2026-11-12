@@ -81,6 +81,7 @@ test.describe("local public player identity", () => {
           return route.fulfill({ json: { used: false } });
         });
         await page.goto(`${servers.webUrl}/games/${id}`);
+        await expect(page.getByRole("link", { name: "Create agent", exact: true })).toHaveAttribute("href", `/agents/create?flow=join_game&gameId=${id}`);
         await page.getByRole("button", { name: "Join with an agent" }).click();
         await expect(page).toHaveURL(`${servers.webUrl}/agents/create?flow=join_game&gameId=${id}`, { timeout: 30_000 });
         const signup = page.getByRole("dialog", { name: "Influence authentication" });
@@ -88,16 +89,16 @@ test.describe("local public player identity", () => {
         const composer = page.getByLabel("Message the character assistant", { exact: true });
         await composer.fill("An exiled diplomat who keeps receipts");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toContainText("Mira Vale");
+        await expect(page.getByRole("button", { name: "Revise Name", exact: true })).toContainText("Mira Vale");
         await expect(signup).toHaveCount(0);
-        await page.getByRole("button", { name: "Yes, that feels right", exact: true }).click();
+        await page.getByRole("button", { name: "Continue", exact: true }).click();
         await composer.fill("A blue coat and gold rings");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await expect(signup).toBeVisible();
         await expect(signup).toContainText("Create a free account for more House messages");
         await signup.getByRole("button", { name: "Close authentication" }).click();
         await expect(composer).toHaveValue("A blue coat and gold rings");
-        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toContainText("Mira Vale");
+        await expect(page.getByRole("button", { name: "Revise Name", exact: true })).toContainText("Mira Vale");
         await expect(page).toHaveURL(`${servers.webUrl}/agents/create?flow=join_game&gameId=${id}`);
         expect(previews).toBe(1);
         expect(privateRequests).toEqual([]);
@@ -109,10 +110,10 @@ test.describe("local public player identity", () => {
 
   test("game pre-show opens creation, reveals the cast, refreshes seats and enters live play", async ({ browser }) => {
     test.setTimeout(180_000);
-    const player = (name: string, personaKey: string): GamePlayer => ({
+    const player = (name: string, personaKey: string, profileHref?: string): GamePlayer => ({
       id: name.toLowerCase(), name, persona: PRIVATE_SENTINEL, personaKey,
       status: "alive", shielded: false,
-      currentAgent: { name, avatarUrl: `/avatars/personas/${personaKey}.png`, role: { key: "strategic", label: "Strategist" }, competition: { gamesPlayed: 7, wins: 3, winRate: 3 / 7 } },
+      currentAgent: { name, avatarUrl: `/avatars/personas/${personaKey}.png`, profileHref, role: { key: "strategic", label: "Strategist" }, competition: { gamesPlayed: 7, wins: 3, winRate: 3 / 7 } },
     });
     for (const width of [1440, 390]) {
       const context = await identityContext(browser, { viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
@@ -121,10 +122,6 @@ test.describe("local public player identity", () => {
       let failRefresh = false;
       let joinedProfile: string | null = null;
       try {
-        await page.route("**/api/free-queue", async route => {
-          const response = await route.fetch();
-          await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } });
-        });
         await page.route("**/api/game-entries/preshow-fixture", route => route.fulfill({ json: { id: "preshow-fixture", slug: "preshow-fixture", gameKind: "influence" } }));
         await page.route("**/api/games/preshow-fixture", route => failRefresh ? route.fulfill({ status: 503, json: { error: "Refresh temporarily unavailable" } }) : route.fulfill({ json: game }));
         await page.route("**/api/games/preshow-fixture/episode", route => route.fulfill({ status: 404, json: { error: "No episode yet" } }));
@@ -138,7 +135,10 @@ test.describe("local public player identity", () => {
         await page.routeWebSocket(/\/ws\/games\/preshow-fixture(?:\?.*)?$/, () => {});
         await page.goto(`${servers.webUrl}/games/preshow-fixture`, { waitUntil: "networkidle" });
         const preShow = page.getByRole("region", { name: "Game pre-show" });
-        const create = preShow.getByRole("link", { name: "Create agent", exact: true });
+        await expect(preShow.getByText("The first seat is yours.")).toBeVisible();
+        await expect(page.getByRole("link", { name: "The House", exact: true })).toHaveCount(1);
+        if (width === 390) await page.getByRole("button", { name: "Open menu" }).click();
+        const create = page.getByRole("link", { name: "Create agent", exact: true });
         await expect(create).toHaveAttribute("href", "/agents/create?flow=join_game&gameId=preshow-fixture");
         await expect(preShow.getByText("The first seat is yours.")).toBeVisible();
         await expect(preShow.getByText("4 seats open", { exact: true })).toBeVisible();
@@ -151,19 +151,19 @@ test.describe("local public player identity", () => {
 
         await page.evaluate(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
         await page.goto(`${servers.webUrl}/games/preshow-fixture`, { waitUntil: "networkidle" });
-        game = { ...game, players: [player("Mira Vale", "social"), player("Atlas", "strategic"), player("Vera", "deceptive")] };
-        await expect(preShow.getByRole("button", { name: "Meet Mira Vale", exact: true })).toBeVisible({ timeout: 12_000 });
+        game = { ...game, players: [player("Mira Vale", "social", "/agents/mira-profile"), player("Atlas", "strategic"), player("Vera", "deceptive")] };
+        await expect(preShow.locator('a[href="/agents/mira-profile"]')).toBeVisible({ timeout: 12_000 });
         await expect(preShow.getByText("1 seat open", { exact: true })).toBeVisible();
         await expect(preShow).not.toContainText(PRIVATE_SENTINEL);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `/tmp/game-pre-show-cast-${width}.png`, fullPage: true });
-        await preShow.getByRole("button", { name: "Meet Mira Vale", exact: true }).click();
-        const portrait = page.getByRole("dialog", { name: "Meet Mira Vale", exact: true });
+        await preShow.getByRole("button", { name: "Meet Atlas", exact: true }).click();
+        const portrait = page.getByRole("dialog", { name: "Meet Atlas", exact: true });
         await expect(portrait).toBeVisible();
         await expect(portrait).toContainText("3 wins / 7 games");
         await portrait.getByRole("button", { name: "Close portrait" }).click();
         await expect(portrait).toHaveCount(0);
-        await expect(preShow.getByRole("button", { name: "Meet Mira Vale", exact: true })).toBeFocused();
+        await expect(preShow.getByRole("button", { name: "Meet Atlas", exact: true })).toBeFocused();
 
         failRefresh = true;
         await expect(preShow.getByRole("alert")).toContainText("Cast refresh failed", { timeout: 12_000 });
@@ -182,6 +182,7 @@ test.describe("local public player identity", () => {
         expect(joinedProfile).toBeTruthy();
         await expect(page).toHaveURL(`${servers.webUrl}/games/preshow-fixture`);
         await expect(preShow.getByText("Cast complete", { exact: true })).toBeVisible({ timeout: 12_000 });
+        if (width === 390) await page.getByRole("button", { name: "Open menu" }).click();
         await expect(create).toHaveAttribute("href", "/agents/create");
         await expect(preShow.getByRole("button", { name: "Join with an agent" })).toHaveCount(0);
 
@@ -206,7 +207,6 @@ test.describe("local public player identity", () => {
       const player: GamePlayer = { id: "cast", name: "Mira", persona: "Social", personaKey: "social", status: "alive", shielded: false };
       try {
         await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), permissions, roles } }); });
-        await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
         await page.route("**/api/game-entries/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", gameKind: "influence" } }));
         await page.route("**/api/games/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", status: "waiting", playerCount: 1, players: full ? [player] : [], currentRound: 0, maxRounds: 10, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: "2026-09-26" } }));
         await page.route("**/api/games/control-fixture/episode", route => route.fulfill({ status: 404, json: { error: "Not ready" } }));
@@ -250,7 +250,7 @@ test.describe("local public player identity", () => {
 
   test("agent selector supports reuse, retries, empty-agent creation and owned-seat roles", async ({ browser }) => {
     test.setTimeout(180_000);
-    const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
+    const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, fullBodyReferenceUrl: "https://example.com/fixture-full-body.png", backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
     for (const width of [1440, 390]) {
       const context = await identityContext(browser, { viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
       await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
@@ -266,7 +266,6 @@ test.describe("local public player identity", () => {
       const spotlight = page.getByRole("button", { name: /Your agent, in the spotlight/ });
       try {
         await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), roles } }); });
-        await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
         await page.route("**/api/agent-profiles", route => listFails ? route.fulfill({ status: 503, json: { error: "Please retry" } }) : route.fulfill({ json: agents }));
         await page.route("**/api/game-entries/selector-fixture", route => route.fulfill({ json: { id: "selector-fixture", slug: "selector-fixture", gameKind: "influence" } }));
         await page.route("**/api/games/selector-fixture", route => route.fulfill({ json: game }));
@@ -313,7 +312,8 @@ test.describe("local public player identity", () => {
         await expect(page.getByText("Your agent is in. Stay for the opening move.")).toBeVisible();
         await expect(spotlight).toHaveCount(0);
         expect(attempts).toEqual(["vesper", "vesper"]);
-        await expect(page.getByRole("region", { name: "Game pre-show" }).getByRole("link", { name: "Create agent", exact: true })).toHaveAttribute("href", "/agents/create");
+        if (width === 390) await page.getByRole("button", { name: "Open menu" }).click();
+        await expect(page.getByRole("link", { name: "Create agent", exact: true })).toHaveAttribute("href", "/agents/create");
 
         for (const role of ["player", "moderator", "admin", "sysop", "producer"]) {
           roles = [role];
@@ -407,7 +407,6 @@ test.describe("local public player identity", () => {
       const base = { status: "waiting", playerCount: 6, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString() };
       try {
         await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), roles: ["gamer"], permissions } }); });
-        await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
         await page.route(/\/api\/public-games\/page(?:\?.*)?$/, route => {
           const query = new URL(route.request().url()).searchParams;
           const items = query.get("status") === "waiting" ? [
@@ -443,10 +442,16 @@ test.describe("local public player identity", () => {
           await expect(card).toContainText("6/6 joined");
           await expect(card.getByRole("button", { name: "Fill AI", exact: true })).toHaveCount(0);
           expect(actions).not.toContain(`${kind}:start`);
+          const beforeStart = await card.elementHandle();
+          expect(beforeStart).not.toBeNull();
           await card.getByRole("button", { name: "Start", exact: true }).click();
           await expect.poll(() => actions.includes(`${kind}:start`)).toBe(true);
+          await beforeStart!.waitForElementState("hidden");
+          const beforeStop = await card.elementHandle();
+          expect(beforeStop).not.toBeNull();
           await card.getByRole("button", { name: "Stop", exact: true }).click();
           await expect.poll(() => actions.includes(`${kind}:stop`)).toBe(true);
+          await beforeStop!.waitForElementState("hidden");
           await card.getByRole("button", { name: "Hide", exact: true }).click();
           const dialog = page.getByRole("dialog", { name: "Hide game", exact: true });
           await dialog.getByRole("button", { name: "Hide", exact: true }).click();
@@ -486,6 +491,8 @@ test.describe("local public player identity", () => {
         for (const title of ["Open Influence", "Open Werewolf"]) {
           const card = shelf.locator("article").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
           await card.scrollIntoViewIfNeeded();
+          if (touch) await page.clock.runFor(250);
+          else await card.locator(".episode-artwork").hover();
           const visible = card.locator(".episode-frame.is-visible");
           await expect(card.locator(".episode-artwork")).toHaveClass(/is-playing/);
           await expect(visible).toContainText("Meet the cast");
@@ -501,20 +508,17 @@ test.describe("local public player identity", () => {
           await expect.poll(() => scene.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
           await expect(card.getByRole("button")).toHaveCount(0);
           await expect(card.locator('img[src="/logo.png"]')).toHaveCount(0);
-          await page.clock.runFor(4300);
-          await expect(visible).toContainText("Cast 5");
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 5");
           await expect(visible.locator(".episode-cast > div")).toHaveCount(4);
-          await page.clock.runFor(4200);
-          await expect(visible).toContainText("Cast 9");
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 9");
           await expect(visible.locator(".episode-cast > div")).toHaveCount(1);
-          await page.clock.runFor(4200);
-          await expect(visible).toContainText("Cast 1");
-          const join = card.getByRole("link", { name: "Join game", exact: true });
-          await join.focus();
-          await expect(card.locator(".episode-artwork")).not.toHaveClass(/is-playing/);
-          await page.clock.runFor(12600);
-          await expect(visible).toContainText("Cast 1");
-          await join.evaluate(link => (link as HTMLElement).blur());
+          await expect.poll(async () => { await page.clock.runFor(500); return visible.textContent(); }, { timeout: 10_000 }).toContain("Cast 1");
+          if (!touch) {
+            await page.mouse.move(0, 0);
+            await expect(card.locator(".episode-artwork")).not.toHaveClass(/is-playing/);
+            await page.clock.runFor(12600);
+            await expect(visible).toContainText("Cast 1");
+          }
           await expect(page).toHaveURL(`${servers.webUrl}/games`);
         }
         await page.emulateMedia({ reducedMotion: "reduce" });
@@ -646,7 +650,6 @@ test.describe("local public player identity", () => {
         if (!game) return route.fulfill({ status: 404, json: { error: "Game not found" } });
         return route.fulfill({ json: { episode: game.episode } });
       });
-      await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
       await page.route("**/api/admin/episodes/backfill", route => {
         const body = route.request().postDataJSON(); batches.push(body);
         return route.fulfill({ json: { gameIds: body.gameIds, calls: body.gameIds.length, skipped: 0, queued: !body.preview } });
@@ -801,7 +804,7 @@ test.describe("local public player identity", () => {
     }
   });
 
-  test("requires terms and identity before prompting a new player to create an agent", async ({
+  test("requires terms and identity without a global queue prompt", async ({
     browser,
   }) => {
     const context = await authenticatedContext(browser, fixture.requiredJwt);
@@ -824,13 +827,9 @@ test.describe("local public player identity", () => {
       await dialog.getByLabel("Handle").fill("required-player");
       await dialog.getByRole("button", { name: "Create public profile" }).click();
       await expect(dialog).toBeHidden();
-      const dailyAgentDialog = page.getByRole("dialog", {
-        name: "Play for Free",
-      });
-      await expect(dailyAgentDialog).toBeVisible({ timeout: 2_500 });
-      await expect(dailyAgentDialog.getByRole("button", {
-        name: "Create an agent",
-      })).toBeVisible();
+      await page.waitForTimeout(3_500);
+      await expect(page.getByRole("dialog", { name: "Play for Free" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Create your first agent", exact: true })).toBeVisible();
     } finally {
       await context.close();
     }
@@ -879,6 +878,8 @@ test.describe("local public player identity", () => {
       const imageReady = Promise.withResolvers<void>();
       let generated = 0;
       let imageRequests = 0;
+      let imageRequestId = "";
+      let imageAvailable = false;
       let exported: Record<string, unknown> | null = null;
       try {
         await page.route("**/creation-fixture.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="#333950"/><circle cx="300" cy="165" r="85" fill="#8faee0"/><rect x="175" y="270" width="250" height="480" rx="60" fill="#d0a646"/></svg>' }));
@@ -894,8 +895,15 @@ test.describe("local public player identity", () => {
         });
         await page.route("**/api/agent-profiles/visual-reference", async route => {
           imageRequests++;
+          imageRequestId = route.request().postDataJSON().requestId;
           await imageReady.promise;
-          await route.fulfill({ json: { fullBodyReferenceUrl: sourceUrl, avatarUrl: sourceUrl, portraitCrop: { sourceUrl, x: 0.2, y: 0.02, width: 0.6, height: 0.4 }, headSuggestion: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: { x: 0.36, y: 0.09, width: 0.28, height: 0.2 } } } });
+          imageAvailable = true;
+          await route.fulfill({ json: { id: imageRequestId, status: "queued", stage: "waiting" } });
+        });
+        await page.route("**/api/agent-profiles/visual-references/**", route => {
+          if (route.request().method() === "POST") return route.fulfill({ json: { ok: true } });
+          if (!imageAvailable) return route.fulfill({ status: 404, json: { error: "Not found" } });
+          return route.fulfill({ json: { status: "ready", stage: "ready", createdAt: new Date().toISOString(), result: { requestId: imageRequestId, fullBodyReferenceUrl: sourceUrl, width: 600, height: 900, avatarUrl: sourceUrl, portraitCrop: { sourceUrl, x: 0.2, y: 0.02, width: 0.6, height: 0.4 }, cropWarning: null, headSuggestion: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: { x: 0.36, y: 0.09, width: 0.28, height: 0.2 } } } } });
         });
         await page.route("**/api/agent-profiles/portrait-crop", route => {
           const { headRectangle, ...portraitCrop } = route.request().postDataJSON();
@@ -903,7 +911,7 @@ test.describe("local public player identity", () => {
           return route.fulfill({ json: { avatarUrl: sourceUrl, portraitCrop, headPosition: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: headRectangle } } });
         });
         await page.goto(`${servers.webUrl}/agents/create`, { waitUntil: "networkidle" });
-        // The global acquisition prompt must not interrupt a longer creation session.
+        // Creation should remain usable without a global queue prompt.
         await page.evaluate(() => window.dispatchEvent(new Event("free-queue:changed")));
         await page.waitForTimeout(3500);
         await expect(page.getByRole("dialog", { name: "Play for Free", exact: true })).toHaveCount(0);
@@ -917,25 +925,25 @@ test.describe("local public player identity", () => {
         await expect(page.getByRole("button", { name: "Remove Streamer ingredient", exact: true })).toBeVisible();
         await page.screenshot({ path: `/tmp/agent-starter-pills-${viewport.width}.png` });
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Yes, that feels right" })).toBeVisible();
-        await page.getByRole("button", { name: "Read Name", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+        await page.getByRole("button", { name: "Edit Name", exact: true }).click();
         const nameReader = page.getByRole("dialog", { name: "Name", exact: true });
-        await expect(nameReader.getByText("Mira Vale", { exact: true })).toBeVisible();
-        await nameReader.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(nameReader.getByRole("textbox", { name: "Name" })).toHaveValue("Mira Vale");
+        await nameReader.getByRole("button", { name: "Cancel", exact: true }).click();
         await expect(page.getByRole("button", { name: "Remove change Name" })).toHaveCount(0);
-        await page.getByRole("button", { name: "Read Character prompt", exact: true }).click();
+        await page.getByRole("button", { name: "View full Character prompt", exact: true }).click();
         const reader = page.getByRole("dialog", { name: "Character prompt", exact: true });
         await expect(reader.getByText(character.personality, { exact: true })).toBeVisible();
-        expect((await reader.boundingBox())?.height).toBe(viewport.height);
+        expect((await reader.boundingBox())!.height).toBeLessThan(viewport.height);
         await page.screenshot({ path: `/tmp/character-section-reader-${viewport.width}.png` });
-        await reader.getByRole("button", { name: "Edit Character prompt", exact: true }).click();
+        await reader.getByRole("button", { name: "Refine", exact: true }).click();
         await expect(reader).toBeHidden();
         await expect(composer).toBeFocused();
         await expect(page.getByRole("button", { name: "Remove change Character prompt" })).toBeVisible();
         await composer.fill("No, make her suspicious");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Read Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
-        await page.getByRole("button", { name: "Yes, that feels right" }).click();
+        await expect(page.getByRole("button", { name: "Revise Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
+        await page.getByRole("button", { name: "Continue" }).click();
         await expect(page.getByText(/What do they look like/)).toBeVisible();
         await expect(page.getByRole("button", { name: "Add Dragon ingredient", exact: true })).toBeVisible();
         await page.getByRole("button", { name: "Add Dragon ingredient", exact: true }).click();
@@ -954,21 +962,23 @@ test.describe("local public player identity", () => {
         await expect(page.getByRole("status", { name: "Assistant typing" })).toBeVisible();
         const formation = page.getByRole("status", { name: "Creating character image" });
         await expect(formation).toBeVisible();
-        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Revise Name", exact: true })).toBeDisabled();
         await page.screenshot({ path: `/tmp/character-formation-${viewport.width}.png` });
         await page.emulateMedia({ reducedMotion: "reduce" });
         await expect(formation.locator("svg")).toBeVisible();
         await page.screenshot({ path: `/tmp/character-formation-reduced-${viewport.width}.png` });
         await page.emulateMedia({ reducedMotion: "no-preference" });
         imageReady.resolve();
+        await expect(page.getByText("Artwork ready", { exact: true })).toBeVisible();
+        await page.getByRole("button", { name: "Select", exact: true }).click();
         const dialog = page.getByRole("dialog", { name: "Adjust character images" });
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole("button", { name: "Head position", exact: true })).toBeVisible();
-        await expect(dialog.getByRole("button", { name: "Confirm this headshot", exact: true })).toBeEnabled();
+        await expect(dialog.getByRole("button", { name: "Head", exact: true })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Confirm", exact: true })).toBeEnabled();
         await dialog.getByText("Precise adjustments", { exact: true }).click();
         const frame = dialog.getByRole("slider", { name: "Frame size", exact: true });
         const originalFrameSize = await frame.inputValue();
-        const confirm = dialog.getByRole("button", { name: "Confirm this headshot", exact: true });
+        const confirm = dialog.getByRole("button", { name: "Confirm", exact: true });
         const beforeWarning = await confirm.evaluate(element => element.getBoundingClientRect().top + (element.closest("dialog")?.scrollTop ?? 0));
         await frame.evaluate(element => { (element as HTMLInputElement).value = "32"; element.dispatchEvent(new Event("input", { bubbles: true })); });
         await expect(dialog.getByRole("img", { name: "Head outside portrait crop" })).toBeVisible();
@@ -999,7 +1009,7 @@ test.describe("local public player identity", () => {
           await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: corner.x + 13, y: corner.y + 13 }] });
           await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
           await cdp.detach();
-          await dialog.getByRole("button", { name: "Head position", exact: true }).click();
+          await dialog.getByRole("button", { name: "Head", exact: true }).click();
           const head = await dialog.getByLabel("Head box; drag to move").boundingBox();
           if (!head) throw new Error("Head box has no bounds");
           await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
@@ -1010,29 +1020,32 @@ test.describe("local public player identity", () => {
           await page.mouse.down(); await page.mouse.move(headCorner.x + 6, headCorner.y + 6); await page.mouse.up();
           await page.screenshot({ path: "/tmp/agent-crop-mobile.png", fullPage: false });
         }
-        await dialog.getByRole("button", { name: "Confirm this headshot", exact: true }).click();
+        await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
         await expect(page.getByRole("dialog")).toBeHidden();
         expect(exported).not.toBeNull();
         if (viewport.width < 500) {
           expect(Number(exported?.["x"])).toBeGreaterThan(0.2);
           expect(Number(exported?.["width"])).toBeGreaterThan(0.6);
         }
-        await expect(page.getByRole("button", { name: "Create Agent", exact: true })).toBeEnabled();
-        await page.getByRole("button", { name: "Read Influence strategy", exact: true }).click();
-        await page.getByRole("dialog", { name: "Influence strategy", exact: true }).getByRole("button", { name: "Edit Influence strategy", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Review", exact: true })).toBeEnabled();
+        await page.getByRole("button", { name: "View full Influence strategy", exact: true }).click();
+        await page.getByRole("dialog", { name: "Influence strategy", exact: true }).getByRole("button", { name: "Refine", exact: true }).click();
         await composer.fill("Be more patient with allies");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Yes, that feels right" })).toBeVisible();
-        await page.getByRole("button", { name: "Yes, that feels right" }).click();
-        await expect(page.getByRole("button", { name: "Create Agent", exact: true })).toBeEnabled();
+        await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+        await page.getByRole("button", { name: "Continue" }).click();
+        await expect(page.getByRole("button", { name: "Review", exact: true })).toBeEnabled();
         await expect(page.getByText("Visual ingredients", { exact: true })).toHaveCount(0);
         expect(imageRequests).toBe(1);
         // Appearance generation must not replace the approved character prompt.
-        await expect(page.getByRole("button", { name: "Read Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
-        await page.getByRole("button", { name: "Advanced create", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Revise Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
+        await page.getByRole("button", { name: "Advanced", exact: true }).click();
         await expect(page.locator("#agent-personality")).toHaveValue("A suspicious diplomat who verifies every promise.");
         await expect(page.locator("#agent-name")).toHaveValue("Mira Vale");
-      } finally { imageReady.resolve(); await page.unrouteAll({ behavior: "wait" }); await context.close(); }
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.getByRole("dialog", { name: "Discard draft?" }).getByRole("button", { name: "Discard", exact: true }).click();
+        await page.waitForURL(/\/dashboard/);
+      } finally { imageReady.resolve(); await context.close(); }
     }
   });
 
@@ -1042,7 +1055,7 @@ test.describe("local public player identity", () => {
     const firstContext = await authenticatedContext(browser, fixture.deferrableJwt);
     const firstPage = await firstContext.newPage();
     try {
-      await firstPage.goto(`${servers.webUrl}/dashboard/profile`, {
+      await firstPage.goto(`${servers.webUrl}/dashboard`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
@@ -1051,6 +1064,7 @@ test.describe("local public player identity", () => {
       });
       await dialog.getByRole("button", { name: "Not now" }).click();
       await expect(dialog).toBeHidden();
+      await firstPage.getByRole("button", { name: /Settings/ }).click();
       await expect(firstPage.getByRole("button", {
         name: "Complete your public profile",
       })).toBeVisible();
@@ -1061,7 +1075,7 @@ test.describe("local public player identity", () => {
     const freshContext = await authenticatedContext(browser, fixture.deferrableJwt);
     const freshPage = await freshContext.newPage();
     try {
-      await freshPage.goto(`${servers.webUrl}/dashboard/profile`, {
+      await freshPage.goto(`${servers.webUrl}/dashboard`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
@@ -1070,6 +1084,66 @@ test.describe("local public player identity", () => {
       })).toBeVisible();
     } finally {
       await freshContext.close();
+    }
+  });
+
+  test("dashboard and owned agent profile lead to one assistant request", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const context = await authenticatedContext(browser, fixture.completeJwt);
+    const page = await context.newPage();
+    const assistantRequests: string[] = [];
+    try {
+      await page.route("**/api/agent-profiles/creation-assistant", route => route.fulfill({ json: { command: "revise_character", reply: "" } }));
+      await page.route("**/api/agent-profiles/edit-assistant", route => {
+        assistantRequests.push(route.request().postDataJSON().message);
+        return route.fulfill({ json: { tool: "clarify", message: "What should Arden prioritize?" } });
+      });
+      await page.route("**/api/agent-learning/eligible-inputs", route => route.fulfill({ json: {
+        credit: { mode: "unlimited", balance: 1, nextAvailableAt: null, latestEligibleCompletion: null },
+        profiles: [{ agentProfileId: "agent-1", name: "Vesper E2E", gameKind: "influence", games: [] }],
+        recommendedAgentProfileId: "agent-1", prompt: { threshold: 1, prominent: false, suppressedByDismissal: false }, openReview: null,
+      } }));
+      await page.goto(`${servers.webUrl}/dashboard`, { waitUntil: "networkidle", timeout: 60_000 });
+      await expect(page.getByRole("heading", { name: "Your agents" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Your game history" })).toBeVisible();
+      await expect(page.getByTestId("owner-learning-activation")).toContainText("Vesper E2E");
+      await expect(page.getByRole("heading", { name: "Recent Result" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "Daily Free" })).toHaveCount(0);
+      await page.screenshot({ path: "/private/tmp/house-dashboard-desktop.png", fullPage: true });
+      await page.getByRole("button", { name: /Settings/ }).click();
+      await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+      const settings = page.getByRole("dialog", { name: "Settings" });
+      await expect(settings.getByRole("heading", { name: "Sign-in methods" })).toBeVisible();
+      await page.screenshot({ path: "/private/tmp/house-dashboard-settings.png" });
+      const passwordAction = settings.getByRole("button", { name: /Add email\/password|Reset password/ });
+      if (await passwordAction.count()) {
+        await passwordAction.click();
+        await expect(settings).toBeHidden();
+        const authDialog = page.getByRole("dialog", { name: "Influence authentication" });
+        await expect(authDialog).toBeVisible();
+        await authDialog.getByRole("button", { name: "Close authentication" }).click();
+      } else {
+        await expect(settings.getByText("New sign-in methods are temporarily unavailable.")).toBeVisible();
+        await settings.getByRole("button", { name: "Close", exact: true }).click();
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: "/private/tmp/house-dashboard-mobile.png", fullPage: true });
+      await page.getByRole("link", { name: "Vesper E2E", exact: true }).first().click();
+      const bar = page.getByRole("textbox", { name: /Describe an update to Vesper E2E/ });
+      await expect(bar).toBeVisible({ timeout: 30_000 });
+      await bar.fill("Make Vesper more patient.");
+      await page.getByRole("button", { name: /Continue/ }).click();
+      await expect(page).toHaveURL(/\/dashboard\/agents\/[^/]+\/edit\?profileRequest=1$/, { timeout: 30_000 });
+      await expect.poll(() => assistantRequests.length).toBe(1);
+      expect(assistantRequests).toEqual(["Make Vesper more patient."]);
+      await expect(page.getByText("What should Arden prioritize?")).toBeVisible();
+      await page.reload();
+      await expect(page.getByRole("heading", { name: "Vesper E2E" })).toBeVisible();
+      expect(assistantRequests).toHaveLength(1);
+    } finally {
+      await page.unrouteAll({ behavior: "wait" });
+      await context.close();
     }
   });
 
@@ -1105,10 +1179,11 @@ test.describe("local public player identity", () => {
     const completeContext = await authenticatedContext(browser, fixture.completeJwt);
     const completePage = await completeContext.newPage();
     try {
-      await completePage.goto(`${servers.webUrl}/dashboard/profile`, {
+      await completePage.goto(`${servers.webUrl}/dashboard`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
+      await completePage.getByRole("button", { name: /Settings/ }).click();
       await expect(completePage.getByRole("heading", { name: "Invite Codes" }))
         .toHaveCount(0);
     } finally {

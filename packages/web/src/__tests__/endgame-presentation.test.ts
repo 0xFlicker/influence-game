@@ -12,6 +12,32 @@ import { buildStoryScenes, isStoryDialogue, withHouseBridges } from "../app/game
 import { createPresentationDirector } from "../app/games/[slug]/components/influence-presentation-director";
 import { buildClassicPresentationCues, comparePresentationCues } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import { buildExportCues } from "../lib/replay-export/cues";
+import { compileTiming, parseTimingProfile } from "../lib/replay-export/timing";
+import { compileAudio } from "../lib/replay-export/audio";
+import { winnerScenePage, winnerSceneDurationMs } from "../app/games/[slug]/components/winner-scene-timing";
+
+test("winner pages use the sampled cue clock and reserve reading time for every cast member", () => {
+  const standings = Array.from({length: 12}, (_, index) => ({playerId: String(index), placement: index + 1}));
+  expect(winnerSceneDurationMs(standings, "0")).toBe(30_000);
+  expect([0, 4_999, 5_000, 15_000, 20_000, 5_000].map(time => winnerScenePage(time, 8))).toEqual([0, 0, 1, 3, 3, 1]);
+});
+
+test("winner cue and export retain enough time for every cast page", () => {
+  const cast = Array.from({length: 12}, (_, index) => ({id: `p${index}`, name: `Player ${index}`, persona: "strategic", status: "alive" as const, shielded: false}));
+  const jury: GameWatchReplayFrame = {schemaVersion:3,gameId:"final",slug:"final",sequence:1,timestamp:1,eventType:"jury.winner_determined",round:1,phase:Phase.JURY_VOTE,players:cast,
+    counts:{totalPlayers:12,alivePlayers:12,eliminatedPlayers:0,unknownPlayers:0},viewerDecisionEvent:{type:"jury.winner_determined",sequence:1,timestamp:"2026-01-01T00:00:00Z",round:1,phase:Phase.JURY_VOTE,payload:{winnerId:"p0",votes:{p1:"p0"}}}};
+  const winner = buildEndgamePresentationCues([jury]).find(cue => cue.kind === "endgame_winner")!;
+  expect(winner.baseDurationMs).toBe(30_000);
+  const exported = buildExportCues({kind:"influence",game:{id:"final",slug:"final",status:"completed",gameKernel:"classic",players:cast},frames:[jury],messages:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}})
+    .find(cue => cue.picture.kind === "influence" && cue.picture.beat?.kind === "winner")!;
+  expect(exported.timing.minimumDurationMs).toBe(winner.baseDurationMs);
+  const [timing] = compileTiming([exported.timing],parseTimingProfile({motionScale:.5}),30);
+  expect(timing!.endMs - timing!.startMs).toBeGreaterThanOrEqual(winner.baseDurationMs);
+  expect(exported.music?.continueAtEnd).toBe(true);
+  const music = exported.music!;
+  const audio = compileAudio([exported],[timing!],{[music.src]:{path:music.src,sha256:"fixture",mediaType:"audio",durationMs:160_000}},parseTimingProfile({ending:{holdMs:0}}),true);
+  expect(audio.clips).toMatchObject([{asset:music.src,purpose:"music",startMs:0,endMs:winner.baseDurationMs}]);
+});
 
 const players = ["Arden", "Kaiya", "Marnie", "Ione"].map((name) => ({ id: name, name, persona: "strategic", status: "alive" as const, shielded: false }));
 function frame(event: ViewerDecisionEvent): GameWatchReplayFrame {

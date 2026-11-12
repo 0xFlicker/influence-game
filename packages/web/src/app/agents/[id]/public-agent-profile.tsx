@@ -5,8 +5,9 @@ import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import { PlayerProfileLink } from "@/components/player-profile-link";
 import { AwardShelf } from "@/components/award-shelf";
 import { ParticipationRows, participationFilters } from "@/components/participation-history";
+import { OwnerAgentActions } from "./owner-agent-actions";
 
-export function PublicAgentProfileView({ profile, gameKind = "all" }: { profile: PublicAgentProfile; gameKind?: ParticipationFilter }) {
+export function PublicAgentProfileView({ profile, gameKind = "all", agentId }: { profile: PublicAgentProfile; gameKind?: ParticipationFilter; agentId?: string }) {
   return <div className="min-w-0 space-y-6">
     <header className="influence-panel rounded-xl p-5 sm:p-6">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-phase">Agent profile</p>
@@ -19,6 +20,7 @@ export function PublicAgentProfileView({ profile, gameKind = "all" }: { profile:
         </div>
       </div>
     </header>
+    {agentId && <OwnerAgentActions agentId={agentId} agentName={profile.name} />}
     <AwardShelf awards={profile.awards} />
     <section aria-labelledby="agent-record" className="influence-panel rounded-xl p-5 sm:p-6">
       <h2 id="agent-record" className="influence-section-title">Rated Influence record</h2>

@@ -9,7 +9,7 @@ import { WerewolfRulesVersionError, replayWerewolf } from "@influence/engine/wer
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, requireRole, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfEvents, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
-import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
+import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch, readWerewolfWatchPosition } from "../services/werewolf-presentation.js";
 import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
@@ -36,7 +36,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     let input: Record<string, unknown>;
     try { input = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some((key) => !["audioMode", "visibility", "preset", "agentProfileIds", "providerManifest", "modelRouting", "maxDays"].includes(key))
+      || Object.keys(input).some((key) => !["audioMode", "visibility", "preset", "agentProfileIds", "providerManifest", "modelRouting", "maxDays", "setup"].includes(key))
       || (input.preset !== "one_wolf" && input.preset !== "two_wolves")
       || !Array.isArray(input.agentProfileIds) || input.agentProfileIds.some((id) => typeof id !== "string")
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || Number(input.maxDays) < 1 || Number(input.maxDays) > 20))) {
@@ -45,6 +45,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     try {
       const game = await createWerewolfGame(db, c.get("user")!.id, { audioMode: input.audioMode as boolean | undefined, visibility: input.visibility, preset: input.preset,
         agentProfileIds: input.agentProfileIds as string[], providerManifest: input.providerManifest, modelRouting: input.modelRouting,
+        ...(input.setup !== undefined ? { setup: input.setup as import("@influence/engine/werewolf/types").WerewolfSetup } : {}),
         ...(input.maxDays !== undefined ? { maxDays: Number(input.maxDays) } : {}) });
       return c.json(game, 201);
     } catch (error) {
@@ -114,6 +115,11 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       return c.json(presentation);
     });
   }
+  app.get("/api/werewolf/:id/watch-position", async c => {
+    const from = c.req.query("from"), to = c.req.query("to"), rawCursor = c.req.query("cursor"), cursor = Number(rawCursor), key = c.req.query("cue");
+    if (["from","to","cursor","cue"].some(name => c.req.queries(name)?.length !== 1) || (from !== "mystery" && from !== "omniscient") || (to !== "mystery" && to !== "omniscient") || !rawCursor || !/^[1-9]\d*$/.test(rawCursor) || !Number.isSafeInteger(cursor) || !key || key.length > 512) return c.json({error:"Invalid watch position"}, 400);
+    return c.json(await readWerewolfWatchPosition(db, c.req.param("id"), from, to, cursor, key));
+  });
   app.get("/api/werewolf/:id/watch", async c => {
     const audience = c.req.query("audience") ?? "mystery";
     if (audience !== "mystery" && audience !== "omniscient") return c.json({ error: "Choose mystery or omniscient" }, 400);

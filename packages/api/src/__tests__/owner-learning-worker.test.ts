@@ -41,7 +41,7 @@ import {
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
 } from "./owner-learning-test-utils.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, acceptTestAgent } from "./test-utils.js";
 
 describe("owner learning worker durability", () => {
   test("runs failure-evidence reconciliation without constructing a provider worker", async () => {
@@ -4315,6 +4315,7 @@ describe("owner learning worker durability", () => {
     await updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
       personality: "This owner-authored change supersedes the in-flight review.",
     });
+    await acceptTestAgent(db,fixture.agentProfileId);
 
     expect(await run).toBe(false);
     expect(providerObservedAbort).toBe(true);

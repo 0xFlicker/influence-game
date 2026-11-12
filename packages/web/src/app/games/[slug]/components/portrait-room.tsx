@@ -13,6 +13,7 @@ import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing
 import { soloPresentationMotion } from "./solo-presentation-timing";
 import { DEFAULT_ROOM_BACKDROP, RoomBackdrop } from "./stage-backdrop";
 import {PaginatedPortraitRoom} from "./paginated-portrait-room";
+import {ItemBadges} from "@/components/watch/item-badges";
 import {portraitRoomDurationMs} from "./portrait-room-pagination";
 
 function portraitRoomTurn(count: number, index: number, speakerIndex: number, deep: boolean) {
@@ -139,15 +140,19 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const bubbleWidth = Math.max(0, Math.min(960, beside ? size.width * .43 : size.width - 32));
   const speechBox = {left: beside ? 12 : (size.width - bubbleWidth) / 2, top: 44,
     width: bubbleWidth, height: bubbleHeight};
-  const speechFit = useBubbleTypography(frame, beat.speech.text, speechBox, "speech", available < 300);
+  const speechFit = useBubbleTypography(frame, beat.speech.text, speechBox, "speech", available < 300, 28, beat.speech.speaker);
   const fittedBubbleHeight = speechFit.typography?.height ?? speechBox.height;
   const fittedBubbleWidth = speechFit.typography?.width ?? speechBox.width;
+  const showSpeech = !thought && !hideSpeech && opacity > 0;
   const focus = thinkingFocus(size.width,available,{left:centerX-diameter*.28,top:centerY-diameter*.4,width:diameter*.56,height:diameter*.56},thought?.focus ?? 0,true,reducedMotion);
   const bubble = {...speechBox,width:fittedBubbleWidth,height:fittedBubbleHeight,
     left: beside ? speechBox.left : centerX - fittedBubbleWidth / 2,
     top: beside ? speechBox.top : Math.max(44, bubbleBottom - fittedBubbleHeight)};
   const roomLabel = beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`;
-  const paginated = paginateLargeCast && beat.participants.length > 4 && size.width > 0 && (size.width < 600 || available < 340 || beat.participants.length > 8);
+  // A short two-person room needs room for complete names and speech.
+  // Reuse the compact cast layout; both participants fit on its single page.
+  const compactPair = beat.participants.length === 2 && speakerIndex >= 0 && size.width > 0 && available < 340;
+  const paginated = compactPair || paginateLargeCast && beat.participants.length > 4 && size.width > 0 && (size.width < 600 || available < 340 || beat.participants.length > 8);
   return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room={!paginated || undefined}
     className={`relative min-h-0 w-full flex-1 overflow-hidden ${paginated ? "flex flex-col" : ""}`} style={{ perspective: 1200 }}>
     {paginated ? <PaginatedPortraitRoom beat={beat} elapsedMs={elapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} backgroundUrl={backgroundUrl} hideSpeech={hideSpeech} onImageReady={onImageReady} /> : <>
@@ -168,14 +173,14 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
         <img ref={active ? activePortrait : undefined} src={source} alt={player.name}
           onLoad={() => { if (active) onImageReady?.(); }} onError={() => setFailed(previous => new Set(previous).add(saved))}
           className={`aspect-square w-full rounded-full object-cover shadow-2xl ring-2 ${active ? "ring-[#d9c9a2]" : "ring-white/20"}`} />
-        <p className={`${deep && !beside && seat.z < 0 ? "absolute bottom-full mb-3" : "mt-3"} w-max max-w-[144px] rounded-full bg-black/60 px-3 py-1 text-center text-xs ${active ? "text-white" : "text-white/65"}`}>{player.name}</p>
+        <p className={`${deep && !beside && seat.z < 0 ? "absolute bottom-full mb-3" : "mt-3"} flex w-max max-w-[144px] items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-center text-xs ${active ? "text-white" : "text-white/65"}`}><span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">{player.name}</span><ItemBadges items={player.items} compact /></p>
       </div>;
     })}
     </div>
-    {!thought && !hideSpeech && opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
+    {showSpeech && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
       style={{...bubble, opacity, padding:speechFit.padding}}>
-      <p className={`mb-2 h-5 shrink-0 truncate text-base font-semibold leading-5 text-white/80 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
-      <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography}
+      <p className={`mb-2 shrink-0 whitespace-normal break-words text-base font-semibold leading-5 text-white/80 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
+      <TimedSpeech advancePart="speech" text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} progressDurationMs={extendedDuration !== undefined ? Math.max(1,extendedDuration - 1450) : undefined}
         progress={extendedDuration !== undefined && sampled?.speech?.text !== beat.speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,extendedDuration - 1450)) : undefined} className="text-base leading-relaxed" />
       <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - speechBox.top - 8 } : undefined} />
     </div>}

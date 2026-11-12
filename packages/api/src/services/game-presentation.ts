@@ -34,11 +34,24 @@ export async function readGamePresentation(db: DrizzleDB, idOrSlug: string, afte
     }
     const transcriptPublications = new Map<string, number>(publications.flatMap(row => row.payload.kind === "transcript_entry" ? [[`${row.payload.turnId}:${row.payload.transcriptOrdinal}`, row.publicationSequence] as const] : []));
     const eventPublications = new Map(publications.flatMap(row => row.payload.kind === "canonical_event" ? [[row.payload.eventSequence, row.publicationSequence] as const] : []));
+    // Older completed games committed huddle speech before spectator delivery
+    // acquired publication slots. Release those entries only with the entire
+    // finished, due prefix; never relax the live publication boundary.
+    const unpublishedHuddles = publications.length === 0 ? [] : transcript.filter(row => row.scope === "huddle" && row.firstDurableEventSequence !== null
+      && !transcriptPublications.has(`${row.gameTurnId}:${row.gameTurnTranscriptOrdinal}`));
+    if (unpublishedHuddles.length && game.status === "completed") {
+      const turns = await tx.select({ id: schema.gameTurns.id, status: schema.gameTurns.status }).from(schema.gameTurns).where(eq(schema.gameTurns.gameId, game.id));
+      const committed = new Set(turns.filter(turn => turn.status === "committed").map(turn => turn.id));
+      if (unpublishedHuddles.some(row => !row.gameTurnId || !committed.has(row.gameTurnId) || row.gameTurnTranscriptOrdinal === null)) {
+        throw new Error("Presentation huddle has no committed turn");
+      }
+    }
     const starts = events.filter(event => event.type === "game.phase_entered");
     const dialogueStarts = new Map(transcript.map(row => [row.id, starts.findLast(event => event.round === row.round && event.phase === row.phase && event.sequence <= (row.firstDurableEventSequence ?? Infinity))?.sequence ?? starts.findLast(event => event.sequence <= (row.firstDurableEventSequence ?? 0))?.sequence ?? 0]));
     const hasUnanchoredDialogue = transcript.some(row => row.firstDurableEventSequence === null);
     let throughSequence = 0, phaseStartSequence = 0;
     for (const phase of closedViewerPhases(events, game.status === "completed")) {
+      if (unpublishedHuddles.length && game.status === "completed" && phase.nextPhaseSequence !== null) continue;
       if (hasUnanchoredDialogue && phase.nextPhaseSequence !== null) continue;
       if (audioReady !== null && phase.throughSequence > audioReady) break;
       // A logical turn may span a phase boundary. Do not expose that partial
@@ -60,6 +73,7 @@ export async function readGamePresentation(db: DrizzleDB, idOrSlug: string, afte
         for (const row of transcript) {
           if (row.firstDurableEventSequence === null || row.firstDurableEventSequence > phase.throughSequence) continue;
           const publication = transcriptPublications.get(`${row.gameTurnId}:${row.gameTurnTranscriptOrdinal}`);
+          if (publication === undefined && game.status === "completed" && row.scope === "huddle" && phase.nextPhaseSequence === null) continue;
           if (publication === undefined) throw new Error("Presentation dialogue has no durable publication");
           requiredHead = Math.max(requiredHead, publication);
         }

@@ -266,6 +266,86 @@ export const users = pgTable("users", {
   ),
 ]);
 
+/** Account-wide effective preference, also used by MCP/API conversions. Missing means denied. */
+export const userAnalyticsPreferences = pgTable("user_analytics_preferences", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  analytics: boolean("analytics").notNull().default(false),
+  analyticsExplicit: boolean("analytics_explicit").notNull().default(false),
+  webUserAgent: text("web_user_agent"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+});
+
+export const userCampaignAttribution = pgTable("user_campaign_attribution", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "restrict" }),
+  channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
+  // Validated campaign touches only (services/campaign-conversions.ts).
+  // Click IDs are retained here under the same access controls as the account
+  // record; they are never copied into model-visible prompts or credentials.
+  firstTouch: jsonb("first_touch").$type<Record<string, string>>(),
+  lastTouch: jsonb("last_touch").$type<Record<string, string>>(),
+  firstTouchAt: text("first_touch_at"),
+  lastTouchAt: text("last_touch_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  check("user_campaign_attribution_channel_check", sql`${table.channel} IN ('web', 'mcp', 'api')`),
+]);
+
+export const campaignConversionEvents = pgTable("campaign_conversion_events", {
+  // Deterministic ID (e.g. signup:{userId}) makes retries idempotent.
+  id: text("id").primaryKey(),
+  eventName: text("event_name").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  publicId: text("public_id").notNull(),
+  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id),
+  seasonId: text("season_id").references(() => seasons.id),
+  channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
+  mcpClientId: text("mcp_client_id"),
+  attribution: jsonb("attribution").$type<Record<string, string>>(),
+  clientUserAgent: text("client_user_agent"),
+  occurredAt: text("occurred_at").notNull().default(sql`now()::text`),
+  posthogStatus: text("posthog_status").notNull().default("pending"),
+  posthogAttempts: integer("posthog_attempts").notNull().default(0),
+  platformStatus: text("platform_status").notNull().default("pending"),
+  platformAttempts: integer("platform_attempts").notNull().default(0),
+  googleStatus: text("google_status").notNull().default("suppressed"),
+  googleAttempts: integer("google_attempts").notNull().default(0),
+  googleLastError: text("google_last_error"),
+  googleAdUserDataGranted: boolean("google_ad_user_data_granted").notNull().default(false),
+  googleDestination: jsonb("google_destination").$type<{
+    operatingAccount: { accountType: "GOOGLE_ADS"; accountId: string };
+    loginAccount: { accountType: "GOOGLE_ADS"; accountId: string };
+    productDestinationId: string;
+  }>(),
+  googleRequestId: text("google_request_id"),
+  googleAcceptedAt: text("google_accepted_at"),
+  googlePollCount: integer("google_poll_count").notNull().default(0),
+  googleNextPollAt: text("google_next_poll_at"),
+  tiktokStatus: text("tiktok_status").notNull().default("suppressed"),
+  tiktokAttempts: integer("tiktok_attempts").notNull().default(0),
+  tiktokPixelId: text("tiktok_pixel_id"),
+  tiktokLastError: text("tiktok_last_error"),
+  xStatus: text("x_status").notNull().default("suppressed"),
+  xAttempts: integer("x_attempts").notNull().default(0),
+  xPixelId: text("x_pixel_id"),
+  xEventId: text("x_event_id"),
+  xLastError: text("x_last_error"),
+  lastError: text("last_error"),
+  deliveredAt: text("delivered_at"),
+}, (table) => [
+  index("campaign_conversion_events_name_time_idx").on(table.eventName, table.occurredAt),
+  index("campaign_conversion_events_delivery_idx").on(table.posthogStatus, table.platformStatus),
+  check("campaign_conversion_events_channel_check", sql`${table.channel} IN ('web', 'mcp', 'api')`),
+  check(
+    "campaign_conversion_events_name_check",
+    sql`${table.eventName} IN ('signup_completed', 'agent_creation_started', 'agent_created', 'agent_ready', 'season_entry', 'game_placed', 'mcp_linked', 'owner_returned')`,
+  ),
+]);
+
 export const legalAcceptances = pgTable("legal_acceptances", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id")
@@ -293,6 +373,54 @@ export const legalAcceptances = pgTable("legal_acceptances", {
 ]);
 
 export type AuthenticationProvider = "privy" | "clerk" | "farcaster";
+
+/** Community identity only: Discord is not an account login/recovery credential. */
+export const discordConnections = pgTable("discord_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }).unique(),
+  discordId: text("discord_id").notNull().unique(),
+  username: text("username").notNull(),
+  guildId: text("guild_id").notNull(),
+  disconnecting: boolean("disconnecting").notNull().default(false),
+  revision: integer("revision").notNull().default(1),
+  deliveredRevision: integer("delivered_revision").notNull().default(0),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lease: uuid("lease"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  lastError: text("last_error"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+  syncedAt: timestamp("synced_at", { withTimezone: true }),
+}, table => [
+  index("discord_connections_pending_idx").on(table.nextAttemptAt),
+  check("discord_connections_snowflakes", sql`${table.discordId} ~ '^[0-9]{17,20}$' AND ${table.guildId} ~ '^[0-9]{17,20}$'`),
+  check("discord_connections_revisions", sql`${table.revision} > 0 AND ${table.deliveredRevision} >= 0 AND ${table.deliveredRevision} <= ${table.revision}`),
+]);
+
+export const discordVerificationAttempts = pgTable("discord_verification_attempts", {
+  stateHash: text("state_hash").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  nonceHash: text("nonce_hash").notNull(),
+  applicationId: text("application_id").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  guildId: text("guild_id").notNull(),
+  status: text("status").notNull().$type<"pending" | "exchanging" | "verified" | "confirmed">(),
+  discordId: text("discord_id"),
+  username: text("username"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [
+  index("discord_verification_attempts_user_idx").on(table.userId),
+  check("discord_verification_attempts_status", sql`${table.status} IN ('pending','exchanging','verified','confirmed')`),
+]);
+
+export const discordConnectionAudit = pgTable("discord_connection_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  discordId: text("discord_id").notNull(),
+  action: text("action").notNull().$type<"connected" | "refresh" | "disconnect" | "removed">(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [check("discord_connection_audit_action", sql`${table.action} IN ('connected','refresh','disconnect','removed')`)]);
 
 export const authenticationCredentials = pgTable("authentication_credentials", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -3537,11 +3665,12 @@ export const agentLearningReviewApplications = pgTable("agent_learning_review_ap
   proposalFingerprint: text("proposal_fingerprint").notNull(),
   sourceRecommendationIds: jsonb("source_recommendation_ids").notNull().$type<string[]>(),
   priorRevisionId: text("prior_revision_id").notNull(), // Game-specific review identity; not a rating revision.
-  resultingRevisionId: text("resulting_revision_id").notNull(), // Game-specific review identity; not a rating revision.
+  resultingRevisionId: text("resulting_revision_id"), // Set only when the submitted strategy is accepted.
+  submissionContentRevisionId: text("submission_content_revision_id"),
   priorStrategyStyle: text("prior_strategy_style").notNull(),
   resultingStrategyStyle: text("resulting_strategy_style").notNull(),
   mutationReceipt: jsonb("mutation_receipt").notNull().$type<Record<string, unknown>>(),
-  appliedAt: text("applied_at").notNull().default(sql`now()::text`),
+  appliedAt: text("applied_at").default(sql`now()::text`),
 }, (table) => [
   foreignKey({
     columns: [table.reviewId, table.proposalFingerprint],
@@ -3717,6 +3846,7 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   id: text("id").primaryKey(),
   agentProfileId: text("agent_profile_id").notNull(),
   userId: text("user_id").notNull().references(() => users.id),
+  avatarChangeSource: text("avatar_change_source").$type<AvatarChangeSource>(),
   competitiveRevisionId: text("competitive_revision_id"),
   parentRevisionId: text("parent_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
   ancestryKnown: boolean("ancestry_known").notNull().default(true),
@@ -3727,6 +3857,7 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   ...payloadChecks("agent_content_revisions", { snapshot: [table.snapshot, "json-gzip"] }),index("agent_content_revisions_profile_idx").on(table.agentProfileId, table.createdAt)]);
 export const agentContentAssets = pgTable("agent_content_assets", {
   hash: text("hash").primaryKey(),
+  isPublic: boolean("is_public").notNull().default(false),
   transparentUrl: text("transparent_url"),
   bytes: payloadColumn("bytes_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
 }, table => [
@@ -3797,6 +3928,12 @@ export const agentContentSubmissions = pgTable("agent_content_submissions", {
   requestHash: text("request_hash").notNull(),
   result: jsonb("result").notNull().$type<Record<string, unknown>>(),
 });
+
+/** Private draft media can be read only by its owner until an accepted revision publishes it. */
+export const agentImageOwners = pgTable("agent_image_owners", {
+  userId: text("user_id").notNull().references(() => users.id),
+  hash: text("hash").notNull().references(() => agentContentAssets.hash),
+}, table => [primaryKey({columns:[table.userId,table.hash]})]);
 /** One assignment per reviewer and review; expired rows are replaced under a reviewer lock. */
 export const moderationClaims = pgTable("moderation_claims", {
   reviewerId: text("reviewer_id").primaryKey().references(() => users.id),
@@ -3919,7 +4056,12 @@ export const inferenceReservations = pgTable("inference_reservations", {
  inputHash:text("input_hash").notNull(),state:text("state").notNull().$type<"reserved"|"dispatched"|"succeeded"|"failed"|"uncertain">(),
  bucket:text("bucket").notNull().$type<"balance"|"grant"|"exempt">(), periodStart:timestamp("period_start",{withTimezone:true,mode:"string"}).notNull(),
  createdAt:timestamp("created_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),finishedAt:timestamp("finished_at",{withTimezone:true,mode:"string"}),
-});
+ executionLeaseUntil:timestamp("execution_lease_until",{withTimezone:true,mode:"string"}),
+ executionReleasedAt:timestamp("execution_released_at",{withTimezone:true,mode:"string"}),
+ executionReleaseReason:text("execution_release_reason").$type<"completed"|"failed"|"cancelled"|"interrupted">(),
+ visualOperationId:text("visual_operation_id").references(() => visualRenderOperations.id),
+ avatarRequestId:text("avatar_request_id").references(() => avatarGenerationRequests.id),
+},table=>[index("inference_reservations_owner_category_state").on(table.userId,table.category,table.state)]);
 export const inferenceActions = pgTable("inference_actions", {
  id:text("id").primaryKey(),actorId:text("actor_id").references(() => users.id),userId:text("user_id").references(() => users.id),
  requestHash:text("request_hash").notNull(),reason:text("reason").notNull(),command:jsonb("command").notNull().$type<Record<string,unknown>>(),
@@ -4352,6 +4494,35 @@ export const gameRetries = pgTable("game_retries", {
 });
 
 /** Owner-requested missing visual preparation. Bodies remain in private object storage. */
+/** Account drafts keep large editable documents in private object storage. */
+export const agentEditorDrafts = pgTable("agent_editor_drafts", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  scope: text("scope").notNull(),
+  name: text("name").notNull(),
+  document: payloadColumn("document_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  version: integer("version").notNull().default(1),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, table => [uniqueIndex("agent_editor_drafts_owner_scope").on(table.userId, table.scope), ...payloadChecks("agent_editor_drafts", { document: [table.document, "json-gzip"] })]);
+
+export const voiceSamples = pgTable("voice_samples", {
+  id: text("id").primaryKey(),
+  audio: payloadColumn("audio_object", "binary").$type<StoredPayload<Buffer>>(),
+  evidence: payloadColumn("evidence_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
+  status: text("status").notNull().default("pending"),
+}, table => [...payloadChecks("voice_samples", { audio: [table.audio, "binary"], evidence: [table.evidence, "json-gzip"] })]);
+
+export const characterReferenceJobs = pgTable("character_reference_jobs", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => users.id),
+  agentId: text("agent_id").references(() => agentProfiles.id), draftScope: text("draft_scope"),
+  requestHash: text("request_hash").notNull(),
+  input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
+  result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
+  status: text("status").notNull().default("queued"), stage: text("stage").notNull().default("image"),
+  leaseId: text("lease_id"), leaseUntil: text("lease_until"), error: text("error"), errorCode: text("error_code"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`), updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, table => [index("character_reference_jobs_owner_status").on(table.userId,table.status,table.createdAt),...payloadChecks("character_reference_jobs", { input: [table.input, "json-gzip"], result: [table.result, "json-gzip"] })]);
+
 export const agentVisualUpdates = pgTable("agent_visual_updates", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
@@ -4374,3 +4545,10 @@ export const agentVisualUpdates = pgTable("agent_visual_updates", {
   uniqueIndex("agent_visual_updates_active_idx").on(table.agentId).where(sql`${table.status} IN ('queued','processing')`),
   ...payloadChecks("agent_visual_updates", { input: [table.input,"json-gzip"], checkpoint: [table.checkpoint,"json-gzip"] }),
 ]);
+
+/** A requested destination survives moderation; this record never reserves a seat. */
+export const agentEntryIntents = pgTable("agent_entry_intents", {
+  agentId: text("agent_id").primaryKey().references(() => agentProfiles.id),
+  userId: text("user_id").notNull().references(() => users.id),
+  intent: jsonb("intent").notNull().$type<{flow:"join_game";gameId:string}|{flow:"daily_free";seasonId:string;season?:string}>(),
+});

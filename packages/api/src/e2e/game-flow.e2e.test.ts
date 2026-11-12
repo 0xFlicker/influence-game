@@ -31,6 +31,10 @@ import type { Browser, HTTPRequest, Page } from "puppeteer";
 import { mkdirSync } from "fs";
 import path from "path";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { publishScreenedAgent } from "../services/agent-screening-publication.js";
+import { schema } from "../db/index.js";
+import { eq } from "drizzle-orm";
+import { contentImageFixture, headPositionFixture } from "../__tests__/content-image-fixture.js";
 
 // Match JWT_SECRET to what test-server uses
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
@@ -271,7 +275,7 @@ describe("E2E: Full Game Flow", () => {
           return originalFetch(input, init);
         }) as typeof fetch;
       });
-      await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle2", timeout: 30000 });
       await page.waitForSelector('[aria-label="Search games"]', { timeout: 15000 });
       // Enter and settle search first: React development mode may mount effects
       // twice. Arm the failure on the next regular poll, not during that setup.
@@ -316,12 +320,17 @@ describe("E2E: Full Game Flow", () => {
     // Each player joins via API
     for (let i = 0; i < 6; i++) {
       const player = await createPlayerUser(testDb.db, i);
+      const fullBodyReferenceUrl = await contentImageFixture(`pfp/game-flow-${i}.png`);
       const createdAgent = await createOwnedAgentProfile(testDb.db, { userId: player.userId }, {
         name: PERSONA_NAMES[i]!,
         personality: PERSONA_KEYS[i]!,
         strategyStyle: `${PERSONA_NAMES[i]} deterministic strategy`,
         personaKey: PERSONA_KEYS[i]!,
+        fullBodyReferenceUrl,
+        headPosition: await headPositionFixture(fullBodyReferenceUrl),
       });
+      await testDb.db.update(schema.agentScreenings).set({ status: "completed", recommendation: "no_concern" }).where(eq(schema.agentScreenings.contentRevisionId, createdAgent.receipt.contentRevisionId!));
+      await publishScreenedAgent(testDb.db, createdAgent.receipt.contentRevisionId!);
 
       const joinRes = await fetch(
         `${servers.apiUrl}/api/games/${gameId}/join`,

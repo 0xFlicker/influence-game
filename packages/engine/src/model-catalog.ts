@@ -346,6 +346,14 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     "displayName": "Meta Muse Wonder 1.0",
     "evaluationStatus": "game-ready",
     "defaultReasoningPolicy": "action-policy"
+  },
+  {
+    "id": "meta-muse:muse-ember-1.0",
+    "providerProfileId": "meta-muse",
+    "modelId": "muse-ember-1.0",
+    "displayName": "Meta Muse Ember 1.0",
+    "evaluationStatus": "evaluation-candidate",
+    "defaultReasoningPolicy": "action-policy"
   }
 ];
 

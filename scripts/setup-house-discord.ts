@@ -4,11 +4,11 @@
  * server for Influence.
  *
  * Usage:
- *   doppler run --project social-strategy-agent --config dev -- \
+ *   doppler run --project overclaw-house --config prd -- \
  *     bun scripts/setup-house-discord.ts
  *
  * Required env:
- *   DISCORD_HOUSE_BOT_TOKEN
+ *   DISCORD_BOT_TOKEN
  *   DISCORD_HOUSE_GUILD_ID
  */
 
@@ -17,7 +17,7 @@ const AUDIT_REASON = encodeURIComponent(
   "Configure The House support/community server",
 );
 
-const token = requireEnv("DISCORD_HOUSE_BOT_TOKEN");
+const token = requireEnv("DISCORD_BOT_TOKEN");
 const guildId = requireEnv("DISCORD_HOUSE_GUILD_ID");
 
 const ChannelType = {
@@ -127,6 +127,7 @@ const staffTalk = perms(
   "EmbedLinks",
 );
 const staffManage = perms("ManageMessages", "ManageThreads");
+const staffAdmin = orPerms(staffTalk, staffManage, perms("ManageChannels", "ManageEvents", "ViewAuditLog", "ManageNicknames", "ModerateMembers"));
 const quietDeny = perms(
   "SendMessages",
   "SendTtsMessages",
@@ -220,6 +221,8 @@ interface SetupContext {
   botUser: DiscordUser;
   roles: {
     everyone: Role;
+    user: Role;
+    sysop: Role;
     admin: Role;
     moderator: Role;
     support: Role;
@@ -440,6 +443,7 @@ function channelBody(spec: ChannelSpec): Record<string, unknown> {
 function roleOverwriteTargets(ctx: SetupContext): string[] {
   return [
     ctx.roles.everyone.id,
+    ctx.roles.user.id,
     ctx.roles.member.id,
     ctx.roles.player.id,
     ctx.roles.spectator.id,
@@ -454,7 +458,8 @@ function publicReadOnlyOverwrites(ctx: SetupContext): PermissionOverwrite[] {
     ),
     overwrite(ctx.roles.support.id, orPerms(staffTalk, staffManage), "0"),
     overwrite(ctx.roles.moderator.id, orPerms(staffTalk, staffManage), "0"),
-    overwrite(ctx.roles.admin.id, perms("Administrator"), "0"),
+    overwrite(ctx.roles.admin.id, staffAdmin, "0"),
+    overwrite(ctx.roles.sysop.id, staffAdmin, "0"),
   ];
 }
 
@@ -467,7 +472,8 @@ function publicChatOverwrites(ctx: SetupContext): PermissionOverwrite[] {
     overwrite(ctx.roles.builder.id, baseTalk, publicDeny),
     overwrite(ctx.roles.support.id, orPerms(staffTalk, staffManage), "0"),
     overwrite(ctx.roles.moderator.id, orPerms(staffTalk, staffManage), "0"),
-    overwrite(ctx.roles.admin.id, perms("Administrator"), "0"),
+    overwrite(ctx.roles.admin.id, staffAdmin, "0"),
+    overwrite(ctx.roles.sysop.id, staffAdmin, "0"),
   ];
 }
 
@@ -480,7 +486,8 @@ function supportOverwrites(ctx: SetupContext): PermissionOverwrite[] {
     overwrite(ctx.roles.builder.id, supportTalk, publicDeny),
     overwrite(ctx.roles.support.id, orPerms(staffTalk, staffManage), "0"),
     overwrite(ctx.roles.moderator.id, orPerms(staffTalk, staffManage), "0"),
-    overwrite(ctx.roles.admin.id, perms("Administrator"), "0"),
+    overwrite(ctx.roles.admin.id, staffAdmin, "0"),
+    overwrite(ctx.roles.sysop.id, staffAdmin, "0"),
   ];
 }
 
@@ -489,7 +496,8 @@ function staffOverwrites(ctx: SetupContext): PermissionOverwrite[] {
     overwrite(ctx.roles.everyone.id, "0", perms("ViewChannel")),
     overwrite(ctx.roles.support.id, staffTalk, "0"),
     overwrite(ctx.roles.moderator.id, orPerms(staffTalk, staffManage), "0"),
-    overwrite(ctx.roles.admin.id, perms("Administrator"), "0"),
+    overwrite(ctx.roles.admin.id, staffAdmin, "0"),
+    overwrite(ctx.roles.sysop.id, staffAdmin, "0"),
   ];
 }
 
@@ -500,9 +508,11 @@ async function configureRoles(ctx: SetupContext, allRoles: Role[]): Promise<void
   }
 
   ctx.roles.everyone = await configureEveryoneRole(everyone);
+  ctx.roles.user = await ensureRole(allRoles, { name: "House User", permissions: baseTalk, color: 0x27ae60 });
+  ctx.roles.sysop = await ensureRole(allRoles, { name: "House Sysop", permissions: staffAdmin, color: 0xf2c94c, hoist: true });
   ctx.roles.admin = await ensureRole(allRoles, {
     name: "House Admin",
-    permissions: perms("Administrator"),
+    permissions: staffAdmin,
     color: 0xf2c94c,
     hoist: true,
   });
@@ -843,7 +853,8 @@ async function configureStarterMessages(ctx: SetupContext): Promise<void> {
     [
       "# Welcome to The House",
       "",
-      "The House is the support and community Discord for Influence.",
+      "The House is the community for Influence and Werewolf.",
+      "Verify your House account and manage server roles at https://thehouse.game/discord/verify",
       "",
       "Use the public support forums for issues. Staff will never DM you first for support, and nobody from The House will ask for seed phrases, private keys, passwords, recovery phrases, API keys, or tokens.",
       "",
@@ -1142,6 +1153,8 @@ async function verifySetup(ctx: SetupContext): Promise<void> {
   ]);
 
   const requiredRoleNames = [
+    "House User",
+    "House Sysop",
     "House Admin",
     "House Moderator",
     "House Support",
@@ -1217,6 +1230,11 @@ async function main(): Promise<void> {
   await configureWelcomeScreen(ctx);
   await configureOnboarding(ctx);
   await verifySetup(ctx);
+  await api("POST", `/applications/${ctx.botUser.id}/guilds/${guildId}/commands`, {
+    name: "verify", description: "Connect your House account and manage server roles", type: 1,
+  });
+  log(`verification role IDs: ${JSON.stringify({ user: ctx.roles.user.id, moderator: ctx.roles.moderator.id, admin: ctx.roles.admin.id, sysop: ctx.roles.sysop.id })}`);
+  ctx.warnings.push("Place The House bot role strictly above House User, Moderator, Admin and Sysop before enabling role delivery. Review existing staff holders; remove setup-time Administrator from the bot after runtime permission proof.");
 
   if (ctx.warnings.length > 0) {
     console.log("");

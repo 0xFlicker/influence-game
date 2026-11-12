@@ -59,6 +59,12 @@ holds allow time for every cast page; long room names and captions use measured
 pagination, and recorded voice retains its original audio duration. Werewolf uses its own room
 presentation and is not routed through this Influence-specific treatment.
 
+Influence winner scenes page the other finalists, jury and cast members in pairs on the
+sampled presentation clock. The winner cue reserves five seconds per page;
+the final page remains held at the end. Rebuild existing bundles from their
+frozen selection and source to pick up the revised timing and layout, then
+render existing movies again. Do not alter the selected source or media pins.
+
 For a new beat, explicitly decide its catalog identity, source position, duration,
 speech/thought ownership, recording identity, selection/default inclusion, allowed
 framing context and ending/handoff. Use structured canonical coordinates and
@@ -78,10 +84,17 @@ Fit and reflow cast, labels and names within the picture. Paginate long speech,
 thoughts and House copy using the shared presentation clock and enough reading
 time. Clipping required content, shrinking it to unreadable text, or asking the
 viewer to page manually or to use a separate required paging UI are not acceptable
-substitutes. Normal keyboard/click advancement following the established player
-transport rules remains allowed. Cropping decorative
+substitutes. Normal keyboard/click advancement follows the shared director's
+measured page schedule: a gesture advances one page before the existing exit
+and cue transition. Automatic clock-driven pagination remains complete without
+interaction. Cropping decorative
 scenery is different from hiding required cast/text content. Studio's editorial
 lists, inspectors and timeline outside the rendered picture may scroll.
+
+Narrow solo ballots reserve enough speech-bubble height for the role label,
+pagination and a complete readable line while keeping the portrait and vote
+ledger in their own space. The same solo layout and typography measurement are
+used by the viewer, Studio and freshly prepared exports.
 
 Regression coverage must inspect the actual player/stage at narrow, short and
 fullscreen geometries with large casts and long names/copy. Reject scrollable
@@ -171,3 +184,67 @@ An existing selection JSON can usually rebuild the same cut using current local
 code; an old bundle can retain stale layouts or omit newly required framing.
 An MP4 must be rendered again. Never silently unpin media or regenerate accepted
 history. See [refreshing an existing export](local-replay-export.md#refresh-an-existing-export-after-presentation-updates).
+
+## Hunter item proof
+
+Run `HUNTER_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts ../../.renders/hunter-parity` from `packages/web`.
+The canonical eight-player v12 fixtures cover held and fired private explanations,
+independent action selections, snipe-only and two-victim dawns, both audiences,
+long frozen names, measured caption pages, reduced motion and recorded/unrecorded
+speech. The sequence case includes speech → action → dawn handoffs. The proof
+uses the production catalog and binding adapter, the viewer stage, actual Studio
+Source/Selected cut Player, and fresh H.264 exports, with reverse-order sampling
+and geometry assertions at 1280×720, 640×360, 360×240 and 390×700.
+
+The Hunter room is included by the existing static-art snapshot writer. Reuse the
+same selection IDs and pinned source/media to prepare a fresh bundle; render a
+new MP4. Reopen/reprepare Studio previews to pick up the new room and corrected
+binding. Do not regenerate historical dialogue or alter accepted item decisions.
+
+For generated Werewolf House narration, run the Hunter matrix with saved narration
+in the projected source (both audiences, isolated cuts and the full sequence):
+
+```sh
+cd packages/web
+HUNTER_PARITY=1 HOUSE_NARRATION_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts ../../.renders/werewolf-house-narration
+```
+
+The provider-free fixture supplies deterministic authored copy; the localhost API
+simulation separately proves real House authoring and private journal persistence.
+The narration must remain identical through the viewer watch adapter, frozen
+Studio source, independent cue selection, caption timing and TTS source. Historical
+sources without references keep fixed factual narration; missing referenced copy
+must fail integrity checks rather than silently change the movie. Existing movies
+need re-encoding, and adopting newer narration requires an explicit source refresh.
+
+## Werewolf v13 pack strategy proof
+
+From `packages/web`, run:
+
+```sh
+PACK_STRATEGY_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts /absolute/path/to/pack-proof
+```
+
+The canonical eight-player v13 fixture agrees at beat two, speaks 320-byte strategy
+messages at beats three/four and passes at five/six. It exercises the production
+catalog, the full pack → night-actions → dawn sequence and independent
+speech/thought/closure binding. Frozen v8 and v12 pack pictures also render. The proof
+compares the viewer stage, actual Studio Source/Selected cut Player and fresh
+H.264 exports, including long frozen names, reduced motion, recorded/unrecorded
+speech, Mystery dawn, direct seeks and reverse-order frames at 1280×720, 640×360,
+360×240 and 390×700. `pack-source.json` and `pack-cases.json` retain exact canonical
+events, catalog/selection identities, source and settings; comparison/manifest,
+frame-audit and page-coverage files retain coordinates and assertions. Pass thinking must not enter the catalog
+or movie. The recorded case uses deterministic local fixture audio, not paid TTS.
+
+V7–v12 retain their historical pack sequences; old frozen sources never acquire
+v13 speech. Reprepare a bundle from the same selection/source to update rendering
+and encode a new movie. Including additional accepted live strategy requires an
+explicit source/selection refresh. Never regenerate game history or pinned media.
+
+Shared room names wrap rather than ellipsize. Speech bubbles reserve the measured
+speaker-label width before tightening short dialogue; short two-person pictures
+reuse the compact room so names and speech fit. Taller rooms retain the circular
+staging. Fresh preparation captures the new label-aware layout keys. Rebuild old
+bundles from the same frozen selection/source before re-encoding; the selection
+does not need new game history or replacement character images.

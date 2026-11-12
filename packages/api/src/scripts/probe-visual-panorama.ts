@@ -74,7 +74,7 @@ try {
   const room = VISUAL_ROOMS.lobby;
   const background = process.argv[3] === "fresh-room" ? (await renderDurableVisualImage(db, {
     gameId: id, operationKey: `background:${room.id}:v${room.version}`, allowFallback: false,
-    request: { width: 1536, height: 864, references: [], prompt: `${VISUAL_HOUSE_STYLE}. Empty setting: ${room.name}. ${room.direction}. Wide room view, no people, no text. Preserve uncluttered conversational furniture sections with generous headroom: ${JSON.stringify(room.sections)}. This is a lived-in social strategy game house, not a clinical studio.` },
+    request: { operation: "create", background: "opaque", width: 1536, height: 864, references: [], prompt: `${VISUAL_HOUSE_STYLE}. Empty setting: ${room.name}. ${room.direction}. Wide room view, no people, no text. Preserve uncluttered conversational furniture sections with generous headroom: ${JSON.stringify(room.sections)}. This is a lived-in social strategy game house, not a clinical studio.` },
   })).image : await readFile(resolve(publicRoot, "visual/influence/rooms-v1/lobby.jpg"));
   const backgroundArtifactId = await storeVisualArtifact(db, id, background);
   await writeFile(resolve(out, "background.png"), await readVisualArtifact(db, id, backgroundArtifactId));

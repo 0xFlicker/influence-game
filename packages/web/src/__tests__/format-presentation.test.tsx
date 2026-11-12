@@ -6,7 +6,7 @@ import {
   FORMAT_PRESENTATION_METADATA,
   type LaunchFormatId,
 } from "@influence/engine/format-presentation-metadata";
-import { FormatPresentation } from "../app/games/[slug]/components/format-presentation";
+import { FormatPresentation, formatPresentationOwnsBackdrop } from "../app/games/[slug]/components/format-presentation";
 import { formatSnapshotForPresentationCursor } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import type {
   FormatPresentationCue,
@@ -105,6 +105,24 @@ describe("FormatPresentation", () => {
     const manual = render({ ...base, resolutionMethod: "manual" });
     expect(manual).toContain("Original vote totals shown.");
     expect(manual).not.toContain("Empower revote");
+  });
+
+  it("owns exactly one backdrop for result stages and none for transparent format cards", () => {
+    const selected = selectedCue("rules_reveal");
+    // The rules reveal paints its own ResultStage room; stage roots must not
+    // paint the same room behind it a second time.
+    expect(formatPresentationOwnsBackdrop(selected, false)).toBe(true);
+    const selectedHtml = renderToString(
+      <FormatPresentation cue={selected} roster={roster} currentStateEntry={false} />,
+    );
+    expect(selectedHtml.match(/data-room-backdrop/g)).toHaveLength(1);
+    // The live label, offer cards and menu keep the stage root's room.
+    expect(formatPresentationOwnsBackdrop(selected, true)).toBe(false);
+    expect(formatPresentationOwnsBackdrop(selectedCue("choice_legible"), false)).toBe(false);
+    expect(formatPresentationOwnsBackdrop(menuCue(), false)).toBe(false);
+    expect(formatPresentationOwnsBackdrop({ ...aggregateCue(), resultsPresentation: true }, false)).toBe(true);
+    expect(formatPresentationOwnsBackdrop({ ...empoweredCue(), resultsPresentation: true, compactEmpower: true }, false)).toBe(true);
+    expect(formatPresentationOwnsBackdrop(empoweredCue(), false)).toBe(false);
   });
 
   it("keeps both offered cards in canonical order and expands only the selected rules", () => {

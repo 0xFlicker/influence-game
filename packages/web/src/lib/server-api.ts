@@ -165,3 +165,7 @@ export function getServerHouseCuts(slug: string, audience?: string): Promise<imp
 export function getServerPublicAgentProfile(id: string, gameKind: "all" | "influence" | "werewolf" = "all"): Promise<PublicAgentProfileEnvelope> {
   return serverApiFetch(`/api/public/agents/${encodeURIComponent(id)}?game=${gameKind}`, { cache: "no-store" });
 }
+
+export function getServerPublicAgentCard(id: string): Promise<{ schemaVersion: 1; status: "found"; profile: Pick<import("./api").PublicAgentProfile, "name" | "avatarUrl" | "profileHref" | "awards"> }> {
+  return serverApiFetch(`/api/public/agents/${encodeURIComponent(id)}/card`, { cache: "no-store" });
+}

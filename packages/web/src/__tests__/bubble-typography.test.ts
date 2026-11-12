@@ -37,6 +37,13 @@ test("a very short reply narrows without reducing its type or changing its line 
  expect(fit.width).toBe(240);expect(fit.fontSize).toBe(28);expect(fit.pages).toEqual(["Agreed."]);
 });
 
+test("short dialogue reserves the measured speaker label width without shrinking its text", () => {
+ const fit=fitBubbleText("Agreed.",{...budget,minWidth:430},measure);
+ expect(fit.width).toBe(430);expect(fit.fontSize).toBe(28);expect(fit.pages).toEqual(["Agreed."]);
+ const narrow=fitBubbleText("Agreed.",{...budget,width:300,minWidth:430},measure);
+ expect(narrow.width).toBe(300);
+});
+
 test("a tight bubble moves its counter to the header rather than producing character pages", () => {
  const text="Give me a reason to change my mind. ".repeat(10);
  const fit=fitBubbleText(text,{width:440,height:76,chrome:50,padding:10,maxFont:20,minFont:12},measure);

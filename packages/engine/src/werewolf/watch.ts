@@ -4,7 +4,7 @@ import { werewolfVisualStaging } from "./visual-staging";
 import { applyWerewolfEvent } from "./rules";
 import { projectWerewolfEntry, projectWerewolfSnapshot, type WerewolfAudience } from "./observation";
 import type { WerewolfEvent, WerewolfState } from "./types";
-import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity, type WerewolfWatchMoment, type WerewolfWatchIndex, type WerewolfWatchWindow} from "./watch-contract";
+import {werewolfNightSteps, isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity, type WerewolfWatchMoment, type WerewolfWatchIndex, type WerewolfWatchPosition, type WerewolfWatchWindow} from "./watch-contract";
 
 /** Server-only staging coordinates never appear in the browser DTO. */
 export type WerewolfWatchStaging = ReturnType<typeof werewolfVisualStaging>;
@@ -22,7 +22,7 @@ export function projectWerewolfProductionWatch(events: readonly WerewolfEvent[],
   return projectWatchHistory(events, audience, 1, Number.MAX_SAFE_INTEGER, hasWolfForms, retakes);
 }
 
-function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean, retakes?: WerewolfRetrospectivePresentation) {
+function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number, hasWolfForms?: (staging: WerewolfWatchStaging, cursor: number, ids: string[]) => boolean, retakes?: WerewolfRetrospectivePresentation, provenance?: Array<{cursor: number; eventSequence: number}>) {
   let state: WerewolfState | null = null, cursor = 0;
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
@@ -42,6 +42,7 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
     state = frame.state;
     cursor = frame.cursor;
     if (entry) {
+      provenance?.push({cursor, eventSequence:event.sequence});
       chapterId = entry.kind === "result" ? "ending" : entry.day === 0 ? "introduction" : `cycle:${entry.day}`;
       if (entry.kind === "phase") {
         if (entry.phase === "introduction") { sceneId = "introduction"; chapterId = "introduction"; }
@@ -58,16 +59,22 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
       else if (entry.kind === "speech") { chapterId = entry.purpose === "retrospective" ? "retrospective" : "introduction"; sceneId = chapterId; }
       const staging = before ?? state;
       const nightActions = resolvedNightActions(staging, entry, audience);
+      const narration = event.houseNarration?.[audience];
+      if (narration?.scene) entry = {...entry, houseSpeech: narration.scene};
+      for (const action of nightActions) {
+        const speech = narration?.[action.kind];
+        if (speech) action.houseSpeech = speech;
+      }
       const nightSteps = werewolfNightSteps(nightActions);
       if (entry.kind === "ballot") {
         if (ballotDay !== entry.day) {dayBallots = []; ballotDay = entry.day;}
         dayBallots.push({voterId: entry.actorId, targetId: entry.targetId, unavailable: entry.unavailable});
       }
       if (isWerewolfPlayable(entry) && navigation.at(-1)?.sceneId !== sceneId) {
-        const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "conversation" ? `Day ${entry.day} · Conversation` : entry.kind === "ballot" ? `Day ${entry.day} · Public ballot` : entry.kind === "proposal" ? `Night ${entry.day} · Pack proposal` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "retrospective" ? "Retrospective" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
+        const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "conversation" ? `Day ${entry.day} · Conversation` : entry.kind === "ballot" ? `Day ${entry.day} · Public ballot` : entry.kind === "proposal" ? `Night ${entry.day} · ${state.config.rulesVersion >= 13 ? "Pack conversation" : "Pack proposal"}` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "retrospective" ? "Retrospective" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
         for (const [step, {action}] of nightSteps.entries()) {
           if (step > 0 && nightSteps[step - 1]!.action === action) continue;
-          const roleLabel = action.kind === "protect" ? "Doctor" : action.kind === "investigate" ? "Seer" : "Hunt";
+          const roleLabel = action.kind === "protect" ? "Doctor" : action.kind === "investigate" ? "Seer" : action.kind === "snipe" ? "Snipe" : "Hunt";
           navigation.push({cursor, step, chapterId, sceneId: `${chapterId}:${action.kind}`, label: `Night ${entry.day} · ${roleLabel}`});
         }
         navigation.push({ cursor, step: nightSteps.length, chapterId, sceneId, label });
@@ -136,6 +143,50 @@ export function projectWerewolfProductionProvenance(events: readonly WerewolfEve
   return provenance;
 }
 
+/** Map a playable audience-local cue through its canonical event without exposing
+ * event sequences or private reducer state to the caller. */
+export function mapWerewolfWatchCue(events: readonly WerewolfEvent[], from: WerewolfAudience, to: WerewolfAudience, cursor: number, key: string):WerewolfWatchPosition {
+  if ((from !== "mystery" && from !== "omniscient") || (to !== "mystery" && to !== "omniscient") || !Number.isSafeInteger(cursor) || cursor < 1) throw new Error("Invalid watch position");
+  // These coordinates stay server-side and are collected during the same
+  // validated walks that construct the audience projections.
+  const sourceEvents: Array<{cursor: number; eventSequence: number}> = [];
+  const destinationEvents: Array<{cursor: number; eventSequence: number}> = [];
+  const source = projectWatchHistory(events, from, 1, Number.MAX_SAFE_INTEGER, undefined, undefined, sourceEvents);
+  const destination = projectWatchHistory(events, to, 1, Number.MAX_SAFE_INTEGER, undefined, undefined, destinationEvents);
+  // A live hold may follow non-playable events, after the last cue has left
+  // the client cache. Map that visible boundary without returning event IDs.
+  if (key === `${source.gameId}:${from}:${cursor}:boundary`) {
+    const sourceEvent = sourceEvents.find(item => item.cursor === cursor);
+    if (!sourceEvent) throw new Error("Unavailable watch position");
+    const boundary = destinationEvents.findLast(item => item.eventSequence <= sourceEvent.eventSequence);
+    const lastCue = boundary && destination.playback.findLast(item => item.cursor <= boundary.cursor);
+    return {cursor:lastCue?.cursor ?? null, key:lastCue?.keys.at(-1) ?? null, exact:false, boundaryCursor:boundary?.cursor ?? null};
+  }
+  const row = source.playback.find(item => item.cursor === cursor);
+  const sourceLast = source.moments.at(-1)?.entry;
+  const destinationLast = destination.moments.at(-1)?.entry;
+  const reprise = key === `${source.gameId}:${from}:${cursor}:reprise`
+    && source.playback.at(-1)?.cursor === cursor
+    && sourceLast?.kind === "speech" && sourceLast.purpose === "retrospective"
+    && events.some(event => event.type === "werewolf.retrospective_completed");
+  if (!row?.keys.includes(key) && !reprise) throw new Error("Unavailable watch cue");
+  const sourceEvent = sourceEvents.find(item => item.cursor === cursor);
+  if (!sourceEvent) throw new Error("Unavailable watch position");
+  const matchingEvent = destinationEvents.find(item => item.eventSequence === sourceEvent.eventSequence);
+  const sourcePrefix = `${source.gameId}:${from}:${cursor}`;
+  const suffix = key.slice(sourcePrefix.length);
+  if (!key.startsWith(sourcePrefix) || suffix && !suffix.startsWith(":")) throw new Error("Invalid watch cue");
+  const target = matchingEvent && destination.playback.find(item => item.cursor === matchingEvent.cursor);
+  const mappedKey = target && `${destination.gameId}:${to}:${target.cursor}${suffix}`;
+  if (target && mappedKey && (target.keys.includes(mappedKey) || reprise && destination.playback.at(-1)?.cursor === target.cursor && destinationLast?.kind === "speech" && destinationLast.purpose === "retrospective")) return {cursor:target.cursor, key:mappedKey, exact:true};
+  const earlier = destinationEvents.filter(item => item.eventSequence < sourceEvent.eventSequence);
+  for (let index = earlier.length - 1; index >= 0; index--) {
+    const candidate = destination.playback.find(item => item.cursor === earlier[index]!.cursor);
+    if (candidate) return {cursor:candidate.cursor, key:candidate.keys.at(-1)!, exact:false};
+  }
+  return {cursor:null, key:null, exact:false};
+}
+
 /** One action list owns both scrub counts and scene expansion; public night entries remain empty. */
 function resolvedNightActions(state: WerewolfState, entry: import("./observation").WerewolfPublicEntry, audience: WerewolfAudience): WerewolfNightAction[] {
   if (audience !== "omniscient" || entry.kind !== "night") return [];
@@ -150,10 +201,20 @@ function resolvedNightActions(state: WerewolfState, entry: import("./observation
     if (!investigation) throw new Error("Resolved investigation has no accepted seer action");
     actions.push({kind: "investigate", actorId: entry.investigation.seerId, targetId: entry.investigation.targetId, isWolf: entry.investigation.isWolf, ...nightSpeech(investigation.decision)});
   }
+  const snipeAction = state.actions.find(action => action.action === "snipe" && action.decision.kind === "item_use");
+  if (snipeAction && snipeAction.decision.kind === "item_use") {
+    if (entry.snipe) {
+      if (snipeAction.actorId !== entry.snipe.actorId) throw new Error("Resolved snipe has no accepted hunter action");
+      actions.push({kind: "snipe", actorId: entry.snipe.actorId, targetId: entry.snipe.targetId, killedId: entry.snipe.killedId, itemId: entry.snipe.itemId, held: false, ...nightSpeech(snipeAction.decision)});
+    } else if (snipeAction.decision.itemId === null) {
+      // A held snipe is still the Hunter's night phase: Omniscient replay shows the decision, Mystery never does.
+      actions.push({kind: "snipe", actorId: snipeAction.actorId, targetId: null, killedId: null, itemId: "snipe", held: true, ...nightSpeech(snipeAction.decision)});
+    }
+  } else if (entry.snipe) throw new Error("Resolved snipe has no accepted hunter action");
   if (entry.attackTargetId) actions.push({kind: "hunt", wolfIds: state.aliveIds.filter(id => state.roles[id] === "werewolf"), targetId: entry.attackTargetId});
   return actions;
 }
 
 function nightSpeech(decision: import("./types").WerewolfDecision) {
-  return decision.kind === "solo_target" && decision.text !== null ? {speech: {text: decision.text, cue: decision.cue}} : {};
+  return (decision.kind === "solo_target" || decision.kind === "item_use") && decision.text !== null ? {speech: {text: decision.text, cue: decision.cue}} : {};
 }

@@ -25,7 +25,7 @@ beforeEach(async () => {
 });
 const create = () => createOwnedAgentProfile(db, { userId: owner }, { name: `Agent ${randomUUID().slice(0, 8)}`, personality: "Original" });
 const edit = (id: string) => updateOwnedAgentProfile(db, { userId: owner }, id, { personality: randomUUID(), submissionId: randomUUID() });
-const unqueue = (id: string) => db.delete(schema.agentScreenings).where(eq(schema.agentScreenings.contentRevisionId, id));
+const unqueue = async (id:string)=>{await db.delete(schema.agentScreenings).where(eq(schema.agentScreenings.contentRevisionId,id));await db.update(schema.agentModerationReviews).set({held:false}).where(eq(schema.agentModerationReviews.contentRevisionId,id));};
 const review = async (id: string) => (await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.id, id)))[0]!;
 const migrate = () => db.transaction(async tx => {
   const statements = readFileSync(new URL("../../drizzle/0127_close_unscreened_superseded_reviews.sql", import.meta.url), "utf8").split("--> statement-breakpoint");

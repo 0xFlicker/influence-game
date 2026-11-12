@@ -19,6 +19,7 @@ export function buildWerewolfResults(events: readonly WerewolfEvent[]): Werewolf
       recap.push({id:`event-${event.sequence}`,day:state.day,source:reference,kind:"night",result,
         noAttackReason:result.attackTargetId === null && failedPackDay === state.day ? "no_agreement" : null});
       if (result.killedId) eliminations.set(result.killedId,{day:state.day,kind:"night",source:reference});
+      if (result.snipe?.killedId) eliminations.set(result.snipe.killedId,{day:state.day,kind:"night",source:reference});
     }
     if (event.type === "werewolf.day_vote_resolved") {
       const result = structuredClone(event.payload);

@@ -9,7 +9,7 @@ let receipts: VisualImageReceipt[];
 let begins: string[];
 let journal: VisualImageJournal;
 let png: string;
-const request = { prompt: "An empty lounge", width: 1024, height: 1024, references: [] };
+const request = { operation: "create" as const, background: "opaque" as const, prompt: "An empty lounge", width: 1024, height: 1024, references: [] };
 
 beforeEach(async () => {
   receipts = []; begins = [];
@@ -24,6 +24,26 @@ afterEach(() => {
   if (originalXai === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = originalXai;
 });
 const success = () => Response.json({ data: [{ b64_json: png }], usage: { output_tokens: 10 } });
+
+test("new compositions with references still use Flare; targeted edits use Sunburst, medium, and transparent PNG", async () => {
+  const bodies: FormData[] = [];
+  png=(await sharp({create:{width:16,height:16,channels:4,background:{r:0,g:0,b:0,alpha:0}}}).composite([{input:await sharp({create:{width:8,height:8,channels:4,background:"#fff"}}).png().toBuffer(),top:4,left:4}]).png().toBuffer()).toString("base64");
+  globalThis.fetch = Object.assign(async (_url: unknown, init?: RequestInit) => { bodies.push(init!.body as FormData); return success(); }, { preconnect: originalFetch.preconnect });
+  await generateVisualImage({ ...request, background: "transparent", references: [Buffer.from(png, "base64")] }, journal);
+  await generateVisualImage({ ...request, operation: "edit", background: "transparent", references: [Buffer.from(png, "base64")] }, journal);
+  expect(bodies.map(body => body.get("model"))).toEqual(["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"]);
+  expect(bodies.map(body => body.get("quality"))).toEqual(["medium", "medium"]);
+  expect(bodies.map(body => body.get("background"))).toEqual(["transparent", "transparent"]);
+  expect(bodies.map(body => body.get("output_format"))).toEqual(["png", "png"]);
+});
+
+test("native alpha survives normalization without opaque padding", async () => {
+  const transparent = await sharp({create:{width:16,height:16,channels:4,background:{r:0,g:0,b:0,alpha:0}}}).png().toBuffer();
+  png=(await sharp(transparent).composite([{input:await sharp({create:{width:8,height:8,channels:4,background:"#fff"}}).png().toBuffer(),top:4,left:4}]).png().toBuffer()).toString("base64");
+  globalThis.fetch = Object.assign(async () => success(), { preconnect: originalFetch.preconnect });
+  const result=await generateVisualImage({...request,background:"transparent",width:1024,height:1536},journal);
+  expect((await sharp(result.image).stats()).isOpaque).toBe(false);
+});
 
 test("journals a successful primary render without calling fallback", async () => {
   globalThis.fetch = Object.assign(async () => success(), { preconnect: originalFetch.preconnect });
@@ -67,6 +87,20 @@ test("durable reservation failure prevents any network request", async () => {
   globalThis.fetch = Object.assign(async () => { calls++; return success(); }, { preconnect: originalFetch.preconnect });
   await expect(generateVisualImage(request, { ...journal, begin: async () => { throw new Error("Already dispatched"); } })).rejects.toThrow("Already dispatched");
   expect(calls).toBe(0);
+});
+
+test.each(["opaque", "transparent"] as const)("retains a completed %s response and corrupt source when image decoding fails", async background => {
+  const source = Buffer.from("not an image");
+  const retained: Uint8Array[] = [];
+  png = source.toString("base64");
+  journal.finish = async (receipt, image) => { receipts.push(receipt); if (image) retained.push(image); };
+  globalThis.fetch = Object.assign(async () => success(), { preconnect: originalFetch.preconnect });
+  await expect(generateVisualImage({ ...request, background }, journal)).rejects.toThrow();
+  expect(begins).toEqual(["openai"]);
+  expect(receipts).toHaveLength(1);
+  expect(receipts[0]).toMatchObject({ status: 200, chargeUncertain: false, usage: { output_tokens: 10 } });
+  expect(receipts[0]!.failure).toBeDefined();
+  expect(Buffer.from(retained[0]!)).toEqual(source);
 });
 
 

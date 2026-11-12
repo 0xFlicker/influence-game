@@ -58,7 +58,7 @@ describe("protected moderation adapters", () => {
     for (const [index, status] of (["running", "completed", "incomplete", "incomplete"] as const).entries()) {
       const created = await createOwnedAgentProfile(db, { userId: owner }, { name: `Screening ${index}`, personality: "Original" });
       await db.update(schema.agentScreenings).set({ status, recommendation: status === "completed" ? "review" : null,
-        failureCode: status === "incomplete" ? "provider_timeout" : null }).where(eq(schema.agentScreenings.contentRevisionId, created.profile.contentRevisionId!));
+        failureCode: status === "incomplete" ? "provider_timeout" : null }).where(eq(schema.agentScreenings.contentRevisionId, created.profile.latestContentRevisionId!));
       if (status === "completed") await db.update(schema.agentModerationReviews).set({ status: "resolved" }).where(eq(schema.agentModerationReviews.id, created.receipt.moderationRecordId!));
     }
     const [original] = await db.select().from(schema.agentScreenings);
@@ -83,15 +83,15 @@ describe("protected moderation adapters", () => {
     await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet("0xmoderator")));
     expect((await request()).status).toBe(403);
   });
-  test("shadow findings use the same private HTTP/MCP boundaries and remain separate from human flags", async () => {
+  test("screening findings use the same private HTTP/MCP boundaries and remain separate from human flags", async () => {
     const result = { recommendation: "review" as const, summary: "Private assessment", findings: [] };
     await db.update(schema.agentScreenings).set({ status: "completed", recommendation: "review", result: await storeJson(result) });
     const app = createModerationRoutes(db);
     const response = await app.request(`/api/moderation/reviews/${reviewId}`, { headers: { Authorization: `Bearer ${token}` } });
     const body = await response.json() as Awaited<ReturnType<typeof readModerationReview>>;
     expect(body.screening!.result!.summary).toBe("Private assessment");
-    expect(body.screening!.mode).toBe("shadow"); expect(body.isLatestSubmission).toBe(true);
-    expect(body.review.flagged).toBe(false); expect(body.review.held).toBe(false);
+    expect(body.screening!.mode).toBe("enforced"); expect(body.isLatestSubmission).toBe(true);
+    expect(body.review.flagged).toBe(false); expect(body.review.held).toBe(true);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     const queue = await app.request("/api/moderation/queue?filter=ai_review", { headers: { Authorization: `Bearer ${token}` } });
     expect((await queue.json() as Awaited<ReturnType<typeof listModerationQueue>>).items.map(item => item.id)).toEqual([reviewId]);

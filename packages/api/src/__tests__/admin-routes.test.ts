@@ -1854,11 +1854,13 @@ describe("admin route RBAC", () => {
     expect(delegatedAgentsResponse.status).toBe(200);
     const delegatedAgents = (await delegatedAgentsResponse.json()) as Array<{
       userId: string;
+      publicProfileAvailable: boolean;
       modelPreference: unknown;
       ownerDisplayName: string | null;
       ownerEmail: string | null;
     }>;
     expect(delegatedAgents.find(agent => agent.userId === delegatedUserId)?.modelPreference).toEqual({ catalogId: "openai:gpt-6.1-sol" });
+    expect(delegatedAgents.find(agent => agent.userId === delegatedUserId)?.publicProfileAvailable).toBe(true);
     expect(
       delegatedAgents.find((agent) => agent.userId === targetUserId)
         ?.ownerEmail,
@@ -1896,9 +1898,11 @@ describe("admin route RBAC", () => {
     expect(delegatedUsersResponse.status).toBe(200);
     const delegatedUsers = (await delegatedUsersResponse.json()) as Array<{
       id: string;
+      publicProfileId: string | null;
       displayName: string | null;
       email: string | null;
     }>;
+    expect(delegatedUsers.find((user) => user.id === targetUserId)?.publicProfileId).toMatch(/^[0-9a-f-]{36}$/);
     expect(
       delegatedUsers.find((user) => user.id === targetUserId)?.email,
     ).toBeNull();

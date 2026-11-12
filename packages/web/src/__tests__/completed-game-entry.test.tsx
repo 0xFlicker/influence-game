@@ -175,8 +175,8 @@ describe("CompletedGameEntry", () => {
     try {
       const metadata = await generateMetadata({params:Promise.resolve({slug:"wolf-game"})});
       expect(metadata.title).toBe("Lanterns and Lies — Werewolf · The House");
-      expect(metadata.description).toBe("Six strangers gather.");
-      expect(metadata.openGraph?.images).toEqual(["https://thehouse.game/cover.webp"]);
+      expect(metadata.description).toBe("Meet the cast of a Werewolf game at The House.");
+      expect(metadata.openGraph?.images).toEqual([{url:"https://thehouse.game/games/wolf-game/card-image",width:1200,height:630,alt:"Lanterns and Lies — Werewolf at The House"}]);
       expect(JSON.stringify(metadata.twitter)).toContain('"card":"player"');
       expect(calls).toHaveLength(1);expect(calls[0]).toEndWith("/api/game-entries/wolf-game/card");
       globalThis.fetch = (async () => new Response("Unavailable",{status:404})) as unknown as typeof fetch;

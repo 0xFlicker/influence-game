@@ -28,9 +28,10 @@ describe("getMcpResourceUrl", () => {
 });
 
 describe("buildMcpSetupClients", () => {
-  it("builds a secure Muse prompt using the current environment and a guided ChatGPT flow", () => {
+  it("builds a secure Muse Assistant prompt using the current environment and a guided ChatGPT flow", () => {
     const clients = buildMcpSetupClients("https://thehouse.game/mcp");
-    const meta = clients.find((client) => client.id === "meta");
+    const meta = clients.find((client) => client.id === "muse-assistant");
+    expect(meta?.name).toBe("Muse Assistant");
     expect(meta?.prompt).toContain("Server: https://thehouse.game/mcp");
     expect(meta?.prompt).toContain("https://thehouse.game/api/oauth/mcp/register");
     expect(meta?.prompt).toContain("https://thehouse.game/.well-known/oauth-protected-resource/mcp");
@@ -50,31 +51,40 @@ describe("buildMcpSetupClients", () => {
 
     expect(clients.map((client) => client.id)).toEqual([
       "chatgpt",
-      "meta",
+      "muse-assistant",
+      "muse-code",
       "codex",
       "claude-code",
       "grok-cli",
       "grok-app",
     ]);
-    expect(clients[2]?.commands).toEqual([
+    expect(clients[3]?.commands).toEqual([
       "codex mcp add the-house-influence --url https://api.influence.example/mcp",
     ]);
     expect(clients[0]).not.toHaveProperty("refreshCommands");
-    expect(clients[3]?.commands).toEqual([
+    expect(clients[4]?.commands).toEqual([
       "claude mcp add --transport http the-house-influence https://api.influence.example/mcp",
     ]);
-    expect(clients[4]?.commands).toEqual([
+    expect(clients[5]?.commands).toEqual([
       "grok mcp add --transport http the-house-influence https://api.influence.example/mcp",
     ]);
-    expect(clients[5]?.commands).toEqual([]);
-    expect(clients[5]?.steps).toEqual([
+    expect(clients[6]?.commands).toEqual([]);
+    expect(clients[6]?.steps).toEqual([
       "Open https://grok.com/connectors.",
       "Click New Connector, then select Custom.",
       "Enter the MCP server URL (https://api.influence.example/mcp), then press Add Connector.",
     ]);
-    expect(clients[5]?.authHint).toBe(
+    expect(clients[6]?.authHint).toBe(
       "Grok App prompts for OAuth after you press Add Connector.",
     );
+    const museCode = clients.find((client) => client.id === "muse-code");
+    expect(museCode?.name).toBe("Muse");
+    expect(museCode?.prompt).toContain("~/.config/muse/settings.json");
+    expect(museCode?.prompt).toContain('"the-house": { "transport": "streamable_http", "url": "https://api.influence.example/mcp" }');
+    expect(museCode?.prompt).toContain("muse mcp login the-house --scope agents:read --scope agents:write --scope games:read");
+    expect(museCode?.prompt).toContain("Restart Muse");
+    expect(museCode?.prompt).not.toContain("callback-port");
+    expect(museCode?.prompt).not.toContain("producer");
   });
 
   it("keeps generated snippets on the player-facing MCP boundary", () => {

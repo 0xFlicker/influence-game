@@ -16,7 +16,8 @@ import {
   derivePublicHandle,
   identityDismissalKey,
   identityPromptDecision,
-  identitySaveHandoffPublicId,
+  currentIdentitySavePublicId,
+  containedFocusTargetIndex,
   markIdentitySaveFailed,
   markIdentitySaving,
   normalizeAuthenticatedPublicIdentity,
@@ -131,51 +132,44 @@ describe("public identity onboarding model", () => {
       signedIn: true,
       needsInvite: true,
       identityState: "required",
-      identityResolved: true,
       dismissed: false,
     })).toBe("invite");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: "required",
-      identityResolved: true,
       dismissed: true,
     })).toBe("identity-required");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: "deferrable",
-      identityResolved: true,
       dismissed: false,
     })).toBe("identity-deferrable");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: "deferrable",
-      identityResolved: true,
       dismissed: true,
-    })).toBe("downstream");
+    })).toBe("none");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: null,
-      identityResolved: false,
       dismissed: false,
     })).toBe("none");
     expect(identityPromptDecision({
       signedIn: false,
       needsInvite: false,
       identityState: null,
-      identityResolved: false,
       dismissed: false,
     })).toBe("none");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: null,
-      identityResolved: true,
       dismissed: false,
-    })).toBe("downstream");
+    })).toBe("none");
   });
 
   it("keeps profile checks completely silent while unresolved", () => {
@@ -230,19 +224,19 @@ describe("public identity onboarding model", () => {
       .toBe("influence:public-identity:dismissed:8d91d5d0-bb3f-4559-a51a-64e1d2236f21");
   });
 
-  it("arms a same-session handoff only for the active saved account", () => {
+  it("accepts an identity save only for the active signed-in account", () => {
     const publicId = "8d91d5d0-bb3f-4559-a51a-64e1d2236f21";
-    expect(identitySaveHandoffPublicId({
+    expect(currentIdentitySavePublicId({
       signedIn: true,
       currentPublicId: publicId,
       savedPublicId: publicId,
     })).toBe(publicId);
-    expect(identitySaveHandoffPublicId({
+    expect(currentIdentitySavePublicId({
       signedIn: false,
       currentPublicId: publicId,
       savedPublicId: publicId,
     })).toBeNull();
-    expect(identitySaveHandoffPublicId({
+    expect(currentIdentitySavePublicId({
       signedIn: true,
       currentPublicId: "1bc88da1-8e1d-4f22-a749-8b80dbba54b4",
       savedPublicId: publicId,
@@ -316,4 +310,13 @@ describe("public identity onboarding model", () => {
     expect(rendered).toContain("<form");
     expect(rendered).toContain('type="submit"');
   });
+});
+
+
+it("identity onboarding contains keyboard focus", () => {
+  expect(containedFocusTargetIndex(3, -1, false)).toBe(0);
+  expect(containedFocusTargetIndex(3, -1, true)).toBe(2);
+  expect(containedFocusTargetIndex(3, 0, true)).toBe(2);
+  expect(containedFocusTargetIndex(3, 2, false)).toBe(0);
+  expect(containedFocusTargetIndex(3, 1, false)).toBeNull();
 });

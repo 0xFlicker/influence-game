@@ -74,7 +74,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
     top:geometry.image.top + geometry.image.height * face.y, width:geometry.image.width * face.width, height:geometry.image.height * face.height},
     thought?.focus ?? 0, !fullBody, reducedMotion);
   const speechBox = geometry.bubble;
-  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", available < 300, beat.roleLabel ? 48 : 28);
+  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", available < 300 || size.width < 480 && available < 340, beat.roleLabel ? 48 : 28);
   const fittedSpeechWidth = speechFit.typography?.width ?? speechBox.width;
   const bubble = {...speechBox, width:fittedSpeechWidth, height:speechFit.typography?.height ?? speechBox.height,
     left:speechBox.left + (geometry.beside ? 0 : (speechBox.width - fittedSpeechWidth) / 2),
@@ -96,7 +96,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
       })}
       className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? portraitOpacity }} />
     </div>
-    {!thought && !hideSpeech && motion.speechOpacity > 0 && <SpeechBubble speaker={player.name} caption={beat.caption ?? beat.purpose} roleLabel={beat.roleLabel}
+    {!thought && !hideSpeech && motion.speechOpacity > 0 && <SpeechBubble speaker={player.name} caption={beat.caption ?? beat.purpose} roleLabel={beat.roleLabel} itemLabels={player.items}
       text={speech.text} box={bubble} opacity={motion.speechOpacity} typography={speechFit.typography} padding={speechFit.padding} staticSpeech={staticSpeech}
       elapsedMs={speechPresentation === "scene" ? readingElapsedMs - SCENE_SPEECH_START_MS : soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs}
       tail={{side:geometry.beside ? "left" : geometry.above ? "bottom" : "top",style:geometry.beside ? {top:Math.min(bubble.height - 16,fullBody ? geometry.tailTop : bubble.height / 2) - 8} : {left:tailLeft - 8}}}/>}

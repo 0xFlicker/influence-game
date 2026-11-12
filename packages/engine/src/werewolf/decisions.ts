@@ -6,7 +6,7 @@ export interface WerewolfDecisionEntry {
   cursor: number;
   day: number;
   actorId: string;
-  action: "vote" | "attack" | "protect" | "investigate";
+  action: "vote" | "attack" | "protect" | "investigate" | "snipe";
   targetId: string | null;
   unavailable: boolean;
   context: string;
@@ -62,7 +62,7 @@ export function projectWerewolfDecisions(
     }
     if (entry.kind === "night" && before) {
       for (const action of before.actions) {
-        if (action.actorId !== actorId || (action.decision.kind !== "target" && action.decision.kind !== "solo_target")) continue;
+        if (action.actorId !== actorId || (action.decision.kind !== "target" && action.decision.kind !== "solo_target" && action.decision.kind !== "item_use")) continue;
         const targetId = action.decision.targetId;
         if (action.action === "protect") {
           const saved = targetId !== null && targetId === entry.attackTargetId && targetId === entry.protectedId && entry.killedId === null;
@@ -78,6 +78,12 @@ export function projectWerewolfDecisions(
           cursor, day: entry.day, actorId, action: "investigate", targetId,
           unavailable: action.fallback !== null, context: `Night ${entry.day} · Seer`,
           result: entry.investigation ? entry.investigation.isWolf ? "Found a werewolf." : "Not a werewolf." : "No investigation result.",
+        });
+        if (action.action === "snipe" && action.decision.kind === "item_use") entries.push({
+          cursor, day: entry.day, actorId, action: "snipe", targetId: action.decision.targetId,
+          unavailable: action.fallback !== null, context: `Night ${entry.day} · Hunter snipe`,
+          result: action.decision.itemId === null ? "Held the snipe."
+            : entry.snipe?.killedId ? `Sniped ${name(entry.snipe.killedId)}.` : "Fired the snipe.",
         });
       }
     }

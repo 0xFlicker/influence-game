@@ -29,13 +29,7 @@ export function GamePreShow({ game, onGameUpdated }: {
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null);
   const refreshRef = useRef<(() => void) | null>(null);
   const openSeats = Math.max(0, game.playerCount - game.players.length);
-  const ownPlayers = account ? game.players.filter(player => player.currentAgent?.owner?.publicId === account.publicId) : [];
-  const inCast = ownPlayers.length > 0;
-  const canAddAnother = !game.seasonId && account?.roles.some(role => ["admin", "sysop", "producer"].includes(role));
-  const canJoin = openSeats > 0 && (!inCast || canAddAnother);
-  const createHref = canJoin
-    ? `/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`
-    : "/agents/create";
+  const { inCast, canJoin, createHref } = gamePreShowJoinState(game, account);
 
   // Waiting games have no live observer socket. Read the canonical roster and
   // status until the game starts, then let the viewer take over.
@@ -96,7 +90,6 @@ export function GamePreShow({ game, onGameUpdated }: {
       <nav className="pre-show-nav" aria-label="Game navigation">
         <Link href="/games">← All games</Link>
         <span className="pre-show-code">{gameDisplayName(game)}</span>
-        <Link className="pre-show-create" href={createHref}><span aria-hidden="true">＋</span> Create agent</Link>
       </nav>
 
       <CastingHero gameKind="influence" eyebrow={game.season?.name ?? "The House presents"}
@@ -112,7 +105,7 @@ export function GamePreShow({ game, onGameUpdated }: {
       <CastingRoster eyebrow="The competitors" description={game.players.length ? "Select a portrait to take a closer look." : "Every rivalry starts with an introduction."}
         empty={!game.players.length ? <div className="pre-show-empty"><span className="pre-show-empty-number" aria-hidden="true">01</span><div><h3>The first seat is yours.</h3><p>No agents have entered yet. Create a character with something to prove, or bring one you already know.</p><button type="button" disabled={!ready} onClick={join}>Bring your agent ↗</button></div></div> : undefined}
         invitation={canJoin && <CastInvitation disabled={!ready} onChoose={join} joined={inCast} />}>
-        {game.players.map((player,index) => { const model=getGamePlayerAvatarPreviewModel(player); return <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(model.avatarUrl,player.persona,player.name,player.personaKey)} eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)} detail={castRecord(player)} onInspect={() => setSelectedPlayer(player)} />; })}
+        {game.players.map((player,index) => { const model=getGamePlayerAvatarPreviewModel(player); return <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(model.avatarUrl,player.persona,player.name,player.personaKey)} eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)} detail={castRecord(player)} profileHref={player.currentAgent?.profileHref} onInspect={() => setSelectedPlayer(player)} />; })}
       </CastingRoster>
 
       <footer className="pre-show-footer"><p>{game.visibility === "unlisted" ? "Unlisted game" : "Public game"} <span aria-hidden="true">/</span> {game.playerCount} agents <span aria-hidden="true">/</span> {game.modelLabel}</p><p>The cast updates here. The show begins here.</p></footer>
@@ -121,6 +114,13 @@ export function GamePreShow({ game, onGameUpdated }: {
       {selectedPlayer && <CastPortrait player={selectedPlayer} onClose={closePortrait} />}
     </section>
   );
+}
+
+export function gamePreShowJoinState(game: GameDetail, account: ReturnType<typeof useAuth>["account"]) {
+  const inCast = !!account && game.players.some(player => player.currentAgent?.owner?.publicId === account.publicId);
+  const canAddAnother = !game.seasonId && account?.roles.some(role => ["admin", "sysop", "producer"].includes(role));
+  const canJoin = game.players.length < game.playerCount && (!inCast || canAddAnother);
+  return { inCast, canJoin, createHref: canJoin ? `/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}` : "/agents/create" };
 }
 
 function PreGameControls({ game, onGameUpdated }: { game: GameDetail; onGameUpdated: (game: GameDetail) => void }) {

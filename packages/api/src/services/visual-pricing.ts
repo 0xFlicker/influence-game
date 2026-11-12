@@ -23,7 +23,7 @@ export function visualReceiptCostMicrousd(receipt: VisualImageReceipt): number |
     const rates = receipt.model === "gpt-6-sol" ? { input: 2, write: 2.5, cached: 0.2, output: 10 } : receipt.model === "gpt-5.6-sol" ? { input: 4, write: 5, cached: 0.4, output: 20 } : { input: 0.20, write: 0.25, cached: 0.02, output: 1.20 };
     return Math.round((input - cached - writes) * rates.input + writes * rates.write + cached * rates.cached + output * rates.output);
   }
-  if (receipt.model !== "gpt-image-2") return null;
+  if (!["gpt-image-2", "gpt-image-2.6-flare", "gpt-image-2.6-sunburst"].includes(receipt.model)) return null;
   const text = count(details?.text_tokens), image = count(details?.image_tokens);
   if (text === null || image === null || text + image !== input) return null;
   const cacheDetails = record(details?.cached_tokens_details);

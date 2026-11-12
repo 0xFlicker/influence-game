@@ -144,7 +144,7 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
       await text(page, "queued for rendering");
       const interrupted = await claimVisualMediaJob(db, 'browser-interrupted-renderer');
       if (!interrupted) throw Error('Missing first job');
-      const operation = await reserveVisualRender(db, game!.id, `media:${interrupted.id}:composition`, { prompt: "Interrupted fixture", width: 640, height: 360, references: [] }, interrupted.sceneId ?? undefined, interrupted.id);
+      const operation = await reserveVisualRender(db, game!.id, `media:${interrupted.id}:composition`, { operation: "create" as const, background: "opaque" as const, prompt: "Interrupted fixture", width: 640, height: 360, references: [] }, interrupted.sceneId ?? undefined, interrupted.id);
       await visualImageJournal(db, operation).begin({ provider: "openai", model: "gpt-image-2", requestHash: "fixture-no-provider" });
       await db.update(schema.visualRepairJobs).set({status: "needs_reconciliation", leaseUntil: null, finishedAt: new Date().toISOString()}).where(eq(schema.visualRepairJobs.id, interrupted.id));
       await click(page, "Refresh selected scene", '[aria-label="Scene inspector"]');

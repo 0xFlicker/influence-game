@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
+/** Werewolf v13 API evaluations inspect shared night speech and next-day voting plans; retain durable game IDs and private evidence, use direct House calls and no `as any`. */
+/** Strategy evaluations use existing private role coaching and a concise glossary; retain character voice and distinguish claims from verified knowledge. */
 /** Visual Mode supports text-only routes using canonical room text and performance cues. */
+/** Werewolf House-summary evaluations run through simulate:werewolf:api; retain durable narration journal evidence, never infer game facts from its prose. Authoring receives canonical facts without fallback copy and requests game-show announcer delivery. */
 /** New room imagery populates distinct crops of one wide room, then harmonizes complete view sets into a verified continuous image; visible IDs never change the canonical audience. */
 
 /** API provider evidence retains immutable image references, never repeated base64 scene bytes.
@@ -27,6 +30,8 @@ import { HOUSE_CAST } from "./house-personas";
 
  * New simulations freeze root schema v3 (strict viewer coverage): Safety Bounce classifies before Mingle;
  * decision v3 preserves public chain/tiebreak speech and private House ballot explanations.
+ * Werewolf Hunter evaluation uses the localhost API: v12 item context stays private,
+ * and pre-v12 planned observation hashes retain their original serialized shape.
  * Keep direct House calls and typed evidence; no `as any` shortcuts.
 
  * Native xAI selects xai:grok-4.3/4.5/4.6 or xai:grok-4.20-multi-agent-0309

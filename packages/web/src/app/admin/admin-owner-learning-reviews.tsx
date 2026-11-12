@@ -305,7 +305,7 @@ function ReceiptPanel({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
       </div>
       {detail.application ? (
         <dl className="mt-5 space-y-2 text-xs">
-          <InlineFact label="Applied" value={formatDateTime(detail.application.appliedAt)} />
+          <InlineFact label="Applied" value={detail.application.appliedAt ? formatDateTime(detail.application.appliedAt) : "Reviewing"} />
         </dl>
       ) : null}
     </div>

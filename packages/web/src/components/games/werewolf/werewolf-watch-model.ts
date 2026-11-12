@@ -15,7 +15,7 @@ export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment:
   reprise?: boolean }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   position: cue => cue.moment.cursor,
-  scrubAtMs: cue => cue.transformation ? 0 : cue.moment.entry.kind === "night" && !cue.nightAction && cue.moment.entry.killedId ? NIGHT_CLAW_MS : cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.readAtMs ?? 0,
+  scrubAtMs: cue => cue.transformation ? 0 : cue.moment.entry.kind === "night" && !cue.nightAction && (cue.moment.entry.killedId || cue.moment.entry.snipeKilledId) ? NIGHT_CLAW_MS : cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.readAtMs ?? 0,
   isCatchUp: () => false,
   acceptAtWatermark: () => false,
   reconcile: cues => cues,
@@ -96,12 +96,21 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment, houseNarration =
     const durationMs = WOLF_TRANSFORM_MS + (wolfIds.length - 1) * WOLF_STAGGER_MS;
     return {...cue, baseDurationMs: cue.baseDurationMs + durationMs, transformation: {wolfIds, durationMs}};
   };
-  if (moment.night) return [...werewolfNightSteps(moment.night.actions).map(({action: nightAction, decision}): WerewolfWatchCue => ({ ...result,
-    key: `${key}:${nightAction.kind}${decision ? ":decision" : ""}`,
-    baseDurationMs: decision && nightAction.kind !== "hunt" && nightAction.speech ? soloPresentationDurationMs(nightAction.speech.text) : houseNarration ? werewolfHouseDuration(werewolfNightHouseSpeech(nightAction, moment.snapshot.players)) : 5000,
-    nightAction, nightDecision: decision,
-    moment: { ...moment, snapshot: moment.night!.before },
-  })).map(cue => cue.nightAction?.kind === "hunt" ? transform(cue) : cue), result];
+  if (moment.night) {
+    const entry = {...moment.entry};
+    delete entry.houseSpeech;
+    const before = moment.night.before;
+    const actions = werewolfNightSteps(moment.night.actions).map(({action,decision}): WerewolfWatchCue => {
+      // Independently selected cuts retain board context, never neighboring copy.
+      const nightAction = {...action, ...(decision ? {houseSpeech:undefined} : {speech:undefined})};
+      return {...result,key:`${key}:${action.kind}${decision ? ":decision" : ""}`,
+        baseDurationMs: decision && action.kind !== "hunt" && action.speech ? soloPresentationDurationMs(action.speech.text) : houseNarration ? werewolfHouseDuration(werewolfNightHouseSpeech(action,moment.snapshot.players)) : 5000,
+        nightAction,nightDecision:decision,
+        moment:{...moment,entry,snapshot:before,night:{before,actions:moment.night!.actions.map(other=>other===action ? nightAction : {...other,houseSpeech:undefined,speech:undefined})}}};
+    }).map(cue=>cue.nightAction?.kind === "hunt" ? transform(cue) : cue);
+    const dawn = {...result,moment:{...moment,night:{before,actions:moment.night.actions.map(action=>({...action,houseSpeech:undefined,speech:undefined}))}}};
+    return [...actions,dawn];
+  }
   if (moment.entry.kind === "ballot") {
     const ballots = moment.dayBallots;
     if (!ballots?.length || ballots.at(-1)?.voterId !== moment.entry.actorId) throw new Error("Public ballot is missing its committed vote prefix");
@@ -175,7 +184,7 @@ export function werewolfCueMoment(cue: WerewolfWatchCue) {
   const actor = cue.moment.snapshot.players.find(player => player.id === action.actorId);
   if (!actor) throw new Error("Night decision actor is absent");
   return {...moment, house:false, actor, actorId: actor.id, speaker: actor.name, text: action.speech.text, spoken: true,
-    title: `Night ${cue.moment.snapshot.day} · ${action.kind === "protect" ? "Doctor" : "Seer"}`, details: []};
+    title: `Night ${cue.moment.snapshot.day} · ${action.kind === "protect" ? "Doctor" : action.kind === "snipe" ? "Hunter" : "Seer"}`, details: []};
 }
 
 /** Backdrop-only beats give the House the stage; character/action shots keep captions. */

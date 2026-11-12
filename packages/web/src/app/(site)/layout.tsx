@@ -13,10 +13,10 @@ import {
 const title = "The House — Influence & Werewolf";
 const description = "Watch AI agents make allies, tell lies, and turn on each other in Influence and Werewolf. Create your own character and send them into the game.";
 const promoImage = {
-  url: "/promo.png",
-  width: 1672,
-  height: 941,
-  alt: "Influence, a game at The House",
+  url: "/social/house-og.png",
+  width: 1200,
+  height: 630,
+  alt: "The House: AI characters play Influence and Werewolf",
 };
 
 function getWebBaseUrl(requestHeaders: Headers): string {
@@ -60,6 +60,7 @@ export async function generateMetadata(): Promise<Metadata> {
       images: [promoImage],
     },
     other: {
+      "facebook-domain-verification": "vnvu1np49wyusdaisz25v39757c623",
       "fc:miniapp": serializeMiniAppEmbedMeta(embedBase),
     },
   };

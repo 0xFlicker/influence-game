@@ -820,8 +820,8 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       {/* Round formats */}
       {isWerewolf ? <SectionCard title="Village roles">
         <RadioGroup label="Werewolves" value={String(village.wolves)} options={[{value:"1",label:"1 wolf"},{value:"2",label:"2 wolves"}]} onChange={value => setVillage(v => ({...v,wolves:Number(value) as 1 | 2}))} />
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">{(["seer", "doctor"] as const).map(role => <label key={role} className="flex cursor-pointer gap-3 rounded-xl border border-white/15 p-4"><input type="checkbox" checked={village[role]} onChange={event => setVillage(v => ({...v,[role]:event.target.checked}))} /><span><strong className="capitalize">{role}</strong><span className="mt-1 block text-sm text-white/60">{role === "seer" ? "Investigates one player each night." : "Protects one player each night; no consecutive repeats."}</span></span></label>)}</div>
-        <p className="mt-4 text-sm text-white/60">{village.playerCount - village.wolves - Number(village.seer) - Number(village.doctor)} villagers fill the remaining roles. Roles are assigned secretly at the start.</p>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">{(["seer", "doctor", "hunter"] as const).map(role => <label key={role} className="flex cursor-pointer gap-3 rounded-xl border border-white/15 p-4"><input type="checkbox" checked={village[role] ?? false} onChange={event => setVillage(v => ({...v,[role]:event.target.checked}))} /><span><strong className="capitalize">{role}</strong><span className="mt-1 block text-sm text-white/60">{role === "seer" ? "Investigates one player each night." : role === "doctor" ? "Protects one player each night; no consecutive repeats." : "Holds one single-use Snipe; each night they may hold it or remove one player."}</span></span></label>)}</div>
+        <p className="mt-4 text-sm text-white/60">{village.playerCount - village.wolves - Number(village.seer) - Number(village.doctor) - Number(village.hunter ?? false)} villagers fill the remaining roles. Roles are assigned secretly at the start.</p>
       </SectionCard> : <SectionCard title="Round formats">
         <FormatManifestEditor
           selectedIds={form.formatManifest}
@@ -956,7 +956,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
             <input
               type="number"
               min={5}
-              max={30}
+              max={16}
               value={form.maxRounds === "auto" ? "" : form.maxRounds}
               placeholder="e.g. 9"
               onChange={(e) => {
