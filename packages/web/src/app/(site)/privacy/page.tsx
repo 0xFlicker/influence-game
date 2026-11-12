@@ -75,12 +75,13 @@ export default function PrivacyPage() {
                 "A unique public handle",
                 "Display name",
                 "Email address (if applicable)",
-                "Wallet address (if used to connect your account)",
+                "Wallet addresses associated with existing accounts or optional wallet sign-in, including previously created embedded wallets",
                 "Authentication information provided by your sign-in provider",
                 "Profile image (if you choose to upload one)",
               ]}
             />
             <P>
+              Email signup does not automatically create a wallet.
               We do not collect passwords when authentication is handled through
               third-party providers.
             </P>
@@ -454,8 +455,8 @@ export default function PrivacyPage() {
             advertisements. These events may include an advertising click
             identifier and a hashed public account identifier. Web conversions sent
             to Meta also include your browser’s user-agent string. They do not
-            include your email, phone number, IP address, wallet address,
-            prompts, or private strategy.
+            include phone numbers or IP addresses, and follow the same
+            exclusions for email, wallet, and private content described above.
           </P>
           <P>
             Your effective tracking preference is saved with your account and

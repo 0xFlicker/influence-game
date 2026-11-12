@@ -24,6 +24,8 @@ import {
   type AuthUser,
 } from "../middleware/auth.js";
 import { createAuthRoutes } from "../routes/auth.js";
+import { createProfileRoutes } from "../routes/profile.js";
+import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { setupTestDB } from "./test-utils.js";
 import {
@@ -561,6 +563,54 @@ describe("authenticated public identity session projection", () => {
     expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(1);
   });
 
+  test.each(["email", "embedded", "external"] as const)(
+    "existing %s login preserves the stored wallet and account",
+    async (kind) => {
+      const id = "existing-wallet-account";
+      const subject = "did:privy:retained-wallet";
+      const address = "0x1111111111111111111111111111111111111111";
+      await db.insert(schema.users).values({ id, walletAddress: address, email: "retained@example.test" });
+      await db.insert(schema.authenticationCredentials).values({
+        userId: id, provider: "privy", providerSubject: subject,
+      });
+      if (kind !== "external") {
+        await db.insert(schema.verifiedEmailClaims).values({
+          normalizedEmail: "retained@example.test", userId: id, state: "active",
+        });
+      }
+      const before = await db.select().from(schema.users);
+      const verifiedAt = new Date();
+      const email = {
+        type: "email" as const, address: "retained@example.test",
+        verifiedAt, firstVerifiedAt: verifiedAt, latestVerifiedAt: verifiedAt,
+      };
+      const wallet = {
+        type: "wallet" as const, address, chainType: "ethereum" as const,
+        walletClientType: kind === "external" ? "metamask" : "privy",
+        verifiedAt, firstVerifiedAt: verifiedAt, latestVerifiedAt: verifiedAt,
+      };
+      const app = new Hono();
+      app.route("/", createAuthRoutes(db, {
+        verifyPrivyToken: async () => subject,
+        getPrivyUser: async () => ({
+          id: subject, createdAt: verifiedAt, isGuest: false, customMetadata: {},
+          linkedAccounts: kind === "external" ? [wallet] : kind === "embedded" ? [email, wallet] : [email],
+        }),
+        isInviteRequired: async () => false,
+      }));
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await app.request("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ token: "verified-token", intent: "sign_in" }),
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ user: { id, walletAddress: address } });
+      }
+      expect(await db.select().from(schema.users)).toEqual(before);
+      expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+    },
+  );
+
   test("login route passes the disabled compatibility bridge to account resolution", async () => {
     const subject = "did:privy:route-bridge-disabled";
     await db.insert(schema.users).values({
@@ -647,9 +697,11 @@ describe("authenticated public identity session projection", () => {
     expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
   });
 
-  test("unknown Privy login creates nothing without current consent and creates once with it", async () => {
+  test("wallet-free Privy email signup requires consent and supports re-login, profile and agent creation", async () => {
     let inviteChecks = 0;
     const app = new Hono();
+    app.route("/", createProfileRoutes(db));
+    app.route("/", createAgentProfileRoutes(db));
     app.route("/", createAuthRoutes(db, {
       verifyPrivyToken: async () => "did:privy:new-consented-user",
       getPrivyUser: async () => ({
@@ -696,7 +748,38 @@ describe("authenticated public identity session projection", () => {
       }),
     });
     expect(created.status).toBe(200);
-    const createdBody = await created.json() as { token: string };
+    const createdBody = await created.json() as {
+      token: string;
+      user: { id: string; walletAddress: string | null };
+    };
+    expect(createdBody.user.walletAddress).toBeNull();
+    const login = await app.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ token: "verified-token", intent: "sign_in" }),
+    });
+    expect(login.status).toBe(200);
+    const session = await login.json() as { token: string; user: { id: string } };
+    expect(session.user.id).toBe(createdBody.user.id);
+    const headers = { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" };
+    const me = await app.request("/api/auth/me", { headers });
+    expect(me.status).toBe(200);
+    expect(await me.json()).toMatchObject({ walletAddress: null, legal: { accepted: true } });
+
+    const profile = await app.request("/api/profile", {
+      method: "PATCH", headers,
+      body: JSON.stringify({ displayName: "Email Player", handle: "email-player" }),
+    });
+    expect(profile.status).toBe(200);
+    const agent = await app.request("/api/agent-profiles", {
+      method: "POST", headers,
+      body: JSON.stringify({
+        name: "Email Agent", personality: "Patient and observant.",
+        creationRequestId: crypto.randomUUID(),
+      }),
+    });
+    expect(agent.status).toBe(201);
+    expect((await db.select().from(schema.agentProfiles))[0]?.userId).toBe(createdBody.user.id);
+    expect((await db.select().from(schema.users))[0]?.walletAddress).toBeNull();
     expect((await verifySessionToken(createdBody.token))?.legalAcceptance).toEqual({
       termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
       privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
