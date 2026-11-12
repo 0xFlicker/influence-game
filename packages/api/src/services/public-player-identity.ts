@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPublicDisplayName } from "../lib/display-name.js";
@@ -70,6 +70,7 @@ export async function resolvePublicPlayer(
 
   const row = (await db.select({
     id: schema.users.id,
+    deletedAt: schema.users.deletedAt,
     publicId: schema.users.publicId,
     handle: schema.users.handle,
     walletAddress: schema.users.walletAddress,
@@ -85,7 +86,7 @@ export async function resolvePublicPlayer(
       : eq(schema.users.handle, parsed.value),
   ).limit(1))[0];
 
-  if (!row || isImportedSyntheticPlayer(row.walletAddress)) return null;
+  if (!row || row.deletedAt || isImportedSyntheticPlayer(row.walletAddress)) return null;
   return {
     internalUserId: row.id,
     identity: {
@@ -133,7 +134,7 @@ export async function getPublicPlayerIdentityMap(
       walletAddress: schema.users.walletAddress,
       email: schema.users.email,
       displayName: schema.users.displayName,
-    }).from(schema.users).where(inArray(schema.users.id, ids)));
+    }).from(schema.users).where(and(inArray(schema.users.id, ids), isNull(schema.users.deletedAt))));
   }
 
   const identities = new Map<string, PublicPlayerIdentityRef>();

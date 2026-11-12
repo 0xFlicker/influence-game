@@ -109,6 +109,8 @@ async function lockAccount(db: DbOrTx, userId: string): Promise<void> {
 }
 
 export async function accountAnalyticsAllowed(db: DbOrTx, userId: string): Promise<boolean> {
+  const [account] = await db.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, userId));
+  if (!account || account.deletedAt) return false;
   const [preference] = await db.select().from(schema.userAnalyticsPreferences)
     .where(eq(schema.userAnalyticsPreferences.userId, userId));
   return preference?.analytics === true;
@@ -119,6 +121,8 @@ export async function syncAnalyticsPreference(
   db: DbOrTx, userId: string, analytics: boolean, explicitChoice = false, expectedVersion?: string, analyticsExplicit = false,
 ): Promise<boolean> {
   await lockAccount(db, userId);
+  const [account] = await db.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, userId));
+  if (!account || account.deletedAt) return false;
   const [previous] = await db.select().from(schema.userAnalyticsPreferences)
     .where(eq(schema.userAnalyticsPreferences.userId, userId));
   const allowed = analytics && (previous?.analytics !== false || (explicitChoice && expectedVersion === previous.updatedAt));
@@ -233,7 +237,9 @@ export interface ConversionInput {
 export async function recordConversion(db: DbOrTx, input: ConversionInput): Promise<boolean> {
   return db.transaction(async tx => {
     await lockAccount(tx, input.userId);
-    const allowed = !input.suppressDelivery && await accountAnalyticsAllowed(tx, input.userId);
+    const [account] = await tx.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, input.userId));
+    if (!account || (account.deletedAt && input.eventName !== "game_placed")) return false;
+    const allowed = !account.deletedAt && !input.suppressDelivery && await accountAnalyticsAllowed(tx, input.userId);
     const [preference] = await tx.select().from(schema.userAnalyticsPreferences)
       .where(eq(schema.userAnalyticsPreferences.userId, input.userId));
     const inserted = await tx
@@ -242,11 +248,11 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
         id: input.id,
         eventName: input.eventName,
         userId: input.userId,
-        publicId: input.publicId,
+        publicId: account.deletedAt ? "" : input.publicId,
         agentProfileId: input.agentProfileId ?? null,
         seasonId: input.seasonId ?? null,
         channel: input.channel,
-        mcpClientId: input.mcpClientId ?? null,
+        mcpClientId: account.deletedAt ? null : input.mcpClientId ?? null,
         attribution: allowed ? await retainedAttribution(tx, input.userId) : null,
         clientUserAgent: allowed && input.channel === "web" ? preference?.webUserAgent ?? null : null,
         occurredAt: input.occurredAt,
@@ -333,7 +339,7 @@ export async function recordAuthenticationTracking(
 /** Recover missing signup totals without inventing historical tracking permission. */
 export async function reconcileSignupConversions(db: DrizzleDB, limit = 100): Promise<void> {
   const missing = await db.select({ id: schema.users.id, publicId: schema.users.publicId, createdAt: schema.users.createdAt })
-    .from(schema.users).where(sql`${schema.users.createdAt}::timestamptz < now() - interval '1 minute' AND NOT EXISTS (SELECT 1 FROM campaign_conversion_events c WHERE c.id = 'signup:' || ${schema.users.id})`)
+    .from(schema.users).where(sql`${schema.users.deletedAt} IS NULL AND ${schema.users.createdAt}::timestamptz < now() - interval '1 minute' AND NOT EXISTS (SELECT 1 FROM campaign_conversion_events c WHERE c.id = 'signup:' || ${schema.users.id})`)
     .orderBy(asc(schema.users.createdAt)).limit(limit);
   for (const user of missing) {
     await db.transaction(tx => recordConversion(tx, { id: `signup:${user.id}`, eventName: "signup_completed",

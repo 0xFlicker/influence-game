@@ -144,6 +144,7 @@ export async function createSessionToken(
 }
 
 export interface SessionPayload {
+  issuedAt: number;
   userId: string;
   roles: string[];
   permissions: string[];
@@ -179,6 +180,7 @@ export async function verifySessionToken(
       : null;
     return {
       userId,
+      issuedAt: typeof payload.iat === "number" ? payload.iat : 0,
       roles: (payload.roles as string[] | undefined) ?? [],
       permissions: (payload.perms as string[] | undefined) ?? [],
       legalAcceptance,
@@ -313,7 +315,7 @@ export function requireAuth(
       .from(schema.users)
       .where(eq(schema.users.id, session.userId)))[0];
 
-    if (!user) {
+    if (!user || user.deletedAt) {
       return c.json({ error: "User not found" }, 401);
     }
 
@@ -358,7 +360,7 @@ export function requireServiceAuth(db: DrizzleDB, permission = "schedule_free_ga
     const { schema } = await import("../db/index.js");
     const { eq } = await import("drizzle-orm");
     const [user] = await db.select().from(schema.users).where(eq(schema.users.id, session.userId));
-    if (!user) return c.json({ error: "User not found" }, 401);
+    if (!user || user.deletedAt) return c.json({ error: "User not found" }, 401);
     const [service] = await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, user.id));
     if (service) {
       if (!service.enabled || !session.permissions.includes(permission)) return c.json({ error: "Insufficient permissions" }, 403);
@@ -467,7 +469,7 @@ export function optionalAuth(db: DrizzleDB) {
           .where(eq(schema.users.id, session.userId)))[0] : null;
 
         const [service] = user ? await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, user.id)) : [];
-        if (user && !service && user.walletAddress?.toLowerCase() !== "0x0000000000000000000000000000000000000000") {
+        if (user && !user.deletedAt && !service && user.walletAddress?.toLowerCase() !== "0x0000000000000000000000000000000000000000") {
           c.set("user", projectAuthUser(user));
           const current = await getPermissionsForUser(db, user.id);
           c.set("userRoles", current.roles);

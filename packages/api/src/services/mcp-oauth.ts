@@ -271,10 +271,10 @@ export async function hasCurrentProducerRoleForUserId(
   userId: string,
 ): Promise<boolean | null> {
   const user = (await db
-    .select({ id: schema.users.id })
+    .select({ id: schema.users.id, deletedAt: schema.users.deletedAt })
     .from(schema.users)
     .where(eq(schema.users.id, userId)))[0];
-  if (!user) return null;
+  if (!user || user.deletedAt) return null;
   return hasCurrentProducerRole(db, user);
 }
 
@@ -624,7 +624,7 @@ export async function exchangeMcpOAuthCode(
     .select()
     .from(schema.users)
     .where(eq(schema.users.id, codeRow.userId)))[0];
-  if (!user) {
+  if (!user || user.deletedAt) {
     return invalidGrant("Authorization subject is no longer active", codeAudit);
   }
   if (mcpOAuthScopeSetHasProducer(codeScopes.scopes) && !(await hasCurrentProducerRole(db, user))) {
@@ -777,7 +777,7 @@ async function refreshMcpOAuthAccessToken(
     .select()
     .from(schema.users)
     .where(eq(schema.users.id, tokenRow.userId)))[0];
-  if (!user) {
+  if (!user || user.deletedAt) {
     return invalidGrant("Authorization subject is no longer active", audit);
   }
   if (!(await projectCurrentLegalAcceptance(db, user.id)).accepted) {
@@ -993,7 +993,7 @@ export async function introspectMcpAccessToken(
     .select()
     .from(schema.users)
     .where(eq(schema.users.id, tokenRow.userId)))[0];
-  if (!user) {
+  if (!user || user.deletedAt) {
     return { active: false };
   }
   if (mcpOAuthScopeSetHasProducer(tokenScopes.scopes) && !(await hasCurrentProducerRole(db, user))) {

@@ -205,7 +205,7 @@ export async function completeCompetitionGameInTransaction(
 
   const ownerIds = [...new Set(uniqueOwnedSeats.map((seat) => seat.userId!))];
   const owners = await tx.select({ id: schema.users.id, displayName: schema.users.displayName })
-    .from(schema.users).where(inArray(schema.users.id, ownerIds));
+    .from(schema.users).where(inArray(schema.users.id, ownerIds)).orderBy(schema.users.id).for("no key update");
   const ownerNameById = new Map(owners.map((owner) => [owner.id, owner.displayName]));
 
   for (const seat of uniqueOwnedSeats) {
