@@ -28,7 +28,7 @@ export interface WerewolfPlayer {
 export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean; hunter?: boolean }
 
 export interface WerewolfConfig {
-  rulesVersion: 7 | 8 | 9 | 10 | 11 | 12 | 13;
+  rulesVersion: 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
   preset: WerewolfPreset;
   setup?: WerewolfSetup;
   maxDays: number;

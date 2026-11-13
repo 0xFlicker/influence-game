@@ -85,7 +85,7 @@ test("v12 hunter setup retains one hunter with a single snipe; fresh non-Hunter 
   const hunter = byRole(state, "hunter");
   expect(state.items[hunter.id]).toEqual(["snipe"]);
   expect(Object.entries(state.items).filter(([, items]) => items.length > 0)).toHaveLength(1);
-  expect(werewolfConfig("two_wolves", 10, { playerCount: 8, wolves: 2, seer: true, doctor: true }).rulesVersion).toBe(13);
+  expect(werewolfConfig("two_wolves", 10, { playerCount: 8, wolves: 2, seer: true, doctor: true }).rulesVersion).toBe(14);
 });
 
 test("item context is public about existence, private about ownership, and seen after a public snipe death", () => {

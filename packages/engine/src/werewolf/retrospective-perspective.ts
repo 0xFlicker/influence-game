@@ -9,6 +9,7 @@ export interface WerewolfRetrospectivePerspective {
     role: WerewolfRole;
     faction: "village" | "wolves";
     packMembers: NamedPlayer[];
+    eliminatedAlignments?: Array<{ eventSequence: number; day: number; player: NamedPlayer; alignment: "village" | "wolves" }>;
     investigations: Array<{ eventSequence: number; day: number; target: NamedPlayer; isWolf: boolean }>;
   };
   ownRecordedActions: Array<{ eventSequence: number; day: number; action: WerewolfRequest["action"]; target: NamedPlayer | null; unavailable: boolean }>;
@@ -35,6 +36,7 @@ const schema = { type: "object", additionalProperties: false, required: ["knownD
   knownDuringPlay: { type: "object", additionalProperties: false, required: ["role", "faction", "packMembers", "investigations"], properties: {
     role: roleSchema, faction: { enum: ["village", "wolves"] },
     packMembers: { type: "array", items: named },
+    eliminatedAlignments: {type:"array",items:{type:"object",additionalProperties:false,required:["eventSequence","day","player","alignment"],properties:{eventSequence:sequence,day,player:named,alignment:{enum:["village","wolves"]}}}},
     investigations: { type: "array", items: { type: "object", additionalProperties: false, required: ["eventSequence", "day", "target", "isWolf"], properties: {
       eventSequence: sequence, day, target: named, isWolf: { type: "boolean" },
     } } },
@@ -66,6 +68,7 @@ export function assertWerewolfRetrospectivePerspective(value: unknown): asserts 
   if (known.faction !== (known.role === "werewolf" ? "wolves" : "village")
     || known.role !== "werewolf" && known.packMembers.length > 0
     || known.role !== "seer" && known.investigations.length > 0
+    || known.eliminatedAlignments?.some(result => perspective.eliminatedAtEventSequence !== null && result.eventSequence >= perspective.eliminatedAtEventSequence)
     || known.investigations.some(result => perspective.eliminatedAtEventSequence !== null && result.eventSequence >= perspective.eliminatedAtEventSequence)) {
     throw new RetrospectiveContractError("Werewolf retrospective knowledge does not match the speaker's role or lifetime");
   }
@@ -119,6 +122,9 @@ export function werewolfRetrospectivePerspective(events: readonly WerewolfEvent[
       if (result.eliminatedId === actorId) perspective.eliminatedAtEventSequence = event.sequence;
     }
   }
+  if (state.config.rulesVersion >= 14) perspective.knownDuringPlay.eliminatedAlignments = perspective.revealedAfterGame.eliminations
+    .filter(death => perspective.eliminatedAtEventSequence === null || death.eventSequence < perspective.eliminatedAtEventSequence)
+    .map(death => ({eventSequence:death.eventSequence,day:death.day,player:player(death.player.id),alignment:death.player.role === "werewolf" ? "wolves" : "village"}));
   assertWerewolfRetrospectivePerspective(perspective);
   return perspective;
 }

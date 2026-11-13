@@ -3,9 +3,9 @@ import { applyWerewolfEvent, replayWerewolf, startWerewolf, werewolfConfig } fro
 import { runWerewolf, type WerewolfAgent } from "../werewolf/runner";
 
 /** Accepted v13 eight-player evidence: agreement, two strategy speeches, two passes. */
-export async function completedPackStrategyFixture(gameId = "pack-strategy") {
+export async function completedPackStrategyFixture(gameId = "pack-strategy", rulesVersion: 13 | 14 = 13) {
   const players = Array.from({length:8}, (_, index) => ({id:`${gameId}-p${index}`,name:`Alexandria Long Frozen Name ${index}`,personality:"Fixture",backstory:"",strategy:"",avatarUrl:null}));
-  const events = [startWerewolf(gameId,players,werewolfConfig("two_wolves",1,{playerCount:8,wolves:2,seer:true,doctor:true}),"pack-strategy")];
+  const events = [startWerewolf(gameId,players,{...werewolfConfig("two_wolves",1,{playerCount:8,wolves:2,seer:true,doctor:true}),rulesVersion},"pack-strategy")];
   const agent: WerewolfAgent = {
     prepareRetrospectiveCapacity:fixtureRetrospectiveCapacity, getRetrospectiveStatement:fixtureWerewolfRetrospective,
     async decide({request,observation}) {

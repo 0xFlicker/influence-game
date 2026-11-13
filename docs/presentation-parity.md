@@ -248,3 +248,21 @@ reuse the compact room so names and speech fit. Taller rooms retain the circular
 staging. Fresh preparation captures the new label-aware layout keys. Rebuild old
 bundles from the same frozen selection/source before re-encoding; the selection
 does not need new game history or replacement character images.
+
+## Doctor saves and lone-wolf decisions
+
+The v14 Doctor-save fixture in `packages/engine/src/fixtures/werewolf-doctor-save.ts`
+backs the permanent alignment and saved-hunt regressions. The implementation was
+also verified with the reusable `verify-presentation-parity.ts` harness using
+local case JSON and approved local image assets; the one-off case preparation
+script is not retained.
+
+The proof covered the saved hunt, surviving wolf's private speech, reduced motion,
+recorded speech and Mystery's public dawn with long names. It compared viewer,
+Studio Source/Selected cut, reverse/direct samples and fresh encoded clips at
+1280×720, 640×360, 360×240 and 390×700. Old source/media pins remain authoritative:
+rebuild bundles from the same selection for solo framing; refresh the Studio source
+explicitly to adopt a subsequently published saved-hunt image or wolf cutout, then
+reselect/rebuild and encode. Existing MP4s never update. No history or media is
+regenerated automatically. Older saved hunts without imagery retain portrait
+fallbacks; public Mystery exports never receive the private hunt composite.

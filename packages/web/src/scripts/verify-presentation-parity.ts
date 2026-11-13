@@ -272,6 +272,7 @@ try {
     }});
   await cp(join(webRoot,"public"),serveUrl,{recursive:true});
   await mkdir(join(serveUrl,"assets"),{recursive:true});
+  if (process.env.PARITY_ASSET_DIR) await cp(resolve(process.env.PARITY_ASSET_DIR),join(serveUrl,"assets"),{recursive:true});
   await runProcess("ffmpeg",["-y","-v","error","-f","lavfi","-i","sine=frequency=523:sample_rate=44100","-t","2",join(serveUrl,"assets/format-context-voice.wav")]);
   await mkdir(join(serveUrl,"public","assets"),{recursive:true});
   await cp(join(serveUrl,"assets/format-context-voice.wav"),join(serveUrl,"public/assets/format-context-voice.wav"));
@@ -281,7 +282,7 @@ try {
     const portrait = process.env.FORMAT_CONTEXT_PORTRAIT === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
     const geometries: readonly (readonly [number, number])[] = process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
-    const geometryCases = narrow || portrait ? cases.filter(item => item.name.startsWith("hunter-") || item.name.startsWith("pack-") || ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
+    const geometryCases = (narrow || portrait) && !suppliedCases ? cases.filter(item => item.name.startsWith("hunter-") || item.name.startsWith("pack-") || ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
     const selectedCases = process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
     for(const [width,height] of geometries) for(const item of selectedCases) {
@@ -357,7 +358,9 @@ try {
         dialogueSamples=weights.map(weight=>{
           const progress=(prior+weight/2)/total;prior+=weight;
           if(thought) return Math.floor((thought.readAtMs+(thought.hideAtMs-thought.readAtMs)*progress)*fps/1000);
-          const source=850+(item.cue.timing.baseDurationMs-1450)*progress;
+          const readStart=item.cue.timing.speech?.readAtMs ?? 850;
+          const readEnd=item.cue.timing.speech?.hideAtMs ?? item.cue.timing.baseDurationMs-600;
+          const source=readStart+(readEnd-readStart)*progress;
           const segment=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
           if(!segment) throw new Error("Missing huddle reading segment");
           return Math.floor((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
@@ -376,7 +379,7 @@ try {
           return Math.floor((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
         });
       }
-      if (item.name.startsWith("pack-") && !item.sequence && (item.cue.speech?.speakerId || item.cue.timing.thinking)) {
+      if ((item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-")) && !item.sequence && (item.cue.speech?.speakerId || item.cue.timing.thinking)) {
         const text = item.cue.timing.thinking ?? item.cue.speech!.text;
         const measuredPages = [...Object.values(pages),...Object.values(layouts).map(layout=>layout.pages)].find(value=>value.join("") === text);
         if (!measuredPages?.length || measuredPages.some(page=>!page.trim())) throw new Error("Pack pagination did not preserve all accepted text");
@@ -386,7 +389,9 @@ try {
         dialogueSamples=weights.map(weight=>{
           const progress=(prior+weight/2)/total;prior+=weight;
           if (thought) return Math.round((thought.insertAt+thought.readAtMs+(thought.hideAtMs-thought.readAtMs)*progress)*fps/1000);
-          const source=850+(item.cue.timing.baseDurationMs-1450)*progress;
+          const readStart=item.cue.timing.speech?.readAtMs ?? 850;
+          const readEnd=item.cue.timing.speech?.hideAtMs ?? item.cue.timing.baseDurationMs-600;
+          const source=readStart+(readEnd-readStart)*progress;
           const segment=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
           if (!segment) throw new Error("Missing pack reading segment");
           // A short recorded page can occupy just one frame. Sample its nearest
@@ -396,7 +401,7 @@ try {
       }
       const winnerRemaining = item.cue.picture.kind === "influence" && item.cue.picture.beat?.kind === "winner" ? item.cue.picture.beat.standings.length : 0;
       const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
-      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
+      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...(item.name.startsWith("lone-wolf-") ? [Math.floor(manifest.range.untilFrame*.65)] : []),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
       const observedCast = new Set<string>();
       const observedWinnerCast = new Set<string>();
       const observedDialoguePages = new Set<string>(), observedRoomPages = new Set<string>();
@@ -425,7 +430,7 @@ try {
         throw new Error(`Not every huddle page appeared: room ${observedRoomPages.size}/${expectedRoomPages}, dialogue ${observedDialoguePages.size}/${expectedDialoguePages}`);
       pageCoverage.push({name:item.name,width,height,expectedDialoguePages,observedDialoguePages:[...observedDialoguePages],samples});
       await writeFile(join(output,"page-coverage.json"),JSON.stringify(pageCoverage,null,2));
-      if (expectedDialoguePages > 0 && (item.name === "page-werewolf-ballot" || item.name.startsWith("hunter-") || item.name.startsWith("pack-")) && observedDialoguePages.size !== expectedDialoguePages)
+      if (expectedDialoguePages > 0 && (item.name === "page-werewolf-ballot" || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-")) && observedDialoguePages.size !== expectedDialoguePages)
         throw new Error(`Not every measured dialogue page appeared: ${observedDialoguePages.size}/${expectedDialoguePages}`);
       // Verify random-access stability independently of the comparison order.
       for(const frame of samples.toReversed()) {
