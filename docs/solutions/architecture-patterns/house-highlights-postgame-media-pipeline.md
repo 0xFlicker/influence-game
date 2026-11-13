@@ -42,6 +42,16 @@ Workers claim one queued or expired job through the internal API. Claims are lea
 
 After rendering, the worker declares each artifact's content type, byte length, and SHA-256. The API returns constrained upload targets. The worker has no object-storage credentials and sends the issued URL and headers unchanged (`packages/web/src/scripts/render-house-highlights-media-worker.ts:302`). Treat that URL-plus-headers pair as one capability. Reconstructing or filtering its headers splits storage policy across services and can invalidate either the signature or publication semantics.
 
+On 2026-11-13, production investigation confirmed six trailer upload failures
+starting November 9: `403 AccessDenied`. Controlled writes proved the production
+key could write both private and public objects. The failing public signer
+hoisted `x-amz-checksum-sha256` into the URL while the worker also sent that
+header. Keeping the checksum in `unhoistableHeaders` made the same constrained
+upload succeed; removing ACL or conditional-write constraints did not fix it.
+Keep both the checksum and ACL in signed headers, and test the actual presigned
+URL rather than only the local storage adapter. The date of the first failure
+does not establish when or why the storage service began rejecting this shape.
+
 Finalization validates the active lease, manifest provenance, immutable object prefix, required bundle members, content types, sizes, hashes, dimensions, and safe public URLs before atomically changing the read model to `ready` (`packages/api/src/services/postgame-media-worker.ts:322`). A rerender always uses a new artifact version, so a failed replacement leaves the prior ready bundle intact.
 
 ### Sign every required S3-compatible upload header
