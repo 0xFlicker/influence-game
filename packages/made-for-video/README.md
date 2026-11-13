@@ -70,7 +70,7 @@ For every chosen beat, record:
 | Audio | Request clear natural English dialogue and diegetic rain, fabric, chair, and room ambience. Explicitly prohibit score and background music. |
 | Forbidden | Empty-table solo coverage, direct-to-camera delivery, portrait-card opening, captions/text, unsupported physical action, melodrama. |
 
-The key lesson from the first attempts was that using a portrait as a video `input_image` made the portrait become the opening shot. The reliable workaround was:
+The key lesson from the first attempts was that using a portrait as a video `input_image` made the portrait become the opening shot. For deliberate shot composition, use this workflow:
 
 ```text
 both avatar references + static background plate
@@ -86,6 +86,21 @@ Copy [`templates/scene-contract.md`](templates/scene-contract.md) into an ignore
 ### 4. Render with Katana
 
 `src/katana-video.ts` is the reusable Katana proof-of-work CLI and contains the approved `sharp-tan-reef` example workflow. Its credentials are read only from Doppler-provided `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET`; it never prints them.
+
+According to the [Katana API documentation](https://kat.imgnai.com/llms.txt) (checked 2026-11-13), conditioning fields have distinct meanings:
+
+| Intent | Canonical request field | Example |
+| --- | --- | --- |
+| Image-generation identity/background references | `image_urls` | `{"type":"image","image_urls":["<portrait>","<room>"]}` |
+| Video identity/style references; model chooses opening composition | `video_image_data.reference_image_urls` | `{"type":"video","video_image_data":{"reference_image_urls":["<portrait>"]}}` |
+| Video starting composition | `video_image_data.first_frame_image_url` | `{"type":"video","video_image_data":{"first_frame_image_url":"<scene-keyframe>"}}` |
+| Video ending composition | `video_image_data.last_frame_image_url` | Include alongside the first frame for H3. |
+
+Placeholders above stand for supported HTTPS image URLs or image data URLs. `input_images` is documented for image generation, not video; this CLI uses canonical `image_urls` for images. The singular `input_image` is a first-frame alias: supplying a portrait there deliberately opens on that portrait, regardless of prompt wording. Identity references do not pin the opening composition. Earlier `input_images` video attempts could silently lose identity references; those renders do not establish that reference mode works or fails.
+
+H3 (`imgn-h3`) permits up to seven reference images, but reference content cannot be combined with first/last frames. A last frame requires a first frame. `submit` and `submit-reference-only` use references; angle/anchor workflows retain first-frame conditioning. Image keyframe workflows keep the ordered identity and room references.
+
+Every successful submission saves a unique owner-only `receipt-<uuid>.json` containing the submitted body, returned receipt and provider request ID before validating the echoed `requests[]`. Missing, empty or partially dropped conditioning causes a clear error with the receipt path and ID; the CLI does not resubmit. Inspect that receipt and the existing job before deciding on any further paid action. Presence/count checks cannot prove semantic identity fidelity or detect a substituted nonempty image; Katana may stage inline images into new URLs. No corrected paid render has been validated by this fix.
 
 Set private paths before invoking it:
 
@@ -155,6 +170,7 @@ The review cut must have a nonzero duration, H.264 video, and AAC audio. Watch i
 ## Validation
 
 ```bash
+bun test scripts/katana-video.test.ts
 bun run --filter @influence/made-for-video typecheck
 bun run --filter @influence/made-for-video lint
 ```
