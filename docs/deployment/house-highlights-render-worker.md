@@ -102,6 +102,16 @@ the upload target. The credential-free worker forwards all issued upload headers
 unchanged. Bucket-level anonymous-read policy does not replace this per-object
 ACL; omitting it can produce a successful PUT followed by public playback `403`s.
 
+The checksum header (`x-amz-checksum-sha256`) must also remain in the presigner's
+`unhoistableHeaders`. The worker sends it as an HTTP header; duplicating it in
+the signed URL query causes Linode to reject the PUT with `403 AccessDenied`.
+For upload failures, inspect **Studio → Tools → Trailer & poster** for the
+underlying `artifact_upload_*` error; the global render monitor reports only
+`worker_failed`. Verify one failed trailer through publication and public reads
+before retrying a backlog. The game-owned retry prepares its trailer snapshot
+from persisted source content; compare the old and new snapshot hashes during
+recovery to confirm the selected content has not changed.
+
 The API container keeps `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`,
 `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET`. The worker receives lease-bound,
 single-use upload targets only. Failed-attempt intermediates are removed from the

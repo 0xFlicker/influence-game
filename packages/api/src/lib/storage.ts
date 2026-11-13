@@ -203,7 +203,10 @@ export async function generateConstrainedPublicUpload(
   });
   const uploadUrl = await getSignedUrl(getS3Client(), command, {
     expiresIn,
-    unhoistableHeaders: new Set(objectStorageProvider() === "aws_s3" || localObjectStorageEnabled() ? ["x-amz-checksum-sha256"] : ["x-amz-acl"]),
+    // The checksum is sent as a header for every provider. Linode also needs
+    // its public ACL signed; AWS and local storage do not send that header.
+    unhoistableHeaders: new Set(objectStorageProvider() === "aws_s3" || localObjectStorageEnabled()
+      ? ["x-amz-checksum-sha256"] : ["x-amz-acl", "x-amz-checksum-sha256"]),
   });
   return {
     uploadUrl,
