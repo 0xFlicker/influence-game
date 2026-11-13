@@ -37,10 +37,9 @@ beforeEach(async () => {
       expect(body.model).toBe("gpt-6-sol");
       expect(body.text.format.strict).toBe(true);
       const identity = Boolean(body.text.format.schema.properties.matches);
-      const composition = Boolean(body.text.format.schema.properties.identities);
-      const ids: string[] = (body.text.format.schema.properties.identities ?? body.text.format.schema.properties.matches ?? body.text.format.schema.properties.anchors).items.properties.playerId.enum;
+      const ids: string[] = (body.text.format.schema.properties.matches ?? body.text.format.schema.properties.anchors).items.properties.playerId.enum;
       const result = { ...(body.text.format.schema.properties.missingParticipantIds ? { missingParticipantIds: [] } : {}), count: rejectIdentity ? ids.length + 1 : ids.length, anchors: ids.map((id, index) => ({ playerId: id, label: index + 1, confidence: "clear", head: { x: index / ids.length, y: 0.3, width: 0.05, height: 0.1 } })) };
-      return Response.json({ status: "completed", usage: { input_tokens: 10, output_tokens: 10 }, output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(composition ? { count: result.count, identities: result.anchors.map(({ playerId, confidence }) => ({ playerId, confidence })) } : identity ? { count: result.count, matches: result.anchors.map(({ head: _head, ...match }) => match) } : result) }] }] });
+      return Response.json({ status: "completed", usage: { input_tokens: 10, output_tokens: 10 }, output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(identity ? { count: result.count, matches: result.anchors.map(({ head: _head, ...match }) => match) } : result) }] }] });
     }
     if (!String(url).includes("/v1/images/")) throw new Error("Unexpected test network request");
     imageCalls += 1;
@@ -61,10 +60,37 @@ test("renders and verifies a small scene once, then resumes entirely from durabl
   const ready = await renderPlannedVisualScene(db, planned);
   expect(ready.status).toBe("ready");
   expect(ready.anchors).toHaveLength(3);
-  expect([imageCalls, visionCalls]).toEqual([1, 3]);
+  expect([imageCalls, visionCalls]).toEqual([1, 2]);
   expect((await renderPlannedVisualScene(db, planned)).id).toBe(ready.id);
-  expect([imageCalls, visionCalls]).toEqual([1, 3]);
+  expect([imageCalls, visionCalls]).toEqual([1, 2]);
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
+});
+
+test.each(["missing", "extra", "duplicate identity", "duplicate label", "uncertain identity", "overlapping heads"])("two-stage verification rejects %s before publishing", async defect => {
+  const mock = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    const response = await mock(url, init);
+    if (!String(url).endsWith("/responses")) return response;
+    const body = await response.json() as { output: Array<{ content: Array<{ text: string }> }> };
+    const result = JSON.parse(body.output[0]!.content[0]!.text);
+    if (defect === "missing") result.count = 2;
+    if (defect === "extra") result.count = 4;
+    if (defect === "overlapping heads" && result.anchors) result.anchors[1].head = result.anchors[0].head;
+    if (result.matches) {
+      if (defect === "duplicate identity") result.matches[1].playerId = result.matches[0].playerId;
+      if (defect === "duplicate label") result.matches[1].label = result.matches[0].label;
+      if (defect === "uncertain identity") result.matches[1].confidence = "uncertain";
+    }
+    body.output[0]!.content[0]!.text = JSON.stringify(result);
+    return Response.json(body);
+  }, { preconnect: originalFetch.preconnect });
+  const planned = await scene(3);
+  await expect(renderPlannedVisualScene(db, planned)).rejects.toThrow();
+  expect((await readCurrentVisualScene(db, "game", "lobby"))?.status).not.toBe("ready");
+  expect(visionCalls).toBe(["missing", "extra", "overlapping heads"].includes(defect) ? 1 : 2);
+  const priorCalls = visionCalls;
+  await expect(renderPlannedVisualScene(db, planned)).rejects.toThrow();
+  expect(visionCalls).toBe(priorCalls);
 });
 
 test.each([false, true])("resumes an earlier template reservation without replacing its prompt or repeating a completed image (%s)", async completed => {
@@ -112,9 +138,9 @@ test.each([8, 9, 10, 12, 14])("renders %i contestants into distinct room regions
   expect(ready.shots?.groups.flatMap(s => s.visibleParticipantIds).sort()).toEqual(planned.plan.cast.map(m => m.id).sort());
   expect(ready.shots?.groups).toHaveLength(count);
   expect(new Set(backdrops).size).toBeGreaterThan(1);
-  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 3]);
+  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 2]);
   await renderPlannedVisualScene(db, planned);
-  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 3]);
+  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 2]);
 });
 
 test("failed identity verification pauses the scene without another automatic paid attempt", async () => {
@@ -291,7 +317,7 @@ test("a hung provider times out to portraits, records uncertainty and rejects la
   expect((await readCurrentVisualScene(db, "game", "lobby"))?.status).toBe("failed");
 });
 
-test("verified composition with malformed geometry publishes an unanchored scene, never guessed anchors", async () => {
+test("malformed geometry cannot publish an unverified scene", async () => {
   const mock = globalThis.fetch;
   globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).endsWith("/responses") && JSON.parse(String(init?.body)).text.format.schema.properties.anchors) {
@@ -299,9 +325,8 @@ test("verified composition with malformed geometry publishes an unanchored scene
     }
     return mock(url, init);
   }, { preconnect: originalFetch.preconnect });
-  const ready = await renderPlannedVisualScene(db, await scene(2));
-  expect(ready.status).toBe("ready");
-  expect(ready.anchors).toEqual([]);
+  await expect(renderPlannedVisualScene(db, await scene(2))).rejects.toThrow("Invalid visual localization document");
+  expect((await readCurrentVisualScene(db, "game", "lobby"))?.status).not.toBe("ready");
 });
 
 test("fallback consumes one shared repair allowance across a multi-section scene", async () => {

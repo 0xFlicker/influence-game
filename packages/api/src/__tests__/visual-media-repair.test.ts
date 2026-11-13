@@ -33,14 +33,13 @@ beforeEach(async () => {
     if (String(url).endsWith("/responses")) {
       const body = JSON.parse(String(init?.body));
       const properties = body.text.format.schema.properties;
-      const kind = properties.identities ? "composition" : properties.matches ? "identities" : "heads";
+      const kind = properties.matches ? "identities" : "heads";
       calls.push(kind);
-      if (fail === "composition-http" && kind === "composition") return Response.json({ error: { message: "Verification unavailable" } }, { status: 400 });
-      const ids: string[] = (properties.identities ?? properties.matches ?? properties.anchors).items.properties.playerId.enum ?? [];
+      if (fail === "heads-http" && kind === "heads") return Response.json({ error: { message: "Verification unavailable" } }, { status: 400 });
+      const ids: string[] = (properties.matches ?? properties.anchors).items.properties.playerId.enum ?? [];
       const count = fail === "count" ? ids.length + 1 : ids.length;
       const anchors = ids.map((playerId, i) => ({ playerId, label: i + 1, confidence: "clear", head: { x: i / ids.length, y: .2, width: .05, height: .1 } }));
-      const result = kind === "composition" ? { count, identities: ids.map(playerId => ({ playerId: fail === "duplicate" ? ids[0] : playerId, confidence: fail === "identity" && playerId === "p3" ? "uncertain" : "clear" })) }
-        : kind === "identities" ? { count, matches: anchors.map(({ head: _head, ...rest }) => rest) } : { count, anchors };
+      const result = kind === "identities" ? { count, matches: anchors.map(({ head: _head, ...rest }) => ({ ...rest, playerId: fail === "duplicate" ? ids[0] : rest.playerId, confidence: fail === "identity" && rest.playerId === "p3" ? "uncertain" : "clear" })) } : { count, anchors };
       return Response.json({ status: "completed", usage: { input_tokens: 10, output_tokens: 10 }, output: [{ type: "message", content: [{ type: "output_text", text: fail === "heads" && kind === "heads" ? "malformed" : JSON.stringify(result) }] }] });
     }
     if (!String(url).includes("/v1/images/")) throw new Error("Unexpected provider URL");
@@ -210,21 +209,21 @@ test("ambiguous identities retain candidate pixels and name the participant with
   fail = "identity"; await send(); await run();
   const latest = (await readVisualMedia(db, "media")).jobs[0]!;
   expect(latest).toMatchObject({ status: "failed", failure: "Character identity could not be verified: Player 3", candidateArtifactId: expect.any(String) });
-  expect(calls).toEqual(["image", "composition"]);
+  expect(calls).toEqual(["image", "heads", "identities"]);
   expect((await readVisualMedia(db, "media")).versions).toHaveLength(0);
   expect(await readVisualRenderAccounting(db, "media")).toMatchObject({ pendingAttempts: 0, uncertainAttempts: 0 });
 });
 
 test("continue reuses the successful region and resumes remaining regions", async () => {
-  fail = "composition-http"; await send(); const first = await run();
-  expect(calls).toEqual(["image", "composition"]);
+  fail = "heads-http"; await send(); const first = await run();
+  expect(calls).toEqual(["image", "heads"]);
   expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed");
   expect((await readVisualMedia(db, "media")).jobs[0]?.candidateIsPartial).toBe(true);
   expect((await readVisualSceneMedia(db, "media", scene.id, { offset: 0, limit: 10 })).media.jobs[0]?.candidateIsPartial).toBe(true);
   expect(await send({ expectedVersion: 1, action: "verify", sourceVersionId: first.id })).toMatchObject({ accepted: false, code: "source_is_partial_view" });
-  expect(calls).toEqual(["image", "composition"]);
+  expect(calls).toEqual(["image", "heads"]);
   fail = null; calls = []; await send({ expectedVersion: 1, action: "continue", sourceJobId: first.id }); await run();
-  expect(calls).toEqual(["composition", "heads", "identities", "image", "composition", "heads", "identities", "image", "composition", "heads", "identities"]);
+  expect(calls).toEqual(["heads", "identities", "image", "heads", "identities", "image", "heads", "identities"]);
 });
 
 test.each(["count", "duplicate"])("rejects %s identities without automatic regeneration", async failure => {
@@ -232,24 +231,24 @@ test.each(["count", "duplicate"])("rejects %s identities without automatic regen
   expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed"); expect(calls.filter(c => c === "image")).toHaveLength(1);
 });
 
-test("uncertain geometry produces no guessed anchors and can be published", async () => {
-  fail = "heads"; const receipt = await send(); await run(); const media = await readVisualMedia(db, "media");
-  expect(media.versions[0]?.localization.anchors).toEqual([]);
-  expect(media.jobs[0]?.status).toBe("ready");
-  expect(await send({ action: "publish", expectedVersion: 1, expectedPublication: 0, versionId: receipt.jobId! })).toMatchObject({ accepted: true });
+test("malformed geometry retains the candidate without publishing a version", async () => {
+  fail = "heads"; await send(); await run(); const media = await readVisualMedia(db, "media");
+  expect(media.versions).toHaveLength(0);
+  expect(media.jobs[0]?.status).toBe("failed");
+  expect(media.jobs[0]?.candidateArtifactId).toBeTruthy();
 });
 
 test("recheck uses the selected image and does not generate; historic scene bypasses current arrangement gate", async () => {
   await acceptedOriginal();
   await prepareVisualScene(db, { gameId: "media", boundarySequence: 6, plan: planVisualScene({ ...scene.plan, cast: scene.plan.cast.slice(0, 2) }) });
   expect(await send({ action: "verify", sourceVersionId: `original:${scene.id}` })).toMatchObject({ accepted: true }); await run();
-  expect(calls).toEqual(["composition", "heads", "identities"]);
+  expect(calls).toEqual(["heads", "identities"]);
   expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("ready");
 });
 
 test("empty-room generation verifies zero occupants", async () => {
   scene = await prepareVisualScene(db, { gameId: "media", boundarySequence: 6, plan: planVisualScene({ roomId: "mingle-1", backgroundArtifactId: imageId, cast: [] }) });
-  await send(); await run(); expect(calls).toEqual(["image", "composition"]);
+  await send(); await run(); expect(calls).toEqual(["image", "heads"]);
   expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("ready");
 });
 
@@ -257,7 +256,7 @@ test("a backfilled plan renders with saved portrait references and no prepared b
   scene = await prepareVisualScene(db, { gameId: "media", boundarySequence: 6, plan: planVisualScene({ roomId: "mingle-1", backgroundArtifactId: null,
     cast: scene.plan.cast.slice(0, 2).map(member => ({ ...member, portraitFallback: true })) }) });
   await send(); await run();
-  expect(calls).toEqual(["image", "composition", "heads", "identities"]);
+  expect(calls).toEqual(["image", "heads", "identities"]);
   const media = await readVisualMedia(db, "media");
   expect(media.jobs[0]?.status).toBe("ready"); expect(media.versions[0]?.plan.backgroundArtifactId).toBeNull();
   expect(media.publications).toHaveLength(0);
@@ -351,7 +350,7 @@ test("harmonizes selected saved panels once, preserves their pixels and metadata
   expect(job).toMatchObject({ mode: "harmonize", sourceVersionId: source.id, sourceImageId: null });
   const media = await readVisualMedia(db, "media"), version = media.versions.find(v => v.id === job!.id)!;
   expect(media.jobs[0]!.status).toBe("ready");
-  expect(calls).toEqual(["image", "composition", "heads", "identities"]);
+  expect(calls).toEqual(["image", "heads", "identities"]);
   expect(version.shots).toMatchObject({ mode: "scene", groups: source.groups });
   expect(version.localization.verifiedParticipantIds).toEqual(scene.plan.cast.map(m => m.id));
   expect(media.publications).toEqual([]);
@@ -369,7 +368,7 @@ test("harmonizes selected saved panels once, preserves their pixels and metadata
 test("harmonization restart and continuation keep the source and reuse a completed composite", async () => {
   const source = await acceptedPanels();
   const receipt = await send({ action: "harmonize", sourceVersionId: source.id });
-  fail = "composition-http";
+  fail = "heads-http";
   const job = await run();
   expect((await readVisualMedia(db, "media")).jobs[0]!.status).toBe("failed");
   expect(calls.filter(c => c === "image")).toHaveLength(1);
@@ -383,7 +382,7 @@ test("harmonization restart and continuation keep the source and reuse a complet
   await executeVisualMediaJob(db, reclaimed!, new AbortController().signal);
   const media = await readVisualMedia(db, "media");
   expect(media.jobs[0]!.status).toBe("ready");
-  expect(calls).toEqual(["composition", "heads", "identities"]);
+  expect(calls).toEqual(["heads", "identities"]);
   expect(media.versions.find(v => v.id === next.jobId)!.shots!.groups).toEqual(source.groups);
   expect(media.publications).toEqual([]);
 });

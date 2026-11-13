@@ -1,7 +1,6 @@
 import { Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { reserveInference, dispatchInference, settleInference, checkInferenceDispatch, withImageExecution } from "./inference-allowances.js";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
-import { VisualIdentityFailure } from "@influence/engine/visual-localization";
 import { VISUAL_LOCALIZATION_MODEL, VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
 import { visualReceiptCostMicrousd } from "./visual-pricing.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
@@ -278,19 +277,12 @@ export async function readVisualSceneAttempts(db:DrizzleDB,gameId:string,sceneId
 /** Image and identity references are hashed into the same durable request boundary. */
 export async function localizeDurableVisualScene(db: DrizzleDB, input: Parameters<typeof runDurableLocalization>[1] & { gameId: string }) {
   if (input.allowMissing) return runDurableLocalization(db, input);
-  await input.onStep?.("verifying:composition");
-  const composition = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:composition`, reuseOperationKey: input.reuseOperationKey ? `${input.reuseOperationKey}:composition` : undefined, compositionOnly: true });
-  if (!input.references.length) return composition;
-  let geometry;
-  try { await input.onStep?.("verifying:heads"); geometry = await runDurableLocalization(db, input); }
-  catch (error) {
-    if (error instanceof VisualIdentityFailure || input.signal?.aborted || (input.repairJobId && error instanceof VisualRenderRecoveryRequired)) throw error;
-    await recordVisualOperationEvent(db, input.gameId, `${input.operationKey}:unanchored`, { kind: "presentation", outcome: "unanchored", message: "Identities verified; head coordinates unavailable. Use a named speech panel." }, visualFailureEvidence(error, "anchors"));
-    return composition;
-  }
+  await input.onStep?.("verifying:heads");
+  const geometry = await runDurableLocalization(db, input);
+  if (!input.references.length) return { ...geometry, verifiedParticipantIds: [] };
   await input.onStep?.("verifying:identities");
   const matched = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:identities`, reuseOperationKey: input.reuseOperationKey ? `${input.reuseOperationKey}:identities` : undefined, candidateAnchors: geometry.anchors });
-  return { ...matched, verifiedParticipantIds: composition.verifiedParticipantIds };
+  return { ...matched, verifiedParticipantIds: matched.anchors.map(anchor => anchor.playerId) };
 }
 
 async function runDurableLocalization(db: DrizzleDB, input: {
@@ -300,15 +292,15 @@ async function runDurableLocalization(db: DrizzleDB, input: {
   beforeDispatch?: VisualBoundaryGuard; repairJobId?: string; reuseOperationKey?: string;
   onStep?: (step: string) => Promise<void>;
   transformation?: "werewolf";
-  compositionOnly?: boolean;
   allowMissing?: boolean;
   candidateAnchors?: readonly import("@influence/engine/visual-mode").VisualPlayerAnchor[];
 }) {
-  const inputHash = hash(stableJson({ task: VISUAL_LOCALIZATION_VERSION, ...(input.transformation && { transformation: input.transformation }), allowMissing: input.allowMissing === true, compositionOnly: input.compositionOnly === true, ...(input.candidateAnchors && { candidates: input.candidateAnchors }), scene: hash(input.scene),
+  // Keep the remaining stages' durable request hashes stable across removal of the cast precheck.
+  const inputHash = hash(stableJson({ task: VISUAL_LOCALIZATION_VERSION, ...(input.transformation && { transformation: input.transformation }), allowMissing: input.allowMissing === true, compositionOnly: false, ...(input.candidateAnchors && { candidates: input.candidateAnchors }), scene: hash(input.scene),
     references: input.references.map((reference) => ({ image: hash(reference.image), players: reference.players })),
   }));
   const operation = await reserveVisualOperation(db, input.gameId, input.operationKey, inputHash, input.userId, {
-    task: VISUAL_LOCALIZATION_VERSION, ...(input.transformation && { transformation: input.transformation }), model: VISUAL_LOCALIZATION_MODEL, compositionOnly: input.compositionOnly === true,
+    task: VISUAL_LOCALIZATION_VERSION, ...(input.transformation && { transformation: input.transformation }), model: VISUAL_LOCALIZATION_MODEL, compositionOnly: false,
     sceneHash: hash(input.scene), candidates: input.candidateAnchors ?? null,
     references: input.references.map((reference) => ({ imageHash: hash(reference.image), players: reference.players })),
   }, input.sceneId, input.repairJobId);
