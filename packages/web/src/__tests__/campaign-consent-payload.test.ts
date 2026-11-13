@@ -29,12 +29,19 @@ test("browser sends explicit-choice metadata separately from regional permission
     await consent.loadAnalyticsConsent();
     await api.loginWithPrivyToken("test", { intent: "sign_in" });
     expect(requests.pop()).toMatchObject({ analytics: true, analyticsExplicit: false });
-    consent.saveAnalyticsChoice({ analytics: true });
+    consent.saveAnalyticsChoice({ analytics: true, advertising: true });
     await api.createManagedAuthentication("test");
     expect(requests.pop()).toMatchObject({ analytics: true, analyticsExplicit: true });
     await api.retainCampaignAttribution(true, "v1");
     expect(requests.pop()).toMatchObject({ analytics: true, analyticsExplicit: true, explicitChoice: true, expectedVersion: "v1" });
-    consent.saveAnalyticsChoice({ analytics: false });
+    for (const analytics of [false, true]) for (const advertising of [false, true]) {
+      consent.saveAnalyticsChoice({ analytics, advertising });
+      await api.loginWithPrivyToken("test", { intent: "sign_in" });
+      expect(requests.pop()).toMatchObject({ analytics, advertising, analyticsExplicit: analytics, advertisingExplicit: advertising });
+      await api.retainCampaignAttribution(true, "v1");
+      expect(requests.pop()).toMatchObject({ analytics, advertising, analyticsExplicit: analytics, advertisingExplicit: advertising });
+    }
+    consent.saveAnalyticsChoice({ analytics: false, advertising: false });
     await api.retainCampaignAttribution(true, "v1");
     expect(requests.pop()).toMatchObject({ analytics: false, analyticsExplicit: false });
   } finally {

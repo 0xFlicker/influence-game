@@ -7,11 +7,11 @@ import { analyticsPermission, parseAnalyticsChoice, visitAnalyticsNotice, type A
 const key = "house:analytics-consent";
 const noticeKey = "house:analytics-us-notice-shown";
 const listeners = new Set<() => void>();
-const initial = { accountAllowed: null as boolean | null, choiceRevision: 0, ready: false, country: null as string | null, choice: null as AnalyticsChoice | null, blocked: false, analytics: false, recordings: false, notice: { seen: false, path: null } as AnalyticsNotice };
+const initial = { accountAllowed: null as boolean | null, accountAdvertisingAllowed: null as boolean | null, choiceRevision: 0, ready: false, country: null as string | null, choice: null as AnalyticsChoice | null, blocked: false, analytics: false, advertising: false, recordings: false, notice: { seen: false, path: null } as AnalyticsNotice };
 let state = initial;
 let loading: Promise<void> | null = null;
 
-function refresh() {
+function refresh(fromStorage = false) {
   let choice: AnalyticsChoice | null = null;
   let blocked = navigator.doNotTrack === "1" || (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true;
   let seen = state.notice.seen;
@@ -20,8 +20,12 @@ function refresh() {
     seen = localStorage.getItem(noticeKey) === "true";
   }
   catch { blocked = true; }
-  state = { ...state, choice, blocked, notice: { ...state.notice, seen }, ...analyticsPermission(state.country, choice, blocked || state.accountAllowed === false) };
-  if (!state.analytics) clearCampaignAttribution();
+  const changed = fromStorage && choice?.advertising !== undefined && JSON.stringify(choice) !== JSON.stringify(state.choice);
+  const accountAllowed = changed ? null : state.accountAllowed;
+  const accountAdvertisingAllowed = changed ? null : state.accountAdvertisingAllowed;
+  state = { ...state, accountAllowed, accountAdvertisingAllowed, choiceRevision: state.choiceRevision + (changed ? 1 : 0),
+    choice, blocked, notice: { ...state.notice, seen }, ...permissions(choice, blocked, accountAllowed, accountAdvertisingAllowed) };
+  if (!state.analytics && !state.advertising) clearCampaignAttribution();
   listeners.forEach(listener => listener());
 }
 
@@ -41,7 +45,7 @@ export function loadAnalyticsConsent(): Promise<void> {
     } catch { console.warn("[Analytics] Region unavailable; consent required"); }
     state = { ...state, ready: true, country };
     refresh();
-    window.addEventListener("storage", event => { if (event.key === key || event.key === noticeKey || event.key === null) refresh(); });
+    window.addEventListener("storage", event => { if (event.key === key || event.key === noticeKey || event.key === null) refresh(true); });
   })();
   return loading;
 }
@@ -62,22 +66,28 @@ export function dismissAnalyticsNotice(): void {
 }
 
 /** Updates in memory even if persistence is unavailable. Never reload an unsaved agent form. */
-export function saveAnalyticsChoice(choice: AnalyticsChoice): boolean {
+export function saveAnalyticsChoice(choice: AnalyticsChoice & { advertising: boolean }): boolean {
   let saved = true;
-  try { localStorage.setItem(key, JSON.stringify({ version: 1, ...choice })); }
+  try { localStorage.setItem(key, JSON.stringify({ version: 2, ...choice })); }
   catch { saved = false; }
-  state = { ...state, choice, accountAllowed: null, choiceRevision: state.choiceRevision + 1,
+  state = { ...state, choice, accountAllowed: null, accountAdvertisingAllowed: null, choiceRevision: state.choiceRevision + 1,
     ...analyticsPermission(state.country, choice, state.blocked) };
-  if (!state.analytics) clearCampaignAttribution();
+  if (!state.analytics && !state.advertising) clearCampaignAttribution();
   listeners.forEach(listener => listener());
   return saved;
 }
 
 /** Apply the signed-in account preference without rewriting the browser's explicit choice. */
-export function setAccountAnalyticsAllowed(allowed: boolean | null): void {
-  if (state.accountAllowed === allowed) return;
-  state = { ...state, accountAllowed: allowed,
-    ...analyticsPermission(state.country, state.choice, state.blocked || allowed === false) };
-  if (!state.analytics) clearCampaignAttribution();
+export function setAccountAnalyticsAllowed(allowed: boolean | null, advertising: boolean | null = null): void {
+  if (state.accountAllowed === allowed && state.accountAdvertisingAllowed === advertising) return;
+  state = { ...state, accountAllowed: allowed, accountAdvertisingAllowed: advertising,
+    ...permissions(state.choice, state.blocked, allowed, advertising) };
+  if (!state.analytics && !state.advertising) clearCampaignAttribution();
   listeners.forEach(listener => listener());
+}
+
+function permissions(choice: AnalyticsChoice | null, blocked: boolean, analytics = state.accountAllowed, advertising = state.accountAdvertisingAllowed) {
+  const permitted = analyticsPermission(state.country, choice, blocked);
+  return { analytics: permitted.analytics && analytics !== false, recordings: permitted.recordings && analytics !== false,
+    advertising: permitted.advertising && advertising !== false };
 }

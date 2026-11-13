@@ -92,7 +92,7 @@ Retention: the first eligible non-direct touch and the latest non-direct touch
 are stored with timestamps, first in consent-gated browser storage, then on
 `user_campaign_attribution` after authorized account linking
 (`POST /api/attribution/retain`, plus the signup request payload). The authenticated
-endpoint also synchronizes the effective analytics preference, including denials
+endpoint also synchronizes both effective tracking preferences, including denials
 when no attribution exists. First touch
 is never overwritten; a direct visit never replaces the last non-direct touch.
 The browser exposes a 90-day window helper, but the current report does not
@@ -197,7 +197,7 @@ hyphens; action IDs are numeric. For braided click IDs, do not configure
 one-per-click counting, which Google rejects. Complete Google's applicable
 account/measurement terms in the Ads UI before activation.
 
-Google receives the affirmative analytics choice as `adUserData =
+Google receives the affirmative advertising-measurement choice as `adUserData =
 CONSENT_GRANTED` only when explicitly recorded at event capture. Regional
 default permission is `CONSENT_STATUS_UNSPECIFIED`, not a fabricated grant;
 Google may reject it according to account defaults and consent requirements.
@@ -205,7 +205,7 @@ Google may reject it according to account defaults and consent requirements.
 metadata does not change the regional policy or re-enable a denied account.
 Later acceptance never changes an older event's consent snapshot.
 
-All destinations obey the same account-wide permission and withdrawal lock,
+Each destination obeys its purpose-specific account permission and the shared withdrawal lock,
 including DNT/GPC and MCP/API outcomes. Migration `0169_ad_platform_conversions`
 defaults Google/TikTok/X statuses to `suppressed` on existing rows; only newly
 captured permitted events become `pending`. Re-enabling tracking never
@@ -382,37 +382,44 @@ before production collection are not traffic evidence.
 
 ## Regional consent (reviewed October 17, 2026)
 
-The banner has one analytics category and equally accessible Accept/Reject
-buttons outside the US. The US notice offers Got it and Reject optional tracking;
-it is shown once per browser storage lifetime and dismissed on navigation. Its
-separate notice-shown marker never grants consent or changes the analytics choice.
-On desktop (1024px and wider), the notice spans the bottom edge with its text
-and actions side by side to reduce vertical obstruction. Smaller screens retain
-the inset, stacked card; both layouts scroll within short viewports.
-The banner explains measurement and navigation-diagnosis purposes and
-links directly to the analytics section of the Privacy policy, which describes
-masked session recordings and shows their status. There is no separate recording
-prompt. Ordinary events and recordings share these start conditions:
+The banner discloses three purposes: essential functionality (always active),
+product analytics and diagnostics (PostHog events, performance/error reports,
+and masked recordings), and advertising measurement (Meta, Google, TikTok, X).
+A compact bottom bar keeps two independent checkboxes and all three actions
+visible. Related choices and supporting links stay grouped; the three actions
+have equal visual weight. Purpose details expand separately, with bounded
+scrolling for descriptions on short screens and pinned actions when needed.
+The Privacy page uses a stacked layout rather than the banner’s desktop columns. The controls accompany Accept all,
+Reject optional, and Save choices. There are no per-vendor controls. A persistent
+Tracking preferences button and the Privacy page reopen the choices.
 
-| Detected location | Before a saved choice | After Accept | After Reject |
-| --- | --- | --- | --- |
-| United States | Both on | Both on | Both off |
-| All other countries or unknown | Both off | Both on | Both off |
+The existing regional defaults are unchanged: both optional purposes default on
+in the US, and off elsewhere or when country is unknown. DNT/GPC and inaccessible
+storage override both. The US notice retains its once-per-storage-lifetime and
+navigation dismissal rules; Close never creates consent. Outside the US, an
+incomplete choice remains visible until the newly disclosed purpose is chosen.
 
-This is an explicit reviewed allowlist, not a claim that all other countries
-require opt-in. US rules generally distinguish notice/opt-out from sensitive
-data, minors, sale, advertising, and other restricted purposes. The US default-on policy includes masked session replay at the owner’s request.
-This is a product choice, not a conclusion that every US state exempts session
-replay from consent; state interception laws and the actual data captured matter.
-Our scope is adult-facing, non-sensitive product
-analytics, with PostHog as a service provider. Paid acquisition measurement
-(campaign fields and click IDs above) is part of that scope as of this change:
-explicit opt-outs, DNT and Global Privacy Control still disable collection,
-and no pre-consent queue was added. Reassess before adding sensitive
-properties, serving children, or activating platform delivery (Advertising-
-platform feedback) — activation sends the mapped conversion events and the
-permitted click identifier to the chosen platform under its terms, which is
-a distinct sharing decision from first-party measurement.
+Browser storage version 2 records both choices. Version 1 rejection means both
+purposes rejected; version 1 acceptance permits PostHog only, leaving advertising
+subject to regional defaults, never an affirmative advertising grant. The account
+migration preserves existing rejections, leaves legacy advertising acceptance
+unknown, and suppresses queued legacy ad deliveries. A later preference cannot
+revive those deliveries. No legal acceptance versions change.
+
+| Analytics | Advertising | Permitted optional delivery |
+| --- | --- | --- |
+| Off | Off | None |
+| On | Off | PostHog only |
+| Off | On | Meta, Google, TikTok, X only |
+| On | On | Both purposes |
+
+Campaign labels, variants, starter identities and click attribution support both
+first-party analytics and advertising measurement; they remain while either
+purpose permits their use. They are not sent to an advertising platform without
+advertising permission. Meta browser user-agent metadata serves advertising only.
+It is removed from retained preferences and event snapshots on ad withdrawal.
+When both purposes are off, retained browser/account touches and event attribution
+are cleared. Operational outcomes and deterministic deduplication IDs survive.
 
 Sources and limits:
 - California AG: https://oag.ca.gov/privacy/ccpa
@@ -453,7 +460,7 @@ headers locally; production requests must use Cloudflare's actual header.
 
 ## Account preference and operational reporting
 
-`user_analytics_preferences` stores the effective account-wide analytics choice.
+`user_analytics_preferences` stores independent effective account-wide analytics and advertising choices.
 Missing preferences fail closed for collection/delivery, but are not stored as
 an explicit rejection. A later resolved regional preference can initialize them;
 already-suppressed events remain suppressed. Browser signup transmits the effective choice
@@ -466,10 +473,9 @@ same record. Attribution writes also require the current version, so an in-fligh
 touch from before withdrawal cannot be restored after re-enabling. Initial sync
 returns the version; subsequent browser requests supply it.
 
-Events captured without permission have both destinations permanently
-`suppressed` and no campaign attribution. Withdrawal suppresses all pending
-delivery and clears retained account/browser campaign touches and conversion
-attribution. Re-enabling permits future events only. Browser requests are
+Events captured without a purpose’s permission have its destinations permanently
+`suppressed`. Withdrawal suppresses only that purpose’s pending delivery. Shared
+attribution is cleared when neither purpose permits it. Re-enabling permits future events only. Browser requests are
 serialized and bound to the current account; stale responses cannot enable a
 new session, and account switching clears the previous account's touches. A
 failed sync stops browser tracking; the server change takes effect only when
@@ -479,6 +485,15 @@ backoff (up to 30 seconds), and navigation also resynchronizes it.
 Operational account/agent/enrollment records and internal outcome counts remain
 available when analytics is off. They do not authorize optional browser histories
 or ad attribution. The privacy page discloses this distinction and Meta, Google, TikTok, and X sharing.
+Migration 0173 adds the advertising preference and suppresses pre-disclosure ad
+outbox entries without changing PostHog eligibility or operational outcomes.
+Apply it with a coordinated API/worker cutover: stop old conversion writers
+and delivery workers before the migration, then run the updated API and workers.
+Release the browser and server contracts together. An older binary is not a safe
+rollback target once independent preferences exist: it does not honor the
+advertising choice. No production migration or
+provider delivery is part of local verification.
+
 Migration 0167 suppresses pre-existing events without recorded permission and
 clears their attribution; it preserves all product records and outcome counts.
 
@@ -496,7 +511,11 @@ retries, signup write failure/recovery, and campaign/creative totals.
 `campaign-consent-sync.test.tsx` exercises the real React component with delayed
 transport responses, withdrawal during an allow request, and account switching.
 `analytics-consent.test.ts` covers regional policy, GPC, cross-tab withdrawal and
-browser attribution clearing. No live provider delivery is required for tests.
+browser attribution clearing. `tracking-preferences.test.tsx` covers controls,
+reopening, advertising-only capture without a PostHog token, redirects and account
+switching. The four purpose combinations, per-purpose queued withdrawal and
+legacy migration are covered by the policy and PostgreSQL conversion tests.
+No live provider delivery is required for tests.
 
 
 ### Meta browser request metadata
@@ -504,7 +523,7 @@ browser attribution clearing. No live provider delivery is required for tests.
 Migration `0170_campaign_browser_user_agent` adds private browser metadata to
 account tracking preferences and conversion events. Authentication and fresh,
 version-matched attribution sync read the actual HTTP `User-Agent` header only
-when effective analytics permission allows retention. Empty, over-1024-character,
+when effective advertising permission allows retention. Empty, over-1024-character,
 and control-character values are rejected. No IP address is retained.
 
 Each new web conversion snapshots the latest consented browser user agent;

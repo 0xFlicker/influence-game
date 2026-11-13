@@ -3,20 +3,22 @@ export function analyticsMode(country: string | null): "opt-out" | "opt-in" {
   return country === "US" ? "opt-out" : "opt-in";
 }
 
-export type AnalyticsChoice = { analytics: boolean };
+export type AnalyticsChoice = { analytics: boolean; advertising?: boolean };
 
 export function parseAnalyticsChoice(raw: string | null): AnalyticsChoice | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw);
-    if (value.version !== 1 || typeof value.analytics !== "boolean") return null;
-    return { analytics: value.analytics };
+    if (![1, 2].includes(value?.version) || typeof value.analytics !== "boolean") return null;
+    if (value.version === 2 && typeof value.advertising !== "boolean") return null;
+    return { analytics: value.analytics, advertising: value.version === 2 ? value.advertising : value.analytics ? undefined : false };
   } catch { return null; }
 }
 
 export function analyticsPermission(country: string | null, choice: AnalyticsChoice | null, blocked: boolean) {
   const analytics = !blocked && (choice?.analytics ?? analyticsMode(country) === "opt-out");
-  return { analytics, recordings: analytics };
+  const advertising = !blocked && (choice?.advertising ?? analyticsMode(country) === "opt-out");
+  return { analytics, advertising, recordings: analytics };
 }
 
 export type AnalyticsNotice = { seen: boolean; path: string | null };

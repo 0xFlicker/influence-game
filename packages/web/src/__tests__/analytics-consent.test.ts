@@ -44,7 +44,7 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
         analytics.setAnalyticsIdentity(null, false);
         assert.equal(optedIn, 0);
       }
-      consent.saveAnalyticsChoice({ analytics: true });
+      consent.saveAnalyticsChoice({ analytics: true, advertising: true });
       await analytics.initializeAnalytics("test", "https://invalid.example");
       analytics.setAnalyticsIdentity(null, false);
       analytics.captureProductEvent("allowed");
@@ -115,11 +115,19 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       assert.equal(analytics.analyticsActive(), false);
       assert.deepEqual(events, ["allowed"]);
       assert.ok(stopped > 0 && optedOut > optOutsBeforeRouteChange);
+      consent.setAccountAnalyticsAllowed(false, false);
+      const revision = consent.getAnalyticsConsent().choiceRevision;
+      values.delete("house:analytics-consent");
+      window.dispatchEvent(event);
+      assert.equal(consent.getAnalyticsConsent().choiceRevision, revision);
+      assert.equal(consent.getAnalyticsConsent().analytics, false);
+      assert.equal(consent.getAnalyticsConsent().advertising, false);
       navigator.globalPrivacyControl = true;
       values.set("house:analytics-consent", JSON.stringify({ version: 1, analytics: true }));
       window.dispatchEvent(event);
       assert.equal(consent.getAnalyticsConsent().analytics, false);
       assert.equal(consent.getAnalyticsConsent().recordings, false);
+      assert.equal(consent.getAnalyticsConsent().advertising, false);
     `], { cwd: resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" });
     expect(result.stderr.toString()).toBe("");
     expect(result.exitCode).toBe(0);

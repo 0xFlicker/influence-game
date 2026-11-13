@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import { capturePage, initializeAnalytics, recordBrowserSession, setAnalyticsIdentity, suspendAnalytics } from "@/lib/product-analytics";
 import { dismissAnalyticsNotice, getAnalyticsConsent, loadAnalyticsConsent, setAccountAnalyticsAllowed, useAnalyticsConsent } from "@/lib/analytics-consent";
-import { bindCampaignAccount, clearCampaignAttribution } from "@/lib/campaign-attribution";
+import { bindCampaignAccount, clearCampaignAttribution, retainCampaignTouch } from "@/lib/campaign-attribution";
 import { AnalyticsPreference } from "./analytics-preference";
 
 export function ProductAnalytics() {
@@ -51,7 +51,17 @@ export function ProductAnalytics() {
         if (!active || api.getAuthToken() !== token) return;
         accountPreferenceVersion.current = result.version;
         lastChoiceRevision.current = consent.choiceRevision;
-        setAccountAnalyticsAllowed(result.analytics);
+        setAccountAnalyticsAllowed(result.analytics, result.advertising);
+      }
+      if (active && (!publicId || token) && !internal && !privateRoute && location.hostname === "thehouse.game" && (getAnalyticsConsent().analytics || getAnalyticsConsent().advertising)) {
+        bindCampaignAccount(publicId);
+        retainCampaignTouch(location.search);
+        if (publicId) {
+          const result = await api.retainCampaignAttribution(false, accountPreferenceVersion.current);
+          if (!active || api.getAuthToken() !== token) return;
+          accountPreferenceVersion.current = result.version;
+          setAccountAnalyticsAllowed(result.analytics, result.advertising);
+        }
       }
       if (!active || (publicId && !token) || !config.ready || !config.POSTHOG_PROJECT_TOKEN ||
         location.hostname !== "thehouse.game" || !getAnalyticsConsent().analytics || internal || privateRoute) return;
@@ -60,12 +70,6 @@ export function ProductAnalytics() {
       if (!active || api.getAuthToken() !== token || !getAnalyticsConsent().analytics) return;
       setAnalyticsIdentity(publicId, false);
       capturePage(pathname);
-      if (publicId) {
-        const result = await api.retainCampaignAttribution(false, accountPreferenceVersion.current);
-        if (!active || api.getAuthToken() !== token) return;
-        accountPreferenceVersion.current = result.version;
-        setAccountAnalyticsAllowed(result.analytics);
-      }
       if (active && getAnalyticsConsent().recordings) recordBrowserSession(pathname === "/agents/create" || pathname === "/dashboard");
     }).catch(() => {
       // A failed preference sync cannot authorize optional tracking.
@@ -77,7 +81,7 @@ export function ProductAnalytics() {
     });
     return () => { active = false; clearTimeout(retryTimer); recordBrowserSession(false); };
   }, [ready, config.ready, config.POSTHOG_PROJECT_TOKEN, pathname, account?.publicId, internal, privateRoute,
-    consent.ready, consent.analytics, consent.choiceRevision, retryAttempt]);
-  if (!ready || internal || privateRoute || pathname === "/privacy" || !config.POSTHOG_PROJECT_TOKEN) return null;
+    consent.ready, consent.analytics, consent.advertising, consent.choiceRevision, retryAttempt]);
+  if (!ready || internal || privateRoute || pathname === "/privacy") return null;
   return <AnalyticsPreference banner />;
 }

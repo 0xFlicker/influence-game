@@ -282,11 +282,13 @@ export const accountDeletionTasks = pgTable("account_deletion_tasks", {
   check("account_deletion_tasks_provider_check", sql`${table.provider} IN ('clerk', 'privy', 'posthog')`),
 ]);
 
-/** Account-wide effective preference, also used by MCP/API conversions. Missing means denied. */
+/** Account-wide purpose permissions, also used by MCP/API conversions. Missing means denied. */
 export const userAnalyticsPreferences = pgTable("user_analytics_preferences", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   analytics: boolean("analytics").notNull().default(false),
   analyticsExplicit: boolean("analytics_explicit").notNull().default(false),
+  advertising: boolean("advertising"),
+  advertisingExplicit: boolean("advertising_explicit").notNull().default(false),
   webUserAgent: text("web_user_agent"),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 });

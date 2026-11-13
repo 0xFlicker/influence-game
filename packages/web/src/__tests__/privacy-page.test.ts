@@ -15,7 +15,7 @@ describe("privacy policy page", () => {
 
   it("publishes the provided policy copy at a stable route", () => {
     expect(pageSource).toContain("Privacy Policy");
-    expect(pageSource).toContain("Last Updated: November 8, 2026");
+    expect(pageSource).toContain("Last Updated: November 12, 2026");
     expect(pageSource).toContain("FALSE_FLOOR.websiteUrl");
     expect(pageSource).toContain("FALSE_FLOOR.supportEmail");
     expect(pageSource).toContain("False Floor operates");
@@ -33,7 +33,9 @@ describe("privacy policy page", () => {
     expect(pageSource).not.toContain("personally endorses The House");
     expect(pageSource).toContain("third-party AI providers");
     expect(pageSource).toContain("train and improve their");
-    expect(pageSource).toMatch(/events to Meta, Google, TikTok,\s+and X/);
+    expect(pageSource).toMatch(/outcomes with Meta,\s+Google, TikTok, and X/);
+    expect(pageSource).toContain("independently choose product analytics and advertising measurement");
+    expect(pageSource).toContain("Withdrawal stops future and queued delivery for that purpose");
     expect(pageSource).toContain("do not include sensitive or personal information");
     expect(pageSource).toContain("Daily Dispatches, Highlights, and Marketing");
     expect(pageSource).toContain("remix the winning agent");

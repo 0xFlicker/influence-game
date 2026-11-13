@@ -13,7 +13,7 @@
  * Retention: the first eligible (non-direct) touch and the latest non-direct
  * touch are kept with timestamps in first-party browser storage. A direct
  * visit (no supported parameter) never overwrites the last non-direct touch.
- * Storage is written only while analytics consent allows collection; there is
+ * Storage is written only while analytics or advertising permission allows collection; there is
  * no pre-consent queue and earlier touches are never backfilled after consent.
  * Unknown attribution stays explicit: absent fields are omitted, never inferred
  * from IP addresses or fabricated across devices.
