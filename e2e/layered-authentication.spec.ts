@@ -481,8 +481,8 @@ test.describe("deterministic layered authentication", () => {
       {
         token: harness.tokens.newManaged,
         acceptTerms: true,
-        termsVersion: "2026-08-12",
-        privacyVersion: "2026-08-12",
+        termsVersion: "2026-11-12",
+        privacyVersion: "2026-11-12",
         deploymentSha: "unknown",
       },
     );
@@ -597,8 +597,8 @@ test.describe("deterministic layered authentication", () => {
       "/api/auth/legal-acceptance",
       {
         acceptTerms: true,
-        termsVersion: "2026-08-12",
-        privacyVersion: "2026-08-12",
+        termsVersion: "2026-11-12",
+        privacyVersion: "2026-11-12",
         deploymentSha: "unknown",
       },
       passwordSession.token,
@@ -654,8 +654,8 @@ test.describe("deterministic layered authentication", () => {
       {
         token: "clerk:unused",
         acceptTerms: true,
-        termsVersion: "2026-08-12",
-        privacyVersion: "2026-08-12",
+        termsVersion: "2026-11-12",
+        privacyVersion: "2026-11-12",
         deploymentSha: "unknown",
       },
     );
