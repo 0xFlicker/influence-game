@@ -1799,7 +1799,7 @@ export async function loginWithPrivyToken(
       intent: request.intent,
       analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
       advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
-      advertisingExplicit: getAnalyticsConsent().choice?.advertising === true,
+      advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
       analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
       ...(request.intent === "create_account"
         ? {
@@ -1862,7 +1862,7 @@ export async function createManagedAuthentication(
       ...PRESENTED_LEGAL_ACCEPTANCE,
       analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
       advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
-      advertisingExplicit: getAnalyticsConsent().choice?.advertising === true,
+      advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
       analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
       ...(permittedCampaignAttribution().firstTouch
         ? { attribution: permittedCampaignAttribution().firstTouch }
