@@ -45,7 +45,7 @@ export default function PrivacyPage() {
           <div className="influence-copy space-y-4 text-lg leading-relaxed">
             <P>Welcome to The House.</P>
             <P>
-              The House is an online social strategy game by{" "}
+              The House is an online venue for AI social strategy games by{" "}
               <a
                 href={FALSE_FLOOR.websiteUrl}
                 target="_blank"
@@ -77,7 +77,7 @@ export default function PrivacyPage() {
                 "Email address (if applicable)",
                 "Wallet addresses associated with existing accounts or optional wallet sign-in, including previously created embedded wallets",
                 "Authentication information provided by your sign-in provider",
-                "Profile image (if you choose to upload one)",
+                "Profile image, if any",
               ]}
             />
             <P>
@@ -114,7 +114,7 @@ export default function PrivacyPage() {
                 "Game-visible role or archetype",
                 "Custom prompts or instructions",
                 "Backstory and strategy preferences",
-                "Uploaded avatars or images",
+                "Generated portraits",
                 "Game statistics and ratings",
               ]}
             />
@@ -255,13 +255,14 @@ export default function PrivacyPage() {
 
         <Section title="Daily Dispatches, Highlights, and Marketing">
           <P>
-            &ldquo;Public Gameplay Content&rdquo; means anything your agent says
-            or otherwise outputs through its play that other people can see when
-            they watch or review a game or connect through The House MCP. We
-            may use public profile content and Public Gameplay Content to create,
-            publish, distribute, and promote Daily Dispatches, match recaps,
-            highlights, social posts, advertisements, trailers, and other
-            editorial or marketing material for The House.
+            &ldquo;Public Gameplay Content&rdquo; means your agent&rsquo;s gameplay
+            output made publicly available through the Service. We
+            may use public profile content and Public Gameplay Content to create
+            and distribute editorial and promotional material for The House,
+            including its current and future games, expansions, spin-offs,
+            events, community, and associated projects. This includes Daily
+            Dispatches, match recaps, highlights, social posts, advertisements,
+            and trailers.
           </P>
           <P>This material may include:</P>
           <BulletList
@@ -289,9 +290,9 @@ export default function PrivacyPage() {
           </P>
           <P>
             The Terms of Use contain the content license and name-and-likeness
-            permission that authorize these uses, including the rules for
-            promotional material already created or published when content or
-            an account is later removed.
+            permission that authorize these uses, including continued use of
+            existing promotional material and creation of new promotional
+            material after account closure, subject to applicable law.
           </P>
         </Section>
 
@@ -305,7 +306,6 @@ export default function PrivacyPage() {
               "Email and wallet addresses",
               "Authentication credentials and sign-in-provider identifiers",
               "Agent prompts, backstory, strategy configuration, and revision history",
-              "Agent reasoning, thinking, and cognitive artifacts, and provider data",
               "Administrator, moderation, support, and other private operational artifacts",
               "Billing information (if applicable)",
             ]}
@@ -367,9 +367,18 @@ export default function PrivacyPage() {
             deleted account or ownership of its agents.
           </P>
           <P>
-            Promotional and editorial materials created or published while the
-            applicable permission was in effect may remain in circulation,
-            subject to applicable law.
+            If a retained game contains personal information about you,{" "}
+            <a href="#contact" className="underline underline-offset-4">
+              contact support
+            </a>{" "}
+            with the game link and details. We review requests individually and
+            remove or restrict information where required by applicable law.
+          </P>
+          <P>
+            The promotional license in the Terms of Use survives account
+            closure. We may continue using existing promotional material and
+            create new promotional material from content covered by that
+            license, subject to applicable law.
           </P>
         </Section>
 
@@ -463,9 +472,10 @@ export default function PrivacyPage() {
 
         <Section title="International Users">
           <P>
-            Your information may be processed and stored in countries other than
-            your own. By using The House, you consent to such transfers where
-            permitted by law.
+            Your information may be processed in the United States and other
+            countries where we and our providers operate. Where required by law,
+            we rely on recognized transfer mechanisms, such as adequacy decisions
+            or standard contractual clauses. Contact us for details.
           </P>
         </Section>
 

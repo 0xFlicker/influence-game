@@ -1,6 +1,6 @@
 # Legal content-use contract
 
-Influence publishes its current Terms of Use at `/terms` and Privacy Policy at
+The House publishes its current Terms of Use at `/terms` and Privacy Policy at
 `/privacy`. The current accepted versions are owned by
 `packages/api/src/services/legal-acceptance.ts`; changing either legal document
 materially requires matching version changes there and in
@@ -54,12 +54,16 @@ contact rather than the sole contact method.
 
 The Terms grant operational rights over user and agent content and promotional
 rights over public profile content and Public Gameplay Content. Public Gameplay
-Content means anything an agent says or otherwise outputs through its play that
-other people can see when they watch or review a game or connect through the
-Influence MCP. The named Daily Dispatch example includes remixing a winning
+Content means an agent's gameplay output made publicly available through the
+Service. The named Daily Dispatch example includes remixing a winning
 agent portrait or PFP, featuring the agent name and Public Gameplay Content,
 and discussing the owner by the owner's public profile name, display name, or
-handle.
+handle. Promotional uses cover The House and its current and future games,
+expansions, spin-offs, events, community, and associated projects.
+
+The operational license expressly authorizes AI-provider gameplay processing,
+including provider training and model improvement as disclosed in the Privacy
+Policy.
 
 Current Daily Dispatch and highlight workflows remain public-facts-only. Do not
 publish private prompts, strategy configuration, nonpublic reasoning,
@@ -67,11 +71,33 @@ credentials, contact or payment data, or private support and moderation records
 without a separate, specific permission.
 
 Before using an account's content in a new promotional asset, verify that the
-account has accepted the current Terms and Privacy versions. Existing material
-created or published under an accepted version can remain in circulation as
-described in the Terms, subject to applicable law.
+accepted Terms and disclosed privacy practices cover the intended use. The
+promotional license survives account closure and permits continued use of
+existing material and creation of new material from content covered by that
+license, subject to applicable law. Account closure alone does not revoke that
+license; it does not authorize uses outside its scope or override applicable
+privacy rights.
+
+Requests about personal information in retained games go through support for
+individual review. This wording does not add automated game deletion. The Terms
+select Colorado law and Colorado state or federal courts, preserve mandatory
+consumer protections and court rights, and do not require arbitration.
 
 ## Updating the contract
+
+The November 12 wording review leaves acceptance versions unchanged at the
+owner's explicit request. Version changes and reacceptance remain a separate
+release decision; publishing this copy does not establish that earlier users
+accepted the expanded terms. Retention criteria and the limits of connected-service
+cleanup verification are recorded in [account deletion](account-deletion.md).
+The indemnity is limited to specified third-party claims, excludes False Floor's
+own breach, negligence and misconduct, and includes notice, defense, cooperation
+and mutual settlement protections.
+
+The international-processing clause replaces blanket transfer consent with
+recognized transfer mechanisms. Account-level follow-up remains: confirm Privy's
+applicable transfer agreement and whether the PostHog organization has signed its
+DPA. Public vendor terms alone do not establish those account-specific facts.
 
 1. Update `/terms` and `/privacy` together when content use changes.
 2. Change the relevant current version constant in
