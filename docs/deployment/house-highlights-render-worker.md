@@ -108,8 +108,9 @@ the signed URL query causes Linode to reject the PUT with `403 AccessDenied`.
 For upload failures, inspect **Studio → Tools → Trailer & poster** for the
 underlying `artifact_upload_*` error; the global render monitor reports only
 `worker_failed`. Verify one failed trailer through publication and public reads
-before retrying a backlog. Retrying uses the frozen trailer input, not new game
-content.
+before retrying a backlog. The game-owned retry prepares its trailer snapshot
+from persisted source content; compare the old and new snapshot hashes during
+recovery to confirm the selected content has not changed.
 
 The API container keeps `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`,
 `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET`. The worker receives lease-bound,
