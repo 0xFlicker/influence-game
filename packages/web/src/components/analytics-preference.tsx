@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { usePathname } from "next/navigation";
 import { dismissAnalyticsNotice, loadAnalyticsConsent, saveAnalyticsChoice, showAnalyticsNotice, useAnalyticsConsent } from "@/lib/analytics-consent";
 
@@ -7,16 +7,8 @@ export function AnalyticsPreference({ banner = false }: { banner?: boolean }) {
   const consent = useAnalyticsConsent();
   const pathname = usePathname();
   const [error, setError] = useState(false);
-  const [open, setOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const detailsId = useId();
-  const panel = useRef<HTMLElement>(null);
-  const reopen = useRef<HTMLButtonElement>(null);
-  const restoreFocus = useRef(false);
-  useEffect(() => {
-    if (open) panel.current?.focus();
-    else if (restoreFocus.current) { reopen.current?.focus(); restoreFocus.current = false; }
-  }, [open, consent.choiceRevision, consent.notice.path]);
   const [draft, setDraft] = useState<{ analytics: boolean; advertising: boolean } | null>(null);
   const analytics = !consent.blocked && (draft?.analytics ?? consent.analytics);
   const advertising = !consent.blocked && (draft?.advertising ?? consent.advertising);
@@ -26,16 +18,15 @@ export function AnalyticsPreference({ banner = false }: { banner?: boolean }) {
     if (banner && consent.ready && consent.country === "US" && !complete && !consent.blocked) showAnalyticsNotice(pathname);
   }, [banner, consent.ready, consent.country, complete, consent.blocked, pathname]);
   if (!consent.ready) return null;
-  const hidden = banner && !open && !error && (complete || consent.blocked || (consent.country === "US" && consent.notice.seen && consent.notice.path !== pathname));
+  const hidden = banner && !error && (complete || consent.blocked || (consent.country === "US" && consent.notice.seen && consent.notice.path !== pathname));
   const focus = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary";
   const button = `influence-button-secondary min-h-11 rounded-lg px-2 py-2 text-xs sm:text-sm ${focus}`;
-  if (hidden) return <button ref={reopen} type="button" className={`${button} fixed bottom-2 left-2 z-50 bg-surface`} onClick={() => { setDraft(null); setDetailsOpen(false); setOpen(true); }}>Tracking preferences</button>;
+  if (hidden) return null;
   const choose = (analytics: boolean, advertising: boolean) => {
     const saved = saveAnalyticsChoice({ analytics, advertising });
     setError(!saved);
-    if (saved) { restoreFocus.current = banner; setOpen(false); }
   };
-  return <section ref={panel} tabIndex={-1} aria-label="Tracking preferences" data-analytics-private className={banner
+  return <section aria-label="Tracking preferences" data-analytics-private className={banner
     ? "fixed bottom-0 left-0 right-0 z-50 max-h-[100dvh] overflow-y-auto border-t border-border-strong bg-surface-raised px-4 py-3 text-text-primary shadow-2xl"
     : "text-text-primary"}>
     <div className={`grid gap-x-8 gap-y-2 ${banner ? "lg:grid-cols-[minmax(0,1fr)_clamp(24rem,36vw,40rem)] lg:items-center" : ""}`}>
@@ -51,7 +42,7 @@ export function AnalyticsPreference({ banner = false }: { banner?: boolean }) {
           <div className="flex flex-wrap items-center gap-x-4 text-xs">
             <button type="button" aria-expanded={detailsOpen} aria-controls={detailsId} className={`flex min-h-8 items-center gap-1.5 ${focus}`} onClick={() => setDetailsOpen(value => !value)}><span aria-hidden="true">{detailsOpen ? "▾" : "▸"}</span><span className="underline underline-offset-4">Purpose details</span></button>
             <a className={`flex min-h-8 items-center underline underline-offset-4 ${focus}`} href="/privacy#analytics">Privacy policy</a>
-            {banner && (open || consent.country === "US") && <button type="button" className={`min-h-8 underline underline-offset-4 ${focus}`} onClick={() => { restoreFocus.current = true; dismissAnalyticsNotice(); setOpen(false); }}>Close</button>}
+            {banner && consent.country === "US" && <button type="button" className={`min-h-8 underline underline-offset-4 ${focus}`} onClick={() => dismissAnalyticsNotice()}>Close</button>}
           </div>
         </div>
         {consent.blocked && <p className="text-sm">Your browser privacy signal or storage settings disable both optional purposes.</p>}

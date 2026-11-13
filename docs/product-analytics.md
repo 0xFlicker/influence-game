@@ -390,8 +390,8 @@ visible. Related choices and supporting links stay grouped; the three actions
 have equal visual weight. Purpose details expand separately, with bounded
 scrolling for descriptions on short screens and pinned actions when needed.
 The Privacy page uses a stacked layout rather than the banner’s desktop columns. The controls accompany Accept all,
-Reject optional, and Save choices. There are no per-vendor controls. A persistent
-Tracking preferences button and the Privacy page reopen the choices.
+Reject optional, and Save choices. There are no per-vendor controls. A Tracking preferences link in the site footer leads to the controls on the
+Privacy page. No floating control remains after the banner is dismissed.
 
 The existing regional defaults are unchanged: both optional purposes default on
 in the US, and off elsewhere or when country is unknown. DNT/GPC and inaccessible
