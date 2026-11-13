@@ -25,6 +25,7 @@ export function AnalyticsPreference({ banner = false }: { banner?: boolean }) {
   const choose = (analytics: boolean, advertising: boolean) => {
     const saved = saveAnalyticsChoice({ analytics, advertising });
     setError(!saved);
+    if (saved) setDraft(null);
   };
   return <section aria-label="Tracking preferences" data-analytics-private className={banner
     ? "fixed bottom-0 left-0 right-0 z-50 max-h-[100dvh] overflow-y-auto border-t border-border-strong bg-surface-raised px-4 py-3 text-text-primary shadow-2xl"
