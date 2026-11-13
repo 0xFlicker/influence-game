@@ -89,7 +89,10 @@ describe("AWS object storage compatibility", () => {
     const constrained = await generateConstrainedPublicUpload({ key: "postgame-media/fixture/video.mp4", contentType: "video/mp4", byteLength: 3, sha256: "a".repeat(64), targetId: "synthetic-target" });
     expect(constrained.uploadHeaders["x-amz-acl"]).toBeUndefined();
     expect(constrained.uploadHeaders["if-none-match"]).toBe("*");
-    expect(new URL(constrained.uploadUrl).searchParams.get("X-Amz-SignedHeaders")).toContain("x-amz-checksum-sha256");
+    const constrainedUrl = new URL(constrained.uploadUrl);
+    expect(constrainedUrl.searchParams.get("X-Amz-SignedHeaders")).toContain("x-amz-checksum-sha256");
+    expect(constrainedUrl.searchParams.get("X-Amz-SignedHeaders")).not.toContain("x-amz-acl");
+    expect(constrainedUrl.searchParams.has("x-amz-checksum-sha256")).toBe(false);
   });
 
   test("public legacy URLs resolve only through exact configured bases", () => {
