@@ -14,7 +14,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { prepareVisualScene, readCurrentVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { renderPlannedVisualScene, renderVisualCandidate } from "../services/visual-scene-renderer.js";
-import { readVisualRenderAccounting } from "../services/visual-render-journal.js";
+import { readVisualRenderAccounting, renderDurableVisualImage, reserveVisualRender } from "../services/visual-render-journal.js";
 const originalFetch = globalThis.fetch;
 const originalKey = process.env.OPENAI_API_KEY;
 let db: DrizzleDB;
@@ -67,12 +67,38 @@ test("renders and verifies a small scene once, then resumes entirely from durabl
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
 });
 
-test.each([9, 10, 12, 14])("renders %i contestants into distinct room regions and harmonizes a continuous scene", async size => {
+test.each([false, true])("resumes an earlier template reservation without replacing its prompt or repeating a completed image (%s)", async completed => {
+  const planned = await scene(3);
+  const operationKey = `${planned.id}:render:${planned.renderRevision}:room-crop:v1:0`;
+  const request = { operation: "create" as const, background: "opaque" as const, width: 1536, height: 864,
+    references: [png, png, png, png], prompt: "Previous deployment: every face must face the camera." };
+  const reserved = await reserveVisualRender(db, "game", operationKey, request, planned.id);
+  if (completed) await renderDurableVisualImage(db, { gameId: "game", sceneId: planned.id, operationKey, request });
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const ready = await renderPlannedVisualScene(db, planned);
+  expect(ready.status).toBe("ready");
+  expect(prompts).toEqual(completed ? [] : [request.prompt]);
+  expect(imageCalls).toBe(1);
+  const [retained] = await loadPayloads(db.select().from(schema.visualRenderOperations).where(eq(schema.visualRenderOperations.id, reserved.id)));
+  expect(retained!.inputHash).toBe(reserved.inputHash);
+  expect(retained!.request).toEqual(reserved.request);
+});
+
+test.each([8, 9, 10, 12, 14])("renders %i contestants into distinct room regions and harmonizes a continuous scene", async size => {
   const bands = await sharp({ create: { width: 3072, height: 1536, channels: 3, background: "red" } }).composite([{ input: await sharp({ create: { width: 1536, height: 1536, channels: 3, background: "blue" } }).png().toBuffer(), left: 1536, top: 0 }]).png().toBuffer();
   artifactId = await storeVisualArtifact(db, "game", bands);
   const mock = globalThis.fetch, backdrops: string[] = [];
   globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).includes("/v1/images/")) {
+      const prompt = String((init?.body as FormData).get("prompt"));
+      expect(prompt).toContain("Allow natural head turns, side profiles, leaning and gestures");
+      expect(prompt).toContain("Keep every entire head visible, separated, in frame and recognizable");
+      expect(prompt).not.toContain("Every face must be visible from the front");
+      expect(prompt).not.toContain("Keep all faces visible");
       const inputs = (init?.body as FormData).getAll("image[]");
       expect(inputs.length).toBeLessThanOrEqual(5);
       backdrops.push(Buffer.from(await (inputs[0] as Blob).arrayBuffer()).toString("base64"));
@@ -397,11 +423,34 @@ test.each(["village", "pack", "hunt"] as const)("preserves frozen Werewolf %s di
   await renderPlannedVisualScene(db, prepared);
   const regions = Math.ceil(size / 4);
   expect(prompts).toHaveLength(regions + (regions > 1 ? 1 : 0));
-  for (const prompt of prompts) expect(prompt).toContain(plan.direction!.roomDirection);
+  for (const prompt of prompts) {
+    expect(prompt).toContain(plan.direction!.roomDirection);
+    expect(prompt).toContain("Allow natural head turns, side profiles");
+    expect(prompt).not.toContain("facing camera");
+    expect(prompt).not.toContain("facing the camera");
+    expect(prompt).not.toContain("front or three-quarter");
+  }
   for (const placement of plan.placements) expect(prompts.filter(prompt => prompt.includes(JSON.stringify(placement.position)))).toHaveLength(1);
   if (size > 4) for (const prompt of prompts.slice(0, regions)) expect(prompt).toContain("Do not reconstruct the entire room");
 });
 
+
+test("rendering an older frozen plan preserves its original staging direction", async () => {
+  const { plan } = await scene(3);
+  plan.direction = { purpose: "werewolf-village", revision: "lantern-village-v1", style: "Rustic village", roomName: "Village", roomDirection: "Seat everyone around the far semicircle with the near half open to camera." };
+  plan.placements = plan.placements.map(p => ({ ...p, position: "Original frozen seat, facing camera" }));
+  const planned = await prepareVisualScene(db, { gameId: "game", boundarySequence: 2, plan });
+  const original = structuredClone(planned.plan);
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  await renderVisualCandidate(db, planned);
+  expect(planned.plan).toEqual(original);
+  expect(prompts[0]).toContain(original.direction!.roomDirection);
+  expect(prompts[0]).toContain("Original frozen seat, facing camera");
+});
 
 test("generic repair defaults do not impose whole-room staging on a supplied crop", async () => {
   const mock = globalThis.fetch, prompts: string[] = [];
