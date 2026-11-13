@@ -61,6 +61,17 @@ function clerkApiResponseError(code: string, message: string) {
 }
 
 describe("unified authentication wrapper", () => {
+  it("disables automatic embedded wallets while preserving email and wallet login", () => {
+    const providerSource = readFileSync(
+      join(import.meta.dir, "../app/providers.tsx"),
+      "utf8",
+    );
+    expect(providerSource).toMatch(/ethereum:\s*\{\s*createOnLogin:\s*"off"\s*\}/);
+    expect(providerSource).toContain('loginMethods: ["email", "wallet"]');
+    expect(providerSource).not.toContain('"users-without-wallets"');
+    expect(providerSource).not.toContain('"all-users"');
+  });
+
   it("matches the settled sign-in and create-account method matrix", () => {
     expect(AUTHENTICATION_METHOD_MATRIX.sign_in).toEqual([
       "email_password",

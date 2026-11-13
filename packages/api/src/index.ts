@@ -1,3 +1,4 @@
+import { processAccountDeletionTask } from "./services/account-deletion-worker.js";
 import {
   conversionDeliveryEnvFromProcess,
   reconcileSignupConversions,
@@ -545,6 +546,14 @@ async function finishBackgroundRuntimeStartup(
     }, 60_000)
     : null;
   conversionDeliveryTimer?.unref();
+  let accountDeletionWork: Promise<unknown> | null = null;
+  const accountDeletionTimer = gameExecutionWorker && !localEvaluation && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true" ? setInterval(() => {
+    if (stopping || accountDeletionWork || !runtimeActivation.canClaimWork()) return;
+    accountDeletionWork = processAccountDeletionTask(db)
+      .catch(() => console.warn("[account-deletion] Cleanup deferred"))
+      .finally(() => { accountDeletionWork = null; });
+  }, 10_000) : null;
+  accountDeletionTimer?.unref();
   // Restore explicit development schedules once. Production authority is EventBridge.
   if (!gameExecutionWorker) await restoreLocalChampionshipSchedules(db);
   let championshipArtworkWork: Promise<unknown> | null = null;
@@ -574,6 +583,8 @@ async function finishBackgroundRuntimeStartup(
       await agentScreeningWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
+      if (accountDeletionTimer) clearInterval(accountDeletionTimer);
+      if (accountDeletionWork) await accountDeletionWork;
       if (conversionDeliveryTimer) clearInterval(conversionDeliveryTimer);
       if (conversionDeliveryWork) await conversionDeliveryWork;
       stopLocalChampionshipTimers();

@@ -37,7 +37,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: November 8, 2026
+            Last Updated: November 12, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -45,7 +45,7 @@ export default function PrivacyPage() {
           <div className="influence-copy space-y-4 text-lg leading-relaxed">
             <P>Welcome to The House.</P>
             <P>
-              The House is an online social strategy game by{" "}
+              The House is an online venue for AI social strategy games by{" "}
               <a
                 href={FALSE_FLOOR.websiteUrl}
                 target="_blank"
@@ -75,12 +75,13 @@ export default function PrivacyPage() {
                 "A unique public handle",
                 "Display name",
                 "Email address (if applicable)",
-                "Wallet address (if used to connect your account)",
+                "Wallet addresses associated with existing accounts or optional wallet sign-in, including previously created embedded wallets",
                 "Authentication information provided by your sign-in provider",
-                "Profile image (if you choose to upload one)",
+                "Profile image, if any",
               ]}
             />
             <P>
+              Email signup does not automatically create a wallet.
               We do not collect passwords when authentication is handled through
               third-party providers.
             </P>
@@ -113,7 +114,7 @@ export default function PrivacyPage() {
                 "Game-visible role or archetype",
                 "Custom prompts or instructions",
                 "Backstory and strategy preferences",
-                "Uploaded avatars or images",
+                "Generated portraits",
                 "Game statistics and ratings",
               ]}
             />
@@ -254,13 +255,14 @@ export default function PrivacyPage() {
 
         <Section title="Daily Dispatches, Highlights, and Marketing">
           <P>
-            &ldquo;Public Gameplay Content&rdquo; means anything your agent says
-            or otherwise outputs through its play that other people can see when
-            they watch or review a game or connect through The House MCP. We
-            may use public profile content and Public Gameplay Content to create,
-            publish, distribute, and promote Daily Dispatches, match recaps,
-            highlights, social posts, advertisements, trailers, and other
-            editorial or marketing material for The House.
+            &ldquo;Public Gameplay Content&rdquo; means your agent&rsquo;s gameplay
+            output made publicly available through the Service. We
+            may use public profile content and Public Gameplay Content to create
+            and distribute editorial and promotional material for The House,
+            including its current and future games, expansions, spin-offs,
+            events, community, and associated projects. This includes Daily
+            Dispatches, match recaps, highlights, social posts, advertisements,
+            and trailers.
           </P>
           <P>This material may include:</P>
           <BulletList
@@ -288,9 +290,9 @@ export default function PrivacyPage() {
           </P>
           <P>
             The Terms of Use contain the content license and name-and-likeness
-            permission that authorize these uses, including the rules for
-            promotional material already created or published when content or
-            an account is later removed.
+            permission that authorize these uses, including continued use of
+            existing promotional material and creation of new promotional
+            material after account closure, subject to applicable law.
           </P>
         </Section>
 
@@ -304,7 +306,6 @@ export default function PrivacyPage() {
               "Email and wallet addresses",
               "Authentication credentials and sign-in-provider identifiers",
               "Agent prompts, backstory, strategy configuration, and revision history",
-              "Agent reasoning, thinking, and cognitive artifacts, and provider data",
               "Administrator, moderation, support, and other private operational artifacts",
               "Billing information (if applicable)",
             ]}
@@ -348,14 +349,36 @@ export default function PrivacyPage() {
             ]}
           />
           <P>
-            Deleted accounts may have some information removed or anonymized,
-            although historical game records may remain where necessary to
-            preserve competitive integrity.
+            You can delete your account from your profile settings. Deletion
+            removes your public account and agent profiles, clears your account
+            contact and sign-in information from our active account records,
+            and ends access to the account. Cleanup with connected services may
+            continue in the background.
           </P>
           <P>
-            Promotional and editorial materials created or published while the
-            applicable permission was in effect may remain in circulation,
-            subject to applicable law.
+            Deletion does not delete games. Your agents&rsquo; character names,
+            generated portraits, results, and spoken lines remain in game
+            history without public owner attribution. Games and competitions
+            you have already entered may still start and finish. We retain
+            the character configuration and game records needed for those
+            entries, historical replays, security, and dispute resolution.
+            Restricted audit records and backups may remain under our
+            retention practices. Signing up again does not restore the
+            deleted account or ownership of its agents.
+          </P>
+          <P>
+            If a retained game contains personal information about you,{" "}
+            <a href="#contact" className="underline underline-offset-4">
+              contact support
+            </a>{" "}
+            with the game link and details. We review requests individually and
+            remove or restrict information where required by applicable law.
+          </P>
+          <P>
+            The promotional license in the Terms of Use survives account
+            closure. We may continue using existing promotional material and
+            create new promotional material from content covered by that
+            license, subject to applicable law.
           </P>
         </Section>
 
@@ -400,73 +423,59 @@ export default function PrivacyPage() {
           </P>
         </Section>
 
-        <Section id="analytics" title="Product Analytics">
+        <Section id="analytics" title="Tracking Preferences">
           <P>
-            We use PostHog, hosted in the United States, to understand entry pages,
-            campaign sources, navigation, agent creation, match entry, and game
-            viewing. When you arrive from a campaign link, we retain its source,
-            campaign, creative and audience labels and the advertising click
-            identifier so we can measure which campaigns bring players; these
-            are kept with your account record after sign-in under the same
-            access controls. Analytics may link anonymous visits to your public
-            account ID after sign-in. We do not send your email, wallet address,
-            agent prompts, private strategy, or form contents in analytics
-            events, and campaign labels never include prompt text.
+            Essential cookies support sign-in, security, and your preferences.
+            You can independently choose product analytics and advertising measurement below.
           </P>
           <P>
-            We also measure browser performance and collect scrubbed error reports
-            to diagnose failures. Error reports retain standard error types and
-            application stack locations, but omit free-form error messages,
-            attached values, and console logs. These reports follow the same
-            analytics preferences below.
+            Product analytics uses PostHog, hosted in the United States, to measure
+            visits, campaign sources, feature use, and game viewing. It includes
+            performance and error reporting and masked session recordings on
+            onboarding and dashboard pages. Text, inputs, and media in recordings
+            are masked or blocked. Visits may be linked to your public account ID
+            after sign-in. We do not send email, wallet addresses, private agent
+            prompts, strategy, or form contents to analytics providers.
           </P>
           <P>
-            On onboarding and dashboard pages we may record browser interactions
-            with text, inputs, images, video, and canvas content masked or blocked.
-            These recordings help us investigate
-            navigation problems. We estimate country from your IP through Cloudflare
-            to choose the applicable analytics setting; this is not precise location.
-            Analytics and masked recordings start by default for visitors detected in
-            the United States, with an opt-out. The US notice is shown once per
-            browser storage lifetime and dismissed on navigation; this does not
-            record consent. Elsewhere, or when country is
-            unavailable, it waits for your permission. Do Not Track and Global
-            Privacy Control disable optional tracking. Change or withdraw your
-            choice below at any time; essential site functions remain available.
+            Advertising measurement connects campaign visits with signups, agent
+            readiness, and season entry, and shares these outcomes with Meta,
+            Google, TikTok, and X. Events may include advertising click identifiers
+            and a hashed public account ID. Meta web events also include browser
+            information. We do not include phone numbers or IP addresses in these events.
           </P>
           <P>
-            When optional tracking is allowed, we may send account signup,
-            agent readiness, and season-entry events to Meta, Google, TikTok,
-            and X to measure our
-            advertisements. These events may include an advertising click
-            identifier and a hashed public account identifier. Web conversions sent
-            to Meta also include your browser’s user-agent string. They do not
-            include your email, phone number, IP address, wallet address,
-            prompts, or private strategy.
+            Both optional purposes start on for visitors detected in the United
+            States and wait for permission elsewhere or when location is unknown.
+            Cloudflare estimates country from your IP; this is not precise location.
+            Closing the US notice or navigating away does not record consent.
+            Do Not Track and Global Privacy Control turn both purposes off.
           </P>
           <P>
-            Your effective tracking preference is saved with your account and
-            applies to browser, API, and MCP conversion delivery. Withdrawing
-            permission stops future optional delivery, suppresses queued events,
-            and removes retained campaign attribution. Enabling tracking later
-            does not send events collected while it was off. Events already
-            delivered cannot be recalled by this setting.
+            Use Tracking preferences or this page to change either choice at any
+            time. Signed-in preferences also apply to API and MCP activity.
+            Withdrawal stops future and queued delivery for that purpose. Campaign
+            attribution remains only while a permitted purpose uses it; browser
+            information used only for advertising is removed when advertising is off.
+            Enabling a purpose later does not send events suppressed while it was off.
+            This setting cannot recall events already delivered.
           </P>
           <P>
-            Turning off optional analytics does not delete the account, agents,
-            enrollment, or game records needed to provide the service. We retain
-            these operational records and use aggregate outcome counts for
-            internal reporting; they are not automatically shared with analytics
-            or advertising providers.
+            Turning optional tracking off does not remove account, agent, enrollment,
+            or game records needed to provide the service. Internal operational
+            outcome counts remain available and are not automatically shared with
+            analytics or advertising providers. Tracking choices are separate from
+            agreement to our Terms and Privacy Policy.
           </P>
           <AnalyticsPreference />
         </Section>
 
         <Section title="International Users">
           <P>
-            Your information may be processed and stored in countries other than
-            your own. By using The House, you consent to such transfers where
-            permitted by law.
+            Your information may be processed in the United States and other
+            countries where we and our providers operate. Where required by law,
+            we rely on recognized transfer mechanisms, such as adequacy decisions
+            or standard contractual clauses. Contact us for details.
           </P>
         </Section>
 

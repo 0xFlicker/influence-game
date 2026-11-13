@@ -6,6 +6,12 @@ authentication without replacing Privy or changing any Influence account ID.
 ## Rules that do not change
 
 - Privy email and wallet login remain first-class signup and login paths.
+- Automatic embedded-wallet creation is off. New email accounts do not need a
+  wallet; existing wallets, stored addresses, sign-in and linking remain intact.
+  Local regressions use injected Privy profiles. Live Privy verification must
+  confirm a fresh email signup creates no wallet, email re-login works, and
+  existing email/embedded-wallet and external-wallet accounts retain access.
+  This configuration change does not change legal acceptance versions.
 - `users.id` remains the durable Influence account ID.
 - The rollout adds credential and verified-email records. It does not merge
   accounts by email, rewrite IDs, transfer ownership, or delete users.

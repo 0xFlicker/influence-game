@@ -20,7 +20,7 @@ test("account sync serializes withdrawal and does not leak attribution across ac
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(async () => Response.json({ country: "US" }), { preconnect: originalFetch.preconnect });
   let account = "account-a";
-  const pending: Array<{ account: string; analytics: boolean; explicit: boolean; expectedVersion?: string; attribution: unknown; resolve: (result: { analytics: boolean; version: string }) => void }> = [];
+  const pending: Array<{ account: string; analytics: boolean; advertising: boolean; explicit: boolean; expectedVersion?: string; attribution: unknown; resolve: (result: { analytics: boolean; advertising: boolean; version: string }) => void }> = [];
   let initialized = 0;
   mock.module("next/navigation", () => ({ usePathname: () => "/season-1" }));
   mock.module("@/hooks/use-auth", () => ({ useAuth: () => ({ ready: true, account: { publicId: account, roles: [], isAdmin: false } }) }));
@@ -30,8 +30,8 @@ test("account sync serializes withdrawal and does not leak attribution across ac
   const attribution = await import("../lib/campaign-attribution");
   mock.module("@/lib/api", () => ({
     getAuthToken: () => account,
-    retainCampaignAttribution: (explicit = false, expectedVersion?: string) => new Promise<{ analytics: boolean; version: string }>(resolve => {
-      pending.push({ account, analytics: consent.getAnalyticsConsent().analytics, explicit, expectedVersion,
+    retainCampaignAttribution: (explicit = false, expectedVersion?: string) => new Promise<{ analytics: boolean; advertising: boolean; version: string }>(resolve => {
+      pending.push({ account, analytics: consent.getAnalyticsConsent().analytics, advertising: consent.getAnalyticsConsent().advertising, explicit, expectedVersion,
         attribution: attribution.getStoredCampaignAttribution(), resolve });
     }),
   }));
@@ -49,32 +49,34 @@ test("account sync serializes withdrawal and does not leak attribution across ac
     await waitFor(() => expect(pending).toHaveLength(1));
     expect(pending[0]).toMatchObject({ account: "account-a", analytics: true, explicit: false });
     // Withdrawal while the allow request is still in flight must win.
-    await act(async () => { consent.saveAnalyticsChoice({ analytics: false }); });
+    await act(async () => { consent.saveAnalyticsChoice({ analytics: false, advertising: false }); });
     expect(pending).toHaveLength(1);
-    await act(async () => { pending[0]!.resolve({ analytics: true, version: "allowed-v1" }); });
+    await act(async () => { pending[0]!.resolve({ analytics: true, advertising: true, version: "allowed-v1" }); });
     await waitFor(() => expect(pending).toHaveLength(2));
-    expect(pending[1]).toMatchObject({ analytics: false, explicit: true, attribution: { firstTouch: null, lastNonDirectTouch: null } });
+    expect(pending[1]).toMatchObject({ analytics: false, advertising: false, explicit: true, attribution: { firstTouch: null, lastNonDirectTouch: null } });
     expect(initialized).toBe(0);
-    await act(async () => { pending[1]!.resolve({ analytics: false, version: "denied-v2" }); });
+    await act(async () => { pending[1]!.resolve({ analytics: false, advertising: false, version: "denied-v2" }); });
     expect(consent.getAnalyticsConsent().analytics).toBe(false);
+    expect(consent.getAnalyticsConsent().advertising).toBe(false);
     // A fresh explicit enable can lift the account denial.
-    await act(async () => { consent.saveAnalyticsChoice({ analytics: true }); });
+    await act(async () => { consent.saveAnalyticsChoice({ analytics: true, advertising: true }); });
     await waitFor(() => expect(pending).toHaveLength(3));
     expect(pending[2]).toMatchObject({ analytics: true, explicit: true, expectedVersion: "denied-v2" });
     // Switch accounts before the old request resolves; its result cannot identify the new account.
     attribution.retainCampaignTouch("?utm_campaign=private-to-a");
     account = "account-b";
     view.rerender(<ProductAnalytics />);
-    await act(async () => { pending[2]!.resolve({ analytics: true, version: "allowed-v1" }); });
+    await act(async () => { pending[2]!.resolve({ analytics: true, advertising: true, version: "allowed-v1" }); });
     await waitFor(() => expect(pending).toHaveLength(4));
     expect(pending[3]).toMatchObject({ account: "account-b", explicit: false, attribution: { firstTouch: null, lastNonDirectTouch: null } });
     expect(initialized).toBe(0);
     expect(pending[3]!.expectedVersion).toBeUndefined();
-    await act(async () => { pending[3]!.resolve({ analytics: false, version: "denied-v2" }); });
+    await act(async () => { pending[3]!.resolve({ analytics: false, advertising: false, version: "denied-v2" }); });
     expect(consent.getAnalyticsConsent().analytics).toBe(false);
+    expect(consent.getAnalyticsConsent().advertising).toBe(false);
   } finally {
     cleanup();
-    for (const request of pending) request.resolve({ analytics: false, version: "denied-v2" });
+    for (const request of pending) request.resolve({ analytics: false, advertising: false, version: "denied-v2" });
     await act(async () => {});
     globalThis.fetch = originalFetch;
     dom.close();

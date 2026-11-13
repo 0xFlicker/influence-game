@@ -8,6 +8,9 @@
 import { createHmac } from "node:crypto";
 import { Hono, type Context } from "hono";
 import type { DrizzleDB } from "../db/index.js";
+import { schema } from "../db/index.js";
+import { eq } from "drizzle-orm";
+import { deleteAccount } from "../services/account-deletion.js";
 import {
   verifyPrivyToken,
   getPrivyUser,
@@ -89,6 +92,19 @@ export function createAuthRoutes(
   dependencies: AuthRouteDependencies = {},
 ) {
   const app = new Hono<AuthEnv>();
+  app.delete("/api/account", requireAuth(db, { allowPendingLegalAcceptance: true }), async c => {
+    const body = await parseJsonBody(c, "DELETE /api/account");
+    if (!body || Array.isArray(body) || body.confirmation !== "DELETE" || Object.keys(body).length !== 1) {
+      return c.json({ error: "Confirm account deletion by typing DELETE" }, 400);
+    }
+    const session = await verifySessionToken(c.req.header("Authorization")!.slice(7));
+    if (!session || session.issuedAt < Date.now() / 1000 - 600) {
+      return c.json({ error: "Sign out and sign in again before deleting your account.", code: "REAUTH_REQUIRED" }, 403);
+    }
+    const result = await deleteAccount(db, c.get("user").id);
+    c.header("Cache-Control", "no-store");
+    return c.json({ ...result, status: "deleted", providerCleanup: "pending" }, 202);
+  });
   const verifyPrivyAccessToken = dependencies.verifyPrivyToken ?? verifyPrivyToken;
   const loadPrivyUser = dependencies.getPrivyUser ?? getPrivyUser;
   const inviteIsRequired = dependencies.isInviteRequired ?? isInviteRequired;
@@ -130,6 +146,8 @@ export function createAuthRoutes(
       "attribution",
       "analytics",
       "analyticsExplicit",
+      "advertising",
+      "advertisingExplicit",
     ]);
     if (!request.ok) return request.response;
     const { body } = request;
@@ -234,7 +252,7 @@ export function createAuthRoutes(
     }
     await recordAuthenticationTracking(db, {
       userId: authentication.user.id, publicId: authentication.user.publicId,
-      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, attribution: body.attribution, userAgent: c.req.header("User-Agent"),
+      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, advertising: requestedAnalytics(c, body.advertising), advertisingExplicit: body.advertisingExplicit, attribution: body.attribution, userAgent: c.req.header("User-Agent"),
     });
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -359,6 +377,8 @@ export function createAuthRoutes(
         "attribution",
         "analytics",
         "analyticsExplicit",
+        "advertising",
+        "advertisingExplicit",
       ],
       "acceptTerms",
     );
@@ -400,7 +420,7 @@ export function createAuthRoutes(
     if (outcome.status === "authenticated" && outcome.created) {
       await recordAuthenticationTracking(db, {
         userId: outcome.user.id, publicId: outcome.user.publicId, created: true,
-        analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, attribution: request.body.attribution, userAgent: c.req.header("User-Agent"),
+        analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, advertising: requestedAnalytics(c, request.body.advertising), advertisingExplicit: request.body.advertisingExplicit, attribution: request.body.attribution, userAgent: c.req.header("User-Agent"),
       });
     }
     if (outcome.status === "invite_required") {
@@ -638,6 +658,8 @@ async function readInfluenceSession(
   if (!token) return { status: "absent" };
   const session = await verifySessionToken(token);
   if (!session) return { status: "absent" };
+  const [user] = await db.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, session.userId));
+  if (!user || user.deletedAt) return { status: "absent" };
   if (hasCurrentLegalAcceptanceVersions(session.legalAcceptance)) {
     return { status: "authenticated", userId: session.userId };
   }
@@ -660,6 +682,8 @@ type StrictAuthBody = {
   attribution?: unknown;
   analytics?: unknown;
   analyticsExplicit?: unknown;
+  advertising?: unknown;
+  advertisingExplicit?: unknown;
 };
 
 async function readStrictTokenRequest(

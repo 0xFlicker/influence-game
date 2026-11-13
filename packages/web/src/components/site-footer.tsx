@@ -51,6 +51,7 @@ export const SITE_FOOTER_SECTIONS: ReadonlyArray<{
     links: [
       { label: "Terms", href: "/terms" },
       { label: "Privacy", href: "/privacy" },
+      { label: "Tracking preferences", href: "/privacy#analytics" },
     ],
   },
 ];

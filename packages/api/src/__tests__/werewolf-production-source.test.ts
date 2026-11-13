@@ -19,9 +19,29 @@ import sharp from "sharp";
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { deleteAccount } from "../services/account-deletion.js";
 
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); });
+
+test("account deletion preserves accepted Werewolf source and viewer history", async () => {
+  const id = "deleted-owner-source", events = await werewolfResultsFixture("saved", id);
+  const started = events[0]!;
+  if (started.type !== "werewolf.started") throw new Error("Fixture requires a start event");
+  started.payload.players[0]!.agentProfileId = "owned-character";
+  await db.insert(schema.users).values({ id: "character-owner", displayName: "Former owner" });
+  await db.insert(schema.agentProfiles).values({ id: "owned-character", userId: "character-owner", name: "Current character", personality: "Patient" });
+  await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", startedAt: "2026-09-01T00:00:00.000Z", config: '{"visibility":"public"}' });
+  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
+  const before = await readWerewolfProductionSource(db, id, { audience: "omniscient", thinking: true });
+  const viewer = await readWerewolfWatch(db, id, "omniscient", 1, 64, before.snapshot.publicationCutoff);
+  await deleteAccount(db, "character-owner");
+  const after = await readWerewolfProductionSource(db, id, { audience: "omniscient", thinking: true, snapshot: before.snapshot });
+  expect(after.snapshot).toEqual(before.snapshot);
+  expect(after.window).toEqual(before.window);
+  expect(after.catalog).toEqual(before.catalog);
+  expect(await readWerewolfWatch(db, id, "omniscient", 1, 64, before.snapshot.publicationCutoff)).toEqual(viewer);
+});
 
 test("obsolete artwork-bound descriptors fail clearly; a current gameplay-only source remains usable", async () => {
   // Captured with origin/main 0bcc1079's catalog and source builder, not the

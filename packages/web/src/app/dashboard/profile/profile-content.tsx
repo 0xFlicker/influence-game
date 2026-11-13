@@ -17,6 +17,7 @@ import { derivePublicHandle } from "@/components/public-identity-onboarding-mode
 import { playerProfileHref } from "@/lib/player-profile-links";
 import { useAuth } from "@/hooks/use-auth";
 import { useRuntimeConfig } from "@/lib/runtime-config";
+import { DeleteAccountSection } from "./delete-account-section";
 
 export function ProfileAwards({ profile }: { profile: Pick<PlayerProfile, "displayName" | "awards"> }) {
   if (!profile.awards?.length) return null;
@@ -531,6 +532,7 @@ export function ProfileContent({ onAuthAction }: { onAuthAction?: () => void } =
 
 
       {/* Link to leaderboard */}
+      <DeleteAccountSection />
       <div className="text-center">
         <Link href="/games/free" className="influence-link text-sm">View Influence leaderboard →</Link>
       </div>

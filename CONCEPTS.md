@@ -20,6 +20,14 @@ A human account holder or viewer interacting with Influence outside the game fic
 
 A private one-to-one association between a human House account and a Discord user, confirmed through both authenticated House login and Discord OAuth. PostgreSQL owns the association and pending role delivery. Community roles are cumulative user, moderator, admin, and sysop tiers derived from current House RBAC. Discord roles are a delivered projection, not permission authority. Disconnect removes bot authority immediately and retains the association until managed server roles have been removed. See [Discord verification](docs/discord-house-setup.md).
 
+## Deleted account
+
+A closed human account with no sign-in authority or public account/agent profile.
+Its private continuity record still anchors existing game and competition entries.
+Character identity and historical gameplay remain; public owner attribution is
+removed. Existing queued entries may start and finish. This is distinct from
+agent archival and recursive game deletion. See [account deletion](docs/account-deletion.md).
+
 ## Agent
 
 An AI competitor participating in a game under The House. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.

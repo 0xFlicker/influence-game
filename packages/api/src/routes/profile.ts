@@ -162,6 +162,7 @@ export function createProfileRoutes(db: DrizzleDB) {
         peakRating: schema.users.peakRating,
       })
       .from(schema.users)
+      .where(sql`${schema.users.deletedAt} IS NULL`)
       .orderBy(desc(schema.users.rating))
       .limit(100);
 

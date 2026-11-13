@@ -75,6 +75,7 @@ describe("site footer", () => {
       },
       { label: "Terms", href: "/terms" },
       { label: "Privacy", href: "/privacy" },
+      { label: "Tracking preferences", href: "/privacy#analytics" },
     ]);
   });
 

@@ -1766,8 +1766,8 @@ export interface AuthMe extends AuthenticatedPublicIdentity {
 
 export const PRESENTED_LEGAL_ACCEPTANCE = {
   acceptTerms: true,
-  termsVersion: "2026-08-12",
-  privacyVersion: "2026-08-12",
+  termsVersion: "2026-11-12",
+  privacyVersion: "2026-11-12",
   deploymentSha: process.env.NEXT_PUBLIC_GIT_SHA ?? "unknown",
 } as const;
 
@@ -1798,6 +1798,8 @@ export async function loginWithPrivyToken(
       token: privyToken,
       intent: request.intent,
       analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+      advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
+      advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
       analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
       ...(request.intent === "create_account"
         ? {
@@ -1859,6 +1861,8 @@ export async function createManagedAuthentication(
       ...(inviteCode ? { inviteCode } : {}),
       ...PRESENTED_LEGAL_ACCEPTANCE,
       analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+      advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
+      advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
       analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
       ...(permittedCampaignAttribution().firstTouch
         ? { attribution: permittedCampaignAttribution().firstTouch }
@@ -1869,17 +1873,17 @@ export async function createManagedAuthentication(
 
 function permittedCampaignAttribution() {
   const consent = getAnalyticsConsent();
-  return consent.ready && consent.analytics ? getStoredCampaignAttribution() : { firstTouch: null, lastNonDirectTouch: null };
+  return consent.ready && (consent.analytics || consent.advertising) ? getStoredCampaignAttribution() : { firstTouch: null, lastNonDirectTouch: null };
 }
 
 /** Sync even denials and empty attribution. Capture the session before starting the request. */
-export async function retainCampaignAttribution(explicitChoice = false, expectedVersion?: string): Promise<{ analytics: boolean; version: string }> {
+export async function retainCampaignAttribution(explicitChoice = false, expectedVersion?: string): Promise<{ analytics: boolean; advertising: boolean; version: string }> {
   const consent = getAnalyticsConsent();
   const stored = permittedCampaignAttribution();
   return apiFetch("/api/attribution/retain", {
     method: "POST",
     signal: AbortSignal.timeout(5000),
-    body: JSON.stringify({ analytics: consent.ready && consent.analytics, analyticsExplicit: consent.choice?.analytics === true, explicitChoice, expectedVersion,
+    body: JSON.stringify({ advertising: consent.ready && consent.advertising, advertisingExplicit: consent.choice?.advertising === true, analytics: consent.ready && consent.analytics, analyticsExplicit: consent.choice?.analytics === true, explicitChoice, expectedVersion,
       firstTouch: stored.firstTouch, lastTouch: stored.lastNonDirectTouch }),
   });
 }
@@ -3939,6 +3943,10 @@ export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
 
 export async function getProfile(): Promise<PlayerProfile> {
   return apiFetch("/api/profile");
+}
+
+export async function deleteMyAccount(): Promise<{ status: "deleted"; deletedAt: string; providerCleanup: "pending" }> {
+  return apiFetch("/api/account", { method: "DELETE", body: JSON.stringify({ confirmation: "DELETE" }) });
 }
 
 export async function updateProfile(

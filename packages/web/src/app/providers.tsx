@@ -376,7 +376,7 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
               accentColor: "#6366f1",
             },
             embeddedWallets: {
-              ethereum: { createOnLogin: "users-without-wallets" },
+              ethereum: { createOnLogin: "off" },
             },
           }}
         >

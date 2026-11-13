@@ -1198,6 +1198,27 @@
       "when": 1794096000004,
       "tag": "0170_campaign_browser_user_agent",
       "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1794441600000,
+      "tag": "0171_account_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1794441600001,
+      "tag": "0172_account_deletion_fences",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1794441600002,
+      "tag": "0173_tracking_purposes",
+      "breakpoints": true
     }
   ]
 }

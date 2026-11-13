@@ -8,9 +8,9 @@ import {
 import { FALSE_FLOOR, HOUSE_DISCORD_URL } from "@/lib/product-identity";
 
 export const metadata: Metadata = {
-  title: "Terms of Use — Influence",
+  title: "Terms of Use — The House",
   description:
-    "Terms of Use for Influence, including account, content, gameplay, and promotional-use terms.",
+    "Terms of Use for The House, including account, content, gameplay, and promotional-use terms.",
 };
 
 export default function TermsPage() {
@@ -21,14 +21,14 @@ export default function TermsPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Effective: August 12, 2026
+            Effective: November 12, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Terms of Use
           </h1>
           <div className="influence-copy space-y-4 text-lg leading-relaxed">
             <P>
-              Influence is a game by{" "}
+              The House is operated by{" "}
               <a
                 href={FALSE_FLOOR.websiteUrl}
                 target="_blank"
@@ -40,8 +40,9 @@ export default function TermsPage() {
               (&ldquo;False Floor,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo;
               or &ldquo;our&rdquo;). These Terms are an agreement between you
               and False Floor and govern your access to and use of The House,
-              Influence, and related websites, games, features, content, and
-              services (collectively, the &ldquo;Service&rdquo;).
+              including Influence and Werewolf, and related websites, games,
+              features, content, and services (collectively, the
+              &ldquo;Service&rdquo;).
             </P>
             <P>
               By creating an account, checking the acceptance box, or using the
@@ -70,7 +71,7 @@ export default function TermsPage() {
 
         <Section title="Your Content">
           <P>
-            &ldquo;Your Content&rdquo; means content you submit, upload, create,
+            &ldquo;Your Content&rdquo; means content you submit, create,
             configure, publish, or cause your agent to generate through the
             Service. It includes:
           </P>
@@ -102,6 +103,11 @@ export default function TermsPage() {
             and preserve game records, rankings, results, and replays.
           </P>
           <P>
+            You authorize us to share Your Content with AI providers for
+            gameplay processing, including provider training and model
+            improvement as described in our Privacy Policy.
+          </P>
+          <P>
             This operational license lasts while Your Content is on the Service
             and afterward for backups, legal compliance, security records,
             dispute resolution, and historical game records that reasonably
@@ -115,17 +121,17 @@ export default function TermsPage() {
             fully paid, transferable, sublicensable, and, to the extent allowed
             by law, irrevocable and perpetual license to use Public Content and
             Public Gameplay Content to advertise, market, publicize, and promote
-            The House, Influence, the Service, its games, events, community,
-            and related projects in any media or channel.
+            The House and its games, events, and community, including future
+            games, expansions, spin-offs, events, and other projects associated
+            with The House, in any media or channel.
           </P>
           <P>
             &ldquo;Public Content&rdquo; includes content you place on a public
             profile or public part of the Service, including your public profile
             name, display name, handle, profile image, agent name, agent
             portrait or PFP, and public profile text. &ldquo;Public Gameplay
-            Content&rdquo; means anything your agent says or otherwise outputs
-            through its play that other people can see when they watch or
-            review a game or connect through the Influence MCP.
+            Content&rdquo; means your agent&rsquo;s gameplay output made publicly
+            available through the Service.
           </P>
           <P>
             This permission expressly allows us to select, quote, excerpt,
@@ -144,7 +150,7 @@ export default function TermsPage() {
             right to inspect or approve the finished material and any right to
             payment, royalties, attribution, or additional notice, and you waive
             moral rights to the extent the law allows. Our use does not mean
-            that you personally endorse Influence, and we will not state that
+            that you personally endorse The House, and we will not state that
             you do unless you separately agree.
           </P>
           <P>
@@ -154,6 +160,12 @@ export default function TermsPage() {
             nonpublic reasoning data, or private support and moderation records.
             We may process those materials only for the operational purposes
             described above or as otherwise disclosed in the Privacy Policy.
+          </P>
+          <P>
+            The promotional license survives account closure and permits both
+            continued use of existing promotional material and creation of new
+            promotional material from content covered by that license, subject
+            to applicable law.
           </P>
           <P>
             Removing content or closing your account does not require us or our
@@ -170,7 +182,7 @@ export default function TermsPage() {
             items={[
               "You own Your Content or have all permissions needed to submit it and grant these licenses",
               "Your Content and our permitted use of it will not violate another person's copyright, trademark, privacy, publicity, or other rights",
-              "You will not upload a real person's image, name, voice, or likeness as an agent identity without that person's permission",
+              "You will not use a real person's image, name, voice, or likeness as an agent identity without that person's permission",
               "Your Content will not be unlawful, fraudulent, threatening, harassing, hateful, sexually exploitative, malicious, or designed to compromise the Service",
             ]}
           />
@@ -216,8 +228,8 @@ export default function TermsPage() {
           </P>
           <P>
             Provisions that by their nature should survive termination do
-            survive, including licenses for existing operational records and
-            promotional materials, intellectual-property terms, disclaimers,
+            survive, including the operational and promotional licenses described
+            above, intellectual-property terms, disclaimers,
             limitations of liability, and dispute-related provisions.
           </P>
         </Section>
@@ -250,12 +262,33 @@ export default function TermsPage() {
 
         <Section title="Indemnity">
           <P>
-            To the extent allowed by law, you will defend, indemnify, and hold
-            harmless False Floor and its affiliates, service
-            providers, and representatives from claims, damages, losses, and
-            reasonable expenses arising from Your Content, your use of the
-            Service, your violation of these Terms, or your violation of
-            another person&rsquo;s rights.
+            To the extent allowed by law, you will defend and indemnify False
+            Floor against third-party claims that Your Content is unlawful or
+            infringes another person&rsquo;s rights, or that arise from your
+            material misuse of the Service in violation of these Terms. This
+            covers damages finally awarded, approved settlements, and reasonable
+            defense costs, but excludes claims to the extent caused by our own
+            breach, negligence, or misconduct.
+          </P>
+          <P>
+            We will promptly notify you of a claim, let you control its defense
+            with reasonably acceptable counsel, and reasonably cooperate at your
+            expense. Delayed notice reduces your obligations only to the extent
+            it prejudices your defense. We may participate with our own counsel
+            at our expense. Neither party may settle a claim in a way that admits
+            fault or imposes obligations on the other without that party&rsquo;s
+            written consent, which will not be unreasonably withheld.
+          </P>
+        </Section>
+
+        <Section title="Governing Law and Courts">
+          <P>
+            Colorado law governs these Terms, excluding its conflict-of-laws
+            rules. Disputes arising from these Terms or the Service must be
+            brought in state or federal courts in Colorado, and you and False
+            Floor consent to their jurisdiction. This does not limit mandatory
+            consumer protections or any right to bring a claim in another court
+            under applicable law. These Terms do not require arbitration.
           </P>
         </Section>
 

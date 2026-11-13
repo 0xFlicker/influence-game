@@ -23,8 +23,8 @@ export function discordCommunityRoles(roles: string[]): string[] {
 }
 
 async function lockAccount(tx: Transaction, userId: string) {
-  const [user] = await tx.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.id, userId)).for("update");
-  if (!user) invalidAttempt();
+  const [user] = await tx.select({ id: schema.users.id, deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, userId)).for("update");
+  if (!user || user.deletedAt) invalidAttempt();
 }
 
 export async function startDiscordVerification(db: DrizzleDB, userId: string, nonce: string, config: DiscordOAuthConfig) {
@@ -124,7 +124,7 @@ export async function resolveDiscordAuthority(db: DrizzleDB | Transaction, disco
   if (!connection) return { connected: false as const };
   const [user] = await db.select().from(schema.users).where(eq(schema.users.id, connection.userId));
   const [service] = await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, connection.userId));
-  if (!user || service || user.walletAddress === "0x0000000000000000000000000000000000000000") return { connected: false as const };
+  if (!user || user.deletedAt || service || user.walletAddress === "0x0000000000000000000000000000000000000000") return { connected: false as const };
   const authority = await getPermissionsForUser(db, connection.userId);
   return { connected: true as const, publicId: user.publicId, roles: authority.roles, permissions: authority.permissions,
     communityRoles: discordCommunityRoles(authority.roles) };
@@ -175,7 +175,8 @@ export async function completeDiscordRoleWork(db: DrizzleDB, input: { id: string
       await tx.update(connections).set({ lease: null, leaseUntil: null, attempts: row.attempts + 1, lastError: input.error,
         nextAttemptAt: sql`now() + ${delay} * interval '1 second'` }).where(eq(connections.id, row.id));
     } else if (row.disconnecting) {
-      await tx.insert(schema.discordConnectionAudit).values({ userId: row.userId, discordId: row.discordId, action: "removed" });
+      const [owner] = await tx.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, row.userId));
+      if (!owner?.deletedAt) await tx.insert(schema.discordConnectionAudit).values({ userId: row.userId, discordId: row.discordId, action: "removed" });
       await tx.delete(connections).where(eq(connections.id, row.id));
     } else {
       await tx.update(connections).set({ lease: null, leaseUntil: null, deliveredRevision: row.revision,

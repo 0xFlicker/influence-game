@@ -221,6 +221,7 @@ const MCP_OAUTH_SCOPE_CHECK_SQL = sql.raw(
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(), // Private authentication/legacy account key.
+  deletedAt: text("deleted_at"),
   publicId: uuid("public_id").defaultRandom().notNull(),
   handle: text("handle"),
   walletAddress: text("wallet_address").unique(),
@@ -266,11 +267,28 @@ export const users = pgTable("users", {
   ),
 ]);
 
-/** Account-wide effective preference, also used by MCP/API conversions. Missing means denied. */
+/** External erasure is retryable; target identifiers are cleared after acknowledgement. */
+export const accountDeletionTasks = pgTable("account_deletion_tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  provider: text("provider").notNull().$type<"clerk" | "privy" | "posthog">(),
+  target: text("target"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, table => [
+  index("account_deletion_tasks_pending_idx").on(table.nextAttemptAt),
+  check("account_deletion_tasks_provider_check", sql`${table.provider} IN ('clerk', 'privy', 'posthog')`),
+]);
+
+/** Account-wide purpose permissions, also used by MCP/API conversions. Missing means denied. */
 export const userAnalyticsPreferences = pgTable("user_analytics_preferences", {
   userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   analytics: boolean("analytics").notNull().default(false),
   analyticsExplicit: boolean("analytics_explicit").notNull().default(false),
+  advertising: boolean("advertising"),
+  advertisingExplicit: boolean("advertising_explicit").notNull().default(false),
   webUserAgent: text("web_user_agent"),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 });

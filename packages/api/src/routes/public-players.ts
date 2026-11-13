@@ -4,7 +4,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { getPublicPlayerProfile } from "../services/public-player-profile.js";
 import { and, eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
-import { eligibleAgentContent } from "../services/agent-content-eligibility.js";
+import { publiclyVisibleAgentContent } from "../services/agent-content-eligibility.js";
 import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import sharp from "sharp";
@@ -39,7 +39,7 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
     const id = c.req.param("identifier");
     const [row] = await db.select({ name: schema.agentProfiles.name, avatarUrl: schema.agentProfiles.avatarUrl, wallet: schema.users.walletAddress })
       .from(schema.agentProfiles).innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-      .where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
+      .where(and(eq(schema.agentProfiles.id, id), publiclyVisibleAgentContent()));
     if (!row || isImportedSyntheticPlayer(row.wallet)) return c.notFound();
     return c.json({ schemaVersion: 1, status: "found", profile: {
       name: row.name, avatarUrl: row.avatarUrl, profileHref: `/agents/${encodeURIComponent(id)}`, awards: await publicAgentAwards(db, id),
@@ -56,7 +56,7 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
       return await withPublicArtworkCapacity(async () => {
         const [initial] = await db.select({ profile: schema.agentProfiles, wallet: schema.users.walletAddress }).from(schema.agentProfiles)
           .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-          .where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
+          .where(and(eq(schema.agentProfiles.id, id), publiclyVisibleAgentContent()));
         if (!initial || isImportedSyntheticPlayer(initial.wallet)) return c.notFound();
         const profile = initial.profile;
         const url = kind === "body" ? (await readAgentTransparentBodies(db, [profile])).get(id) : profile.avatarUrl;
@@ -67,7 +67,7 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
         // Revalidate before returning the old bytes, never cache visibility.
         const [current] = await db.select({ revision: schema.agentProfiles.contentRevisionId, body: schema.agentProfiles.fullBodyReferenceUrl, avatar: schema.agentProfiles.avatarUrl, wallet: schema.users.walletAddress })
           .from(schema.agentProfiles).innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-          .where(and(eq(schema.agentProfiles.id, id), eligibleAgentContent()));
+          .where(and(eq(schema.agentProfiles.id, id), publiclyVisibleAgentContent()));
         if (!current || isImportedSyntheticPlayer(current.wallet)) return c.notFound();
         if (current.revision !== profile.contentRevisionId || current.body !== profile.fullBodyReferenceUrl || current.avatar !== profile.avatarUrl) {
           return new Response(null, { status: 503, headers: { "Cache-Control": "private, no-store", "Retry-After": "1" } });
