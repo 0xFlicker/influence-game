@@ -49,6 +49,32 @@ night actions with dawn could spoil the death in a hunt summary despite the
 prompt. Independent pre-resolution inputs removed that information entirely. These corrections do not rewrite accepted copy
 from the exploratory game.
 
+The `young-pink-prism` production game exposed two further narration errors:
+the first dawn reported six living players instead of seven, and the second
+dawn announced nightfall rather than the completed night's no-death result.
+Future authoring now sends an explicit `announcementKind`: resolved nights are
+`dawn_result`, while independently scoped choices are `night_action`. Dawn,
+phase-opening and pre-resolution action instructions are separate; a dawn call
+never receives the instruction to withhold the later dawn result.
+The final user message puts roster context first, followed by the announcement
+kind, day, event/choice facts, count timing, required votes and living count.
+`countTiming` distinguishes the pre-resolution action board from the board after
+the current event. Dawn instructions explicitly say that the living count already
+includes casualties and must not have deaths subtracted again. A no-death dawn
+must announce that nobody died, without disclosing a cause to Mystery.
+These are authoring-only changes: schemas, accepted narration references,
+historical copy, observations, projections and viewer/Studio/export consumers
+are unchanged. Existing selections and MP4s retain their accepted copy; no
+historical narration should be regenerated to adopt this prompt revision.
+Native-request regressions cover zero, one and two deaths, both audiences,
+final fact ordering and the separation of dawn/action/phase instructions.
+
+Validation for this dawn-prompt revision (2026-11-13): nine focused tests pass;
+the provider-free baseline passes 3,526 tests with five skips and no failures;
+the local PostgreSQL baseline passes all 2,638 tests across 248 files; typecheck
+and lint pass. The provider-free run required localhost access after the sandbox
+prevented test servers from binding. No paid evaluation or deployment was run.
+
 ## Local verification
 
 - Provider-free baseline after the facts-only prompt revision: 3,495 passed, 5 skipped, zero failures; focused narration/Hunter

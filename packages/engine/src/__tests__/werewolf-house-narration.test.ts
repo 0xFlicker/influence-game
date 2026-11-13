@@ -62,6 +62,8 @@ describe("Werewolf House narration", () => {
     }
     expect(hunt.requestedParts).toEqual(["hunt"]);
     expect(shot.requestedParts).toEqual(["snipe"]);
+    expect(hunt.announcementKind).toBe("night_action");
+    expect(hunt.countTiming).toBe("before_night_resolution");
     expect(werewolfHouseNarrationInput(prefix,"mystery","hunt")).toBeNull();
   });
   test("vote narration supplies the living count and exact majority after deaths", async () => {
@@ -128,6 +130,70 @@ describe("Werewolf House narration", () => {
   });
 });
 
+test("native House requests distinguish dawn from choices and end with authoritative facts", async () => {
+  const {default:OpenAI} = await import("openai");
+  const {createProviderAdapter} = await import("../provider-adapters");
+  const {modelCatalogEntryById} = await import("../model-catalog");
+  const {generateWerewolfHouseNarration} = await import("../werewolf/house-narration");
+  const model = modelCatalogEntryById("katana:glm-5-2")!;
+  let calls = 0;
+  for (const mode of ["held","double","saved"] as const) {
+    const events = await completedHunterFixture(mode);
+    const index = events.findIndex(event => event.type === "werewolf.night_resolved");
+    const prefix = events.slice(0,index+1);
+    const expectedLiving = mode === "held" ? 7 : mode === "double" ? 6 : 8;
+    for (const audience of ["mystery","omniscient"] as const) {
+      const seen = new Set<string>();
+      const client = new OpenAI({apiKey:"fixture",baseURL:"http://fixture.invalid/v1",maxRetries:0,fetch:async(_url,init)=>{
+        const request=JSON.parse(String(init?.body));
+        expect(request.messages.map((message:{role:string})=>message.role)).toEqual(["system","user"]);
+        const instructions=request.messages[0].content as string;
+        const serialized=request.messages.at(-1).content as string;
+        const input=JSON.parse(serialized);
+        expect(Object.keys(input).indexOf("players")).toBeLessThan(Object.keys(input).indexOf("announcementKind"));
+        expect(serialized.endsWith(`"requiredVotes":null,"livingPlayerCount":${input.livingPlayerCount}}`)).toBe(true);
+        expect(input.requestedParts).toHaveLength(1);
+        seen.add(input.announcementKind);
+        if (input.announcementKind === "dawn_result") {
+          expect(instructions).toContain("Announce dawn and the result of the completed night");
+          expect(instructions).toContain("never subtract the casualties again");
+          expect(instructions).toContain("If no deaths are supplied");
+          expect(instructions).not.toContain("before night resolution");
+          expect(input.countTiming).toBe("after_current_event");
+          expect(input.livingPlayerCount).toBe(expectedLiving);
+          expect(input.actions).toEqual([]);
+          if (audience === "mystery") {
+            expect(input.entry.deadPlayerIds).toHaveLength(8-expectedLiving);
+            expect(serialized).not.toContain("protectedId");
+            expect(serialized).not.toContain("attackTargetId");
+          } else if (mode === "saved") {
+            expect(input.entry.killedId).toBeNull();
+            expect(input.entry.protectedId).toBe(input.entry.attackTargetId);
+          }
+        } else {
+          expect(input.announcementKind).toBe("night_action");
+          expect(instructions).toContain("Announce only the supplied night-action choice or held shot");
+          expect(instructions).toContain("Do not reveal or predict dawn deaths");
+          expect(instructions).toContain("A supplied Seer investigation result belongs to that action and may be announced");
+          expect(instructions).not.toContain("Announce dawn");
+          expect(input.countTiming).toBe("before_night_resolution");
+          expect(input.livingPlayerCount).toBe(8);
+          expect(input.entry).toBeNull();
+          expect(input.actions).toHaveLength(1);
+          expect(serialized).not.toContain("killedId");
+        }
+        const content=JSON.stringify({[input.requestedParts[0]]:"A fixture announcement."});
+        return Response.json({id:`house-order-${calls++}`,object:"chat.completion",created:0,model:model.modelId,
+          choices:[{index:0,finish_reason:"stop",message:{role:"assistant",content}}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:10}});
+      }});
+      const runtime={adapter:createProviderAdapter("katana",client),catalogId:model.id,providerProfileId:"katana" as const,modelId:model.modelId,
+        modelCapabilities:model.capabilities,reasoningPolicy:"medium" as const,position:0,role:"primary" as const};
+      await generateWerewolfHouseNarration({events:prefix,audience,runtimes:[runtime],hooks:{},ownerEpoch:"fixture"});
+      expect([...seen].sort()).toEqual(audience === "mystery" ? ["dawn_result"] : ["dawn_result","night_action"]);
+    }
+  }
+});
+
 test("House authoring retries malformed native payloads and rejects exhausted output", async () => {
   const {default:OpenAI} = await import("openai");
   const {createProviderAdapter} = await import("../provider-adapters");
@@ -141,10 +207,15 @@ test("House authoring retries malformed native payloads and rejects exhausted ou
     const client = new OpenAI({apiKey:"fixture",baseURL:"http://fixture.invalid/v1",maxRetries:0,fetch:async(_url,init)=>{
       const request=JSON.parse(String(init?.body));
       expect(request.messages[0].content).toContain("game-show announcer");
+      expect(request.messages[0].content).toContain("Introduce only the supplied current phase");
+      expect(request.messages[0].content).not.toContain("Announce dawn");
+      expect(request.messages[0].content).not.toContain("Announce only the supplied night-action choice");
       const input=JSON.parse(request.messages[1].content);
       expect(input).not.toHaveProperty("required");
       expect(input.requestedParts).toEqual(["scene"]);
       expect(input.entry).toEqual({kind:"phase",day:0,phase:"introduction"});
+      expect(input.announcementKind).toBe("phase");
+      expect(input.countTiming).toBe("after_current_event");
       expect(JSON.stringify(input)).not.toContain("Introduce yourselves");
       const content=responses[Math.min(calls++,responses.length-1)]!;
       return Response.json({id:`house-${calls}`,object:"chat.completion",created:0,model:model.modelId,
