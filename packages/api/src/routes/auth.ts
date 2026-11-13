@@ -146,6 +146,8 @@ export function createAuthRoutes(
       "attribution",
       "analytics",
       "analyticsExplicit",
+      "advertising",
+      "advertisingExplicit",
     ]);
     if (!request.ok) return request.response;
     const { body } = request;
@@ -250,7 +252,7 @@ export function createAuthRoutes(
     }
     await recordAuthenticationTracking(db, {
       userId: authentication.user.id, publicId: authentication.user.publicId,
-      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, attribution: body.attribution, userAgent: c.req.header("User-Agent"),
+      created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, advertising: requestedAnalytics(c, body.advertising), advertisingExplicit: body.advertisingExplicit, attribution: body.attribution, userAgent: c.req.header("User-Agent"),
     });
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -375,6 +377,8 @@ export function createAuthRoutes(
         "attribution",
         "analytics",
         "analyticsExplicit",
+        "advertising",
+        "advertisingExplicit",
       ],
       "acceptTerms",
     );
@@ -416,7 +420,7 @@ export function createAuthRoutes(
     if (outcome.status === "authenticated" && outcome.created) {
       await recordAuthenticationTracking(db, {
         userId: outcome.user.id, publicId: outcome.user.publicId, created: true,
-        analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, attribution: request.body.attribution, userAgent: c.req.header("User-Agent"),
+        analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, advertising: requestedAnalytics(c, request.body.advertising), advertisingExplicit: request.body.advertisingExplicit, attribution: request.body.attribution, userAgent: c.req.header("User-Agent"),
       });
     }
     if (outcome.status === "invite_required") {
@@ -678,6 +682,8 @@ type StrictAuthBody = {
   attribution?: unknown;
   analytics?: unknown;
   analyticsExplicit?: unknown;
+  advertising?: unknown;
+  advertisingExplicit?: unknown;
 };
 
 async function readStrictTokenRequest(

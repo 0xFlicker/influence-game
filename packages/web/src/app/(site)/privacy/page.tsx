@@ -37,7 +37,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: November 8, 2026
+            Last Updated: November 12, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -414,64 +414,49 @@ export default function PrivacyPage() {
           </P>
         </Section>
 
-        <Section id="analytics" title="Product Analytics">
+        <Section id="analytics" title="Tracking Preferences">
           <P>
-            We use PostHog, hosted in the United States, to understand entry pages,
-            campaign sources, navigation, agent creation, match entry, and game
-            viewing. When you arrive from a campaign link, we retain its source,
-            campaign, creative and audience labels and the advertising click
-            identifier so we can measure which campaigns bring players; these
-            are kept with your account record after sign-in under the same
-            access controls. Analytics may link anonymous visits to your public
-            account ID after sign-in. We do not send your email, wallet address,
-            agent prompts, private strategy, or form contents in analytics
-            events, and campaign labels never include prompt text.
+            Essential cookies support sign-in, security, and your preferences.
+            You can independently choose product analytics and advertising measurement below.
           </P>
           <P>
-            We also measure browser performance and collect scrubbed error reports
-            to diagnose failures. Error reports retain standard error types and
-            application stack locations, but omit free-form error messages,
-            attached values, and console logs. These reports follow the same
-            analytics preferences below.
+            Product analytics uses PostHog, hosted in the United States, to measure
+            visits, campaign sources, feature use, and game viewing. It includes
+            performance and error reporting and masked session recordings on
+            onboarding and dashboard pages. Text, inputs, and media in recordings
+            are masked or blocked. Visits may be linked to your public account ID
+            after sign-in. We do not send email, wallet addresses, private agent
+            prompts, strategy, or form contents to analytics providers.
           </P>
           <P>
-            On onboarding and dashboard pages we may record browser interactions
-            with text, inputs, images, video, and canvas content masked or blocked.
-            These recordings help us investigate
-            navigation problems. We estimate country from your IP through Cloudflare
-            to choose the applicable analytics setting; this is not precise location.
-            Analytics and masked recordings start by default for visitors detected in
-            the United States, with an opt-out. The US notice is shown once per
-            browser storage lifetime and dismissed on navigation; this does not
-            record consent. Elsewhere, or when country is
-            unavailable, it waits for your permission. Do Not Track and Global
-            Privacy Control disable optional tracking. Change or withdraw your
-            choice below at any time; essential site functions remain available.
+            Advertising measurement connects campaign visits with signups, agent
+            readiness, and season entry, and shares these outcomes with Meta,
+            Google, TikTok, and X. Events may include advertising click identifiers
+            and a hashed public account ID. Meta web events also include browser
+            information. We do not include phone numbers or IP addresses in these events.
           </P>
           <P>
-            When optional tracking is allowed, we may send account signup,
-            agent readiness, and season-entry events to Meta, Google, TikTok,
-            and X to measure our
-            advertisements. These events may include an advertising click
-            identifier and a hashed public account identifier. Web conversions sent
-            to Meta also include your browser’s user-agent string. They do not
-            include phone numbers or IP addresses, and follow the same
-            exclusions for email, wallet, and private content described above.
+            Both optional purposes start on for visitors detected in the United
+            States and wait for permission elsewhere or when location is unknown.
+            Cloudflare estimates country from your IP; this is not precise location.
+            Closing the US notice or navigating away does not record consent.
+            Do Not Track and Global Privacy Control turn both purposes off.
           </P>
           <P>
-            Your effective tracking preference is saved with your account and
-            applies to browser, API, and MCP conversion delivery. Withdrawing
-            permission stops future optional delivery, suppresses queued events,
-            and removes retained campaign attribution. Enabling tracking later
-            does not send events collected while it was off. Events already
-            delivered cannot be recalled by this setting.
+            Use Tracking preferences or this page to change either choice at any
+            time. Signed-in preferences also apply to API and MCP activity.
+            Withdrawal stops future and queued delivery for that purpose. Campaign
+            attribution remains only while a permitted purpose uses it; browser
+            information used only for advertising is removed when advertising is off.
+            Enabling a purpose later does not send events suppressed while it was off.
+            This setting cannot recall events already delivered.
           </P>
           <P>
-            Turning off optional analytics does not delete the account, agents,
-            enrollment, or game records needed to provide the service. We retain
-            these operational records and use aggregate outcome counts for
-            internal reporting; they are not automatically shared with analytics
-            or advertising providers.
+            Turning optional tracking off does not remove account, agent, enrollment,
+            or game records needed to provide the service. Internal operational
+            outcome counts remain available and are not automatically shared with
+            analytics or advertising providers. Tracking choices are separate from
+            agreement to our Terms and Privacy Policy.
           </P>
           <AnalyticsPreference />
         </Section>

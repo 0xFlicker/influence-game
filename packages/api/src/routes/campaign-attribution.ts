@@ -33,21 +33,21 @@ export function createCampaignAttributionRoutes(db: DrizzleDB) {
   app.post("/api/attribution/retain", requireAuth(db), async (c) => {
     const user = c.get("user");
     const body = await parseJsonBody(c, "POST /api/attribution/retain");
-    if (typeof body?.analytics !== "boolean" || (body.analyticsExplicit !== undefined && typeof body.analyticsExplicit !== "boolean") || (body.explicitChoice !== undefined && typeof body.explicitChoice !== "boolean") || (body.expectedVersion !== undefined && typeof body.expectedVersion !== "string")) {
-      return c.json({ error: "analytics must be a boolean" }, 400);
+    if (typeof body?.analytics !== "boolean" || typeof body?.advertising !== "boolean" || (body.advertisingExplicit !== undefined && typeof body.advertisingExplicit !== "boolean") || (body.analyticsExplicit !== undefined && typeof body.analyticsExplicit !== "boolean") || (body.explicitChoice !== undefined && typeof body.explicitChoice !== "boolean") || (body.expectedVersion !== undefined && typeof body.expectedVersion !== "string")) {
+      return c.json({ error: "analytics and advertising must be booleans; preference metadata must have valid types" }, 400);
     }
     const preference = await db.transaction(async tx => {
-      const allowed = await syncAnalyticsPreference(tx, user.id, body.analytics === true && c.req.header("Sec-GPC") !== "1" && c.req.header("DNT") !== "1", body.explicitChoice === true, typeof body.expectedVersion === "string" ? body.expectedVersion : undefined, body.analyticsExplicit === true);
+      const allowed = await syncAnalyticsPreference(tx, user.id, body.analytics === true && c.req.header("Sec-GPC") !== "1" && c.req.header("DNT") !== "1", body.explicitChoice === true, typeof body.expectedVersion === "string" ? body.expectedVersion : undefined, body.analyticsExplicit === true, body.advertising === true && c.req.header("Sec-GPC") !== "1" && c.req.header("DNT") !== "1", body.advertisingExplicit === true);
       const [saved] = await tx.select().from(schema.userAnalyticsPreferences).where(eq(schema.userAnalyticsPreferences.userId, user.id));
       // A delayed touch from before withdrawal cannot reappear after re-enabling.
       // Initial sync returns the version; the next browser write supplies it.
-      if (allowed && body.expectedVersion === saved!.updatedAt) {
+      if ((allowed || saved!.advertising) && body.expectedVersion === saved!.updatedAt) {
         await retainBrowserUserAgent(tx, user.id, c.req.header("User-Agent"));
         await retainUserAttribution(tx, {
           userId: user.id, channel: "web", firstTouch: body.firstTouch, lastTouch: body.lastTouch,
         });
       }
-      return { analytics: allowed, version: saved!.updatedAt };
+      return { analytics: allowed, advertising: saved!.advertising === true, version: saved!.updatedAt };
     });
     return c.json(preference);
   });

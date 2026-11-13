@@ -33,7 +33,7 @@ const success: ConversionFetch = async (url) => {
 async function fixture(clickIdParam = "gclid", allowed = true, explicit = true) {
   const db = await setupTestDB();
   const [user] = await db.insert(schema.users).values({ id: randomUUID(), displayName: "Ad delivery fixture" }).returning();
-  await db.transaction(tx => syncAnalyticsPreference(tx, user!.id, allowed, false, undefined, explicit));
+  await db.transaction(tx => syncAnalyticsPreference(tx, user!.id, allowed, false, undefined, explicit, allowed, explicit));
   await db.transaction(tx => retainBrowserUserAgent(tx, user!.id, "Mozilla/5.0 TestBrowser/1.0"));
   await retainUserAttribution(db, { userId: user!.id, channel: "web",
     firstTouch: { source: "test", campaign: "season1", clickIdParam, clickId: "click-123" } });
@@ -93,7 +93,7 @@ test("Google snapshots affirmative consent, maps all funnel actions and supporte
 test("regional permission is not misreported as affirmative Google consent; later consent never rewrites an event", async () => {
   const { db, user, row } = await fixture("gclid", true, false);
   const [preference] = await db.select().from(schema.userAnalyticsPreferences).where(eq(schema.userAnalyticsPreferences.userId, user.id));
-  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, preference!.updatedAt, true));
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, preference!.updatedAt, true, true, true));
   expect((await row()).googleAdUserDataGranted).toBe(false);
   await deliverPendingConversions(db, env, async (url, init) => {
     if (url.includes("events:ingest")) expect(JSON.parse(String(init?.body))).toMatchObject({ events: [{
@@ -107,7 +107,7 @@ test("auth captures explicit browser choice without reviving previously denied p
   const db = await setupTestDB();
   const [user] = await db.insert(schema.users).values({ id: randomUUID() }).returning();
   await recordAuthenticationTracking(db, { userId: user!.id, publicId: user!.publicId, created: true,
-    analytics: true, analyticsExplicit: true, attribution: { clickIdParam: "gclid", clickId: "auth-click" } });
+    analytics: true, analyticsExplicit: true, advertising: true, advertisingExplicit: true, attribution: { clickIdParam: "gclid", clickId: "auth-click" } });
   const [event] = await db.select().from(schema.campaignConversionEvents);
   expect(event?.googleAdUserDataGranted).toBe(true);
   await db.transaction(tx => syncAnalyticsPreference(tx, user!.id, false));
@@ -258,7 +258,7 @@ test("denied events stay suppressed across re-enable for all new destinations", 
   const { db, user, id, row } = await fixture("gclid", false);
   expect(await row()).toMatchObject({ googleStatus: "suppressed", tiktokStatus: "suppressed", xStatus: "suppressed" });
   const [preference] = await db.select().from(schema.userAnalyticsPreferences);
-  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, preference!.updatedAt, true));
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, preference!.updatedAt, true, true, true));
   expect((await deliverPendingConversions(db, env, async () => { throw new Error("Must not send"); })).claimed).toBe(0);
   expect(await recordConversion(db, { id, userId: user.id, publicId: user.publicId, eventName: "signup_completed", channel: "mcp" })).toBe(false);
   expect((await row()).googleStatus).toBe("suppressed");
@@ -273,7 +273,7 @@ test("withdrawal suppresses Google polling and failed TikTok and X delivery with
   expect((await deliverPendingConversions(db, env, async () => { throw new Error("Withdrawn"); })).claimed).toBe(0);
   expect(await row()).toMatchObject({ googleStatus: "suppressed", tiktokStatus: "suppressed", xStatus: "suppressed", attribution: null });
   const [preference] = await db.select().from(schema.userAnalyticsPreferences);
-  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, preference!.updatedAt, true));
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, preference!.updatedAt, true, true, true));
   expect((await deliverPendingConversions(db, env, success)).claimed).toBe(0);
 });
 
@@ -360,13 +360,13 @@ test("Google rejects mismatched diagnostic destinations and keeps accepted reque
 test("adding affirmative metadata to an allowed account preserves the attribution sync version", async () => {
   const { db, user } = await fixture("gclid", true, false);
   const [before] = await db.select().from(schema.userAnalyticsPreferences);
-  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, false, before!.updatedAt, true));
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, false, before!.updatedAt, true, true, true));
   const [after] = await db.select().from(schema.userAnalyticsPreferences);
   expect(after).toMatchObject({ analytics: true, analyticsExplicit: true, updatedAt: before!.updatedAt });
   await db.transaction(tx => syncAnalyticsPreference(tx, user.id, false, true));
   const [denied] = await db.select().from(schema.userAnalyticsPreferences);
   expect(denied!.updatedAt).not.toBe(before!.updatedAt);
-  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, before!.updatedAt, true));
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, before!.updatedAt, true, true, true));
   expect((await db.select().from(schema.userAnalyticsPreferences))[0]).toMatchObject({ analytics: false, analyticsExplicit: false });
 });
 
@@ -387,5 +387,23 @@ test("migration preserves existing delivery history while suppressing every new 
       google_attempts: 0, tiktok_attempts: 0, x_attempts: 0, google_ad_user_data_granted: false });
     const [preference] = await tx.execute(sql`SELECT * FROM user_analytics_preferences`);
     expect(preference).toMatchObject({ user_id: "existing", analytics: true, analytics_explicit: false });
+  });
+});
+
+test("purpose migration preserves legacy rejection and never converts PostHog acceptance to ad consent", async () => {
+  const db = await setupTestDB();
+  const migration = readFileSync(new URL("../../drizzle/0173_tracking_purposes.sql", import.meta.url), "utf8");
+  await db.transaction(async tx => {
+    await tx.execute(sql`CREATE TEMP TABLE user_analytics_preferences (user_id text, analytics boolean, web_user_agent text) ON COMMIT DROP`);
+    await tx.execute(sql`CREATE TEMP TABLE campaign_conversion_events (id text, posthog_status text, platform_status text, google_status text, tiktok_status text, x_status text, client_user_agent text, google_ad_user_data_granted boolean, google_next_poll_at text) ON COMMIT DROP`);
+    await tx.execute(sql`INSERT INTO user_analytics_preferences VALUES ('accepted', true, 'browser'), ('rejected', false, NULL)`);
+    await tx.execute(sql`INSERT INTO campaign_conversion_events VALUES ('pending', 'pending', 'pending', 'processing', 'failed', 'unconfigured', 'browser', true, 'later'), ('delivered', 'delivered', 'delivered', 'delivered', 'delivered', 'delivered', 'browser', true, NULL)`);
+    for (const statement of migration.split("--> statement-breakpoint")) await tx.execute(sql.raw(statement));
+    const preferences = await tx.execute(sql`SELECT * FROM user_analytics_preferences ORDER BY user_id`);
+    expect(preferences[0]).toMatchObject({ analytics: true, advertising: null, advertising_explicit: false, web_user_agent: null });
+    expect(preferences[1]).toMatchObject({ analytics: false, advertising: false, advertising_explicit: false });
+    const events = await tx.execute(sql`SELECT * FROM campaign_conversion_events ORDER BY id`);
+    expect(events[0]).toMatchObject({ posthog_status: "delivered", platform_status: "delivered", google_status: "delivered" });
+    expect(events[1]).toMatchObject({ posthog_status: "pending", platform_status: "suppressed", google_status: "suppressed", tiktok_status: "suppressed", x_status: "suppressed", client_user_agent: null, google_ad_user_data_granted: false, google_next_poll_at: null });
   });
 });

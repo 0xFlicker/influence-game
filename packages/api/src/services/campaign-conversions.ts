@@ -108,17 +108,17 @@ async function lockAccount(db: DbOrTx, userId: string): Promise<void> {
     .where(eq(schema.users.id, userId)).for("no key update");
 }
 
-export async function accountAnalyticsAllowed(db: DbOrTx, userId: string): Promise<boolean> {
+export async function accountAnalyticsAllowed(db: DbOrTx, userId: string, purpose: "analytics" | "advertising" = "analytics"): Promise<boolean> {
   const [account] = await db.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, userId));
   if (!account || account.deletedAt) return false;
   const [preference] = await db.select().from(schema.userAnalyticsPreferences)
     .where(eq(schema.userAnalyticsPreferences.userId, userId));
-  return preference?.analytics === true;
+  return preference?.[purpose] === true;
 }
 
 /** Existing denials survive automatic sync; only a fresh explicit choice can re-enable. */
 export async function syncAnalyticsPreference(
-  db: DbOrTx, userId: string, analytics: boolean, explicitChoice = false, expectedVersion?: string, analyticsExplicit = false,
+  db: DbOrTx, userId: string, analytics: boolean, explicitChoice = false, expectedVersion?: string, analyticsExplicit = false, advertising = false, advertisingExplicit = false,
 ): Promise<boolean> {
   await lockAccount(db, userId);
   const [account] = await db.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, userId));
@@ -126,6 +126,8 @@ export async function syncAnalyticsPreference(
   const [previous] = await db.select().from(schema.userAnalyticsPreferences)
     .where(eq(schema.userAnalyticsPreferences.userId, userId));
   const allowed = analytics && (previous?.analytics !== false || (explicitChoice && expectedVersion === previous.updatedAt));
+  const adsAllowed = advertising && (previous?.advertising !== false || (explicitChoice && expectedVersion === previous.updatedAt));
+  const adsAffirmative = adsAllowed && (previous?.advertisingExplicit === true || (advertisingExplicit && (!previous || expectedVersion === previous.updatedAt)));
   // A regional default is permission to deliver, not an affirmative consent signal.
   // Stale browser requests cannot upgrade the stored explicit choice.
   const confirmedChoice = analyticsExplicit && (!previous || expectedVersion === previous.updatedAt);
@@ -133,26 +135,30 @@ export async function syncAnalyticsPreference(
   // Version permission changes, including repeated explicit rejection. Recording
   // affirmative metadata while already allowed preserves that version so the
   // same validated browser sync can retain its current campaign touch.
-  const permissionChanged = !previous || previous.analytics !== allowed || (!analytics && explicitChoice);
-  if (permissionChanged || previous.analyticsExplicit !== affirmative) {
-    await db.insert(schema.userAnalyticsPreferences).values({ userId, analytics: allowed, analyticsExplicit: affirmative })
+  const permissionChanged = !previous || previous.analytics !== allowed || previous.advertising !== adsAllowed || (explicitChoice && (!analytics || !advertising));
+  if (permissionChanged || previous.analyticsExplicit !== affirmative || previous.advertisingExplicit !== adsAffirmative) {
+    await db.insert(schema.userAnalyticsPreferences).values({ userId, analytics: allowed, analyticsExplicit: affirmative, advertising: adsAllowed, advertisingExplicit: adsAffirmative })
       .onConflictDoUpdate({ target: schema.userAnalyticsPreferences.userId,
-        set: { analytics: allowed, analyticsExplicit: affirmative, updatedAt: permissionChanged ? new Date(Math.max(Date.now(), Date.parse(previous?.updatedAt ?? "") + 1 || 0)).toISOString() : previous.updatedAt } });
+        set: { analytics: allowed, analyticsExplicit: affirmative, advertising: adsAllowed, advertisingExplicit: adsAffirmative, updatedAt: permissionChanged ? new Date(Math.max(Date.now(), Date.parse(previous?.updatedAt ?? "") + 1 || 0)).toISOString() : previous.updatedAt } });
   }
   if (!allowed) {
-    await db.update(schema.userAnalyticsPreferences).set({ webUserAgent: null })
-      .where(eq(schema.userAnalyticsPreferences.userId, userId));
-    await db.delete(schema.userCampaignAttribution).where(eq(schema.userCampaignAttribution.userId, userId));
     await db.update(schema.campaignConversionEvents).set({
-      attribution: null,
-      clientUserAgent: null,
       posthogStatus: sql`CASE WHEN posthog_status = 'delivered' THEN posthog_status ELSE 'suppressed' END`,
+    }).where(eq(schema.campaignConversionEvents.userId, userId));
+  }
+  if (!adsAllowed) {
+    await db.update(schema.userAnalyticsPreferences).set({ webUserAgent: null }).where(eq(schema.userAnalyticsPreferences.userId, userId));
+    await db.update(schema.campaignConversionEvents).set({
+      clientUserAgent: null,
       platformStatus: sql`CASE WHEN platform_status = 'delivered' THEN platform_status ELSE 'suppressed' END`,
       googleStatus: sql`CASE WHEN google_status = 'delivered' THEN google_status ELSE 'suppressed' END`,
       tiktokStatus: sql`CASE WHEN tiktok_status = 'delivered' THEN tiktok_status ELSE 'suppressed' END`,
-      googleNextPollAt: null,
-      xStatus: sql`CASE WHEN x_status = 'delivered' THEN x_status ELSE 'suppressed' END`,
+      xStatus: sql`CASE WHEN x_status = 'delivered' THEN x_status ELSE 'suppressed' END`, googleNextPollAt: null,
     }).where(eq(schema.campaignConversionEvents.userId, userId));
+  }
+  if (!allowed && !adsAllowed) {
+    await db.delete(schema.userCampaignAttribution).where(eq(schema.userCampaignAttribution.userId, userId));
+    await db.update(schema.campaignConversionEvents).set({ attribution: null }).where(eq(schema.campaignConversionEvents.userId, userId));
   }
   return allowed;
 }
@@ -160,7 +166,7 @@ export async function syncAnalyticsPreference(
 /** Keep request metadata separate from attribution and other analytics destinations. */
 export async function retainBrowserUserAgent(db: DbOrTx, userId: string, userAgent: unknown): Promise<void> {
   await lockAccount(db, userId);
-  if (!await accountAnalyticsAllowed(db, userId)) return;
+  if (!await accountAnalyticsAllowed(db, userId, "advertising")) return;
   const value = typeof userAgent === "string" && userAgent.length > 0 && userAgent.length <= 1024
     && !/[\x00-\x1f\x7f]/.test(userAgent) ? userAgent : null;
   await db.update(schema.userAnalyticsPreferences).set({ webUserAgent: value })
@@ -181,7 +187,8 @@ export async function retainUserAttribution(
     lastTouch?: unknown;
   },
 ): Promise<void> {
-  if (!await accountAnalyticsAllowed(db, input.userId)) return;
+  const adsAllowed = await accountAnalyticsAllowed(db, input.userId, "advertising");
+  if (!adsAllowed && !await accountAnalyticsAllowed(db, input.userId)) return;
   const firstTouch = validateCampaignTouch(input.firstTouch);
   const lastTouch = validateCampaignTouch(input.lastTouch);
   if (!isNonDirectTouch(firstTouch) && !isNonDirectTouch(lastTouch)) return;
@@ -240,6 +247,7 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
     const [account] = await tx.select({ deletedAt: schema.users.deletedAt }).from(schema.users).where(eq(schema.users.id, input.userId));
     if (!account || (account.deletedAt && input.eventName !== "game_placed")) return false;
     const allowed = !account.deletedAt && !input.suppressDelivery && await accountAnalyticsAllowed(tx, input.userId);
+    const adsAllowed = !account.deletedAt && !input.suppressDelivery && await accountAnalyticsAllowed(tx, input.userId, "advertising");
     const [preference] = await tx.select().from(schema.userAnalyticsPreferences)
       .where(eq(schema.userAnalyticsPreferences.userId, input.userId));
     const inserted = await tx
@@ -253,15 +261,15 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
         seasonId: input.seasonId ?? null,
         channel: input.channel,
         mcpClientId: account.deletedAt ? null : input.mcpClientId ?? null,
-        attribution: allowed ? await retainedAttribution(tx, input.userId) : null,
-        clientUserAgent: allowed && input.channel === "web" ? preference?.webUserAgent ?? null : null,
+        attribution: allowed || adsAllowed ? await retainedAttribution(tx, input.userId) : null,
+        clientUserAgent: adsAllowed && input.channel === "web" ? preference?.webUserAgent ?? null : null,
         occurredAt: input.occurredAt,
         posthogStatus: allowed ? "pending" : "suppressed",
-        platformStatus: allowed ? "pending" : "suppressed",
-        googleStatus: allowed ? "pending" : "suppressed",
-        tiktokStatus: allowed ? "pending" : "suppressed",
-        xStatus: allowed ? "pending" : "suppressed",
-        googleAdUserDataGranted: allowed && preference?.analyticsExplicit === true,
+        platformStatus: adsAllowed ? "pending" : "suppressed",
+        googleStatus: adsAllowed ? "pending" : "suppressed",
+        tiktokStatus: adsAllowed ? "pending" : "suppressed",
+        xStatus: adsAllowed ? "pending" : "suppressed",
+        googleAdUserDataGranted: adsAllowed && preference?.advertisingExplicit === true,
       })
       .onConflictDoNothing()
       .returning({ id: schema.campaignConversionEvents.id });
@@ -313,15 +321,15 @@ export async function recordSignupCompleted(
 /** Optional tracking must not turn a committed signup into a failed login. */
 export async function recordAuthenticationTracking(
   db: DrizzleDB,
-  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; analyticsExplicit?: unknown; attribution?: unknown; userAgent?: string },
+  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; analyticsExplicit?: unknown; advertising?: unknown; advertisingExplicit?: unknown; attribution?: unknown; userAgent?: string },
 ): Promise<void> {
   try {
     await db.transaction(async tx => {
       await tx.execute(sql`SET LOCAL statement_timeout = '2000ms'`);
       if (typeof input.analytics === "boolean") {
-        await syncAnalyticsPreference(tx, input.userId, input.analytics === true, false, undefined, input.analyticsExplicit === true);
+        await syncAnalyticsPreference(tx, input.userId, input.analytics === true, false, undefined, input.analyticsExplicit === true, input.advertising === true, input.advertisingExplicit === true);
       }
-      if (input.analytics === true) await retainBrowserUserAgent(tx, input.userId, input.userAgent);
+      if (input.advertising === true) await retainBrowserUserAgent(tx, input.userId, input.userAgent);
       if (input.created) {
         await recordSignupCompleted(tx, { userId: input.userId, channel: "web", attribution: input.attribution });
       } else {
@@ -542,7 +550,7 @@ export async function deliverPendingConversions(
       await lockAccount(tx, candidate.userId);
       const [row] = await tx.select().from(schema.campaignConversionEvents)
         .where(eq(schema.campaignConversionEvents.id, candidate.id));
-      if (!row || !await accountAnalyticsAllowed(tx, row.userId)) return;
+      if (!row || !await accountAnalyticsAllowed(tx, row.userId, "advertising")) return;
       const destination = googleDestination(env, row.eventName);
       const xEventId = env.xEventIds?.[row.eventName as FunnelEvent];
       await tx.update(schema.campaignConversionEvents).set({
@@ -559,9 +567,15 @@ export async function deliverPendingConversions(
       const [row] = await tx.select().from(schema.campaignConversionEvents)
         .where(eq(schema.campaignConversionEvents.id, candidate.id));
       if (!row) return;
-      if (!await accountAnalyticsAllowed(tx, row.userId)) {
-        await syncAnalyticsPreference(tx, row.userId, false);
-        return;
+      const analytics = await accountAnalyticsAllowed(tx, row.userId);
+      const advertising = await accountAnalyticsAllowed(tx, row.userId, "advertising");
+      if (!analytics && row.posthogStatus !== "delivered") row.posthogStatus = "suppressed";
+      if (!advertising) {
+        if (row.platformStatus !== "delivered") row.platformStatus = "suppressed";
+        if (row.googleStatus !== "delivered") row.googleStatus = "suppressed";
+        if (row.tiktokStatus !== "delivered") row.tiktokStatus = "suppressed";
+        if (row.xStatus !== "delivered") row.xStatus = "suppressed";
+        row.googleNextPollAt = null;
       }
       // Independent destinations start under the same consent lock. Their HTTP
       // timeouts overlap so added providers do not extend the account lock by
@@ -639,9 +653,9 @@ export async function deliverPendingConversions(
       const allAdsDone = [platformStatus, google.googleStatus ?? row.googleStatus,
         tiktok.tiktokStatus ?? row.tiktokStatus, x.xStatus ?? row.xStatus]
         .every(status => ["delivered", "not_applicable", "suppressed"].includes(status));
-      await tx.update(schema.campaignConversionEvents).set({ ...google, ...tiktok, ...x, posthogStatus, platformStatus,
+      await tx.update(schema.campaignConversionEvents).set({ googleStatus: row.googleStatus, tiktokStatus: row.tiktokStatus, xStatus: row.xStatus, googleNextPollAt: row.googleNextPollAt, ...google, ...tiktok, ...x, posthogStatus, platformStatus,
         posthogAttempts, platformAttempts, lastError,
-        deliveredAt: posthogStatus === "delivered" && allAdsDone
+        deliveredAt: ["delivered", "suppressed"].includes(posthogStatus) && allAdsDone
           ? new Date().toISOString() : null,
       }).where(eq(schema.campaignConversionEvents.id, row.id));
     });
