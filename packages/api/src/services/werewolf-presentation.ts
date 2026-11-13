@@ -87,7 +87,7 @@ export function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerew
   const mediaUrl = (asset: string) => `${root}/media/${encodeURIComponent(asset)}?${query}`;
   // Membership must match exactly: never substitute a future or pre-death cast.
   const eligible = rows.filter(row => row.scene.roomId === frame.roomId && row.scene.boundarySequence <= frame.boundary
-    && (frame.purpose === "hunt" ? row.version.plan.direction?.purpose === "werewolf-hunt"
+    && (frame.purpose === "hunt" ? row.version.plan.direction?.purpose === "werewolf-hunt" && (row.version.plan.direction.doctorSaved === true) === ("doctorSaved" in frame && frame.doctorSaved === true)
       : !row.version.plan.direction || row.version.plan.direction.purpose === `werewolf-${frame.purpose}`));
   const latest = eligible.filter((row, index) => eligible.findIndex(other => other.scene.id === row.scene.id) === index);
   const selected = latest.find(row => row.version.plan.cast.length === frame.participantIds.length && row.version.plan.cast.every(p => frame.participantIds.includes(p.id)));

@@ -94,11 +94,11 @@ describe("Werewolf House integration", () => {
     // A presentation-object outage cannot make the canonical game state unreadable.
     expect(replayWerewolf(await readWerewolfEvents(db,game.id))).toEqual(replayWerewolf(events));
   });
-  test("creates an 8-player Hunter game with frozen v13 snipe ownership and audience-safe views", async () => {
+  test("creates an 8-player Hunter game with frozen v14 snipe ownership and audience-safe views", async () => {
     const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: manifest, maxDays: 2,
       setup: { playerCount: 8, wolves: 2, seer: false, doctor: true, hunter: true } });
     const state = replayWerewolf(await readWerewolfEvents(db, game.id));
-    expect(state.config.rulesVersion).toBe(13);
+    expect(state.config.rulesVersion).toBe(14);
     expect(Object.values(state.roles).sort()).toEqual(["doctor", "hunter", "villager", "villager", "villager", "villager", "werewolf", "werewolf"]);
     const hunter = state.players.find((player) => state.roles[player.id] === "hunter")!;
     expect(state.items[hunter.id]).toEqual(["snipe"]);
@@ -257,18 +257,18 @@ describe("Werewolf House integration", () => {
     expect(final.outcome).not.toBeNull();
   }, 30_000);
 
-  test("new v10 games retain their rules identity in API view and replay reads", async () => {
+  test("new v14 games retain their rules identity in API view and replay reads", async () => {
     const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: manifest, maxDays: 2 });
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
     const state = replayWerewolf(await store.read());
-    expect(state.config.rulesVersion).toBe(13);
+    expect(state.config.rulesVersion).toBe(14);
     const view = await readWerewolfView(db, game.id, "mystery");
-    expect(view).toMatchObject({ rulesVersion: 13, phase: "introduction", conversation: null });
+    expect(view).toMatchObject({ rulesVersion: 14, phase: "introduction", conversation: null });
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}/presentation?audience=mystery`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ view: { rulesVersion: 13, phase: "introduction", conversation: null } });
+    expect(await response.json()).toMatchObject({ view: { rulesVersion: 14, phase: "introduction", conversation: null } });
   });
 
   test("accepted v10 pack proposals survive owner loss before commit without a second provider call", async () => {
@@ -327,7 +327,7 @@ describe("Werewolf House integration", () => {
     await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}`);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10, v11, v12 and v13." });
+    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Supported versions are v7, v8, v9, v10, v11, v12, v13 and v14." });
     expect(await game.store.read()).toEqual([initial]);
   });
   test("one character keeps separate strategies and freezes only Werewolf into its game", async () => {

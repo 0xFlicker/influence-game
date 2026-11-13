@@ -18,15 +18,16 @@ const locations = {
 /** Planning only: copies approved backgrounds, never dispatches a provider. */
 export async function planWerewolfScene(db: DrizzleDB, gameId: string, descriptor: WerewolfSceneDescriptor,
   originalCast: readonly VisualCastMember[], regenerateForms?: string): Promise<VisualScenePlan> {
+  const saved = descriptor.purpose === "hunt" && descriptor.doctorSaved === true;
   const location = locations[descriptor.purpose];
   const bytes = await readFile(process.env.WEREWOLF_ASSET_DIR ? join(process.env.WEREWOLF_ASSET_DIR, location.file) : new URL(`../../assets/werewolf/${location.file}`, import.meta.url));
   const backgroundArtifactId = await storeVisualArtifact(db, gameId, bytes);
   const cast = await werewolfVariantCast(db, gameId, descriptor.wolfIds, originalCast, regenerateForms);
   const plan = planVisualScene({ roomId: descriptor.roomId, backgroundArtifactId, cast });
-  const direction: VisualSceneDirection = { purpose: `werewolf-${descriptor.purpose}`, revision: WEREWOLF_ART_REVISION, style,
-    roomName: location.roomName, roomDirection: location.roomDirection };
+  const direction: VisualSceneDirection = { purpose: `werewolf-${descriptor.purpose}`, revision: WEREWOLF_ART_REVISION, style, ...(saved ? { doctorSaved: true } : {}),
+    roomName: saved ? "Protected village doorway" : location.roomName, roomDirection: saved ? "A failed nighttime attack in the supplied moonlit medieval lane. The intended target is safe inside a warmly lit cottage behind a closed heavy wooden door with a barred upper viewing opening. Keep their face and upper costume clearly visible, without bars across the eyes. The wolves are outside on cold moonlit cobbles, visibly thwarted at the locked threshold, faces recognizable. Natural scale, convincing architecture, warm safe interior versus cold exterior. Include only the exact referenced wolves and target. No Doctor figure, no extra person, no magic, shields, medical symbols, blood or injuries. The doorway is illustrative staging, not a new game mechanic." : location.roomDirection };
   return { ...plan, direction, placements: cast.map((member, index) => ({ playerId: member.id, role: "participant", sectionId: plan.placements[index]!.sectionId,
-    position: descriptor.purpose === "hunt" ? member.id === descriptor.targetId ? "foreground left, large and nearest camera, walking toward the near end of the alley, head visible and recognizable" : `background right at the far end of the alley, smaller wolf position ${index + 1}, following behind the foreground character with wide separation, head visible and recognizable`
+    position: saved ? member.id === descriptor.targetId ? "safe inside the warm cottage, face and upper costume visible through the barred door opening" : `outside the locked doorway, wolf position ${index + 1}, recognizable head, thwarted posture, no contact with target` : descriptor.purpose === "hunt" ? member.id === descriptor.targetId ? "foreground left, large and nearest camera, walking toward the near end of the alley, head visible and recognizable" : `background right at the far end of the alley, smaller wolf position ${index + 1}, following behind the foreground character with wide separation, head visible and recognizable`
       : descriptor.purpose === "pack" ? `${index === 0 ? "left" : "right"} built-in masonry seat, natural conversation pose with head visible`
       : `table position ${index + 1} of ${cast.length}, natural conversation pose with head visible and separated` })) };
 }

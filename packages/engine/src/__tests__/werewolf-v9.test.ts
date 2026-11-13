@@ -155,7 +155,7 @@ describe("Werewolf v9", () => {
       const actorId = step.request.actorId;
       const roleState = { ...s, roles: { ...s.roles, [actorId]: role } };
       await decide(roleState);
-      expect(sent?.roleCoaching).toBe(werewolfRoleCoaching(role));
+      expect(sent?.roleCoaching).toBe(werewolfRoleCoaching(role, roleState.config.rulesVersion));
       expect(sent?.roleCoaching).toContain(role === "werewolf" ? "You play for the wolves" : "You play for the village");
       expect(sent?.roleCoaching).not.toContain(role === "werewolf" ? "consider preserving their information" : "You may bluff a role or investigation");
     }

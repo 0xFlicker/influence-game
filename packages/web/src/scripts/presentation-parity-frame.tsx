@@ -90,7 +90,7 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
       }
       for (const name of document.querySelectorAll<HTMLElement>("[data-speaker-name]")) {
         const box = name.getBoundingClientRect();
-        if (box.width > 0 && (name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > 21)) throw new Error("Item speaker name does not fit its reserved header");
+        if (box.width > 0 && (name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > (name.hasAttribute("data-wrapped-speaker") ? name.clientHeight + 1 : 21))) throw new Error("Item speaker name does not fit its reserved header");
       }
       const hunter = document.querySelector<HTMLElement>('[data-night-role="snipe"], [data-night-elimination]');
       if (hunter) {
@@ -122,10 +122,18 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
         const winnerImage = winner.querySelector<HTMLElement>("[data-winner-image]");
         if (!winnerImage || winnerImage.getBoundingClientRect().height < 24) throw new Error("Winner artwork has no readable space");
       }
+      const hunt = document.querySelector<HTMLElement>("[data-night-hunt]");
+      if (hunt) {
+        const bounds = hunt.getBoundingClientRect();
+        const scene = hunt.querySelector<HTMLElement>("[data-hunt-scene]");
+        if (scene && scene.getBoundingClientRect().height < 24) throw new Error("Hunt image has no visible space");
+        const save = hunt.querySelector<HTMLElement>("[data-doctor-save]");
+        if (save && save.getBoundingClientRect().bottom > bounds.bottom + 1) throw new Error("Doctor save card leaves its scene");
+      }
       const namePage = room?.querySelector<HTMLElement>("[data-room-context-label] [data-speech-page]");
       const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble], [data-in-scene-thinking]") ?? document.querySelector<HTMLElement>("[data-speech-bubble], [data-in-scene-thinking]");
       const speechPage = speechBox && Number(getComputedStyle(speechBox).opacity) > .1 ? speechBox.querySelector<HTMLElement>("[data-speech-page]") : null;
-      setResult(JSON.stringify({frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
+      setResult(JSON.stringify({geometry:Array.from(document.querySelectorAll<HTMLElement>("[data-solo-image], [data-solo-portrait], [data-night-hunt], [data-doctor-save]")).map(node=>({tag:node.tagName,rect:node.getBoundingClientRect().toJSON()})),frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,
         speechPages:Array.from(document.querySelectorAll<HTMLElement>("[data-speech-page]")).map(page=>({page:page.dataset.speechPage,text:page.textContent})),
         castMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-room-player]")).map(member=>member.dataset.roomPlayer),

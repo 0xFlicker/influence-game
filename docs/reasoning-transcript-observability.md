@@ -1,5 +1,7 @@
 # Reasoning & Transcript Observability
 
+Werewolf v14 prompts carry public eliminated alignments (`board.players[].alignment`, `wolves` or `village`) for every role and decision type. This is canonical public knowledge, distinct from private exact roles, thinking and provider evidence. V7–v13 observations stay frozen. Verify the accepted death/vote boundary before judging a model's wolf-count reasoning; no future death or living alignment enters its prompt.
+
 Contestant prompts in both games include each character's stored gender from the frozen roster, including the acting character. Influence renders cast identity in its shared system prompt; Werewolf includes `gender` in `board.players`. Missing values remain unspecified, with instructions to use names or neutral language instead of guessing. This shares no private personality, backstory, strategy, or reasoning. Existing frozen rosters are never filled from mutable profiles.
 
 New House-created casts carry fixed authored name/archetype/gender identities from `HOUSE_CAST` at fill time too. API fills, the agent factory and offline simulations use the same map. Inspect the frozen roster fields for those players; audio defaults use stored gender even without a saved profile. Historical missing values and frozen voice snapshots remain unchanged.

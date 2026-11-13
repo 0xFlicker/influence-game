@@ -18,10 +18,10 @@ export function WerewolfHuntStage({ cue, scene, onReady }: { cue: WerewolfWatchC
   const save = werewolfDoctorSave(cue.moment);
   const [failedDoctorUrl, setFailedDoctorUrl] = useState<string | null>(null);
   const doctorUrl = save?.doctor.avatarUrl ?? save?.doctor.fullBodyReferenceUrl;
-  return <div style={{backgroundImage: `linear-gradient(#0008, #000a), url("${WEREWOLF_ROOMS.pack}")`, backgroundSize: "cover", backgroundPosition: "top", paddingBottom: "clamp(112px, 22cqh, 156px)"}} className="relative flex min-h-0 flex-1 flex-col gap-4 bg-[#101318] p-4 sm:p-5" data-night-hunt>
+  return <div style={{backgroundImage: `linear-gradient(#0008, #000a), url("${WEREWOLF_ROOMS.pack}")`, backgroundSize: "cover", backgroundPosition: "top"}} className="relative flex min-h-0 flex-1 flex-col gap-1 bg-[#101318] p-1 sm:gap-3 sm:p-3" data-night-hunt>
     <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
     {/* eslint-disable-next-line @next/next/no-img-element -- immutable audience-scoped generated scene */}
-    {scene && !failed ? <img src={scene.imageUrl} alt="The pack and their distant target in the moonlit village" className="absolute inset-0 h-full w-full object-contain" onLoad={() => setLoadedUrl(scene.imageUrl)} onError={() => setFailedUrl(scene.imageUrl)} />
+    {scene && !failed ? <img data-hunt-scene src={scene.imageUrl} alt={save ? "The wolves are blocked outside while their target is safe inside" : "The pack and their distant target in the moonlit village"} className="absolute inset-0 h-full w-full object-contain" onLoad={() => setLoadedUrl(scene.imageUrl)} onError={() => setFailedUrl(scene.imageUrl)} />
       : <div className="flex h-full min-h-0 w-full max-w-4xl items-center justify-between gap-4 sm:gap-8">
         {[hunt.wolfIds, [hunt.targetId]].map((ids, group) => <div key={group} className="flex flex-1 flex-wrap justify-center gap-3">{ids.map(id => {
           const player = players.find(p => p.id === id)!;
@@ -32,14 +32,14 @@ export function WerewolfHuntStage({ cue, scene, onReady }: { cue: WerewolfWatchC
         })}</div>)}
       </div>}
     </div>
-    {save ? <aside data-doctor-save className="z-10 mx-auto flex w-full max-w-xl shrink-0 items-center gap-3 rounded-xl border border-emerald-200/30 bg-[#102923] p-3 text-emerald-50 sm:gap-4 sm:p-4">
+    {save && scene && !failed ? <p data-doctor-save className="shrink-0 text-center text-sm font-semibold text-emerald-100">Doctor save</p> : save ? <aside data-doctor-save className="z-10 mx-auto flex w-full max-w-xl shrink-0 items-center gap-2 rounded-xl border border-emerald-200/30 bg-[#102923] p-1 text-emerald-50 sm:gap-3 sm:p-3">
       {doctorUrl && failedDoctorUrl !== doctorUrl ?
         // eslint-disable-next-line @next/next/no-img-element -- frozen doctor portrait
-        <img src={doctorUrl} alt={save.doctor.name} onError={event => void characterImageError(event, () => setFailedDoctorUrl(doctorUrl))} className={`size-14 shrink-0 rounded-lg border border-emerald-200/30 bg-black/20 sm:size-16 ${save.doctor.avatarUrl ? "object-cover" : "object-contain"}`} />
-        : <span aria-hidden="true" className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-emerald-200/30 text-2xl">+</span>}
+        <img src={doctorUrl} alt={save.doctor.name} onError={event => void characterImageError(event, () => setFailedDoctorUrl(doctorUrl))} className={`size-8 shrink-0 rounded-lg border border-emerald-200/30 bg-black/20 sm:size-12 ${save.doctor.avatarUrl ? "object-cover" : "object-contain"}`} />
+        : <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200/30 text-2xl">+</span>}
       <div className="min-w-0">
-        <p className="text-balance text-base font-semibold sm:text-lg">{save.target.name} was saved by the Doctor.</p>
-        <p className="mt-1 text-sm text-emerald-100/75">{save.doctor.name} · Doctor</p>
+        <p className="text-balance text-sm font-semibold sm:text-base">{save.target.name} was saved by the Doctor.</p>
+        <p className="text-xs text-emerald-100/75">{save.doctor.name} · Doctor</p>
       </div>
     </aside> : <p className="shrink-0 text-center text-sm text-white/75">Night falls over the village</p>}
   </div>;

@@ -11,6 +11,8 @@ export interface WerewolfSceneDescriptor {
   participantIds: string[];
   wolfIds: string[];
   targetId: string | null;
+  /** Canonical protection outcome; absent on historical successful hunts. */
+  doctorSaved?: boolean;
 }
 
 /** All production callers use the same canonical cast and purpose, including repairs. */
@@ -23,18 +25,18 @@ export function werewolfConversationScene(state: WerewolfState, action: Werewolf
   return null;
 }
 
-/** Stage successful attacks before the victim dies; Doctor saves need no hunt render. */
+/** Stage attacks with their canonical protection outcome before the night resolves. */
 export function werewolfHuntScene(before: WerewolfState, event: WerewolfEvent): WerewolfSceneDescriptor | null {
-  if (event.type !== "werewolf.night_resolved" || !event.payload.attackTargetId || event.payload.attackTargetId === event.payload.protectedId) return null;
+  if (event.type !== "werewolf.night_resolved" || !event.payload.attackTargetId) return null;
   const wolfIds = before.aliveIds.filter(id => before.roles[id] === "werewolf");
   const targetId = event.payload.attackTargetId;
   if (!wolfIds.length || !before.aliveIds.includes(targetId) || wolfIds.includes(targetId)) throw new Error("Invalid canonical hunt cast");
   return { purpose: "hunt", roomId: "mingle-2", boundarySequence: event.sequence - 1, day: before.day,
-    participantIds: [...wolfIds, targetId], wolfIds, targetId };
+    participantIds: [...wolfIds, targetId], wolfIds, targetId, ...(event.payload.attackTargetId === event.payload.protectedId ? { doctorSaved: true } : {}) };
 }
 
 export function werewolfSceneSignature(scene: WerewolfSceneDescriptor) {
-  return JSON.stringify([scene.purpose, scene.participantIds, scene.wolfIds, scene.targetId]);
+  return JSON.stringify([scene.purpose, scene.participantIds, scene.wolfIds, scene.targetId, scene.doctorSaved ?? false, scene.purpose === "hunt" ? scene.boundarySequence : null]);
 }
 
 /** No introductions, no invented lone-wolf meeting, no target-less hunt. */

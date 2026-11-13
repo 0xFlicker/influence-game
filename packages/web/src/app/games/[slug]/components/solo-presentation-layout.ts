@@ -2,7 +2,7 @@ import { validHeadRectangle, type HeadRectangle } from "@influence/engine/charac
 import type { SceneFrame } from "./visual-scene-layout";
 
 export function layoutSoloPresentation(width: number, height: number, imageWidth: number, imageHeight: number,
-  fullBody: boolean, controlsInset: number, speechHeight: number, head?: HeadRectangle, showSpeech = true) {
+  fullBody: boolean, controlsInset: number, speechHeight: number, head?: HeadRectangle, showSpeech = true, compactSideBySide = false) {
   const margin = 12;
   if (!fullBody) {
     const available = Math.max(0, height - controlsInset);
@@ -26,7 +26,7 @@ export function layoutSoloPresentation(width: number, height: number, imageWidth
   const ratio = imageWidth > 0 && imageHeight > 0 ? imageWidth / imageHeight : 2 / 3;
   const available = Math.max(0, height - controlsInset);
   const gap = 20;
-  const beside = width >= 760 || (width >= 480 && available < 320);
+  const beside = width >= 760 || (width >= (compactSideBySide ? 320 : 480) && available < 320);
   const textWidth = Math.max(0, beside ? Math.min(720, width * .46) : width - margin * 2);
   const minimumBubble = Math.min(150, Math.max(0, available - 84));
   const bubbleHeight = showSpeech ? Math.max(0, Math.min(speechHeight, beside ? available * .8 : Math.max(available * .36, minimumBubble))) : 0;

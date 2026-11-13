@@ -63,6 +63,7 @@
     "./werewolf/presentation": "./src/werewolf/presentation.ts",
     "./game-visibility": "./src/game-visibility.ts",
     "./game-availability": "./src/game-availability.ts",
+    "./fixtures/werewolf-doctor-save": "./src/fixtures/werewolf-doctor-save.ts",
     "./fixtures/werewolf-hunter": "./src/fixtures/werewolf-hunter.ts",
     "./fixtures/werewolf-pack-strategy": "./src/fixtures/werewolf-pack-strategy.ts",
     "./fixtures/werewolf-results": "./src/fixtures/werewolf-results.ts",

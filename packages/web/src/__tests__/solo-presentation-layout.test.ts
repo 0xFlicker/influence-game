@@ -71,3 +71,17 @@ test("mobile portraits and their paged speech are centered above fullscreen cont
   expect(bubble.top).toBeGreaterThan(image.top + image.height);
   expect(bubble.top + bubble.height).toBeLessThanOrEqual(704);
 });
+
+test("a lone wolf keeps substantial full-body art beside speech in a short narrow player", () => {
+  const {image,bubble,beside} = layoutSoloPresentation(360,207,1024,1536,true,0,440,undefined,true,true);
+  expect(beside).toBe(true);
+  expect(image.height).toBeGreaterThan(150);
+  expect(bubble.height).toBeGreaterThan(150);
+  expect(overlaps(image,bubble)).toBe(false);
+  for (const box of [image,bubble]) {
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.left+box.width).toBeLessThanOrEqual(360);
+    expect(box.top+box.height).toBeLessThanOrEqual(207);
+  }
+});

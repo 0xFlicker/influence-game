@@ -45,7 +45,7 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
       expect(context.observation.board).toEqual(before.board);
       expect(Object.keys(context).at(-1)).toBe("turnReminder");
       expect(context.contributionGuidance ?? "").not.toContain("You do not need to contribute to every thread.");
-      expect(context.roleCoaching).toBe(werewolfRoleCoaching(role));
+      expect(context.roleCoaching).toBe(werewolfRoleCoaching(role, state.config.rulesVersion));
       if (role === "werewolf") {
         expect(context.roleCoaching).toContain("You play for the wolves");
         expect(context.roleCoaching).toContain("A genuine Seer can be a valuable elimination target");
@@ -131,12 +131,12 @@ test("strategy coaching gives every village role shared judgment without wolf ob
     const coaching = werewolfRoleCoaching(role);
     expect(coaching).toContain("Build independent reads even without a credible Seer");
     expect(coaching).toContain("committed votes and remaining voters");
-    expect(coaching).toContain("Do not assume that wolf count is known");
+    expect(coaching).toContain("count surviving wolves");
     expect(coaching).toContain("Your personality shapes delivery");
     expect(coaching).not.toContain("Pack victory does not require public solidarity");
   }
   const wolf = werewolfRoleCoaching("werewolf");
   expect(wolf).toContain("neither is mandatory");
-  expect(wolf).toContain("bussing earns no guaranteed confirmation or trust");
+  expect(wolf).toContain("Eliminated players have confirmed public");
   expect(wolf).not.toContain("Build independent reads even without a credible Seer");
 });

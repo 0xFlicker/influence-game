@@ -7,7 +7,7 @@ import { initialWerewolfItems, isWerewolfItemId } from "./items";
 import type { WerewolfAcceptedAction, WerewolfConfig, WerewolfEvent, WerewolfRequest, WerewolfState, WerewolfStep, WerewolfPlayer, WerewolfDayResult, WerewolfPackVote, WerewolfOutcome } from "./types";
 
 export const DEFAULT_DISCUSSION_POLICY = { bytesPerLivingPlayer: 400, messageBytes: 320, maxHandoffs: 3 };
-function rulesWithPack(packRules: string) { return `Werewolf is a social deduction game. Win with your faction even if you die. Wolves know their partners; other roles are private until the competitive outcome. Lies and false role claims are legal speech, never verified facts.
+function rulesWithPack(packRules: string, revealAlignments = false) { return `Werewolf is a social deduction game. Win with your faction even if you die. Wolves know their partners; ${revealAlignments ? "after every resolved night death or daytime elimination, the eliminated player’s alignment (wolves or village) is public in board.players[].alignment. This includes Hunter kills. Use these confirmed alignments and the starting wolf count to count surviving wolves; never guess an eliminated player’s alignment or infer it from speech. Exact village roles remain private until the competitive outcome." : "other roles are private until the competitive outcome."} Lies and false role claims are legal speech, never verified facts.
 Everyone may introduce themselves before the first night. Each night the Seer investigates exactly one other living player and learns wolf/not-wolf only when night resolves. Day N has at most N completed checks; no daytime speech or vote creates another investigation. The Doctor protects one living player, including themself, but cannot repeat the previous night's target. All night choices resolve together. Protection prevents the pack attack; a Seer killed that night still receives their check but cannot communicate it.
 ${packRules}
 Day discussion has a shared UTF-8 speech byte allowance, visible in the observation. This is a ceiling, not a target to spend. Silence costs no spoken bytes. If you have nothing new or consequential to add, pass with null text; an offered turn or direct question does not require speech. Do not recap the room, repeat a position, or announce you have nothing to add. Not everyone is guaranteed a discussion opportunity. When less than one full message allowance remains, discussion ends with the unused bytes; a complete silent sweep also ends discussion. Passing does not abstain from the later vote.
@@ -24,6 +24,9 @@ ${PRIORITY_RULES}`;
 export const WEREWOLF_RULES_V12 = `${WEREWOLF_RULES_V11}
 This game has items. ${ITEM_RULES}`;
 export const WEREWOLF_RULES_V13 = `${rulesWithPack(PACK_RULES_V13)}
+${PRIORITY_RULES}
+Items are optional: the frozen setup determines whether a Hunter and items exist. ${ITEM_RULES}`;
+export const WEREWOLF_RULES_V14 = `${rulesWithPack(PACK_RULES_V13, true)}
 ${PRIORITY_RULES}
 Items are optional: the frozen setup determines whether a Hunter and items exist. ${ITEM_RULES}`;
 const same = (a: unknown, b: unknown) => hashCanonicalJson(a) === hashCanonicalJson(b);

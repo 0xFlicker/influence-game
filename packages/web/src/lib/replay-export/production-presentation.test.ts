@@ -340,7 +340,7 @@ test("v10 role explanations have separate private Studio moments and match serve
   }
 });
 
-test("full omniscient cuts retain accepted pack speech and room thinking without leaking into Mystery",async () => {
+test("full omniscient cuts retain lone-wolf speech and solo thinking without leaking into Mystery",async () => {
   const input = await fixture("omniscient",true);
   const bound = await bindWerewolfProductionPresentation(input);
   const proposals = input.source.windows.flatMap(w => w.moments).filter(m => m.entry.kind === "proposal" && !m.entry.unavailable && m.entry.text);
@@ -348,12 +348,15 @@ test("full omniscient cuts retain accepted pack speech and room thinking without
   const cut = compilePresentation({...settings,source:bound,selectedIds:input.catalog.moments.filter(m=>m.defaultIncluded).map(m=>m.id)});
   const speech = cut.cues.filter(c=>c.picture.kind === "werewolf" && c.picture.cue.moment.entry.kind === "proposal");
   expect(speech.map(c=>c.speech?.text ?? null)).toEqual(proposals.map(m=>m.entry.kind === "proposal" ? m.entry.text : null));
-  for (const cue of cut.cues) if (cue.picture.kind === "thinking" && cue.picture.room?.label?.includes("Pack")) {
-    expect(cue.picture.room.backgroundUrl).toContain("pack");
-    expect(cue.picture.room.players.every(p=>proposals[0]!.snapshot.players.find(x=>x.id===p.id)?.role === "werewolf")).toBeTrue();
-    expect(cue.timing.thinkingEstablishMs).toBe(650);
+  const packSequences = new Set(input.thoughts.filter(t=>t.action === "pack_propose").map(t=>t.eventSequence));
+  const packThoughtIds = input.catalog.moments.filter(m=>m.kind === "thinking" && m.source.kind === "werewolf-action" && packSequences.has(m.source.eventSequence)).map(m=>m.id);
+  const packThoughts = bound.filter(m=>packThoughtIds.includes(m.id)).flatMap(m=>m.segments);
+  expect(packThoughts.length).toBeGreaterThan(0);
+  for (const cue of packThoughts) {
+    if(cue.picture.kind!=="thinking")throw new Error("Expected lone-wolf thought");
+    expect(cue.picture.backgroundUrl).toBe(WEREWOLF_ROOMS.pack);
+    expect(cue.picture.room).toBeUndefined();
   }
-  expect(cut.cues.some(c=>c.picture.kind === "thinking" && c.picture.room?.label?.includes("Pack"))).toBeTrue();
   const mystery = await fixture("mystery",true);
   const publicCut = await bindWerewolfProductionPresentation(mystery);
   expect(publicCut.some(m=>m.segments.some(c=>c.picture.kind === "werewolf" && c.picture.cue.moment.entry.kind === "proposal"))).toBeFalse();

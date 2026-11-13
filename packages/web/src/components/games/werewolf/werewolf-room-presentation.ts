@@ -7,6 +7,7 @@ export function werewolfPortraitRoom(cue: WerewolfWatchCue): Extract<VisualPrese
   const moment = werewolfCueMoment(cue), entry = cue.moment.entry;
   if (!moment.actor || !moment.spoken || moment.retrospective || cue.ballot || cue.nightAction ||
     !(entry.kind === "discussion" || entry.kind === "conversation" || entry.kind === "proposal" || entry.kind === "speech" && moment.pack)) return null;
+  if (moment.pack && cue.moment.snapshot.players.filter(player => player.alive && player.role === "werewolf").length === 1) return null;
   return {kind:"portrait-room",roomNumber:null,
     roomLabel:moment.pack ? `Night ${cue.moment.snapshot.day} · Pack conversation` : `Day ${cue.moment.snapshot.day} · Village conversation`,
     participants:cue.moment.snapshot.players.filter(player => player.alive && (!moment.pack || player.role === "werewolf"))

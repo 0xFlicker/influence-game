@@ -40,7 +40,7 @@ export interface WerewolfView {
   conversation?: WerewolfState["conversation"];
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;
-  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; headRectangle?: import("../character-portrait").HeadRectangle; personaKey: string | null; alive: boolean; role?: WerewolfRole; items?: WerewolfItemId[]; elimination?: { day: number; kind: "night" | "vote" } | null }>;
+  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; headRectangle?: import("../character-portrait").HeadRectangle; personaKey: string | null; alive: boolean; role?: WerewolfRole; alignment?: WerewolfFaction; items?: WerewolfItemId[]; elimination?: { day: number; kind: "night" | "vote" } | null }>;
   entries: WerewolfPublicEntry[];
   outcome: WerewolfOutcome | null;
 }
@@ -94,6 +94,7 @@ export function projectWerewolfSnapshot(state: WerewolfState, audience: Werewolf
     } : null,
     cursor,
     players: state.players.map((p) => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, alive: state.aliveIds.includes(p.id),
+      ...(state.config.rulesVersion >= 14 && !state.aliveIds.includes(p.id) ? { alignment: state.roles[p.id] === "werewolf" ? "wolves" as const : "village" as const } : {}),
       ...(omniscient || state.outcome ? { role: state.roles[p.id]! } : {}),
       ...(omniscient && state.config.rulesVersion >= 12 ? { items: [...(state.items[p.id] ?? [])] } : {}),
       ...(state.outcome ? { elimination: (() => {
@@ -108,7 +109,7 @@ export interface WerewolfObservation {
   board: Omit<WerewolfView, "players" | "conversation"> & {
     conversation?: { totalBytes: number; remainingBytes: number; messageBytes: number;
       mustRedirect: boolean; finalRecipientMustRedirect: boolean; voterIds?: string[] } | null;
-    players: Array<{ id: string; name: string; gender?: import("../types").AgentGender | null; alive: boolean }>;
+    players: Array<{ id: string; name: string; gender?: import("../types").AgentGender | null; alive: boolean; alignment?: WerewolfFaction }>;
   };
   turnReminder: WerewolfTurnReminder | null;
   self: { id: string; role: WerewolfRole; faction: WerewolfFaction; personality: string; backstory: string; strategy: string };
@@ -156,7 +157,7 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
         ...(state.phase === "vote" ? { voterIds: [...conversation.voterIds] } : {}) } : null,
       // Stored gender is shared identity; private character notes and spectator visuals stay out.
       // Preserve absent fields in historical rosters: observation hashes fence durable plans.
-      players: state.players.map(p => ({ id: p.id, name: p.name, ...(p.gender !== undefined && { gender: p.gender }), alive: state.aliveIds.includes(p.id) })),
+      players: state.players.map(p => ({ id: p.id, name: p.name, ...(p.gender !== undefined && { gender: p.gender }), alive: state.aliveIds.includes(p.id), ...(state.config.rulesVersion >= 14 && !state.aliveIds.includes(p.id) ? { alignment: state.roles[p.id] === "werewolf" ? "wolves" as const : "village" as const } : {}) })),
     },
     turnReminder: werewolfTurnReminder(state, actorId),
     self: { id: actorId, role, faction: role === "werewolf" ? "wolves" : "village", personality: player.personality, backstory: player.backstory, strategy: player.strategy },
