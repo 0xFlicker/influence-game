@@ -36,4 +36,6 @@ a fixed desktop action column there can crush the copy and checkbox labels.
 Keep purpose choices and supporting links together, preserve equal visual weight
 for all three actions, and test expanded details as well as the collapsed bar.
 Native checkbox semantics, an explicitly labelled group, disclosure state and
-keyboard focus return belong to the shared component.
+keyboard access belong to the shared component. Keep the persistent preferences
+entry in the site footer, linking to `/privacy#analytics`, rather than overlaying
+page content with a floating button.
