@@ -1766,8 +1766,8 @@ export interface AuthMe extends AuthenticatedPublicIdentity {
 
 export const PRESENTED_LEGAL_ACCEPTANCE = {
   acceptTerms: true,
-  termsVersion: "2026-08-12",
-  privacyVersion: "2026-08-12",
+  termsVersion: "2026-11-12",
+  privacyVersion: "2026-11-12",
   deploymentSha: process.env.NEXT_PUBLIC_GIT_SHA ?? "unknown",
 } as const;
 

@@ -58,7 +58,7 @@ requests from recreating credentials or identity fields after deletion.
 ## Connected services
 
 `account_deletion_tasks` durably queues Clerk, Privy, and PostHog cleanup. The
-game worker processes tasks every ten seconds with row locks, bounded retries,
+game worker processes tasks every ten seconds with row locks, capped retry delays,
 and sanitized errors. Retry targets are cleared after provider acknowledgement.
 PostHog acknowledges asynchronous erasure; it is not a physical-erasure receipt.
 Farcaster is an independent identity: only its House binding is deleted.
@@ -105,9 +105,8 @@ bun test src/__tests__/influence-production-source.test.ts src/__tests__/werewol
 ```
 
 Run root `bun run test`, `bun run test:postgres`, and `bun run check` before merge.
-External provider deletion is not part of required tests. Before claiming this
-works in production, deploy the migration and code together, configure erasure
-credentials, and verify cleanup with an explicitly approved disposable account.
+External provider deletion is not part of required tests. Deploy the migration
+and code together and configure the required provider credentials.
 No game presentation, timing, dialogue, or frozen source changes are intended;
 existing selections, bundles and MP4s do not require regeneration for deletion.
 The production-source regressions compare accepted source hashes, catalog,

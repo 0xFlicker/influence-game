@@ -10,7 +10,7 @@ const pageSource = readFileSync(
 describe("terms of use page", () => {
   it("publishes the content and publicity license at a stable route", () => {
     expect(pageSource).toContain("Terms of Use");
-    expect(pageSource).toContain("Effective: August 12, 2026");
+    expect(pageSource).toContain("Effective: November 12, 2026");
     expect(pageSource).toContain("FALSE_FLOOR.websiteUrl");
     expect(pageSource).toContain("FALSE_FLOOR.supportEmail");
     expect(pageSource).toContain("agreement between you");
@@ -25,7 +25,7 @@ describe("terms of use page", () => {
     expect(pageSource).toContain("does not mean");
     expect(pageSource).toContain("private agent prompts or strategy");
     expect(pageSource).toContain("Public Gameplay Content");
-    expect(pageSource).toContain("connect through the Influence MCP");
+    expect(pageSource).toMatch(/made publicly\s+available through the Service/);
     expect(pageSource).not.toContain("Mingle");
   });
 });

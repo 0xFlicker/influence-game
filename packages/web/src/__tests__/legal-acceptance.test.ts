@@ -75,8 +75,8 @@ describe("current legal acceptance", () => {
   it("posts explicit acceptance instead of trusting presentation state", () => {
     expect(apiSource).toContain('"/api/auth/legal-acceptance"');
     expect(apiSource).toContain("setAuthToken(session.token)");
-    expect(apiSource).toContain('termsVersion: "2026-08-12"');
-    expect(apiSource).toContain('privacyVersion: "2026-08-12"');
+    expect(apiSource).toContain('termsVersion: "2026-11-12"');
+    expect(apiSource).toContain('privacyVersion: "2026-11-12"');
     expect(apiSource).toContain("process.env.NEXT_PUBLIC_GIT_SHA");
     expect(webDockerfile).toContain("ENV NEXT_PUBLIC_GIT_SHA=${GIT_SHA}");
     expect(apiSource).toContain("JSON.stringify(PRESENTED_LEGAL_ACCEPTANCE)");

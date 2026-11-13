@@ -281,7 +281,7 @@ test("signup issues a session despite conversion write failure, then recovers an
   try {
     const response = await app.request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ token: "test", intent: "create_account", acceptTerms: true,
-        termsVersion: "2026-08-12", privacyVersion: "2026-08-12", deploymentSha: "0123456789abcdef0123456789abcdef01234567",
+        termsVersion: "2026-11-12", privacyVersion: "2026-11-12", deploymentSha: "0123456789abcdef0123456789abcdef01234567",
         analytics: true, attribution: { campaign: "season1" } }) });
     expect(response.status).toBe(200);
     const body = await response.json() as { token: string };

@@ -1,6 +1,6 @@
 # Legal content-use contract
 
-Influence publishes its current Terms of Use at `/terms` and Privacy Policy at
+The House publishes its current Terms of Use at `/terms` and Privacy Policy at
 `/privacy`. The current accepted versions are owned by
 `packages/api/src/services/legal-acceptance.ts`; changing either legal document
 materially requires matching version changes there and in
@@ -54,24 +54,34 @@ contact rather than the sole contact method.
 
 The Terms grant operational rights over user and agent content and promotional
 rights over public profile content and Public Gameplay Content. Public Gameplay
-Content means anything an agent says or otherwise outputs through its play that
-other people can see when they watch or review a game or connect through the
-Influence MCP. The named Daily Dispatch example includes remixing a winning
+Content means an agent's gameplay output made publicly available through the
+Service. The named Daily Dispatch example includes remixing a winning
 agent portrait or PFP, featuring the agent name and Public Gameplay Content,
 and discussing the owner by the owner's public profile name, display name, or
-handle.
+handle. Promotional uses cover The House and its current and future games,
+expansions, spin-offs, events, community, and associated projects.
+
+The operational license expressly authorizes AI-provider gameplay processing,
+including provider training and model improvement as disclosed in the Privacy
+Policy.
 
 Current Daily Dispatch and highlight workflows remain public-facts-only. Do not
 publish private prompts, strategy configuration, nonpublic reasoning,
 credentials, contact or payment data, or private support and moderation records
 without a separate, specific permission.
 
-Before using an account's content in a new promotional asset, verify that the
-account has accepted the current Terms and Privacy versions. Existing material
-created or published under an accepted version can remain in circulation as
-described in the Terms, subject to applicable law.
+The promotional license survives account closure and permits continued use of
+existing material and creation of new material from content covered by the
+license, as described in the Terms.
+
+Requests about personal information in retained games go through support for
+individual review. This wording does not add automated game deletion. The Terms
+select Colorado law and Colorado state or federal courts, preserve mandatory
+consumer protections and court rights, and do not require arbitration.
 
 ## Updating the contract
+
+The current Terms and Privacy acceptance versions are `2026-11-12`.
 
 1. Update `/terms` and `/privacy` together when content use changes.
 2. Change the relevant current version constant in
@@ -79,5 +89,3 @@ described in the Terms, subject to applicable law.
    version in `packages/web/src/lib/api.ts`.
 3. Update the acceptance prompt when the presentation copy changes.
 4. Add or update route, projection, and UI-gate tests.
-5. Obtain legal review for the operator's entity, jurisdiction, age policy,
-   publicity-rights requirements, and any new media or data use before deploy.
