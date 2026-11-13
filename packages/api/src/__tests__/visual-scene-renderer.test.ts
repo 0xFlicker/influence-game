@@ -14,7 +14,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { prepareVisualScene, readCurrentVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { renderPlannedVisualScene, renderVisualCandidate } from "../services/visual-scene-renderer.js";
-import { readVisualRenderAccounting } from "../services/visual-render-journal.js";
+import { readVisualRenderAccounting, renderDurableVisualImage, reserveVisualRender } from "../services/visual-render-journal.js";
 const originalFetch = globalThis.fetch;
 const originalKey = process.env.OPENAI_API_KEY;
 let db: DrizzleDB;
@@ -37,10 +37,9 @@ beforeEach(async () => {
       expect(body.model).toBe("gpt-6-sol");
       expect(body.text.format.strict).toBe(true);
       const identity = Boolean(body.text.format.schema.properties.matches);
-      const composition = Boolean(body.text.format.schema.properties.identities);
-      const ids: string[] = (body.text.format.schema.properties.identities ?? body.text.format.schema.properties.matches ?? body.text.format.schema.properties.anchors).items.properties.playerId.enum;
+      const ids: string[] = (body.text.format.schema.properties.matches ?? body.text.format.schema.properties.anchors).items.properties.playerId.enum;
       const result = { ...(body.text.format.schema.properties.missingParticipantIds ? { missingParticipantIds: [] } : {}), count: rejectIdentity ? ids.length + 1 : ids.length, anchors: ids.map((id, index) => ({ playerId: id, label: index + 1, confidence: "clear", head: { x: index / ids.length, y: 0.3, width: 0.05, height: 0.1 } })) };
-      return Response.json({ status: "completed", usage: { input_tokens: 10, output_tokens: 10 }, output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(composition ? { count: result.count, identities: result.anchors.map(({ playerId, confidence }) => ({ playerId, confidence })) } : identity ? { count: result.count, matches: result.anchors.map(({ head: _head, ...match }) => match) } : result) }] }] });
+      return Response.json({ status: "completed", usage: { input_tokens: 10, output_tokens: 10 }, output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(identity ? { count: result.count, matches: result.anchors.map(({ head: _head, ...match }) => match) } : result) }] }] });
     }
     if (!String(url).includes("/v1/images/")) throw new Error("Unexpected test network request");
     imageCalls += 1;
@@ -61,18 +60,71 @@ test("renders and verifies a small scene once, then resumes entirely from durabl
   const ready = await renderPlannedVisualScene(db, planned);
   expect(ready.status).toBe("ready");
   expect(ready.anchors).toHaveLength(3);
-  expect([imageCalls, visionCalls]).toEqual([1, 3]);
+  expect([imageCalls, visionCalls]).toEqual([1, 2]);
   expect((await renderPlannedVisualScene(db, planned)).id).toBe(ready.id);
-  expect([imageCalls, visionCalls]).toEqual([1, 3]);
+  expect([imageCalls, visionCalls]).toEqual([1, 2]);
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
 });
 
-test.each([9, 10, 12, 14])("renders %i contestants into distinct room regions and harmonizes a continuous scene", async size => {
+test.each(["missing", "extra", "duplicate identity", "duplicate label", "uncertain identity", "overlapping heads"])("two-stage verification rejects %s before publishing", async defect => {
+  const mock = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    const response = await mock(url, init);
+    if (!String(url).endsWith("/responses")) return response;
+    const body = await response.json() as { output: Array<{ content: Array<{ text: string }> }> };
+    const result = JSON.parse(body.output[0]!.content[0]!.text);
+    if (defect === "missing") result.count = 2;
+    if (defect === "extra") result.count = 4;
+    if (defect === "overlapping heads" && result.anchors) result.anchors[1].head = result.anchors[0].head;
+    if (result.matches) {
+      if (defect === "duplicate identity") result.matches[1].playerId = result.matches[0].playerId;
+      if (defect === "duplicate label") result.matches[1].label = result.matches[0].label;
+      if (defect === "uncertain identity") result.matches[1].confidence = "uncertain";
+    }
+    body.output[0]!.content[0]!.text = JSON.stringify(result);
+    return Response.json(body);
+  }, { preconnect: originalFetch.preconnect });
+  const planned = await scene(3);
+  await expect(renderPlannedVisualScene(db, planned)).rejects.toThrow();
+  expect((await readCurrentVisualScene(db, "game", "lobby"))?.status).not.toBe("ready");
+  expect(visionCalls).toBe(["missing", "extra", "overlapping heads"].includes(defect) ? 1 : 2);
+  const priorCalls = visionCalls;
+  await expect(renderPlannedVisualScene(db, planned)).rejects.toThrow();
+  expect(visionCalls).toBe(priorCalls);
+});
+
+test.each([false, true])("resumes an earlier template reservation without replacing its prompt or repeating a completed image (%s)", async completed => {
+  const planned = await scene(3);
+  const operationKey = `${planned.id}:render:${planned.renderRevision}:room-crop:v1:0`;
+  const request = { operation: "create" as const, background: "opaque" as const, width: 1536, height: 864,
+    references: [png, png, png, png], prompt: "Previous deployment: every face must face the camera." };
+  const reserved = await reserveVisualRender(db, "game", operationKey, request, planned.id);
+  if (completed) await renderDurableVisualImage(db, { gameId: "game", sceneId: planned.id, operationKey, request });
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const ready = await renderPlannedVisualScene(db, planned);
+  expect(ready.status).toBe("ready");
+  expect(prompts).toEqual(completed ? [] : [request.prompt]);
+  expect(imageCalls).toBe(1);
+  const [retained] = await loadPayloads(db.select().from(schema.visualRenderOperations).where(eq(schema.visualRenderOperations.id, reserved.id)));
+  expect(retained!.inputHash).toBe(reserved.inputHash);
+  expect(retained!.request).toEqual(reserved.request);
+});
+
+test.each([8, 9, 10, 12, 14])("renders %i contestants into distinct room regions and harmonizes a continuous scene", async size => {
   const bands = await sharp({ create: { width: 3072, height: 1536, channels: 3, background: "red" } }).composite([{ input: await sharp({ create: { width: 1536, height: 1536, channels: 3, background: "blue" } }).png().toBuffer(), left: 1536, top: 0 }]).png().toBuffer();
   artifactId = await storeVisualArtifact(db, "game", bands);
   const mock = globalThis.fetch, backdrops: string[] = [];
   globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).includes("/v1/images/")) {
+      const prompt = String((init?.body as FormData).get("prompt"));
+      expect(prompt).toContain("Allow natural head turns, side profiles, leaning and gestures");
+      expect(prompt).toContain("Keep every entire head visible, separated, in frame and recognizable");
+      expect(prompt).not.toContain("Every face must be visible from the front");
+      expect(prompt).not.toContain("Keep all faces visible");
       const inputs = (init?.body as FormData).getAll("image[]");
       expect(inputs.length).toBeLessThanOrEqual(5);
       backdrops.push(Buffer.from(await (inputs[0] as Blob).arrayBuffer()).toString("base64"));
@@ -86,9 +138,9 @@ test.each([9, 10, 12, 14])("renders %i contestants into distinct room regions an
   expect(ready.shots?.groups.flatMap(s => s.visibleParticipantIds).sort()).toEqual(planned.plan.cast.map(m => m.id).sort());
   expect(ready.shots?.groups).toHaveLength(count);
   expect(new Set(backdrops).size).toBeGreaterThan(1);
-  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 3]);
+  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 2]);
   await renderPlannedVisualScene(db, planned);
-  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 3]);
+  expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 2]);
 });
 
 test("failed identity verification pauses the scene without another automatic paid attempt", async () => {
@@ -265,7 +317,7 @@ test("a hung provider times out to portraits, records uncertainty and rejects la
   expect((await readCurrentVisualScene(db, "game", "lobby"))?.status).toBe("failed");
 });
 
-test("verified composition with malformed geometry publishes an unanchored scene, never guessed anchors", async () => {
+test("malformed geometry cannot publish an unverified scene", async () => {
   const mock = globalThis.fetch;
   globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).endsWith("/responses") && JSON.parse(String(init?.body)).text.format.schema.properties.anchors) {
@@ -273,9 +325,8 @@ test("verified composition with malformed geometry publishes an unanchored scene
     }
     return mock(url, init);
   }, { preconnect: originalFetch.preconnect });
-  const ready = await renderPlannedVisualScene(db, await scene(2));
-  expect(ready.status).toBe("ready");
-  expect(ready.anchors).toEqual([]);
+  await expect(renderPlannedVisualScene(db, await scene(2))).rejects.toThrow("Invalid visual localization document");
+  expect((await readCurrentVisualScene(db, "game", "lobby"))?.status).not.toBe("ready");
 });
 
 test("fallback consumes one shared repair allowance across a multi-section scene", async () => {
@@ -397,11 +448,34 @@ test.each(["village", "pack", "hunt"] as const)("preserves frozen Werewolf %s di
   await renderPlannedVisualScene(db, prepared);
   const regions = Math.ceil(size / 4);
   expect(prompts).toHaveLength(regions + (regions > 1 ? 1 : 0));
-  for (const prompt of prompts) expect(prompt).toContain(plan.direction!.roomDirection);
+  for (const prompt of prompts) {
+    expect(prompt).toContain(plan.direction!.roomDirection);
+    expect(prompt).toContain("Allow natural head turns, side profiles");
+    expect(prompt).not.toContain("facing camera");
+    expect(prompt).not.toContain("facing the camera");
+    expect(prompt).not.toContain("front or three-quarter");
+  }
   for (const placement of plan.placements) expect(prompts.filter(prompt => prompt.includes(JSON.stringify(placement.position)))).toHaveLength(1);
   if (size > 4) for (const prompt of prompts.slice(0, regions)) expect(prompt).toContain("Do not reconstruct the entire room");
 });
 
+
+test("rendering an older frozen plan preserves its original staging direction", async () => {
+  const { plan } = await scene(3);
+  plan.direction = { purpose: "werewolf-village", revision: "lantern-village-v1", style: "Rustic village", roomName: "Village", roomDirection: "Seat everyone around the far semicircle with the near half open to camera." };
+  plan.placements = plan.placements.map(p => ({ ...p, position: "Original frozen seat, facing camera" }));
+  const planned = await prepareVisualScene(db, { gameId: "game", boundarySequence: 2, plan });
+  const original = structuredClone(planned.plan);
+  const mock = globalThis.fetch, prompts: string[] = [];
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/")) prompts.push(String((init?.body as FormData).get("prompt")));
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  await renderVisualCandidate(db, planned);
+  expect(planned.plan).toEqual(original);
+  expect(prompts[0]).toContain(original.direction!.roomDirection);
+  expect(prompts[0]).toContain("Original frozen seat, facing camera");
+});
 
 test("generic repair defaults do not impose whole-room staging on a supplied crop", async () => {
   const mock = globalThis.fetch, prompts: string[] = [];
