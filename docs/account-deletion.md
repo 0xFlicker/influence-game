@@ -58,7 +58,7 @@ requests from recreating credentials or identity fields after deletion.
 ## Connected services
 
 `account_deletion_tasks` durably queues Clerk, Privy, and PostHog cleanup. The
-game worker processes tasks every ten seconds with row locks, bounded retries,
+game worker processes tasks every ten seconds with row locks, capped retry delays,
 and sanitized errors. Retry targets are cleared after provider acknowledgement.
 PostHog acknowledges asynchronous erasure; it is not a physical-erasure receipt.
 Farcaster is an independent identity: only its House binding is deleted.
