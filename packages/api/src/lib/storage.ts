@@ -226,7 +226,9 @@ export async function generateConstrainedPublicUpload(
   });
   const uploadUrl = await getSignedUrl(getS3Client(), command, {
     expiresIn,
-    unhoistableHeaders: new Set(["x-amz-acl"]),
+    // The worker sends both headers. Keep them in the signed-header contract:
+    // Linode rejects a checksum duplicated in the query string and headers.
+    unhoistableHeaders: new Set(["x-amz-acl", "x-amz-checksum-sha256"]),
   });
   return {
     uploadUrl,

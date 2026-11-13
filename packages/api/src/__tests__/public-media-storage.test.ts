@@ -228,6 +228,9 @@ describe("public House Highlights media storage", () => {
     expect(target.uploadHeaders["x-amz-acl"]).toBe("public-read");
     expect(new URL(target.uploadUrl).searchParams.get("X-Amz-SignedHeaders")).toContain("if-none-match");
     expect(new URL(target.uploadUrl).searchParams.get("X-Amz-SignedHeaders")).toContain("x-amz-acl");
+    expect(new URL(target.uploadUrl).searchParams.get("X-Amz-SignedHeaders")).toContain("x-amz-checksum-sha256");
+    expect(new URL(target.uploadUrl).searchParams.has("x-amz-checksum-sha256")).toBe(false);
+    expect(target.uploadHeaders["x-amz-checksum-sha256"]).toBe(createHash("sha256").update(bytes).digest("base64"));
     const sanitized = JSON.stringify(sanitizePublicMediaUploadTarget(target));
     expect(sanitized).not.toContain("X-Amz-");
     expect(sanitized).not.toContain("private.example.test");
