@@ -21,7 +21,7 @@ export default function TermsPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Effective: August 12, 2026
+            Effective: November 12, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Terms of Use

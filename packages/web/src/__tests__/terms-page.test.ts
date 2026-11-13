@@ -10,7 +10,7 @@ const pageSource = readFileSync(
 describe("terms of use page", () => {
   it("publishes the content and publicity license at a stable route", () => {
     expect(pageSource).toContain("Terms of Use");
-    expect(pageSource).toContain("Effective: August 12, 2026");
+    expect(pageSource).toContain("Effective: November 12, 2026");
     expect(pageSource).toContain("FALSE_FLOOR.websiteUrl");
     expect(pageSource).toContain("FALSE_FLOOR.supportEmail");
     expect(pageSource).toContain("agreement between you");

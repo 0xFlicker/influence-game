@@ -50,8 +50,8 @@ const TEST_ADMIN_ADDRESS = "0xadmin000000000000000000000000000000dead";
 const TEST_DEPLOYMENT_SHA = "0123456789abcdef0123456789abcdef01234567";
 const CURRENT_LEGAL_CONSENT = {
   acceptTerms: true,
-  termsVersion: "2026-08-12",
-  privacyVersion: "2026-08-12",
+  termsVersion: "2026-11-12",
+  privacyVersion: "2026-11-12",
   deploymentSha: TEST_DEPLOYMENT_SHA,
 } as const;
 
@@ -1152,8 +1152,8 @@ describe("managed authentication routes", () => {
     expect(acceptances).toHaveLength(1);
     expect(acceptances[0]).toMatchObject({
       userId: firstBody.user.id,
-      termsVersion: "2026-08-12",
-      privacyVersion: "2026-08-12",
+      termsVersion: "2026-11-12",
+      privacyVersion: "2026-11-12",
       deploymentSha: TEST_DEPLOYMENT_SHA,
       source: "account_creation",
     });
@@ -1351,8 +1351,8 @@ describe("managed authentication routes", () => {
       user: { legal: { accepted: boolean } };
     };
     expect(acceptedBody.user.legal).toMatchObject({
-      termsVersion: "2026-08-12",
-      privacyVersion: "2026-08-12",
+      termsVersion: "2026-11-12",
+      privacyVersion: "2026-11-12",
       accepted: true,
     });
     expect((await verifySessionToken(acceptedBody.token))?.legalAcceptance)

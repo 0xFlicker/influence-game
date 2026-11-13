@@ -70,13 +70,9 @@ publish private prompts, strategy configuration, nonpublic reasoning,
 credentials, contact or payment data, or private support and moderation records
 without a separate, specific permission.
 
-Before using an account's content in a new promotional asset, verify that the
-accepted Terms and disclosed privacy practices cover the intended use. The
-promotional license survives account closure and permits continued use of
-existing material and creation of new material from content covered by that
-license, subject to applicable law. Account closure alone does not revoke that
-license; it does not authorize uses outside its scope or override applicable
-privacy rights.
+The promotional license survives account closure and permits continued use of
+existing material and creation of new material from content covered by the
+license, as described in the Terms.
 
 Requests about personal information in retained games go through support for
 individual review. This wording does not add automated game deletion. The Terms
@@ -85,19 +81,7 @@ consumer protections and court rights, and do not require arbitration.
 
 ## Updating the contract
 
-The November 12 wording review leaves acceptance versions unchanged at the
-owner's explicit request. Version changes and reacceptance remain a separate
-release decision; publishing this copy does not establish that earlier users
-accepted the expanded terms. Retention criteria and the limits of connected-service
-cleanup verification are recorded in [account deletion](account-deletion.md).
-The indemnity is limited to specified third-party claims, excludes False Floor's
-own breach, negligence and misconduct, and includes notice, defense, cooperation
-and mutual settlement protections.
-
-The international-processing clause replaces blanket transfer consent with
-recognized transfer mechanisms. Account-level follow-up remains: confirm Privy's
-applicable transfer agreement and whether the PostHog organization has signed its
-DPA. Public vendor terms alone do not establish those account-specific facts.
+The current Terms and Privacy acceptance versions are `2026-11-12`.
 
 1. Update `/terms` and `/privacy` together when content use changes.
 2. Change the relevant current version constant in
@@ -105,5 +89,3 @@ DPA. Public vendor terms alone do not establish those account-specific facts.
    version in `packages/web/src/lib/api.ts`.
 3. Update the acceptance prompt when the presentation copy changes.
 4. Add or update route, projection, and UI-gate tests.
-5. Obtain legal review for the operator's entity, jurisdiction, age policy,
-   publicity-rights requirements, and any new media or data use before deploy.

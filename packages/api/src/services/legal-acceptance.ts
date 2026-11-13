@@ -2,8 +2,8 @@ import { and, desc, eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
-export const CURRENT_TERMS_VERSION = "2026-08-12";
-export const CURRENT_PRIVACY_VERSION = "2026-08-12";
+export const CURRENT_TERMS_VERSION = "2026-11-12";
+export const CURRENT_PRIVACY_VERSION = "2026-11-12";
 
 export interface LegalAcceptanceVersions {
   termsVersion: string;
