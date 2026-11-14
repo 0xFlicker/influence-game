@@ -8,10 +8,9 @@ import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {TimedSpeech} from "./timed-speech";
 import {VisualSceneView, type SceneComposition} from "./visual-scene-view";
 import type {PortraitRoom} from "./portrait-room";
-import {portraitRoomDurationMs} from "./portrait-room-pagination";
+import {roomSpeechDurationMs} from "./portrait-room-pagination";
 import {DEFAULT_ROOM_BACKDROP} from "./stage-backdrop";
 import {PaginatedPortraitRoom} from "./paginated-portrait-room";
-import {sceneSpeechDurationMs} from "./scene-speech-timing";
 
 import {composedCastHead,frameVisualScene,placeSceneBubble} from "./visual-scene-layout";
 import {BUBBLE_BORDER_INSET,bubbleFontRange} from "@/components/watch/bubble-typography";
@@ -73,7 +72,7 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
     roomId:"lobby",version:1,imageUrl:backgroundUrl,annotatedImageUrl:"",participantIds:beat.participants.map(player=>player.id),
     anchors:composition.cast.map((player,index) => ({playerId:player.id,label:index+1,confidence:"clear" as const,head:player.head}))};
   const actor = beat.participants.find(player => player.id === beat.speech.playerId);
-  const duration=paginateLargeCast && beat.participants.length>4 ? portraitRoomDurationMs(beat.speech.text,beat.participants.length) : sceneSpeechDurationMs(beat.speech.text);
+  const duration=roomSpeechDurationMs(beat.speech.text,beat.participants.length,Boolean(paginateLargeCast));
   const roomProgress=thought ? thought.elapsedMs/Math.max(1,thought.durationMs) : Math.max(0,(props.readingElapsedMs-650)/Math.max(1,duration-1050));
   return <section ref={frame} aria-label={compact ? undefined : beat.roomLabel ?? "Mingle room"} data-composed-room className="relative flex min-h-0 flex-1 flex-col">
     {/* eslint-disable @next/next/no-img-element -- frozen cutouts must expose natural dimensions before shared camera layout */}
@@ -87,7 +86,7 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
       const {naturalWidth:width,naturalHeight:height}=event.currentTarget;
       setLoaded(previous=>({...previous,[backgroundUrl]:{width,height}}));
     }}/>}
-    {compact ? <PaginatedPortraitRoom beat={beat} elapsedMs={props.elapsedMs} readingElapsedMs={props.readingElapsedMs} reducedMotion={props.reducedMotion} backgroundUrl={backgroundUrl} hideSpeech={hideSpeech} short={available<360} durationMs={duration}/> : <VisualSceneView {...props} previousFocusPlayerId={previousSpeakerId} speechDurationMs={paginateLargeCast && beat.participants.length > 4 ? duration : undefined} scene={scene} composition={composition} focusPlayerId={beat.speech.playerId ?? undefined} focusActor={actor}
+    {compact ? <PaginatedPortraitRoom beat={beat} elapsedMs={props.elapsedMs} readingElapsedMs={props.readingElapsedMs} reducedMotion={props.reducedMotion} backgroundUrl={backgroundUrl} hideSpeech={hideSpeech} short={available<360} durationMs={duration}/> : <VisualSceneView {...props} previousFocusPlayerId={previousSpeakerId} speechDurationMs={duration} scene={scene} composition={composition} focusPlayerId={beat.speech.playerId ?? undefined} focusActor={actor}
       speech={hideSpeech ? null : {...beat.speech,portrait:actor}} onReadyChange={ready => {onReadyChange?.(ready); if (ready) onImageReady?.();}} />
     }
     {!compact && <div data-room-context-label className={`pointer-events-none absolute inset-x-0 h-4 text-center text-xs font-medium text-[#e6ce9a] ${composition.fitCast ? "top-0" : "top-3"}`}>

@@ -1,8 +1,9 @@
 import {expect, test} from "bun:test";
-import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, portraitRoomNameProgress, PORTRAIT_ROOM_PAGE_HOLD_MS} from "../app/games/[slug]/components/portrait-room-pagination";
+import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, portraitRoomNameProgress, PORTRAIT_ROOM_PAGE_HOLD_MS,roomSpeechDurationMs} from "../app/games/[slug]/components/portrait-room-pagination";
 import {buildClassicPresentationCues} from "../app/games/[slug]/components/influence-replay-cues";
 import {buildStoryScenes} from "../app/games/[slug]/components/house-story";
 import {compileTiming, parseTimingProfile, sampleTiming} from "../lib/replay-export/timing";
+import {buildExportCues} from "../lib/replay-export/cues";
 import type {TranscriptEntry} from "../lib/api";
 
 test("guest names finish inside their own cast page while the speaker keeps the shared clock",()=>{
@@ -41,4 +42,21 @@ test("recorded speech and thinking leave enough clock time for large cast pages"
   expect(sampleTiming(speech!, speech!.startMs + 7500).elapsedMs).toBeGreaterThan(1000);
   expect(thought!.thought!.hideAtMs - thought!.thought!.readAtMs).toBeGreaterThanOrEqual(14000);
   expect(thought!.recording?.durationMs).toBe(2000);
+});
+
+test("short large Lobby contributions reserve complete cast pages through viewer and export timing",()=>{
+  const players=Array.from({length:12},(_,index)=>({id:`p${index}`,name:`Player ${index}`,persona:"",status:"alive" as const,shielded:false}));
+  const message:TranscriptEntry={id:1,entrySequence:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:"p0",fromPlayerId:"p0",fromPlayerName:"Player 0",toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
+  const cue=buildClassicPresentationCues(buildStoryScenes([message]),[],players)[0]!;
+  expect(cue.baseDurationMs).toBe(8050);
+  expect(cue.minimumDurationMs).toBe(8050);
+  expect(cue.minimumThinkingMs).toBe(7000);
+  expect(cue.readingHold).toBe(true);
+  expect(roomSpeechDurationMs(message.text,12,false)).toBe(cue.baseDurationMs);
+  const exported=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},messages:[message],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies:Object.fromEntries(players.map(player=>[player.id,"/body.png"]))}}).find(row=>row.speech?.text===message.text)!;
+  expect(exported.timing.baseDurationMs).toBe(cue.baseDurationMs);
+  expect(exported.timing.minimumDurationMs).toBe(cue.minimumDurationMs);
+  expect(exported.timing.minimumThinkingMs).toBe(cue.minimumThinkingMs);
+  const [timeline]=compileTiming([{...exported.timing,recording:{assetId:"voice",durationMs:500}}],parseTimingProfile({motionScale:.1}),30);
+  expect(timeline!.endMs-timeline!.startMs).toBeGreaterThanOrEqual(8050);
 });

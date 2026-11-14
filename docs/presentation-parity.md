@@ -298,7 +298,9 @@ they never become accepted scene records, contestant observations or model input
 Short or narrow stages use shared-clock full-body cast pages when the composed
 head/label bounds leave insufficient room for a readable speech line. Names are
 literal identity text; each guest completes its name pages during its own cast
-page, while the persistent speaker uses the whole contribution clock.
+page, while the persistent speaker uses the whole contribution clock. Large
+Lobby cues reserve at least 3.5 seconds per compact cast page in their canonical
+presentation timing, including recorded speech and isolated thinking cuts.
 No provider request or generated image is involved. Saved head boxes follow the
 source image; older art uses the same presentation head position as solo shots.
 

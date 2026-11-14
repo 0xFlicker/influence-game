@@ -10,7 +10,7 @@ import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { sceneSpeechDurationMs } from "./scene-speech-timing";
 import { isSafetyBounceSceneCue, safetyBounceLobbyScene } from "./safety-bounce-scene-model";
 import { allianceIntroductionDurationMs } from "@influence/engine/alliance-introductions";
-import {portraitRoomDurationMs, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_HOLD_MS} from "./portrait-room-pagination";
+import {portraitRoomDurationMs, compactRoomReadingMs, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_HOLD_MS} from "./portrait-room-pagination";
 
 /** Historical speaker/audience fields are seat IDs or exact frozen names, never dialogue prose. */
 export function resolveTranscriptPlayer(token: string | null | undefined, players: readonly GamePlayer[]) {
@@ -31,12 +31,21 @@ export function isSoloTranscript(message: TranscriptEntry): boolean {
     && (message.phase === "RETROSPECTIVE" || message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && message.phase !== "LOBBY" && !isMingleDialogue(message))))));
 }
 
-export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
+export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = [], frames: readonly GameWatchReplayFrame[] = []) {
   if (message.allianceIntroduction) return allianceIntroductionDurationMs(message.text, message.allianceIntroduction.memberIds.length);
   const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
+  const lobbyCount=largeLobbyCastCount(message,players,frames);
+  if(lobbyCount>8)return Math.max(sceneSpeechDurationMs(text),compactRoomReadingMs(lobbyCount)+1050);
   return isSoloTranscript(message) ? soloPresentationDurationMs(text)
     : message.anonymous || message.speakerPlayerId || message.fromPlayerId
       ? largeSocialCastCount(message) > 4 ? portraitRoomDurationMs(text, largeSocialCastCount(message)) : sceneSpeechDurationMs(text) : visualSpeechDurationMs(text);
+}
+
+export function largeLobbyCastCount(message:TranscriptEntry,players:readonly GamePlayer[],frames:readonly GameWatchReplayFrame[]):number {
+  if(message.phase!=="LOBBY" || message.visualScene || !(message.speakerPlayerId || message.fromPlayerId))return 0;
+  const sequence=message.firstDurableEventSequence;
+  const frame=frames.findLast(frame=>sequence!=null ? frame.sequence<=sequence : frame.round<message.round || frame.round===message.round && frame.phase==="LOBBY");
+  return (frame?.players ?? players).filter(player=>player.status==="alive").length;
 }
 
 export function largeSocialCastCount(message: TranscriptEntry): number {
