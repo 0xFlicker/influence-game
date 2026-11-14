@@ -30,6 +30,8 @@ Captions reserve the union of the cast's head boxes and keep their pointer on
 the speaker. Short players lift the room picture to retain caption space.
 This preserves all attendees through ordinary speech and isolated speech cuts;
 the existing thinking close-up remains the deliberate focus treatment.
+The room label occupies a reserved line above the cast; long labels use the
+shared reading clock without a counter or scrolling.
 
 Independent thoughts retain only allowed cast/artwork/room framing. They do not
 carry omitted speech, future choices or private room members. Pack rooms continue

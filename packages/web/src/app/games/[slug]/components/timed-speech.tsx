@@ -8,7 +8,7 @@ import { cleanSpeechPage, paginateSpeech, speechPageIndex, speechPageStarts } fr
 import {WatchPageContext} from "@/components/watch/watch-page-context";
 
 /** Measured pages use the existing beat's reading position, never their own timer. */
-export function TimedSpeech({ text, elapsedMs, className = "", typography, progress, progressDurationMs, progressClock = "content", advancePart, growToLine = false }: { growToLine?:boolean; progress?:number; progressDurationMs?:number; progressClock?:"content"|"timeline"; advancePart?:"thinking"|"speech"; typography?: BubbleTypography | null; text: string; elapsedMs: number; className?: string; onNaturalHeight?: (height: number) => void }) {
+export function TimedSpeech({ text, elapsedMs, className = "", typography, progress, progressDurationMs, progressClock = "content", advancePart, growToLine = false, pageCounter = true }: { pageCounter?:boolean; growToLine?:boolean; progress?:number; progressDurationMs?:number; progressClock?:"content"|"timeline"; advancePart?:"thinking"|"speech"; typography?: BubbleTypography | null; text: string; elapsedMs: number; className?: string; onNaturalHeight?: (height: number) => void }) {
   const sampled = useSampledStage();
   const director = useContext(WatchPageContext);
   const pageOwner = useRef(Symbol("speech pages"));
@@ -24,7 +24,7 @@ export function TimedSpeech({ text, elapsedMs, className = "", typography, progr
     let active = true;
     const update = () => {
       if (!active) return;
-      const height = Math.max(1, container.clientHeight - 22);
+      const height = Math.max(1, container.clientHeight - (pageCounter ? 22 : 0));
       if (!container.clientWidth || !container.clientHeight) return;
       if (growToLine) {
         // Start from responsive CSS each time; size the complete message, never its current page.
@@ -69,7 +69,7 @@ export function TimedSpeech({ text, elapsedMs, className = "", typography, progr
     update();
     void document.fonts?.ready.then(update);
     return () => { active = false; observer.disconnect(); };
-  }, [text, typography, frozenPages, capturePages, growToLine]);
+  }, [text, typography, frozenPages, capturePages, growToLine, pageCounter]);
   const pages = useMemo(() => typography?.pages ?? (pagination.text === text ? pagination.pages : [text]), [typography, pagination, text]);
   const readingDuration = visualSpeechDurationMs(text) - 2 * VISUAL_SPEECH_FADE_MS;
   const cueKey = director?.getActiveCue()?.key;
@@ -86,6 +86,6 @@ export function TimedSpeech({ text, elapsedMs, className = "", typography, progr
   return <div ref={frame} className={`relative min-h-0 flex-1 ${className}`} style={typography ? {fontSize:typography.fontSize,lineHeight:typography.lineHeight} : undefined}>
     <div ref={measure} aria-hidden="true" className="pointer-events-none invisible absolute inset-x-0 top-0 whitespace-pre-wrap [overflow-wrap:anywhere]" />
     <div data-speech-page-copy data-speech-page={page} data-speech-page-count={pages.length} className="whitespace-pre-wrap [overflow-wrap:anywhere]">{cleanSpeechPage(pages, page)}</div>
-    {pages.length > 1 && <div aria-label={`Page ${page + 1} of ${pages.length}`} className="absolute right-0 text-xs leading-5 text-white/50" style={typography && typography.footerHeight === 0 ? {top:-typography.headerHeight} : {bottom:0}}>{page + 1} / {pages.length}</div>}
+    {pageCounter && pages.length > 1 && <div aria-label={`Page ${page + 1} of ${pages.length}`} className="absolute right-0 text-xs leading-5 text-white/50" style={typography && typography.footerHeight === 0 ? {top:-typography.headerHeight} : {bottom:0}}>{page + 1} / {pages.length}</div>}
   </div>;
 }

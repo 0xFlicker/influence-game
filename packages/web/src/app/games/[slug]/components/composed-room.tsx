@@ -4,6 +4,8 @@ import {characterImageError} from "@/components/character/image-error";
 import {useState} from "react";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {useSampledStage} from "@/components/watch/sampled-stage";
+import {useSceneThinking} from "@/components/watch/watch-thinking";
+import {TimedSpeech} from "./timed-speech";
 import {VisualSceneView, type SceneComposition} from "./visual-scene-view";
 import type {PortraitRoom} from "./portrait-room";
 import {portraitRoomDurationMs} from "./portrait-room-pagination";
@@ -42,6 +44,7 @@ export function composeRoomCast(players: readonly Player[], images: Record<strin
 /** A DOM composite uses the exact Visual Mode camera, thought focus and speech renderer. */
 export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onImageReady, onReadyChange, hideSpeech, paginateLargeCast, previousSpeakerId = null, ...props}: RoomProps) {
   const sampled = useSampledStage();
+  const thought = useSceneThinking();
   const [missing,setMissing] = useState<string|null>(null);
   const [loaded,setLoaded] = useState<Record<string,Dimensions>>({});
   if (missing && beat.participants.some(player => player.fullBodyReferenceUrl === missing)) throw new Error(`Frozen room character image is missing: ${missing}`);
@@ -51,6 +54,8 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
     roomId:"lobby",version:1,imageUrl:backgroundUrl,annotatedImageUrl:"",participantIds:beat.participants.map(player=>player.id),
     anchors:composition.cast.map((player,index) => ({playerId:player.id,label:index+1,confidence:"clear" as const,head:player.head}))};
   const actor = beat.participants.find(player => player.id === beat.speech.playerId);
+  const duration=portraitRoomDurationMs(beat.speech.text,beat.participants.length);
+  const roomProgress=thought ? thought.elapsedMs/Math.max(1,thought.durationMs) : Math.max(0,(props.readingElapsedMs-650)/Math.max(1,duration-1050));
   return <section aria-label={beat.roomLabel ?? "Mingle room"} data-composed-room className="relative flex min-h-0 flex-1 flex-col">
     {/* eslint-disable @next/next/no-img-element -- frozen cutouts must expose natural dimensions before shared camera layout */}
     {beat.participants.map(player => <img key={player.id} src={player.fullBodyReferenceUrl!} alt="" aria-hidden="true" data-composed-preload
@@ -61,6 +66,8 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
       }} />)}
     <VisualSceneView {...props} previousFocusPlayerId={previousSpeakerId} speechDurationMs={paginateLargeCast && beat.participants.length > 4 ? portraitRoomDurationMs(beat.speech.text,beat.participants.length) : undefined} scene={scene} composition={composition} focusPlayerId={beat.speech.playerId ?? undefined} focusActor={actor}
       speech={hideSpeech ? null : {...beat.speech,portrait:actor}} onReadyChange={ready => {onReadyChange?.(ready); if (ready) onImageReady?.();}} />
-    <p data-room-context-label className="pointer-events-none absolute inset-x-0 top-3 text-center text-xs font-medium text-[#e6ce9a]">{beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`}</p>
+    <div data-room-context-label className={`pointer-events-none absolute inset-x-0 h-4 text-center text-xs font-medium text-[#e6ce9a] ${composition.fitCast ? "top-0" : "top-3"}`}>
+      <TimedSpeech text={beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`} elapsedMs={props.readingElapsedMs} progress={roomProgress} pageCounter={false} className="h-full text-xs leading-4"/>
+    </div>
   </section>;
 }
