@@ -21,6 +21,8 @@ const OVERVIEW_HOLD_MS = 200;
 
 export interface SceneComposition {
   width:number; height:number; ready:boolean;
+  /** Crowded social rooms retain their entire cast through ordinary speech. */
+  fitCast?:boolean;
   cast: Array<{id:string;name:string;items?:readonly string[];source:string;frame:SceneFrame;head:HeadRect}>;
 }
 
@@ -82,13 +84,14 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
   // room's settling interval or the following thought/speech shot.
   useLayoutEffect(() => { onReadyChange?.(imageKnown); }, [imageKnown, onReadyChange]);
   let head = imageFailed ? undefined : pointer ? { x: pointer.x, y: pointer.y, width: 0, height: 0 } : anchor?.head;
-  let target = frameVisualScene(size.width, size.height, imageKnown ? loaded.width : 0, imageKnown ? loaded.height : 0, pointer && treatment !== "focal" ? undefined : head, treatment);
+  let target = frameVisualScene(size.width, size.height, imageKnown ? loaded.width : 0, imageKnown ? loaded.height : 0, composition?.fitCast || pointer && treatment !== "focal" ? undefined : head, treatment);
   // If an extreme close-up leaves no readable bubble space, show the full image
   // with a named panel instead of covering the face or silently clipping speech.
-  if (head && placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), target, head).height < 110) {
+  if (head && !composition?.fitCast && placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), target, head).height < 110) {
     target = frameVisualScene(size.width, size.height, loaded.width, loaded.height);
     head = undefined;
   }
+  if(composition?.fitCast && size.height-controlsInset<340) target={...target,top:target.top-Math.min(48,target.height*.3)};
   const viewKey = `${scene.id}:${scene.version}:${scene.imageUrl}:${speechKey}:${imageKnown}:${loaded.width}:${loaded.height}:${target.left}:${target.top}:${target.width}:${target.height}:${head?.x}:${head?.width}:${treatment}:${navigationRevision}:${reducedMotion}`;
   const nextView: SceneCameraView = { url: imageKnown ? scene.imageUrl : "", frame: target, focusX: head ? head.x + head.width / 2 : .5, panelTreatment: treatment, shots: roomScene.shots };
   const [camera, setCamera] = useState({ key: viewKey, speechKey, from: nextView, target: nextView, startedAt: elapsedMs, direction: 0, navigationRevision, size });
@@ -127,7 +130,7 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
     const previousId = sampled ? sampled.previousSpeaker : previousFocusPlayerId;
     const previousHead = scene.anchors.find(anchor => anchor.playerId === previousId)?.head;
     to = nextView; from = nextView; startedAt = 0; direction = 0;
-    if (previousHead) {
+    if (previousHead && !composition.fitCast) {
       let previousFrame = frameVisualScene(size.width,size.height,composition.width,composition.height,previousHead);
       const canFrameHead = placeSceneBubble(size.width,Math.max(0,size.height-controlsInset),previousFrame,previousHead).height >= 110;
       if (!canFrameHead) previousFrame = frameVisualScene(size.width,size.height,composition.width,composition.height);
@@ -140,7 +143,11 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
   const framing = currentLayer.frame;
   const transitioning = imageKnown && from.url !== to.url && sceneCameraProgress(cameraElapsedMs) < 1;
   const thinkingReady = imageKnown && !transitioning && currentLayer.url === scene.imageUrl;
-  const rawBubble = placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), framing, head);
+  const castHeads = composition?.fitCast ? composition.cast.map(player=>player.head) : [];
+  const castHead = castHeads.length ? {x:Math.min(...castHeads.map(head=>head.x)),y:Math.min(...castHeads.map(head=>head.y)),
+    width:Math.max(...castHeads.map(head=>head.x+head.width))-Math.min(...castHeads.map(head=>head.x)),
+    height:Math.max(...castHeads.map(head=>head.y+head.height))-Math.min(...castHeads.map(head=>head.y))} : undefined;
+  const rawBubble = placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), framing, castHead ?? head);
   const thought = useSceneThinking();
   const available = Math.max(0,size.height - controlsInset);
   // Use the verified head box even when the speech pointer has zero dimensions.
@@ -155,7 +162,13 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
   const speechBox = rawBubble;
   const speechFit = useBubbleTypography(frameRef, speech?.text ?? "", speechBox, "speech", available < 300, 28, composition ? speech?.speaker : undefined);
   const bubble = {...speechBox,width:speechFit.typography?.width ?? speechBox.width,height:speechFit.typography?.height ?? speechBox.height};
-  return <section ref={frameRef} aria-label="Current room" data-panel-treatment={treatment} data-scene-loading={!imageKnown || undefined} data-panel-transition={transitioning || undefined} className="relative min-h-0 w-full flex-1 overflow-hidden">
+  if(castHead && head) {
+    const x=framing.left+(head.x+head.width/2)*framing.width;
+    bubble.left=Math.max(12,Math.min(size.width-bubble.width-12,x-bubble.width/2));
+    if(!bubble.below)bubble.top=speechBox.top+speechBox.height-bubble.height;
+    bubble.arrowLeft=Math.max(12,Math.min(bubble.width-20,x-bubble.left-4));
+  }
+  return <section ref={frameRef} aria-label="Current room" data-fit-cast={composition?.fitCast || undefined} data-thinking-shot={Boolean(thought) || undefined} data-panel-treatment={treatment} data-scene-loading={!imageKnown || undefined} data-panel-transition={transitioning || undefined} className="relative min-h-0 w-full flex-1 overflow-hidden">
     <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
     {layers.filter(layer => layer.url).map(layer => <div key={layer.url} data-backdrop-layer className="pointer-events-none absolute inset-0" style={{ opacity: layer.opacity }}>
       <StageBackdrop source={layer.url} frame={layer.frame} panelTreatment={layer.panelTreatment} {...sceneBackdropSources(layer.url, layer.shots)} />

@@ -140,6 +140,18 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers}: {expe
         const rect=item.getBoundingClientRect();
         if(rect.left < 0 || rect.top < 0 || rect.right > window.innerWidth+1 || rect.bottom > window.innerHeight+1)throw new Error("Held-item badge leaves the player picture");
       }
+      const fitted=document.querySelector<HTMLElement>('[data-fit-cast="true"]:not([data-thinking-shot])');
+      if(fitted) {
+        const stage=fitted.getBoundingClientRect(), bubble=fitted.querySelector<HTMLElement>("[data-speech-bubble]");
+        for(const image of fitted.querySelectorAll<HTMLImageElement>("[data-room-player]")) {
+          const rect=image.getBoundingClientRect();
+          if(rect.left<stage.left-1 || rect.top<stage.top-1 || rect.right>stage.right+1 || rect.bottom>stage.bottom+1)throw new Error(`Crowded cast attendee is outside the picture: ${image.alt}`);
+          // These fixtures use the composer's default source head rectangle.
+          const head={left:rect.left+rect.width*.4,right:rect.left+rect.width*.6,top:rect.top+rect.height*.04,bottom:rect.top+rect.height*.2};
+          const caption=bubble?.getBoundingClientRect();
+          if(bubble && caption && Number(getComputedStyle(bubble).opacity)>.1 && head.left<caption.right && head.right>caption.left && head.top<caption.bottom && head.bottom>caption.top)throw new Error(`Crowded caption obscures an attendee's head: ${image.alt}`);
+        }
+      }
       setResult(JSON.stringify({geometry:Array.from(document.querySelectorAll<HTMLElement>("[data-solo-image], [data-solo-portrait], [data-night-hunt], [data-doctor-save]")).map(node=>({tag:node.tagName,rect:node.getBoundingClientRect().toJSON()})),frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
         itemPlayers,
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,

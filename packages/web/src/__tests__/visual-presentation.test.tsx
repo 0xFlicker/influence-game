@@ -593,3 +593,28 @@ test.each([0,100,225,449,450])("Influence room camera at %i ms matches sampled e
     for(const [key,descriptor] of dimensions){if(descriptor)Object.defineProperty(prototype,key,descriptor);else Reflect.deleteProperty(prototype,key);}
   }
 });
+
+test.each([[390,700],[360,240]])("crowded composed rooms retain the complete cast at %i by %i", (width,height) => {
+  const prototype=dom.HTMLElement.prototype;
+  const dimensions=new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
+  try {
+    Object.defineProperty(prototype,"clientWidth",{configurable:true,get:()=>width});
+    Object.defineProperty(prototype,"clientHeight",{configurable:true,get:()=>height});
+    const participants=Array.from({length:8},(_,index)=>({id:String(index),name:`Player ${index}`,persona:"",fullBodyReferenceUrl:"/body.png"}));
+    const images={"/body.png":{width:400,height:900},[INFLUENCE_ROOMS.lobby]:{width:1600,height:900}};
+    const view=render(<SampledStageProvider value={{images,previousScene:null,previousSpeaker:null,firstInScene:true}}><VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",paginateLargeCast:true,participants,
+      speech:{id:"crowd",playerId:"0",speaker:"Player 0",text:"Let us hear everyone."}}} rooms={[]} elapsedMs={3000} controlsInset={0}/></SampledStageProvider>);
+    expect(view.container.querySelector('[data-fit-cast="true"]')).not.toBeNull();
+    const bodies=view.container.querySelectorAll<HTMLImageElement>("[data-room-player]");
+    expect(bodies).toHaveLength(8);
+    for(const body of bodies) {
+      expect(parseFloat(body.style.left)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(body.style.top)).toBeGreaterThanOrEqual(0);
+      expect(parseFloat(body.style.left)+parseFloat(body.style.width)).toBeLessThanOrEqual(width);
+      expect(parseFloat(body.style.top)+parseFloat(body.style.height)).toBeLessThanOrEqual(height);
+    }
+  } finally {
+    cleanup();
+    for(const [key,descriptor] of dimensions){if(descriptor)Object.defineProperty(prototype,key,descriptor);else Reflect.deleteProperty(prototype,key);}
+  }
+});

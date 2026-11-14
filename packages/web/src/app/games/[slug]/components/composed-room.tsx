@@ -46,7 +46,7 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
   const [loaded,setLoaded] = useState<Record<string,Dimensions>>({});
   if (missing && beat.participants.some(player => player.fullBodyReferenceUrl === missing)) throw new Error(`Frozen room character image is missing: ${missing}`);
   const images = {...loaded,...sampled?.images};
-  const composition = composeRoomCast(beat.participants,images);
+  const composition = {...composeRoomCast(beat.participants,images),fitCast:Boolean(paginateLargeCast && beat.participants.length>4)};
   const scene: AcceptedVisualScene = {id:`composed:${backgroundUrl}:${beat.participants.map(player=>player.id).join(":")}`,
     roomId:"lobby",version:1,imageUrl:backgroundUrl,annotatedImageUrl:"",participantIds:beat.participants.map(player=>player.id),
     anchors:composition.cast.map((player,index) => ({playerId:player.id,label:index+1,confidence:"clear" as const,head:player.head}))};

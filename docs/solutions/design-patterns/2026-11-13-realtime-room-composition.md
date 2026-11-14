@@ -24,6 +24,12 @@ its sampled camera. Coordinates never become contestant observations, accepted
 scene records or gameplay authority. A missing reference anywhere in the full
 game roster retains portraits, even when that player is outside the current room.
 Accepted generated scene bindings remain authoritative.
+Crowded social rooms marked `paginateLargeCast` keep their complete composed
+cast framed together, rather than using the speaker-centered portrait crop.
+Captions reserve the union of the cast's head boxes and keep their pointer on
+the speaker. Short players lift the room picture to retain caption space.
+This preserves all attendees through ordinary speech and isolated speech cuts;
+the existing thinking close-up remains the deliberate focus treatment.
 
 Independent thoughts retain only allowed cast/artwork/room framing. They do not
 carry omitted speech, future choices or private room members. Pack rooms continue
