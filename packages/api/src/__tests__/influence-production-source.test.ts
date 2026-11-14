@@ -13,6 +13,7 @@ import { acceptVisualScene, prepareVisualScene, storeVisualArtifact } from "../s
 import { readViewerMedia } from "../services/visual-media-viewer.js";
 import { createCanonicalEventFixture, createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
+import { createVisualRoutes } from "../routes/visual.js";
 import { sha256StableJson } from "../services/stable-hash.js";
 import { deleteAccount } from "../services/account-deletion.js";
 
@@ -329,6 +330,58 @@ test("Two Names production binds exact speech and thought text without changing 
     expect(productionMomentContent(source,thought).text).toBe(message.thinking);
     expect(productionMomentContent({...source,snapshot:{...source.snapshot,projectionVersion:4}},speech).text).toBeNull();
   }
+});
+
+test("historical confirmed head sources resolve derivatives in viewer and pinned Studio source without rewriting history", async () => {
+  const { gameId } = await fixture();
+  const imageId = await asset(gameId);
+  const [artifact] = await db.select().from(schema.visualArtifacts).where(eq(schema.visualArtifacts.id, imageId));
+  const sourceUrl = "/characters/original.png", transparentUrl = "/characters/cutout.png";
+  const rect = { x: .3, y: .1, width: .2, height: .15 };
+  const [player] = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.id, "atlas"));
+  const persona = JSON.stringify({ ...JSON.parse(player!.persona), fullBodyReferenceUrl: sourceUrl,
+    headPosition: { sourceUrl, sourceHash: artifact!.image.sha256, sourceWidth: 100, sourceHeight: 150,
+      rect, confirmation: { userId: "original-owner", at: "2025-01-01T00:00:00.000Z" } } });
+  await db.update(schema.gamePlayers).set({ persona }).where(eq(schema.gamePlayers.id, "atlas"));
+  await db.insert(schema.agentContentAssets).values({ hash: artifact!.image.sha256, bytes: artifact!.image });
+  const before = await readInfluenceProductionSource(db, gameId);
+  await db.update(schema.agentContentAssets).set({ transparentUrl }).where(eq(schema.agentContentAssets.hash, artifact!.image.sha256));
+  const response = await createVisualRoutes(db).request(`/api/games/${gameId}/visual`);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ fullBodies: { atlas: transparentUrl }, fullBodyHeads: { atlas: rect } });
+  const source = await readInfluenceProductionSource(db, gameId, { snapshot: before.snapshot });
+  expect(source.visual.fullBodies.atlas).toBe(transparentUrl);
+  expect(source.visual.fullBodyHeads.atlas).toEqual(rect);
+  expect(source.snapshot.sourceHash).toBe(before.snapshot.sourceHash);
+  expect(source.snapshot.acceptedSourceHash).toBe(before.snapshot.acceptedSourceHash);
+  expect(source.catalog).toEqual(before.catalog);
+  expect(source.frames).toEqual(before.frames);
+  expect(source.messages).toEqual(before.messages);
+  expect((await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.id, "atlas")))[0]!.persona).toBe(persona);
+  expect(await db.select().from(schema.characterCutouts)).toHaveLength(0);
+});
+
+test("historical source hints require confirmation, matching URL, valid hash and head rectangle", async () => {
+  const { gameId } = await fixture();
+  const imageId = await asset(gameId);
+  const [artifact] = await db.select().from(schema.visualArtifacts).where(eq(schema.visualArtifacts.id, imageId));
+  const sourceUrl = "/characters/original.png";
+  const head = { sourceUrl, sourceHash: artifact!.image.sha256, sourceWidth: 100, sourceHeight: 150,
+    rect: { x: .3, y: .1, width: .2, height: .15 }, confirmation: { userId: "owner", at: "2025-01-01T00:00:00.000Z" } };
+  const invalid = [ { ...head, confirmation: undefined }, { ...head, sourceUrl: "/other.png" },
+    { ...head, sourceHash: "invalid" }, { ...head, rect: { ...head.rect, width: 2 } } ];
+  for (const [index, id] of ["atlas", "echo", "mira", "nyx"].entries()) {
+    const [player] = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.id, id));
+    await db.update(schema.gamePlayers).set({ persona: JSON.stringify({ ...JSON.parse(player!.persona),
+      fullBodyReferenceUrl: sourceUrl, headPosition: invalid[index] }) }).where(eq(schema.gamePlayers.id, id));
+  }
+  await db.insert(schema.agentContentAssets).values({ hash: artifact!.image.sha256, bytes: artifact!.image, transparentUrl: "/cutout.png" });
+  const response = await createVisualRoutes(db).request(`/api/games/${gameId}/visual`);
+  expect(response.status).toBe(200);
+  const visual = await response.json() as { fullBodies: Record<string, string> };
+  expect(visual.fullBodies).toEqual(Object.fromEntries(["atlas", "echo", "mira", "nyx"].map(id => [id, sourceUrl])));
+  const source = await readInfluenceProductionSource(db, gameId);
+  expect(Object.values(source.visual.fullBodies)).toEqual([sourceUrl, sourceUrl, sourceUrl, sourceUrl]);
 });
 
 test("publishing the frozen image's derivative preserves an existing Studio snapshot", async () => {

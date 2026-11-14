@@ -32,8 +32,8 @@ import { WatchTransport } from "@/components/watch/watch-transport";
 import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
 import { VisualPresentation, presentationBeatOwnsBackdrop } from "./visual-presentation";
 import { compileVoteLedgers } from "./vote-ledger-model";
-import { useVisualWatch } from "./use-visual-watch";
-import { visualWatchPresentation } from "./visual-watch-model";
+import { useVisualWatchSnapshot,useVisualWatchChoice } from "./use-visual-watch";
+import { previousPortraitRoomSpeaker, visualWatchPresentation } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
 import type {
   TranscriptEntry,
@@ -136,6 +136,8 @@ function DramaticReplayTheater({
   anonymous = false,
   shared,
 }: DramaticReplayViewerProps & {shared?:ReplayShareState; preferences: ReturnType<typeof useWatchPreferences>}) {
+  const visualSnapshot=useVisualWatchSnapshot(game.id,true,live,anonymous);
+  const composeRooms=players.length>0 && players.every(player=>visualSnapshot?.fullBodies?.[player.id]);
   const initialSequenceSeekAppliedRef = useRef(false);
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
@@ -158,8 +160,8 @@ function DramaticReplayTheater({
   );
   const scenes = useMemo(() => buildStoryScenes(filteredMessages), [filteredMessages]);
   const classicCues = useMemo(
-    () => buildClassicPresentationCues(scenes, replayFrames, players),
-    [replayFrames, scenes, players],
+    () => buildClassicPresentationCues(scenes, replayFrames, players,{composeRooms,gameKernel:isFormatGame ? "format" : "classic",messages:filteredMessages}),
+    [replayFrames, scenes, players,composeRooms,isFormatGame,filteredMessages],
   );
   const formatCompilation = useMemo(
     () => compileFormatPresentationPrefix({
@@ -326,11 +328,16 @@ function DramaticReplayTheater({
     [canonicalReplayFrame, eliminatedIds, isFormatGame, players, live, openingCue],
   );
 
-  const visualData = useVisualWatch(game.id, true, live, activeCue?.key, anonymous);
+  const visualData = useVisualWatchChoice(game.id,activeCue?.key,visualSnapshot);
   const priorLobbyMessages = formatCue ? lobbyMessages(formatCue.round, formatCue.canonicalSequence) : [];
   const visual = visualWatchPresentation(
     visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, replayPlayers, priorLobbyMessages, replayFrames,
   );
+  const previousCue = presentationCues[presentationCues.findIndex(cue => cue.key === activeCue?.key) - 1];
+  const previousMessage = previousCue?.source === "classic" ? scenes[previousCue.sceneIndex]?.messages[previousCue.messageIndex] ?? null : null;
+  const previousBeat = visual.beat?.kind === "portrait-room" && previousCue
+    ? visualWatchPresentation(visualData ?? {enabled:true,status:null,portraits:{},scenes:[]}, previousCue, previousMessage, replayPlayers, [], replayFrames).beat : null;
+  const previousSpeakerId = previousPortraitRoomSpeaker(visual.beat, previousBeat);
   // Self-painting scenes own the sole stage backdrop; the fallback room in
   // the stage must not render a second copy inset behind them. Computed
   // before the memoized callbacks below as a pure read of the current beat.
@@ -818,7 +825,7 @@ function DramaticReplayTheater({
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation hideHouseNarration={voice.houseNarrationAvailable} fullscreen={expanded} director={director} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
+          {visual?.beat ? <VisualPresentation previousSpeakerId={previousSpeakerId} hideHouseNarration={voice.houseNarrationAvailable} fullscreen={expanded} director={director} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
             voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>

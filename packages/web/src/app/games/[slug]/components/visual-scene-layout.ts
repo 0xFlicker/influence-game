@@ -50,3 +50,12 @@ export function placeSceneBubble(width: number, height: number, image: SceneFram
     top: head ? below ? bottom + gap : top - gap - bubbleHeight : margin,
     below, arrowLeft: clamp(x - left - 4, 12, bubbleWidth - 20) };
 }
+
+/** Reserve every composed head and its fixed-height identity label. */
+export function composedCastHead(cast: readonly {head:HeadRect;labelTop:number}[], height:number, frame:SceneFrame):HeadRect | undefined {
+  if(!cast.length)return undefined;
+  const x=Math.min(...cast.map(player=>player.head.x));
+  const y=Math.min(...cast.map(player=>Math.min(player.head.y,player.labelTop/height-36/Math.max(1,frame.height))));
+  return {x,y,width:Math.max(...cast.map(player=>player.head.x+player.head.width))-x,
+    height:Math.max(...cast.map(player=>player.head.y+player.head.height))-y};
+}

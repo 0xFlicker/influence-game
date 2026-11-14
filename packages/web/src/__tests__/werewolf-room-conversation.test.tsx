@@ -3,13 +3,18 @@ import {Window} from "happy-dom";
 import {act, cleanup, fireEvent, render as renderRoot, renderHook} from "@testing-library/react";
 import type {WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
+import {SampledStageProvider} from "../components/watch/sampled-stage";
+import {WEREWOLF_ROOMS} from "../components/games/werewolf/werewolf-rooms";
 import {WerewolfContentFrame, WerewolfWatchStage} from "../components/games/werewolf/werewolf-watch-stage";
-import {werewolfMomentCues, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfCueMoment, werewolfMomentCues, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
 import {WerewolfOpeningFrame} from "../components/games/werewolf/werewolf-opening-frame";
 import type {WerewolfOpeningCue} from "../components/games/werewolf/werewolf-opening";
 import {PresentationDirector} from "../components/watch/watch-director";
 import {useWatchMusic} from "../components/watch/use-watch-music";
 import {SCENE_READ_START_MS} from "../app/games/[slug]/components/scene-speech-timing";
+import {completedHunterFixture} from "@influence/engine/fixtures/werewolf-hunter";
+import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
+import {werewolfPortraitRoom} from "../components/games/werewolf/werewolf-room-presentation";
 import {SOLO_IMAGE_FADE_MS, SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
@@ -199,7 +204,7 @@ test("village conversation uses the living prefix cast and follows speaker chang
   expect(ready).toHaveBeenCalledWith(true);
 });
 
-test("private pack room contains only living wolves and uses portraits instead of cropped full-body forms", () => {
+test("private pack composes only living wolves from frozen body art, never transformed wolf forms", () => {
   const moment = discussion();
   moment.snapshot.audience = "omniscient";
   moment.snapshot.players = moment.snapshot.players.map(player => ({
@@ -208,11 +213,31 @@ test("private pack room contains only living wolves and uses portraits instead o
   }));
   moment.wolfForms = {a: "/wolf-form.png", b: "/wolf-form-2.png"};
   moment.entry = {kind: "speech", day: 2, audience: "pack", actorId: "a", text: "We should agree on a target.", cue: null};
-  const view = render(frame(moment));
+  const view = render(<SampledStageProvider value={{images:{"/body.png":{width:600,height:900},[WEREWOLF_ROOMS.pack]:{width:1600,height:900}},previousScene:null,previousSpeaker:null,firstInScene:true}}>{frame(moment)}</SampledStageProvider>);
+  expect(view.container.querySelector("[data-composed-room]")).not.toBeNull();
   expect(view.getByRole("region", {name: "Night 2 · Pack conversation"})).not.toBeNull();
   expect(roomIds(view.container)).toEqual(["a", "b"]);
-  expect(view.getByRole("img", {name: "Arden"}).getAttribute("src")).toBe("/arden.png");
-  expect(view.getByText("Arden · werewolf")).not.toBeNull();
+  expect(view.getByRole("img", {name: "Arden"}).getAttribute("src")).toBe("/body.png");
+  expect(view.container.querySelector('[src="/wolf-form.png"]')).toBeNull();
+});
+
+test.each(["omniscient","mystery"] as const)("composed village rooms retain audience-filtered Hunter items for %s", async audience => {
+  const projected=projectWerewolfProductionWatch(await completedHunterFixture("held",{conversation:true}),audience);
+  const moment=projected.moments.find(moment=>werewolfMomentCues(moment).some(cue=>!werewolfCueMoment(cue).pack && werewolfPortraitRoom(cue)));
+  if(!moment)throw new Error("Expected Hunter village conversation");
+  moment.snapshot.players=moment.snapshot.players.map(player=>({...player,fullBodyReferenceUrl:"/body.png"}));
+  const allowed=moment.snapshot.players.filter(player=>player.alive && player.items?.includes("snipe"));
+  expect(allowed).toHaveLength(audience==="omniscient" ? 1 : 0);
+  for(const [width,height] of [[1280,720],[390,700],[360,240]]) {
+  Object.defineProperty(dom.HTMLElement.prototype,"clientWidth",{configurable:true,get:()=>width});
+  Object.defineProperty(dom.HTMLElement.prototype,"clientHeight",{configurable:true,get:()=>height});
+  const view=render(<SampledStageProvider value={{images:{"/body.png":{width:600,height:900},[WEREWOLF_ROOMS.village]:{width:1600,height:900}},previousScene:null,previousSpeaker:null,firstInScene:true}}>{frame(moment)}</SampledStageProvider>);
+  expect(view.container.querySelector("[data-composed-room]")).not.toBeNull();
+  expect(view.container.querySelectorAll('[data-item-badge="snipe"]')).toHaveLength(allowed.length);
+  if(allowed.length)expect(view.container.querySelector('[data-composed-item-player]')?.getAttribute("data-composed-item-player")).toBe(allowed[0]!.id);
+  expect(view.container.querySelectorAll("[data-room-player-name]")).toHaveLength(moment.snapshot.players.filter(player=>player.alive).length);
+  view.unmount();
+  }
 });
 
 test("an accepted visual discussion still uses its scene, while an uncovered speaker uses the room", () => {
@@ -366,4 +391,15 @@ test.each([1440, 800])("full-body solo shots stay anchored through the dissolve 
   view.rerender(shot(b,0,a,undefined,true));
   expect(view.container.querySelector('[data-solo-layer="outgoing"]')).toBeNull();
   expect(view.container.querySelector<HTMLImageElement>('[data-solo-portrait]')?.style.opacity).toBe("1");
+});
+
+test("a missing full-body reference outside the pack keeps the whole game on portraits", () => {
+  const moment = discussion();
+  moment.snapshot.audience = "omniscient";
+  moment.snapshot.players = moment.snapshot.players.map(player => ({...player,role:player.id === "d" ? "villager" : "werewolf",fullBodyReferenceUrl:player.id === "d" ? null : "/body.png"}));
+  moment.entry = {kind:"speech",day:2,audience:"pack",actorId:"a",text:"Our private conversation.",cue:null};
+  const view = render(frame(moment));
+  expect(view.container.querySelector("[data-composed-room]")).toBeNull();
+  expect(roomIds(view.container)).toEqual(["a","b"]);
+  expect(view.getByRole("img",{name:"Arden"}).getAttribute("src")).toBe("/arden.png");
 });

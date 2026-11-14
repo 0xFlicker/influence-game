@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render as baseRender, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { SceneRepairPanel, type MediaRecords, type MediaAttempt } from "../app/admin/games/[id]/visual/scene-repair-panel";
-import { useVisualWatch } from "../app/games/[slug]/components/use-visual-watch";
+import { useVisualWatchSnapshot,useVisualWatchChoice } from "../app/games/[slug]/components/use-visual-watch";
 import { setApiBase } from "../lib/api";
 const originalFetch = globalThis.fetch;
 const globals = ["window", "document", "navigator", "localStorage", "Element", "HTMLElement", "Node", "Event", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle"] as const;
@@ -108,7 +108,8 @@ test("compares annotations, publishes explicitly, restores versions and preserve
 });
 
 function Watch({ beat, live = false }: { beat: string; live?: boolean }) {
-  const data = useVisualWatch("game", true, live, beat);
+  const snapshot=useVisualWatchSnapshot("game",true,live);
+  const data=useVisualWatchChoice("game",beat,snapshot);
   return <p>{data?.scenes[0]?.imageUrl ?? "Portraits"}</p>;
 }
 test.each([false, true])("published media refreshes silently between beats (live=%s), retaining media through failures", async live => {

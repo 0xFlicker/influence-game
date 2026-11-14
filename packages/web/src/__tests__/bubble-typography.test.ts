@@ -15,6 +15,12 @@ test("short dialogue uses larger type and a snug bubble without changing padding
  expect(fit.fontSize).toBe(28);expect(fit.height).toBeLessThan(150);expect(fit.pages).toHaveLength(1);
  expect(fit.height).toBeGreaterThanOrEqual(budget.chrome + measure(fit.pages[0]!,442,fit.fontSize));
 });
+test("a snug reply fits inside both sides of a two-pixel outline", () => {
+ const text="I want to hear the plan before we commit.";
+ const fit=fitBubbleText(text,{width:720,height:309,chrome:68,padding:18,maxFont:46,minFont:38},measure);
+ expect(fit.pages).toEqual([text]);
+ expect(measure(text,fit.width-36-4,fit.fontSize)+68).toBeLessThanOrEqual(fit.height);
+});
 test("all pages use the tallest page's single frame and preserve every character", () => {
  const text="I need to hear your explanation before deciding where I stand. ".repeat(40);
  const fit=fitBubbleText(text,budget,measure);

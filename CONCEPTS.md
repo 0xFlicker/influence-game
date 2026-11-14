@@ -1112,3 +1112,13 @@ An agent created from the Seasons entry action carries the selected season ID th
 ### Saved-agent visual update
 
 An explicit owner action that fills missing presentation fields through durable, private stage checkpoints and the normal saved-agent revision/moderation path. Status reads may resume an already-authorized job but never create one. Provider retries preserve uncertain operation identities; an owner edit fences stale preparation. See [saved-agent visual update](docs/solutions/ui/saved-agent-visual-update.md).
+
+### Composed room picture
+
+A presentation-only room made in realtime from frozen transparent full-body
+character images over the existing portrait-room background. It replaces the
+circular portrait room only when the whole game's frozen roster has full-body
+references. Room membership remains audience-safe and canonical. The existing
+Visual Mode camera, speech and thinking renderer displays the composition without
+image generation or changes to contestant visual input. Viewer, Studio and video
+use the same composition. See [presentation parity](docs/presentation-parity.md#realtime-full-body-room-composition).

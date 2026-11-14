@@ -55,7 +55,7 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
 export function thinkingSegment(cue: ExportCue, id: string, text: string, actorId?: string): ExportCue {
   if (!text.trim()) throw new Error(`Empty thinking moment: ${id}`);
   const picture = thinkingPicture(cue, actorId);
-  return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,activeFormatId:cue.activeFormatId,
+  return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,activeFormatId:cue.activeFormatId,previousRoomSpeakerId:cue.previousRoomSpeakerId,
     timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,minimumThinkingMs:cue.timing.minimumThinkingMs,...(picture.room && {thinkingEstablishMs:650})}};
 }
 

@@ -1,7 +1,7 @@
 "use client";
 import {useSampledStage} from "./sampled-stage";
 import {useLayoutEffect, useState, type RefObject} from "react";
-import {bubbleFontRange, fitBubbleText, type BubbleTypography} from "./bubble-typography";
+import {BUBBLE_BORDER_INSET, bubbleFontRange, fitBubbleText, type BubbleTypography} from "./bubble-typography";
 import type {SceneFrame} from "@/app/games/[slug]/components/visual-scene-layout";
 
 /** Measure before speech is shown; time/page changes cannot resize the bubble. */
@@ -9,7 +9,7 @@ export function useBubbleTypography(frame: RefObject<HTMLElement | null>, text: 
   const sampled=useSampledStage();
   const {width, height} = box;
   const padding = compact ? 10 : 18;
-  const chrome = padding * 2 + 2 + headerHeight;
+  const chrome = padding * 2 + BUBBLE_BORDER_INSET + headerHeight;
   const {minFont, maxFont} = bubbleFontRange(width, compact);
   const key = JSON.stringify([text,width,height,kind,compact,headerHeight,minFont,maxFont,...(headerText === undefined ? [] : [headerText])]);
   const frozen=sampled?.layouts?.[key];
@@ -33,9 +33,9 @@ export function useBubbleTypography(frame: RefObject<HTMLElement | null>, text: 
         // Measuring at this independent width avoids a label/body resize loop.
         Object.assign(probe.style,{width:"max-content",fontSize:"16px",fontWeight:"600",lineHeight:"20px",whiteSpace:"pre"});
         probe.textContent = headerText;
-        minWidth = Math.min(width,Math.max(240,Math.ceil(probe.getBoundingClientRect().width) + padding * 2 + 2));
-        Object.assign(probe.style,{width:`${Math.max(1,minWidth-padding*2-2)}px`,whiteSpace:"pre-wrap"});
-        measuredChrome = padding * 2 + 2 + Math.ceil(probe.getBoundingClientRect().height) + 8;
+        minWidth = Math.min(width,Math.max(240,Math.ceil(probe.getBoundingClientRect().width) + padding * 2 + BUBBLE_BORDER_INSET));
+        Object.assign(probe.style,{width:`${Math.max(1,minWidth-padding*2-BUBBLE_BORDER_INSET)}px`,whiteSpace:"pre-wrap"});
+        measuredChrome = padding * 2 + BUBBLE_BORDER_INSET + Math.ceil(probe.getBoundingClientRect().height) + 8;
         Object.assign(probe.style,{fontWeight:"400",lineHeight:"1.4"});
       }
       const value = fitBubbleText(text, {width,height,chrome:measuredChrome,padding,maxFont,minFont,minWidth}, (copy, contentWidth, fontSize) => {

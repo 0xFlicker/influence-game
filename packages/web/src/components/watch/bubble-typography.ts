@@ -1,5 +1,8 @@
 import {paginateSpeech} from "@/app/games/[slug]/components/speech-pages";
 
+/** Both sides of the shared two-pixel speech/thought outline consume content space. */
+export const BUBBLE_BORDER_INSET = 4;
+
 export interface BubbleTypography {
   width: number; height: number; fontSize: number; lineHeight: number; pages: string[]; footerHeight: number; headerHeight: number;
 }
@@ -17,7 +20,7 @@ export function fitBubbleText(text: string, budget: BubbleBudget, measure: Measu
   const {width, height, chrome, padding, maxFont, minFont} = budget;
   const lineHeight = 1.4;
   let fittedWidth = width;
-  let contentWidth = Math.max(1, width - padding * 2 - 2);
+  let contentWidth = Math.max(1, width - padding * 2 - BUBBLE_BORDER_INSET);
   const room = Math.max(1, height - chrome);
   let fontSize = maxFont;
   while (fontSize > minFont && measure(text, contentWidth, fontSize) > room) fontSize--;
@@ -28,14 +31,14 @@ export function fitBubbleText(text: string, budget: BubbleBudget, measure: Measu
     let low = Math.min(Math.floor(width), Math.max(240,Math.ceil(budget.minWidth ?? 240))), high = Math.floor(width);
     while (low < high) {
       const mid = Math.floor((low + high) / 2);
-      if (measure(text, Math.max(1, mid - padding * 2 - 2), fontSize) <= naturalHeight + .5) high = mid;
+      if (measure(text, Math.max(1, mid - padding * 2 - BUBBLE_BORDER_INSET), fontSize) <= naturalHeight + .5) high = mid;
       else low = mid + 1;
     }
-    fittedWidth = low; contentWidth = Math.max(1, fittedWidth - padding * 2 - 2);
+    fittedWidth = low; contentWidth = Math.max(1, fittedWidth - padding * 2 - BUBBLE_BORDER_INSET);
   }
   const multipage = measure(text, contentWidth, fontSize) > room;
   const footer = multipage && room >= fontSize * lineHeight + 22 ? 22 : 0;
   const pages = paginateSpeech(text, page => measure(page, contentWidth, fontSize) <= Math.max(1, room - footer));
   const tallest = Math.max(...pages.map(page => measure(page, contentWidth, fontSize)));
-  return {width:fittedWidth, height: Math.min(height, Math.ceil(tallest + chrome + footer)), fontSize, lineHeight, pages, footerHeight:footer, headerHeight:chrome - padding * 2 - 2};
+  return {width:fittedWidth, height: Math.min(height, Math.ceil(tallest + chrome + footer)), fontSize, lineHeight, pages, footerHeight:footer, headerHeight:chrome - padding * 2 - BUBBLE_BORDER_INSET};
 }

@@ -12,7 +12,7 @@ export function SpeechBubble({speaker, caption, roleLabel, itemLabels, text, box
   typography?:BubbleTypography | null; padding:number; elapsedMs:number; staticSpeech?:boolean; wrapSpeaker?:boolean;
   tail:{side:"left" | "top" | "bottom"; style:CSSProperties};
 }) {
-  return <div data-speech-bubble style={{...box,opacity,padding}} className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/85 shadow-xl">
+  return <div data-speech-bubble style={{...box,opacity,padding}} className="absolute z-[200] flex flex-col rounded-2xl border-2 border-white/60 bg-black/85 shadow-xl">
     <div className={`mb-2 shrink-0 text-base leading-5 ${typography && typography.pages.length > 1 && !typography.footerHeight ? "pr-12" : ""}`}>
       {wrapSpeaker ? <p data-speaker-name data-wrapped-speaker className="whitespace-pre-wrap break-words font-semibold leading-5">{speaker}{"\n"}<span className="text-amber-200">{roleLabel ?? caption}</span></p> : itemLabels?.length ? <>
         <p data-speaker-name className="font-semibold leading-5">{speaker}</p>
@@ -29,6 +29,6 @@ export function SpeechBubble({speaker, caption, roleLabel, itemLabels, text, box
       {staticSpeech ? <p className="break-words" style={{fontSize:typography?.fontSize,lineHeight:1.4}}>{normalizeAudioDelivery(text).cleanText}</p>
         : <TimedSpeech advancePart="speech" text={text} elapsedMs={elapsedMs} typography={typography}/>}
     </blockquote>
-    <span aria-hidden="true" data-speech-tail className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${tail.side === "left" ? "-left-2 border-l border-b" : tail.side === "bottom" ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={tail.style}/>
+    <span aria-hidden="true" data-speech-tail className={`absolute h-4 w-4 rotate-45 border-white/60 bg-black ${tail.side === "left" ? "-left-2 border-l-2 border-b-2" : tail.side === "bottom" ? "-bottom-2 border-r-2 border-b-2" : "-top-2 border-l-2 border-t-2"}`} style={tail.style}/>
   </div>;
 }

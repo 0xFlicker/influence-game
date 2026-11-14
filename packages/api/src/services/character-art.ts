@@ -21,10 +21,13 @@ export async function readCharacterArtwork(db: Pick<DrizzleDB, "select">, gameId
     const snapshot = revisions.find(revision => revision.id === persona.contentRevisionId)?.snapshot;
     const hashes = snapshot?.assets as Record<string, string> | undefined;
     const url = member ? artifactUrl(member.referenceArtifactId) : persona.fullBodyReferenceUrl ?? null;
-    const hash = member ? artifacts.find(artifact => artifact.id === member.referenceArtifactId)?.image.sha256
-      : (persona.fullBodyReferenceUrl ? hashes?.[persona.fullBodyReferenceUrl] : undefined);
     const headPosition = !member ? persona.headPosition ?? null : null;
-    const headRectangle = member?.headRectangle ?? (headPosition?.confirmation && headPosition.sourceUrl === url && validHeadRectangle(headPosition.rect) ? headPosition.rect : undefined);
+    const confirmedHead = headPosition?.confirmation && headPosition.sourceUrl === url && validHeadRectangle(headPosition.rect);
+    // Older frozen personas retain the approved source identity with their head box.
+    const confirmedHash = confirmedHead && /^[a-f0-9]{64}$/.test(headPosition.sourceHash) ? headPosition.sourceHash : undefined;
+    const hash = member ? artifacts.find(artifact => artifact.id === member.referenceArtifactId)?.image.sha256
+      : (persona.fullBodyReferenceUrl ? hashes?.[persona.fullBodyReferenceUrl] ?? confirmedHash : undefined);
+    const headRectangle = member?.headRectangle ?? (confirmedHead ? headPosition.rect : undefined);
     return { id: player.id, fullBodyReferenceUrl: url, headPosition, headRectangle, hash, sourceArtifactId: member?.referenceArtifactId };
   });
   const hashes = originals.flatMap(art => art.hash ? [art.hash] : []);
