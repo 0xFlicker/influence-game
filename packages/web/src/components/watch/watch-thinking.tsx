@@ -63,10 +63,10 @@ export function ThoughtBubble({box, head, typography, padding = 18, wrapSpeaker 
   const circles = thoughtTail(head, start, Math.max(.8, Math.min(1.5, (typography?.fontSize ?? 28) / 28)));
   return <>
     {circles.map((circle, index) => <span key={index} aria-hidden="true" data-thought-tail
-        className="pointer-events-none absolute z-[180] rounded-full border border-slate-300/35 bg-slate-950/90"
+        className="pointer-events-none absolute z-[180] rounded-full border-2 border-slate-300/70 bg-slate-950/90"
         style={{...circle, opacity:thought.opacity}} />)}
     <aside aria-label={`${thought.speaker} thinking`} data-in-scene-thinking
-      className="pointer-events-none absolute z-[180] flex flex-col rounded-[2rem] border border-slate-300/35 bg-slate-950/90 text-slate-300 shadow-xl"
+      className="pointer-events-none absolute z-[180] flex flex-col rounded-[2rem] border-2 border-slate-300/70 bg-slate-950/90 text-slate-300 shadow-xl"
       style={{...box, padding, opacity: thought.opacity}}>
       <div className={`mb-2 shrink-0 text-base leading-5 font-medium text-slate-300 ${typography && typography.pages.length > 1 && !typography.footerHeight ? "pr-12" : ""}`}>
         <p className={wrapSpeaker ? "whitespace-normal break-words [overflow-wrap:anywhere]" : "truncate"}><span style={{opacity: .65 + .35 * Math.sin(thought.elapsedMs / 350) ** 2}} aria-hidden="true">••• </span>{thought.speaker} thinks</p>

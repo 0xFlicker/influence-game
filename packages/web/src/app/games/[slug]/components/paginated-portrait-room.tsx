@@ -42,7 +42,7 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
       <TimedSpeech text={roomName} elapsedMs={readingElapsedMs} progress={roomProgress} className="text-sm font-medium uppercase leading-4" />
     </div>
     <div className="relative grid min-h-0 flex-1 grid-cols-2 gap-2 px-3 pb-2 pt-12">
-      <div data-speech-bubble className="flex min-h-0 flex-col rounded-xl border border-white/25 bg-black/90 p-2 text-white" style={{opacity:thought ? thought.opacity : hideSpeech ? 0 : speechOpacity}}>
+      <div data-speech-bubble className="flex min-h-0 flex-col rounded-xl border-2 border-white/60 bg-black/90 p-2 text-white" style={{opacity:thought ? thought.opacity : hideSpeech ? 0 : speechOpacity}}>
         <p className="shrink-0 break-words text-sm font-semibold leading-4">{thought ? `${speaker.name} thinks` : beat.speech.speaker}</p>
         {thought?.roleLabel && <p data-thinking-role className="shrink-0 text-sm leading-4 text-amber-200">{thought.roleLabel}</p>}
         <TimedSpeech advancePart={thought ? "thinking" : "speech"} text={text} elapsedMs={readingElapsedMs} progress={progress} progressDurationMs={thought ? thought.durationMs : Math.max(1,duration - 1450)} className="mt-1 text-sm leading-5" />

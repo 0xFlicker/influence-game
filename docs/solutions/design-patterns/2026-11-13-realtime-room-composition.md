@@ -14,8 +14,11 @@ scene, generating imagery or consulting today's Agent Profile. Treat full-body
 references as transparent following the completed artwork migration.
 
 `PortraitRoom` chooses `ComposedRoom` for the viewer, Studio and exporter. The
-composition stages source images in bounded rows with their original aspect
-ratios, transforms source head boxes into composition coordinates, then supplies
+composition stages source images in bounded, horizontally staggered rows with
+their original aspect ratios. Rear rows use smaller figures, a higher floor line
+and spacing that recedes toward the room center, rather than placing one figure
+directly behind another at nearly the same size. It transforms source head boxes
+into composition coordinates, then supplies
 that geometry to `VisualSceneView`. Background, bodies, speech and thinking share
 its sampled camera. Coordinates never become contestant observations, accepted
 scene records or gameplay authority. A missing reference anywhere in the full
@@ -49,14 +52,20 @@ fresh encoded clips rather than treating matching component imports as evidence.
 
 ## Local verification
 
-- 149 focused regressions passed; the local PostgreSQL baseline passed all 2,665
-  tests. `bun run check` passed all workspace typechecks and lint.
-- 214 viewer/export frames and 428 actual Studio Source/Selected cut frames
-  matched exactly, including reverse/direct sampling at four geometries. Four
-  fresh H.264 clips passed the unchanged 4/255 decoded-frame tolerance; recorded
-  audio passed its correlation/offset bounds.
-- Evidence, exact commands/settings, page coverage, manifests, frames, movies and
-  check logs are indexed at `.renders/composed-room-validation/README.md`.
-- The full provider-free baseline remains blocked by the Solana dependency's
-  missing `bytesEqual` export (3,352 passed; 36 failures including 34 import
-  errors). Do not describe that baseline as passing. No deployment was performed.
+- Final provider-free baseline: 3,583 passed, five skipped, zero failures. The
+  PostgreSQL baseline passed 2,667 tests. Workspace typechecks/lint passed.
+- 46 focused presentation regressions include eight-player staggering/depth,
+  source image aspect ratios and paused/direct-seek camera behavior.
+- Perspective proof: 128 viewer/export and 256 Studio Source/Selected cut
+  comparisons passed, with three fresh encoded clips. Eight distinct characters,
+  larger Influence casts, Werewolf, reduced motion and isolated thoughts were
+  sampled in direct/reverse order at four geometries.
+- Final brighter-outline proof: 54 viewer/export and 108 Studio comparisons,
+  plus two fresh encoded clips, passed for speech and thinking. Both the speech
+  pointer and thought-circle trail use the thicker, higher-contrast border.
+- Commands, settings, frames, encoded clips, thresholds and bundle refresh
+  instructions are indexed at `.renders/composed-room-depth/README.md` and
+  `.renders/composed-room-outlines/README.md`. Original broader composition
+  evidence remains in `.renders/composed-room-validation/README.md`.
+- Historical reader conversion evidence is separate in
+  `.renders/local-cutouts-2026-11-13/README.md`. No deployment was performed.

@@ -19,14 +19,18 @@ export function composeRoomCast(players: readonly Player[], images: Record<strin
   const height = Math.min(570, 660 / Math.max(1, rows) * 1.2);
   const cast = players.map((player,index) => {
     const row = Math.floor(index / columns), count = Math.min(columns, players.length - row * columns);
-    const slot = 1440 / count;
+    const depth = rows - row - 1;
+    const slot = 1440 / (count + (rows > 1 ? .5 : 0));
     const source = player.fullBodyReferenceUrl!;
     const dimensions = images[source];
-    const bodyHeight = height * (1 - (rows - row - 1) * .08);
+    const bodyHeight = height / (1 + depth * .28);
     const width = dimensions ? Math.min(slot * .85, bodyHeight * dimensions.width / dimensions.height) : 0;
     const actualHeight = dimensions ? width * dimensions.height / dimensions.width : 0;
-    const frame = {left:80 + slot * (index % columns + .5) - width / 2,
-      top:790 - (rows - row - 1) * 170 - actualHeight, width, height:actualHeight};
+    // Alternate floor positions; distant rows recede toward the central vanishing point.
+    const stagger = rows > 1 ? (row % 2 ? .25 : -.25) : 0;
+    const center = 800 + slot * (index % columns - (count - 1) / 2 + stagger) / (1 + depth * .08);
+    const frame = {left:center - width / 2,
+      top:790 - depth * 170 - actualHeight, width, height:actualHeight};
     const head = player.headRectangle ?? {x:.4,y:.04,width:.2,height:.16};
     return {id:player.id,name:player.name,source,frame,
       head:{x:(frame.left + head.x * width)/1600,y:(frame.top + head.y * actualHeight)/900,

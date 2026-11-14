@@ -176,7 +176,7 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
     {thinkingReady && thought && fallback && portraitActor && <img alt={portraitActor.name} src={resolveAgentAvatarUrl(portraitActor.avatarUrl,portraitActor.persona,portraitActor.name,portraitActor.personaKey)}
       className="absolute rounded-full object-cover" style={{...fallbackFrame,opacity:thought.focus}} />}
     </div>
-    {!thought && speech && imageKnown && !transitioning && opacity > 0 && <div data-speech-bubble className="absolute z-10 flex flex-col rounded-2xl border border-white/20 bg-black/90 px-4 py-3 text-white shadow-xl"
+    {!thought && speech && imageKnown && !transitioning && opacity > 0 && <div data-speech-bubble className="absolute z-10 flex flex-col rounded-2xl border-2 border-white/60 bg-black/90 px-4 py-3 text-white shadow-xl"
       style={{ opacity, width: bubble.width, height: bubble.height, left: bubble.left, top: bubble.top, padding:speechFit.padding }}>
       <div className={`mb-2 flex shrink-0 items-center gap-3 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
         {(imageFailed || !anchor && !pointer) && speech.playerId && <div data-headshot-fallback><AgentAvatar {...speech.portrait} persona={speech.portrait?.persona ?? ""} name={speech.speaker} size="12" /></div>}
@@ -184,7 +184,7 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
       </div>
       <TimedSpeech advancePart="speech" typography={speechFit.typography} text={speech.text} elapsedMs={speechPresentation === "solo" ? soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs : readingElapsedMs - SCENE_SPEECH_START_MS} progressDurationMs={speechDurationMs !== undefined ? Math.max(1,speechDurationMs - 1450) : undefined}
         progress={speechDurationMs !== undefined && sampled?.speech?.text !== speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,speechDurationMs - 1450)) : undefined} className="text-sm leading-relaxed" />
-      {head && <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/20 bg-black/90 ${bubble.below ? "border-t border-l" : "border-b border-r"}`} style={{ left: bubble.arrowLeft, top: bubble.below ? -8 : undefined, bottom: bubble.below ? undefined : -8 }} />}
+      {head && <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/60 bg-black/90 ${bubble.below ? "border-t-2 border-l-2" : "border-b-2 border-r-2"}`} style={{ left: bubble.arrowLeft, top: bubble.below ? -8 : undefined, bottom: bubble.below ? undefined : -8 }} />}
     </div>}
     {thinkingReady && <ThinkingFocusOverlay wrapSpeaker={Boolean(composition)} frame={frameRef} layout={focus} />}
   </section>;

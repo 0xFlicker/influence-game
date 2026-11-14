@@ -5,6 +5,15 @@ applies to bug fixes and cosmetic changes as well as new beats. Until the paths
 are unified, every author and reviewer must check the adapters between them.
 An unverified surface is an outstanding requirement, not presumed coverage.
 
+Realtime composed-room casts use staggered floor rows with perspective scaling:
+rear figures are smaller and higher on the floor, with spacing receding toward
+the room center. The shared composition coordinates drive the viewer, Studio and
+fresh exports. Rebuild prepared bundles and re-encode existing movies to adopt
+this placement; accepted history and pinned character identities stay unchanged.
+Speech and thinking boxes use a two-pixel, higher-contrast outline, including
+speech pointers and the thought-circle trail. Keep these treatments consistent
+in the shared scene, solo, portrait and reduced-cast renderers.
+
 ## Define the comparison
 
 Compare the same accepted source/pinned media, audience, moment, elapsed time,

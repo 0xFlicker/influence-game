@@ -181,12 +181,12 @@ function CircularPortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion
       </div>;
     })}
     </div>
-    {showSpeech && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
+    {showSpeech && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border-2 border-white/60 bg-black/90 px-5 py-4 shadow-xl"
       style={{...bubble, opacity, padding:speechFit.padding}}>
       <p className={`mb-2 shrink-0 whitespace-normal break-words text-base font-semibold leading-5 text-white/80 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
       <TimedSpeech advancePart="speech" text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} progressDurationMs={extendedDuration !== undefined ? Math.max(1,extendedDuration - 1450) : undefined}
         progress={extendedDuration !== undefined && sampled?.speech?.text !== beat.speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,extendedDuration - 1450)) : undefined} className="text-base leading-relaxed" />
-      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - speechBox.top - 8 } : undefined} />
+      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/60 bg-black/90 ${beside ? "-right-2 border-r-2 border-t-2" : "-bottom-2 left-1/2 -translate-x-1/2 border-r-2 border-b-2"}`} style={beside ? { top: centerY - speechBox.top - 8 } : undefined} />
     </div>}
     <ThinkingFocusOverlay frame={frame} layout={focus} />
     </>}

@@ -516,6 +516,18 @@ test.each([2,8,12])("composed %i-player cast fits the floor and retains image as
   expect(composeRoomCast(participants,{}).ready).toBe(false);
 });
 
+test("eight-player rooms stagger the floor rows and scale the back row into perspective", () => {
+  const participants = Array.from({length:8},(_,index)=>({id:String(index),name:`Player ${index}`,persona:"",fullBodyReferenceUrl:"/body.png"}));
+  const {cast} = composeRoomCast(participants,{"/body.png":{width:400,height:900}});
+  const center = (player: typeof cast[number]) => player.frame.left + player.frame.width / 2;
+  for (let index=0; index<4; index++) {
+    const back = cast[index]!, front = cast[index+4]!;
+    expect(front.frame.height/back.frame.height).toBeGreaterThan(1.2);
+    expect(Math.abs(center(front)-center(back))).toBeGreaterThan(back.frame.width/2);
+    expect(back.frame.top+back.frame.height).toBeLessThan(front.frame.top+front.frame.height);
+  }
+});
+
 test("a paused composed-room seek matches a fresh frame instead of panning from the previous speaker", () => {
   const prototype = dom.HTMLElement.prototype;
   const dimensions = new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));

@@ -85,6 +85,17 @@ if (process.env.COMPOSED_ROOM_PARITY === "1") {
   cases.push({name:"composed-large",reference:cue,cue});
   cases.push({name:"composed-large-reduced",reference:cue,cue,reducedMotion:true});
   cases.push({name:"composed-thought",reference:cue,cue:thinkingSegment(cue,"composed-thought",largeHuddle.thinking!,"atlas")});
+  const eightPlayers = largePlayers.slice(0,8);
+  const eightHuddle:TranscriptEntry = {...largeHuddle,toPlayerIds:eightPlayers.slice(1).map(player=>player.id),
+    allianceSession:{...largeHuddle.allianceSession!,memberIds:eightPlayers.map(player=>player.id)}};
+  const personas = ["strategic","social","diplomat","observer","deceptive","honest","broker","wildcard"];
+  const eight = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players:eightPlayers},messages:[eightHuddle],
+    frames:largeFrames.map(frame=>({...frame,players:eightPlayers,counts:{...frame.counts,totalPlayers:8,alivePlayers:8}})),thoughts:{},
+    visual:{enabled:false,status:null,portraits:{},fullBodies:Object.fromEntries(eightPlayers.map((player,index)=>[player.id,`/avatars/personas/full-body-v1/${personas[index]}.webp`])),scenes:[]}})
+    .find(cue=>cue.speech?.text===eightHuddle.text)!;
+  cases.push({name:"composed-eight",reference:eight,cue:eight});
+  cases.push({name:"composed-eight-reduced",reference:eight,cue:eight,reducedMotion:true});
+  cases.push({name:"composed-eight-thought",reference:eight,cue:thinkingSegment(eight,"composed-eight-thought",eightHuddle.thinking!,"atlas")});
   const pair = socialCues.find(cue => cue.speech?.text === social.text)!;
   cases.push({name:"composed-pair-recorded",reference:pair,cue:{...pair,timing:{...pair.timing,recording:{assetId:"assets/format-context-voice.wav",durationMs:2000}}}});
 }
@@ -485,7 +496,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
         if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",imageFormat:item.name.startsWith("composed-") ? "png" : undefined,crf:item.name === "influence-winner" || item.name.startsWith("composed-") ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
