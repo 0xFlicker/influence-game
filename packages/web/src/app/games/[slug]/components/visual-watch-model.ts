@@ -60,6 +60,13 @@ export interface VisualWatchData {
   scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number }>;
 }
 
+/** Camera continuity follows adjacent canonical pictures, never navigation history. */
+export function previousPortraitRoomSpeaker(current: VisualPresentationBeat | null, previous: VisualPresentationBeat | null): string | null {
+  if (current?.kind !== "portrait-room" || previous?.kind !== "portrait-room") return null;
+  const key = (room: Extract<VisualPresentationBeat, {kind:"portrait-room"}>) => JSON.stringify([room.roomNumber, room.roomLabel, room.participants.map(player => player.id)]);
+  return key(current) === key(previous) ? previous.speech.playerId : null;
+}
+
 export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[], priorMessages: readonly TranscriptEntry[] = [], frames: readonly GameWatchReplayFrame[] = []): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
   const rooms: AcceptedVisualScene[] = [];
   if (message?.entrySequence !== undefined) {

@@ -7,6 +7,7 @@ import type {ExportCue} from "../lib/replay-export/cues";
 import {sampleTiming} from "../lib/replay-export/timing";
 import {SceneThinkingProvider} from "../components/watch/watch-thinking";
 import {VisualPresentationFrame} from "../app/games/[slug]/components/visual-presentation";
+import {previousPortraitRoomSpeaker} from "../app/games/[slug]/components/visual-watch-model";
 import {WerewolfWatchStage} from "../components/games/werewolf/werewolf-watch-stage";
 import {WerewolfOpeningFrame} from "../components/games/werewolf/werewolf-opening-frame";
 import {werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
@@ -193,7 +194,7 @@ function ViewerFrame({manifest,reference:singleReference,references}:ParityProps
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
       <div data-influence-stage className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
         {reference.activeFormatId && <ActiveFormatOverlay formatId={reference.activeFormatId} onOpen={() => {}} />}
-        <VisualPresentationFrame beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster} voteLedger={picture.ledger ?? undefined}/>
+        <VisualPresentationFrame previousSpeakerId={reference.previousRoomSpeakerId !== undefined ? reference.previousRoomSpeakerId : previousPortraitRoomSpeaker(picture.beat, previousPicture?.kind === "influence" ? previousPicture.beat ?? null : null)} beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster} voteLedger={picture.ledger ?? undefined}/>
       </SceneThinkingProvider></div>
     </> : null}
     <FormatAudit key={frame} expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
@@ -256,7 +257,7 @@ registerRoot(() => {
   const props = getInputProps<ParityProps>();
   return <>
     <Composition id="Export" component={ExportFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
-      durationInFrames={props.prepare ? 2 : props.manifest.range.untilFrame} defaultProps={props}/>
+      durationInFrames={props.prepare ? props.manifest.timeline.length * 2 : props.manifest.range.untilFrame} defaultProps={props}/>
     <Composition id="Viewer" component={ViewerFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}
       durationInFrames={props.manifest.range.untilFrame} defaultProps={props}/>
     <Composition id="StudioSource" component={StudioFrame} width={props.manifest.width} height={props.manifest.height} fps={props.manifest.fps}

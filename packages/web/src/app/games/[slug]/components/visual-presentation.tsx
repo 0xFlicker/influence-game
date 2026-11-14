@@ -111,7 +111,7 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   return <VisualPresentationFrame {...props} {...clock} onSceneReadyChange={onSceneReadyChange} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, retainedScene: sourceRetainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster: sourceRoster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
+export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, retainedScene: sourceRetainedScene, previousSpeakerId = null, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster: sourceRoster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
   beat: VisualPresentationBeat;
   hideHouseNarration?: boolean;
   naturalHouseMessages?: boolean;
@@ -119,6 +119,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
   retainedScene?: AcceptedVisualScene | null;
+  previousSpeakerId?: string | null;
   elapsedMs: number;
   readingElapsedMs?: number;
   holdAtTail?: boolean;
@@ -172,7 +173,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {
-    content = <PortraitRoom navigationRevision={navigationRevision} paused={paused} onReadyChange={onSceneReadyChange} paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
+    content = <PortraitRoom previousSpeakerId={previousSpeakerId} navigationRevision={navigationRevision} paused={paused} onReadyChange={onSceneReadyChange} paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
     content = voteLedger ? <VotePresentation backgroundUrl={backgroundUrl} beat={beat} ledger={voteLedger} roster={roster} controlsInset={controlsInset}
       paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} />

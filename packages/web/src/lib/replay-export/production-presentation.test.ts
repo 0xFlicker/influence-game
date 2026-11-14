@@ -16,7 +16,8 @@ import {compilePresentation, thinkingPicture} from "./presentation";
 import {parseTimingProfile} from "./timing";
 import {werewolfBackdrop} from "../../components/games/werewolf/werewolf-room-presentation";
 import {WEREWOLF_ROOMS} from "../../components/games/werewolf/werewolf-rooms";
-import {exportContinuedActor} from "./room-continuity";
+import {exportContinuedActor,exportPreviousSpeaker} from "./room-continuity";
+import {thinkingSegment} from "./presentation";
 import type {ReplaySource} from "./source";
 
 async function fixture(audience:"mystery"|"omniscient", current = false) {
@@ -83,6 +84,21 @@ test("Influence room thoughts preserve the speech environment and floor framing"
   if (!speech) throw new Error("Expected Lobby room");
   const thought = thinkingPicture(speech,"a");
   expect(thought.room).toMatchObject({floorPerspective:true,backgroundUrl:"/visual/influence/rooms-v1/lobby.jpg"});
+});
+test("isolated Influence speech and thought cuts retain canonical camera context without omitted dialogue", () => {
+  const players=[{id:"a",name:"Ada",persona:"",status:"alive" as const,shielded:false},{id:"b",name:"Bea",persona:"",status:"alive" as const,shielded:false}];
+  const source:Extract<ReplaySource,{kind:"influence"}>={kind:"influence",game:{id:"camera",slug:"camera",status:"completed",gameKernel:"classic",players},frames:[],thoughts:{},
+    messages:players.map((player,index)=>({id:index+1,gameId:"camera",round:1,phase:"LOBBY",scope:"public",fromPlayerId:player.id,fromPlayerName:player.name,toPlayerIds:null,text:index ? "Selected response" : "OMITTED CAMERA DIALOGUE",timestamp:index+1})),
+    visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies:{a:"/a.png",b:"/b.png"}}};
+  const rooms=buildExportCues(source).filter(cue=>cue.picture.kind==="influence" && cue.picture.beat?.kind==="portrait-room");
+  expect(rooms).toHaveLength(2);
+  expect(exportPreviousSpeaker(rooms[0]!)).toBeNull();
+  const speech=rooms[1]!;
+  expect(exportPreviousSpeaker(speech)).toBe("a");
+  expect(exportPreviousSpeaker({...speech,previousRoomSpeakerId:null},rooms[0])).toBeNull();
+  const thought=thinkingSegment(speech,"selected-thought","I considered our options.","b");
+  expect(exportPreviousSpeaker(thought)).toBe("a");
+  expect(JSON.stringify([speech,thought])).not.toContain("OMITTED CAMERA DIALOGUE");
 });
 test("independent room thoughts retain cutouts and head boxes without copying omitted speech", () => {
   const source: Extract<ReplaySource,{kind:"influence"}> = {kind:"influence",

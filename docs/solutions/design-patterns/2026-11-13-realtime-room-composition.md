@@ -37,6 +37,14 @@ render history. Match the prior shot's readable-caption fallback as well as its
 normal framing. Confirmed missing cutouts fail clearly; transient image errors
 retry the same artwork rather than permanently replacing it.
 
+The Influence viewer derives `previousSpeakerId` from adjacent canonical room
+pictures, resetting at room/cast boundaries, and passes it through the frame
+adapter. Export cues freeze that minimal identity as `previousRoomSpeakerId`
+before editorial selection; isolated speech and thought cuts retain the camera
+path without retaining omitted dialogue. Sample the first 450 ms, including cold
+loads and paused seeks. A multi-cue proof must prepare two layout frames per cue,
+matching production, rather than measuring only the first contribution.
+
 Short, narrow thinking shots need a smaller head beside the thought panel. Stacked
 head/text framing can leave less than one readable line. Measure wrapping speaker
 labels as part of the thought/speech typography budget. Preserve long-copy pages

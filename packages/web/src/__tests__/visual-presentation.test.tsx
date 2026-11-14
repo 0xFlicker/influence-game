@@ -560,3 +560,36 @@ test("a paused composed-room seek matches a fresh frame instead of panning from 
     }
   }
 });
+
+test.each([0,100,225,449,450])("Influence room camera at %i ms matches sampled exports on cold load and paused seeks", elapsedMs => {
+  const prototype = dom.HTMLElement.prototype;
+  const dimensions = new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
+  try {
+    Object.defineProperty(prototype,"clientWidth",{configurable:true,get:()=>390});
+    Object.defineProperty(prototype,"clientHeight",{configurable:true,get:()=>700});
+    const participants = [{id:"a",name:"Arden",persona:"",fullBodyReferenceUrl:"/a.png"},{id:"b",name:"Marlow",persona:"",fullBodyReferenceUrl:"/b.png"}];
+    const images = {"/a.png":{width:600,height:900},"/b.png":{width:600,height:900},[INFLUENCE_ROOMS.lobby]:{width:1600,height:900}};
+    const frame = (paused:boolean,revision:number) => <VisualPresentationFrame previousSpeakerId="a" beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",participants,
+      speech:{id:"next",playerId:"b",speaker:"Marlow",text:"Our next contribution."}}} rooms={[]} paused={paused} elapsedMs={elapsedMs} navigationRevision={revision} controlsInset={0}/>;
+    const ready = (container:HTMLElement) => {
+      for(const image of container.querySelectorAll<HTMLImageElement>("[data-composed-preload], [data-scene-preload]")) {
+        const size=images[image.getAttribute("src") as keyof typeof images]!;
+        Object.defineProperties(image,{naturalWidth:{configurable:true,value:size.width},naturalHeight:{configurable:true,value:size.height}});
+        fireEvent.load(image);
+      }
+    };
+    const camera = (container:HTMLElement) => container.querySelector<HTMLElement>("[data-scene-layer] img")!.getAttribute("style");
+    const exported = render(<SampledStageProvider value={{images,previousScene:null,previousSpeaker:"a",firstInScene:false}}>{frame(false,0)}</SampledStageProvider>);
+    const expected = camera(exported.container); exported.unmount();
+    const viewer = render(frame(false,0)); ready(viewer.container);
+    expect(camera(viewer.container)).toBe(expected);
+    viewer.rerender(frame(true,1));
+    expect(camera(viewer.container)).toBe(expected);
+    viewer.unmount();
+    const sought=render(frame(true,2));ready(sought.container);
+    expect(camera(sought.container)).toBe(expected);
+  } finally {
+    cleanup();
+    for(const [key,descriptor] of dimensions){if(descriptor)Object.defineProperty(prototype,key,descriptor);else Reflect.deleteProperty(prototype,key);}
+  }
+});

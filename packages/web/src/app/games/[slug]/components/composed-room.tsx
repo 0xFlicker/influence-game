@@ -40,7 +40,7 @@ export function composeRoomCast(players: readonly Player[], images: Record<strin
 }
 
 /** A DOM composite uses the exact Visual Mode camera, thought focus and speech renderer. */
-export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onImageReady, onReadyChange, hideSpeech, paginateLargeCast, previousSpeakerId, ...props}: RoomProps) {
+export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onImageReady, onReadyChange, hideSpeech, paginateLargeCast, previousSpeakerId = null, ...props}: RoomProps) {
   const sampled = useSampledStage();
   const [missing,setMissing] = useState<string|null>(null);
   const [loaded,setLoaded] = useState<Record<string,Dimensions>>({});

@@ -13,6 +13,7 @@ export function exportRoomContext(cue: ExportCue | undefined) {
     actorId:p.kind === "thinking" ? p.actor.id : cue.speech?.speakerId ?? null};
 }
 export function exportPreviousSpeaker(current: ExportCue, previous?: ExportCue): string | null {
+  if(current.previousRoomSpeakerId !== undefined) return current.previousRoomSpeakerId;
   const room = exportRoomContext(current), before = exportRoomContext(previous);
   if (room) return before?.key === room.key ? before.actorId : null;
   return previous?.picture.kind === "thinking" ? previous.picture.actor.id : previous?.speech?.speakerId ?? null;

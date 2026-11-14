@@ -13,6 +13,11 @@ this placement; accepted history and pinned character identities stay unchanged.
 Speech and thinking boxes use a two-pixel, higher-contrast outline, including
 speech pointers and the thought-circle trail. Keep these treatments consistent
 in the shared scene, solo, portrait and reduced-cast renderers.
+Room camera transitions use the adjacent canonical room's speaker, not the last
+mounted React picture. Freeze that actor ID before selecting a cut so omitted
+neighbors do not change the first 450 ms or contribute their dialogue. Rebuild
+old bundles to acquire the canonical predecessor metadata; existing selection
+IDs and accepted source remain valid.
 
 ## Define the comparison
 
