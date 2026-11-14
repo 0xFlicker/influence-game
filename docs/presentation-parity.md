@@ -5,6 +5,20 @@ applies to bug fixes and cosmetic changes as well as new beats. Until the paths
 are unified, every author and reviewer must check the adapters between them.
 An unverified surface is an outstanding requirement, not presumed coverage.
 
+Realtime composed-room casts use staggered floor rows with perspective scaling:
+rear figures are smaller and higher on the floor, with spacing receding toward
+the room center. The shared composition coordinates drive the viewer, Studio and
+fresh exports. Rebuild prepared bundles and re-encode existing movies to adopt
+this placement; accepted history and pinned character identities stay unchanged.
+Speech and thinking boxes use a two-pixel, higher-contrast outline, including
+speech pointers and the thought-circle trail. Keep these treatments consistent
+in the shared scene, solo, portrait and reduced-cast renderers.
+Room camera transitions use the adjacent canonical room's speaker, not the last
+mounted React picture. Freeze that actor ID before selecting a cut so omitted
+neighbors do not change the first 450 ms or contribute their dialogue. Rebuild
+old bundles to acquire the canonical predecessor metadata; existing selection
+IDs and accepted source remain valid.
+
 ## Define the comparison
 
 Compare the same accepted source/pinned media, audience, moment, elapsed time,
@@ -266,3 +280,48 @@ explicitly to adopt a subsequently published saved-hunt image or wolf cutout, th
 reselect/rebuild and encode. Existing MP4s never update. No history or media is
 regenerated automatically. Older saved hunts without imagery retain portrait
 fallbacks; public Mystery exports never receive the private hunt composite.
+
+## Realtime full-body room composition
+
+When every player in the frozen game roster has a full-body reference, portrait
+rooms compose the room's audience-safe cast from those transparent images on the
+existing static `rooms-v1` backgrounds. Full-body references are treated as
+transparent following the artwork migration. A missing reference anywhere in the
+game roster retains the circular portraits. Accepted generated scenes keep their
+published images and bindings.
+
+`PortraitRoom` selects the shared composition for Influence Lobby/Mingle/huddles
+and Werewolf village/pack conversations, including independent Studio/export
+thoughts. `VisualSceneView` supplies the existing camera, thinking focus, speech
+pagination and sampled clock. Composition coordinates are presentation data;
+they never become accepted scene records, contestant observations or model input.
+Short or narrow stages use shared-clock full-body cast pages when the composed
+head/label bounds leave insufficient room for a readable speech line or fixed
+identity labels would overlap at the requested geometry. Names are
+literal identity text; each guest completes its name pages during its own cast
+page, while the persistent speaker uses the whole contribution clock. Large
+Lobby cues reserve at least 3.5 seconds per compact cast page in their canonical
+presentation timing, including recorded speech and isolated thinking cuts. Large portrait-only Lobby rooms use their existing timed cast pages and retain
+the same caption hold when a body reference is missing. The shared hold covers
+the smaller portrait page capacity as well as full-body pages. Compact composed rooms
+reserve the visible transport-control inset before sizing cast and captions.
+No provider request or generated image is involved. Saved head boxes follow the
+source image; older art uses the same presentation head position as solo shots.
+
+Run the provider-free proof from `packages/web`:
+
+```sh
+COMPOSED_ROOM_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts ../../.renders/composed-room-parity
+```
+
+This covers full-body room composition, reduced motion, independent thoughts,
+recorded speech and both Werewolf audiences at wide, short, narrow and tall
+geometries. It compares viewer, Studio Source/Selected cut and fresh export frames,
+reverse samples and fresh encoded clips. No game rules, source order, audience
+membership or pinned art changes. House Cuts has no circular conversation-room
+consumer and is unaffected.
+
+Reprepare existing Studio selections and rebuild bundles from the same frozen
+source/selection to pick up this renderer. A source that predates full-body room
+metadata needs an explicit source refresh to adopt available artwork; it remains
+playable with portraits until then. Existing MP4s must be encoded again.

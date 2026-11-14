@@ -45,7 +45,7 @@ export type VisualPresentationBeat =
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
-  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; paginateLargeCast?: true; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null; items?: readonly string[]}>; speech: VisualSpeech }
+  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; paginateLargeCast?: true; participants: Array<{fullBodyReferenceUrl?: string | null; headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null; items?: readonly string[]}>; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; roomLabel?: string; speechDurationMs?: number; speech: VisualSpeech | null }
   | { kind: "portrait"; thinkingAllowed?: boolean; purpose: "Decision" | "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null; items?: readonly string[] }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string; backgroundUrl?:string }
@@ -92,10 +92,11 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   const onSceneReadyChange = useCallback((ready: boolean) => {
     if (cueKey) director.setReady(cueKey, ready);
   }, [director, cueKey]);
+  const waitsForMedia = props.beat.kind === "scene" || props.beat.kind === "portrait-room" && props.beat.participants.length > 0 && props.beat.participants.every(player => player.fullBodyReferenceUrl);
   useLayoutEffect(() => {
-    if (props.beat.kind !== "scene") onSceneReadyChange(true);
+    if (!waitsForMedia) onSceneReadyChange(true);
     return () => onSceneReadyChange(true);
-  }, [props.beat.kind, onSceneReadyChange]);
+  }, [waitsForMedia, onSceneReadyChange]);
   const [clock, setClock] = useState(() => ({ elapsedMs: director.getElapsedBaseMs(), paused: !director.getSnapshot().isPlaying }));
   useEffect(() => {
     return sampleWatch(director, () => {
@@ -110,7 +111,7 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   return <VisualPresentationFrame {...props} {...clock} onSceneReadyChange={onSceneReadyChange} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, retainedScene: sourceRetainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster: sourceRoster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
+export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, retainedScene: sourceRetainedScene, previousSpeakerId = null, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster: sourceRoster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
   beat: VisualPresentationBeat;
   hideHouseNarration?: boolean;
   naturalHouseMessages?: boolean;
@@ -118,6 +119,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
   retainedScene?: AcceptedVisualScene | null;
+  previousSpeakerId?: string | null;
   elapsedMs: number;
   readingElapsedMs?: number;
   holdAtTail?: boolean;
@@ -171,14 +173,14 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {
-    content = <PortraitRoom paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
+    content = <PortraitRoom previousSpeakerId={previousSpeakerId} navigationRevision={navigationRevision} paused={paused} onReadyChange={onSceneReadyChange} paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
     content = voteLedger ? <VotePresentation backgroundUrl={backgroundUrl} beat={beat} ledger={voteLedger} roster={roster} controlsInset={controlsInset}
       paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} />
       : <SoloPresentation backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "anonymous") {
     const opacity = sceneSpeechOpacity(beat.speech.text, clockElapsedMs, reducedMotion);
-    content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech advancePart="speech" text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
+    content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border-2 border-white/60 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech advancePart="speech" text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     const segment = hideHouseNarration && beat.text !== null ? null : <HouseSegment logoUrl={houseLogoUrl} fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
     content = naturalHouseMessages && beat.text !== null ? <div style={{paddingBottom:fullscreen ? controlsInset + 8 : 8}} className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-hidden p-2"><RoomBackdrop source={beat.backgroundUrl ?? INFLUENCE_ROOMS.lobby} resilient /><div className="h-1/3 min-h-[90px] shrink-0"><HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} /></div></div> : beat.backgroundUrl ? <div className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><RoomBackdrop source={beat.backgroundUrl} resilient />{segment}</div> : segment;

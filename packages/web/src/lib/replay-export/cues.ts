@@ -27,6 +27,7 @@ import {
   formatPresentationEligibilityFromFrames,
 } from "../../app/games/[slug]/components/format-presentation-model";
 import {
+  previousPortraitRoomSpeaker,
   visualWatchPresentation,
 } from "../../app/games/[slug]/components/visual-watch-model";
 import { influencePresentationPolicy } from "../../app/games/[slug]/components/influence-presentation-director";
@@ -78,6 +79,8 @@ export type ExportPicture =
       ledger: VoteLedgerState | null;
     };
 export interface ExportCue {
+  /** Canonical room framing survives an editorial cut without omitted dialogue. */
+  previousRoomSpeakerId?: string | null;
   /** Stable editorial identity; multiple authored shots may belong to one moment. */
   momentId?: string;
   /** Audience-safe selected-format context at this social moment. */
@@ -238,7 +241,9 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     const ledger = ledgers[index] ?? null;
     const activeFormatId = cue.source === "classic" && cue.phase === "FORMAT_MINGLE" && game.gameKernel === "format"
       ? formatSnapshotForPresentationCursor(cues, index, cue.round)?.activeFormatId : null;
+    const previous = result.at(-1)?.picture;
     result.push({
+      ...(picture.beat?.kind === "portrait-room" ? {previousRoomSpeakerId:previousPortraitRoomSpeaker(picture.beat,previous?.kind === "influence" ? previous.beat : null)} : {}),
       ...(activeFormatId ? {activeFormatId} : {}),
       timing: {
         key: cue.key,

@@ -3,11 +3,25 @@ import { sceneSpeechDurationMs } from "../app/games/[slug]/components/scene-spee
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import { expect, test } from "bun:test";
 import { createPresentationDirector } from "../app/games/[slug]/components/influence-presentation-director";
-import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
+import { previousPortraitRoomSpeaker, visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
 import { soloPresentationDurationMs } from "../app/games/[slug]/components/solo-presentation-timing";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { GamePlayer, GameWatchReplayFrame, TranscriptEntry } from "../lib/api";
 const player: GamePlayer = { id: "a", name: "Ada", persona: "social", status: "alive", shielded: false };
+
+test("room camera predecessors use adjacent frozen room pictures and reset at room/cast boundaries", () => {
+  const players = [player,{...player,id:"b",name:"Bea"}];
+  const data:VisualWatchData = {enabled:false,status:null,portraits:{},scenes:[],fullBodies:{a:"/a.png",b:"/b.png"}};
+  const first:TranscriptEntry = {id:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:"a",fromPlayerId:"a",fromPlayerName:"Ada",toPlayerIds:null,text:"First",timestamp:1};
+  const before = visualWatchPresentation(data,null,first,players).beat;
+  const current = visualWatchPresentation(data,null,{...first,id:2,speakerPlayerId:"b",fromPlayerId:"b",fromPlayerName:"Bea"},players).beat;
+  expect(previousPortraitRoomSpeaker(current,before)).toBe("a");
+  expect(previousPortraitRoomSpeaker(current,null)).toBeNull();
+  if(current?.kind!=="portrait-room" || before?.kind!=="portrait-room")throw new Error("Expected frozen lobby rooms");
+  expect(previousPortraitRoomSpeaker(current,{...before,roomNumber:1})).toBeNull();
+  expect(previousPortraitRoomSpeaker(current,{...before,roomLabel:"Private huddle"})).toBeNull();
+  expect(previousPortraitRoomSpeaker(current,{...before,participants:[before.participants[0]!]})).toBeNull();
+});
 const message: TranscriptEntry = { id: 10, gameId: "g", round: 1, phase: "LOBBY", fromPlayerId: "a", fromPlayerName: "Ada", scope: "public", toPlayerIds: null, text: "Let us talk.", timestamp: 1, entrySequence: 5, visualScene: { id: "old", roomId: "lobby" } };
 const data: VisualWatchData = { enabled: true, status: null, portraits: { a: "/frozen.png" }, scenes: [
   { id: "old", roomId: "lobby", version: 1, afterDialogueSequence: 2, imageUrl: "/old.png", participantIds: ["a"], anchors: [] },
@@ -346,4 +360,17 @@ test("farewell uses the council room while private diaries use a House room", as
   if (farewell?.kind === "portrait") {
     expect(influenceRoomBackground({...farewell, purpose:"Diary"})).toBe(INFLUENCE_ROOMS.mingle[4]);
   }
+});
+
+test("room composition requires full-body art for the entire frozen game cast, even outside this huddle", () => {
+  const roster = [player,{...player,id:"b",name:"Bea"},{...player,id:"c",name:"Cy"}];
+  const speech: TranscriptEntry = {...message,visualScene:undefined,phase:"MINGLE",scope:"mingle",toPlayerIds:["b"]};
+  const visual: VisualWatchData = {enabled:false,status:null,portraits:{a:"/head.png"},scenes:[],fullBodies:{a:"/a.png",b:"/b.png"},fullBodyHeads:{a:{x:.4,y:.04,width:.2,height:.16}}};
+  const incomplete = visualWatchPresentation(visual,null,speech,roster).beat;
+  expect(incomplete?.kind).toBe("portrait-room");
+  if (incomplete?.kind !== "portrait-room") throw new Error("Missing room");
+  expect(incomplete.participants.every(player => !player.fullBodyReferenceUrl)).toBe(true);
+  const complete = visualWatchPresentation({...visual,fullBodies:{...visual.fullBodies,c:"/c.png"}},null,speech,roster).beat;
+  expect(complete).toMatchObject({kind:"portrait-room",participants:[{id:"a",fullBodyReferenceUrl:"/a.png",headRectangle:visual.fullBodyHeads!.a},{id:"b",fullBodyReferenceUrl:"/b.png"}]});
+  expect(complete?.kind === "portrait-room" && complete.participants.some(player => player.id === "c")).toBe(false);
 });

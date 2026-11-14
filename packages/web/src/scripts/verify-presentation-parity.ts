@@ -9,6 +9,7 @@ import {bundle} from "@remotion/bundler";
 import {openBrowser, renderStill, renderFrames, renderMedia, selectComposition} from "@remotion/renderer";
 import tailwindConfig from "../../tailwind.config";
 import {createFormatKernelViewerScenario} from "@influence/engine/fixtures/format-kernel-viewer";
+import {werewolfPortraitRoom} from "../components/games/werewolf/werewolf-room-presentation";
 import {Phase} from "@influence/engine";
 import {completedCurrentWerewolfFixture, completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
@@ -77,6 +78,42 @@ const largeHuddle:TranscriptEntry = {...huddle,id:103,entrySequence:103,toPlayer
   thinking:"I promised to listen before choosing a target. This room contains several competing commitments, and I need to remember who supports each option. The safest move may be to ask for a clear explanation before accepting a plan that leaves someone else exposed.",
   allianceSession:{sessionId:"large",allianceId:"large",allianceName:"The Exceptionally Long Night Shift Alliance",memberIds:huddleMembers.map(player=>player.id)}};
 const largeCues = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players:largePlayers},messages:[largeHuddle],frames:largeFrames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}});
+if (process.env.COMPOSED_ROOM_PARITY === "1") {
+  const bodies = Object.fromEntries(largePlayers.map(player => [player.id,"/avatars/personas/full-body-v1/strategic.webp"]));
+  const cue = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players:largePlayers},messages:[largeHuddle],frames:largeFrames,thoughts:{},
+    visual:{enabled:false,status:null,portraits:{},fullBodies:bodies,scenes:[]}}).find(cue => cue.speech?.text === largeHuddle.text)!;
+  cases.push({name:"composed-large",reference:cue,cue});
+  cases.push({name:"composed-large-reduced",reference:cue,cue,reducedMotion:true});
+  cases.push({name:"composed-thought",reference:cue,cue:thinkingSegment(cue,"composed-thought",largeHuddle.thinking!,"atlas")});
+  const lobby:TranscriptEntry={id:110,entrySequence:110,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:largePlayers[0]!.id,fromPlayerId:largePlayers[0]!.id,fromPlayerName:largePlayers[0]!.name,toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
+  const lobbyCue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:largePlayers},messages:[lobby],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},fullBodies:bodies,scenes:[]}}).find(cue=>cue.speech?.text===lobby.text)!;
+  cases.push({name:"composed-lobby-short",reference:lobbyCue,cue:lobbyCue});
+  cases.push({name:"composed-lobby-short-thought",reference:lobbyCue,cue:thinkingSegment(lobbyCue,"composed-lobby-short-thought",lobby.thinking!,largePlayers[0]!.id)});
+  const fallbackPlayers=largePlayers.map((player,index)=>({...player,name:`P${index}`}));
+  const fallbackCue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:fallbackPlayers},messages:[{...lobby,fromPlayerName:"P0"}],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}}).find(cue=>cue.speech?.text===lobby.text)!;
+  cases.push({name:"composed-lobby-fallback",reference:fallbackCue,cue:fallbackCue});
+  const eightPlayers = largePlayers.slice(0,8);
+  const eightHuddle:TranscriptEntry = {...largeHuddle,toPlayerIds:eightPlayers.slice(1).map(player=>player.id),
+    allianceSession:{...largeHuddle.allianceSession!,memberIds:eightPlayers.map(player=>player.id)}};
+  const personas = ["strategic","social","diplomat","observer","deceptive","honest","broker","wildcard"];
+  const nextHuddle:TranscriptEntry = {...eightHuddle,id:104,entrySequence:104,fromPlayerId:eightPlayers[1]!.id,speakerPlayerId:eightPlayers[1]!.id,
+    fromPlayerName:eightPlayers[1]!.name,toPlayerIds:eightPlayers.filter(player=>player.id!==eightPlayers[1]!.id).map(player=>player.id),text:"I want to hear the plan before we commit."};
+  const eightSequence = buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"format",players:eightPlayers},messages:[eightHuddle,nextHuddle],
+    frames:largeFrames.map(frame=>({...frame,players:eightPlayers,counts:{...frame.counts,totalPlayers:8,alivePlayers:8}})),thoughts:{},
+    visual:{enabled:false,status:null,portraits:{},fullBodies:Object.fromEntries(eightPlayers.map((player,index)=>[player.id,`/avatars/personas/full-body-v1/${personas[index]}.webp`])),scenes:[]}})
+    .filter(cue=>cue.picture.kind === "influence" && cue.picture.beat?.kind === "portrait-room");
+  const eight = eightSequence[0]!;
+  if(eightSequence.length !== 2) throw new Error("Missing consecutive room camera fixture");
+  cases.push({name:"composed-eight",reference:eight,cue:eight});
+  cases.push({name:"composed-eight-reduced",reference:eight,cue:eight,reducedMotion:true});
+  cases.push({name:"composed-eight-thought",reference:eight,cue:thinkingSegment(eight,"composed-eight-thought",eightHuddle.thinking!,"atlas")});
+  cases.push({name:"composed-camera-sequence",reference:eight,cue:eight,sequence:eightSequence,references:eightSequence});
+  cases.push({name:"composed-camera-reduced",reference:eight,cue:eight,sequence:eightSequence,references:eightSequence,reducedMotion:true});
+  cases.push({name:"composed-camera-isolated",reference:eightSequence[1]!,cue:eightSequence[1]!});
+  cases.push({name:"composed-camera-isolated-thought",reference:eightSequence[1]!,cue:thinkingSegment(eightSequence[1]!,"composed-camera-isolated-thought","I need to hear their reasons.",eightPlayers[1]!.id)});
+  const pair = socialCues.find(cue => cue.speech?.text === social.text)!;
+  cases.push({name:"composed-pair-recorded",reference:pair,cue:{...pair,timing:{...pair.timing,recording:{assetId:"assets/format-context-voice.wav",durationMs:2000}}}});
+}
 const largeHuddleCue = largeCues.find(cue => cue.speech?.text === largeHuddle.text);
 if (!largeHuddleCue || largeHuddleCue.activeFormatId !== "majority_elimination") throw new Error("Missing large huddle format context");
 cases.push({name:"format-huddle-large",reference:largeHuddleCue,cue:largeHuddleCue});
@@ -111,11 +148,51 @@ for (const suite of suites) for (const audience of ["mystery","omniscient"] as c
     player.fullBodyReferenceUrl="/avatars/personas/full-body-v1/strategic.webp";
   }
   const cues=buildExportCues({kind:"werewolf",windows:[{...projected,audience,status:"completed",slug:"render-parity",publicationCutoff:"fixture",media:{}}],thoughts:[]});
+  if (process.env.COMPOSED_ROOM_PARITY === "1" && !suite.prefix) {
+    const cue = cues.find(item => item.picture.kind === "werewolf" && werewolfPortraitRoom(item.picture.cue) && !item.picture.scene)!;
+    if (!cue) throw new Error("Missing composed Werewolf discussion");
+    cases.push({name:`composed-werewolf-${audience}`,reference:cue,cue});
+  }
   for(const kind of suite.kinds) {
     const cue=cues.find(item=>item.picture.kind === "werewolf" && (kind === "ending" ? item.picture.cue.reprise : !item.picture.cue.reprise && !item.picture.cue.ballot && !item.picture.cue.nightAction && item.picture.cue.moment.entry.kind === kind));
     if(!cue) throw new Error(`Missing ${audience} ${kind} fixture`);
     cases.push({name:`${suite.prefix}${audience}-${kind}`,cue,reference:cue});
   }
+}
+if (process.env.COMPOSED_ROOM_PARITY === "1") {
+  const {completedHunterFixture} = await import("@influence/engine/fixtures/werewolf-hunter");
+  const heldEvents=await completedHunterFixture("held",{conversation:true});
+  for(const audience of ["omniscient","mystery"] as const) {
+    const projected=projectWerewolfProductionWatch(heldEvents,audience);
+    for(const moment of projected.moments)for(const player of moment.snapshot.players) {
+      player.avatarUrl="/avatars/personas/strategic.png";
+      player.fullBodyReferenceUrl="/avatars/personas/full-body-v1/strategic.webp";
+    }
+    const held=buildExportCues({kind:"werewolf",windows:[{...projected,audience,status:"completed",slug:"hunter-held",publicationCutoff:"fixture",media:{}}],thoughts:[]})
+      .find(cue=>cue.picture.kind==="werewolf" && werewolfPortraitRoom(cue.picture.cue) && (audience==="mystery" || cue.picture.cue.moment.snapshot.players.some(player=>player.id===cue.speech?.speakerId && player.items?.includes("snipe"))));
+    if(!held)throw new Error(`Missing composed Hunter ${audience} conversation`);
+    cases.push({name:`composed-hunter-held-${audience}`,reference:held,cue:held});
+  }
+  const historical = projectWerewolfProductionWatch(await completedWerewolfResultsFixture("saved","composed-historical",1),"omniscient");
+  for (const moment of historical.moments) for (const player of moment.snapshot.players) {
+    player.avatarUrl = "/avatars/personas/strategic.png";
+    player.fullBodyReferenceUrl = "/avatars/personas/full-body-v1/strategic.webp";
+  }
+  const historicalCue = buildExportCues({kind:"werewolf",windows:[{...historical,audience:"omniscient",status:"completed",slug:"composed-historical",publicationCutoff:"fixture",media:{}}],thoughts:[]})
+    .find(cue => cue.picture.kind === "werewolf" && werewolfPortraitRoom(cue.picture.cue));
+  if (!historicalCue) throw new Error("Missing historical composed pack room");
+  cases.push({name:"composed-historical-pack",reference:historicalCue,cue:historicalCue});
+  const {packStrategyPresentationFixture} = await import("./pack-strategy-presentation-fixture");
+  const input = await packStrategyPresentationFixture("omniscient");
+  const pack = input.base.filter(cue => cue.picture.kind === "werewolf" && cue.picture.cue.moment.entry.kind === "proposal" && werewolfPortraitRoom(cue.picture.cue)).slice(0,2);
+  if (pack.length !== 2) throw new Error("Missing eight-player pack composition sequence");
+  cases.push({name:"composed-pack-sequence",reference:pack[0]!,cue:pack[0]!,sequence:pack,references:pack});
+  const thought = input.bound.flatMap(moment => moment.segments).find(cue => cue.picture.kind === "thinking" && cue.picture.gameKind === "werewolf" && cue.picture.room);
+  if (!thought || thought.source.kind !== "werewolf") throw new Error("Missing isolated composed pack thought");
+  const cursor = thought.source.cursor;
+  const reference = input.base.find(cue => cue.source.kind === "werewolf" && cue.source.cursor === cursor);
+  if (!reference) throw new Error("Missing pack thought source reference");
+  cases.push({name:"composed-pack-thought",reference,cue:thought});
 }
 // A long accepted ballot exercises the exact speech adapter used by manual
 // page advancement, including an isolated Studio cut with omitted neighbors.
@@ -276,16 +353,24 @@ try {
   await runProcess("ffmpeg",["-y","-v","error","-f","lavfi","-i","sine=frequency=523:sample_rate=44100","-t","2",join(serveUrl,"assets/format-context-voice.wav")]);
   await mkdir(join(serveUrl,"public","assets"),{recursive:true});
   await cp(join(serveUrl,"assets/format-context-voice.wav"),join(serveUrl,"public/assets/format-context-voice.wav"));
-  const browser=await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
+  let browser=await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
+  const resetComparisonBrowser = async () => {
+    await browser.close({silent:true});
+    browser = await openBrowser("chrome",{browserExecutable:process.env.REPLAY_BROWSER_EXECUTABLE});
+  };
   try {
     const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
     const portrait = process.env.FORMAT_CONTEXT_PORTRAIT === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
-    const geometries: readonly (readonly [number, number])[] = process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
-    const geometryCases = (narrow || portrait) && !suppliedCases ? cases.filter(item => item.name.startsWith("hunter-") || item.name.startsWith("pack-") || ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
+    const geometries: readonly (readonly [number, number])[] = process.env.FORMAT_CONTEXT_MEDIUM === "1" ? [[640,700]] : process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(process.env.COMPOSED_ROOM_PARITY === "1" || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
+    const geometryCases = (narrow || portrait) && !suppliedCases ? cases.filter(item => item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
-    const selectedCases = process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
+    const selectedCases = process.env.COMPOSED_ROOM_PARITY === "1" ? geometryCases.filter(item => item.name.startsWith("composed-") && (!process.env.FORMAT_CONTEXT_CASE || process.env.FORMAT_CONTEXT_CASE.split(",").includes(item.name))) : process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
+    if (process.env.COMPOSED_ROOM_PARITY === "1" && !selectedCases.length) throw new Error("No composed-room proof cases selected");
     for(const [width,height] of geometries) for(const item of selectedCases) {
+      // Dense cutout cases retain many decoded textures. Start each comparison
+      // in a fresh browser rather than carrying that cache across the matrix.
+      if (process.env.COMPOSED_ROOM_PARITY === "1" && results.length) await resetComparisonBrowser();
       const profile=parseTimingProfile({ending:{holdMs:0}}),fps=30;
       const preparedCues = item.sequence ?? [item.cue];
       const timeline=compileTiming(preparedCues.map(cue=>cue.timing),profile,fps);
@@ -323,7 +408,7 @@ try {
       }
       const expectedCast = item.name === "format-huddle-five" ? fiveMembers : huddleMembers;
       const castPages = portraitRoomPageCount(expectedCast.length);
-      const castSamples = ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
+      const castSamples = item.name==="composed-lobby-fallback" ? Array.from({length:portraitRoomPageCount(largePlayers.length)},(_,page)=>Math.floor((650+(item.cue.timing.baseDurationMs-1050)*(page+.5)/portraitRoomPageCount(largePlayers.length))*fps/1000)) : ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
         : (item.name.startsWith("format-huddle-large-thought") || item.name === "format-huddle-six-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
       let dialogueSamples:number[]=[];
       let roomSamples:number[]=[];
@@ -379,9 +464,9 @@ try {
           return Math.floor((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
         });
       }
-      if ((item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-")) && !item.sequence && (item.cue.speech?.speakerId || item.cue.timing.thinking)) {
+      if ((item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-") || item.name.startsWith("composed-")) && !item.sequence && (item.cue.speech?.speakerId || item.cue.timing.thinking)) {
         const text = item.cue.timing.thinking ?? item.cue.speech!.text;
-        const measuredPages = [...Object.values(pages),...Object.values(layouts).map(layout=>layout.pages)].find(value=>value.join("") === text);
+        const measuredPages = [...Object.values(pages),...Object.values(layouts).map(layout=>layout.pages)].findLast(value=>value.join("") === text);
         if (!measuredPages?.length || measuredPages.some(page=>!page.trim())) throw new Error("Pack pagination did not preserve all accepted text");
         expectedDialoguePages = measuredPages.length;
         const weights = measuredPages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)), total=weights.reduce((a,b)=>a+b,0);
@@ -401,16 +486,49 @@ try {
       }
       const winnerRemaining = item.cue.picture.kind === "influence" && item.cue.picture.beat?.kind === "winner" ? item.cue.picture.beat.standings.length : 0;
       const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
-      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...(item.name.startsWith("lone-wolf-") ? [Math.floor(manifest.range.untilFrame*.65)] : []),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
+      const cameraSamples = item.name==="composed-lobby-fallback" ? [180] : item.name.startsWith("composed-camera-") ? timeline.flatMap(row=>[0,3,7,13,14].map(offset=>Math.min(row.endFrame-1,row.startFrame+offset))) : [];
+      const roomCast=item.cue.picture.kind==="thinking" ? item.cue.picture.room?.players ?? [] : item.cue.picture.kind==="influence" && item.cue.picture.beat?.kind==="portrait-room" ? item.cue.picture.beat.participants : item.cue.picture.kind==="werewolf" ? werewolfPortraitRoom(item.cue.picture.cue)?.participants ?? [] : [];
+      const verifyNames=item.name.startsWith("composed-") && roomCast.every(player=>player.fullBodyReferenceUrl) && !item.sequence && !(item.cue.picture.kind==="thinking" && width>=640 && height>=394);
+      const nameSamples:number[]=[];
+      if(verifyNames)for(const player of roomCast) {
+        const namePages=Object.values(pages).findLast(value=>value.join("")===player.name);
+        if(!namePages?.length)throw new Error(`Missing measured participant name: ${player.name}`);
+        const weights=namePages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)),total=weights.reduce((a,b)=>a+b,0);let before=0;
+        for(const weight of weights) {
+          let progress=(before+weight/2)/total;before+=weight;
+          const actorId=item.cue.picture.kind==="thinking" ? item.cue.picture.actor.id : item.cue.speech?.speakerId;
+          const progressOptions=[progress];
+          if(roomCast.length>8 && player.id!==actorId) {
+            const guests=roomCast.filter(player=>player.id!==actorId),castPages=Math.max(1,Math.ceil(guests.length/7));
+            progress=(Math.floor(guests.findIndex(guest=>guest.id===player.id)/7)+progress)/castPages;
+          }
+          progressOptions.push(progress);
+          for(const progress of new Set(progressOptions)) {
+          if(thought)nameSamples.push(Math.round((thought.insertAt+thought.readAtMs+progress*(thought.hideAtMs-thought.readAtMs))*fps/1000));
+          else {
+            const source=650+progress*(item.cue.timing.baseDurationMs-1050);
+            const part=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
+            if(part)nameSamples.push(Math.round((part.startMs+(source-part.sourceStartMs)/(part.sourceEndMs-part.sourceStartMs)*(part.endMs-part.startMs))*fps/1000));
+          }
+          }
+        }
+      }
+      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...(item.name.startsWith("lone-wolf-") ? [Math.floor(manifest.range.untilFrame*.65)] : []),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...cameraSamples,...nameSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
       const observedCast = new Set<string>();
+      const observedNames=new Map<string,Map<number,string>>();
       const observedWinnerCast = new Set<string>();
       const observedDialoguePages = new Set<string>(), observedRoomPages = new Set<string>();
       for(const frame of samples) {
         const paths={viewer:`${prefix}-${frame}-viewer.png`,export:`${prefix}-${frame}-export.png`};
         const frameAudits:unknown[]=[];
+        if(item.name==="composed-lobby-short" && width===390) {
+          const controlled={...inputProps,controlsInset:140};
+          const composition=await selectComposition({serveUrl,id:"Viewer",inputProps:controlled,puppeteerInstance:browser});
+          await renderStill({serveUrl,composition,inputProps:controlled,frame,output:`${prefix}-${frame}-controls.png`,imageFormat:"png",puppeteerInstance:browser});
+        }
         await renderStill({serveUrl,composition:viewer,inputProps,frame,output:paths.viewer,imageFormat:"png",puppeteerInstance:browser});
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:paths.export,imageFormat:"png",puppeteerInstance:browser,
-          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); frameAudits.push(data); for (const id of data.castMembers ?? []) observedCast.add(id); for (const id of data.winnerMembers ?? []) observedWinnerCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
+          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); frameAudits.push(data); for(const name of data.castNames ?? []){if(!observedNames.has(name.id))observedNames.set(name.id,new Map());observedNames.get(name.id)!.set(name.page,name.text);} for (const id of data.castMembers ?? []) observedCast.add(id); for (const id of data.winnerMembers ?? []) observedWinnerCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
         await writeFile(`${prefix}-${frame}-audit.json`,JSON.stringify(frameAudits,null,2));
         const meanDifference=difference(await pixels(paths.viewer),await pixels(paths.export));
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
@@ -428,19 +546,27 @@ try {
       if(item.name === "influence-winner" && winnerPlayers.slice(1).some(player=>!observedWinnerCast.has(player.id))) throw new Error(`Not every winner-scene cast member appeared: ${[...observedWinnerCast].join(", ")}`);
       if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
         throw new Error(`Not every huddle page appeared: room ${observedRoomPages.size}/${expectedRoomPages}, dialogue ${observedDialoguePages.size}/${expectedDialoguePages}`);
+      if(verifyNames)for(const player of roomCast) {
+        if(!observedCast.has(player.id))throw new Error(`Participant never appeared: ${player.id}`);
+        const seen=observedNames.get(player.id);
+        const text=seen ? [...seen].sort(([a],[b])=>a-b).map(([,text])=>text).join("") : "";
+        if(text.replace(/\s/gu,"")!==player.name.replace(/\s/gu,""))throw new Error(`Participant name was not fully shown: ${player.name} => ${text}`);
+      }
       pageCoverage.push({name:item.name,width,height,expectedDialoguePages,observedDialoguePages:[...observedDialoguePages],samples});
       await writeFile(join(output,"page-coverage.json"),JSON.stringify(pageCoverage,null,2));
-      if (expectedDialoguePages > 0 && (item.name === "page-werewolf-ballot" || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-")) && observedDialoguePages.size !== expectedDialoguePages)
+      if (expectedDialoguePages > 0 && (item.name === "page-werewolf-ballot" || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-") || item.name.startsWith("composed-")) && observedDialoguePages.size !== expectedDialoguePages)
         throw new Error(`Not every measured dialogue page appeared: ${observedDialoguePages.size}/${expectedDialoguePages}`);
-      // Verify random-access stability independently of the comparison order.
+      // Verify random-access stability independently of prior React/browser state.
+      if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
       for(const frame of samples.toReversed()) {
         const path=join(scratch,"reverse.png");
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && (process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-lobby-fallback","composed-lobby-short","composed-lobby-short-thought","composed-large-reduced","composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
-        await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",crf:item.name === "influence-winner" ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
+        if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
+        await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",imageFormat:item.name.startsWith("composed-") ? "png" : undefined,crf:item.name === "influence-winner" || item.name.startsWith("composed-") ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});
         for(const frame of samples) {
           const encoded=`${prefix}-${frame}-encoded.png`;
           await runProcess("ffmpeg",["-y","-v","error","-i",`${prefix}.mp4`,"-vf",`select=eq(n\\,${frame})`,"-frames:v","1",encoded]);
