@@ -173,7 +173,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {
-    content = <PortraitRoom previousSpeakerId={previousSpeakerId} navigationRevision={navigationRevision} paused={paused} onReadyChange={onSceneReadyChange} paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
+    content = <PortraitRoom previousSpeakerId={beat.participants.length>0 && beat.participants.every(player=>player.fullBodyReferenceUrl) ? previousSpeakerId : undefined} navigationRevision={navigationRevision} paused={paused} onReadyChange={onSceneReadyChange} paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
     content = voteLedger ? <VotePresentation backgroundUrl={backgroundUrl} beat={beat} ledger={voteLedger} roster={roster} controlsInset={controlsInset}
       paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} />

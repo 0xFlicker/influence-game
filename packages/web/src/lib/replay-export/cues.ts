@@ -243,7 +243,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
       ? formatSnapshotForPresentationCursor(cues, index, cue.round)?.activeFormatId : null;
     const previous = result.at(-1)?.picture;
     result.push({
-      ...(picture.beat?.kind === "portrait-room" ? {previousRoomSpeakerId:previousPortraitRoomSpeaker(picture.beat,previous?.kind === "influence" ? previous.beat : null)} : {}),
+      ...(picture.beat?.kind === "portrait-room" && picture.beat.participants.length>0 && picture.beat.participants.every(player=>player.fullBodyReferenceUrl) ? {previousRoomSpeakerId:previousPortraitRoomSpeaker(picture.beat,previous?.kind === "influence" ? previous.beat : null)} : {}),
       ...(activeFormatId ? {activeFormatId} : {}),
       timing: {
         key: cue.key,

@@ -69,6 +69,7 @@ test("portrait-only and mixed-art games keep original Lobby timing in viewer and
  expect(viewer.minimumDurationMs).toBeUndefined();expect(viewer.minimumThinkingMs).toBeUndefined();expect(viewer.readingHold).toBeUndefined();
  for(const fullBodies of [{},Object.fromEntries(players.slice(0,-1).map(player=>[player.id,"/body.png"]))]){
   const cue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},messages:[message],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies}}).find(row=>row.speech?.text===message.text)!;
+  expect(cue.previousRoomSpeakerId).toBeUndefined();
   expect(cue.timing.baseDurationMs).toBe(viewer.baseDurationMs);expect(cue.timing.minimumDurationMs).toBeUndefined();expect(cue.timing.minimumThinkingMs).toBeUndefined();
   if(cue.picture.kind!=="influence" || cue.picture.beat?.kind!=="portrait-room")throw new Error("Expected the original portrait room");
   expect(cue.picture.beat.participants.every(player=>!player.fullBodyReferenceUrl)).toBe(true);

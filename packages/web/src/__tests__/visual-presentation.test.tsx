@@ -648,3 +648,17 @@ test("large Lobby without full-body art retains the circular gallery and origina
  expect(view.container.querySelectorAll("[data-thinking-camera] [data-room-player]")).toHaveLength(12);
  expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
 });
+
+test("portrait-only galleries keep their original speaker-to-speaker ring rotation",()=>{
+ const prototype=dom.HTMLElement.prototype;
+ const dimensions=new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
+ try {
+  Object.defineProperty(prototype,"clientWidth",{configurable:true,get:()=>1280});Object.defineProperty(prototype,"clientHeight",{configurable:true,get:()=>720});
+  const participants=Array.from({length:4},(_,index)=>({id:String(index),name:`P${index}`,persona:""}));
+  const frame=(playerId:string,elapsedMs:number)=><VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",participants,speech:{id:playerId,playerId,speaker:`P${playerId}`,text:"Yes."}}} rooms={[]} elapsedMs={elapsedMs} controlsInset={0}/>;
+  const transforms=(container:HTMLElement)=>Array.from(container.querySelectorAll<HTMLElement>("[data-room-player]")).map(node=>node.style.transform);
+  const view=render(frame("0",1000)),before=transforms(view.container);
+  view.rerender(frame("1",0));expect(transforms(view.container)).toEqual(before);
+  view.rerender(frame("1",650));expect(transforms(view.container)).not.toEqual(before);
+ }finally {cleanup();for(const [key,descriptor]of dimensions){if(descriptor)Object.defineProperty(prototype,key,descriptor);else Reflect.deleteProperty(prototype,key);}}
+});

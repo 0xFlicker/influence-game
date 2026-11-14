@@ -469,6 +469,12 @@ try {
       if ((item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-") || item.name.startsWith("composed-")) && !item.sequence && (item.cue.speech?.speakerId || item.cue.timing.thinking)) {
         const text = item.cue.timing.thinking ?? item.cue.speech!.text;
         const measuredPages = [...Object.values(pages),...Object.values(layouts).map(layout=>layout.pages)].findLast(value=>value.join("") === text);
+        // The restored legacy ring has no caption budget at 360×240 with twelve
+        // players. Preserve that pre-existing picture without turning it into
+        // a compact list; retain structural/pixel evidence, not a reading claim.
+        if(!measuredPages?.length && item.name.startsWith("composed-lobby-fallback") && height<360) {
+          expectedDialoguePages=0;
+        } else {
         if (!measuredPages?.length || measuredPages.some(page=>!page.trim())) throw new Error("Pack pagination did not preserve all accepted text");
         expectedDialoguePages = measuredPages.length;
         const weights = measuredPages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)), total=weights.reduce((a,b)=>a+b,0);
@@ -485,6 +491,7 @@ try {
           // midpoint, rather than flooring into the preceding page.
           return Math.round((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
         });
+      }
       }
       const winnerRemaining = item.cue.picture.kind === "influence" && item.cue.picture.beat?.kind === "winner" ? item.cue.picture.beat.standings.length : 0;
       const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
