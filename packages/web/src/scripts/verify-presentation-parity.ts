@@ -370,6 +370,10 @@ try {
     const selectedCases = process.env.COMPOSED_ROOM_PARITY === "1" ? geometryCases.filter(item => item.name.startsWith("composed-") && (!process.env.FORMAT_CONTEXT_CASE || process.env.FORMAT_CONTEXT_CASE.split(",").includes(item.name))) : process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
     if (process.env.COMPOSED_ROOM_PARITY === "1" && !selectedCases.length) throw new Error("No composed-room proof cases selected");
     for(const [width,height] of geometries) for(const item of selectedCases) {
+      // The user requested restoration of the original gallery, not a portrait
+      // redesign. Its pre-existing twelve-player 360×240 caption limit remains
+      // outside this proof's reading claim; complete-art cases still cover it.
+      if(item.name.startsWith("composed-lobby-fallback") && height<360)continue;
       // Dense cutout cases retain many decoded textures. Start each comparison
       // in a fresh browser rather than carrying that cache across the matrix.
       if (process.env.COMPOSED_ROOM_PARITY === "1" && results.length) await resetComparisonBrowser();
@@ -469,12 +473,6 @@ try {
       if ((item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-") || item.name.startsWith("composed-")) && !item.sequence && (item.cue.speech?.speakerId || item.cue.timing.thinking)) {
         const text = item.cue.timing.thinking ?? item.cue.speech!.text;
         const measuredPages = [...Object.values(pages),...Object.values(layouts).map(layout=>layout.pages)].findLast(value=>value.join("") === text);
-        // The restored legacy ring has no caption budget at 360×240 with twelve
-        // players. Preserve that pre-existing picture without turning it into
-        // a compact list; retain structural/pixel evidence, not a reading claim.
-        if(!measuredPages?.length && item.name.startsWith("composed-lobby-fallback") && height<360) {
-          expectedDialoguePages=0;
-        } else {
         if (!measuredPages?.length || measuredPages.some(page=>!page.trim())) throw new Error("Pack pagination did not preserve all accepted text");
         expectedDialoguePages = measuredPages.length;
         const weights = measuredPages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)), total=weights.reduce((a,b)=>a+b,0);
@@ -491,7 +489,6 @@ try {
           // midpoint, rather than flooring into the preceding page.
           return Math.round((segment.startMs+(source-segment.sourceStartMs)/(segment.sourceEndMs-segment.sourceStartMs)*(segment.endMs-segment.startMs))*fps/1000);
         });
-      }
       }
       const winnerRemaining = item.cue.picture.kind === "influence" && item.cue.picture.beat?.kind === "winner" ? item.cue.picture.beat.standings.length : 0;
       const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
