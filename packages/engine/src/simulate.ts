@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/** Werewolf v14 reveals only eliminated wolves/village alignments in every contestant observation; preserve historical information boundaries. */
 /** Werewolf v13 API evaluations inspect shared night speech and next-day voting plans; retain durable game IDs and private evidence, use direct House calls and no `as any`. */
 /** Strategy evaluations use existing private role coaching and a concise glossary; retain character voice and distinguish claims from verified knowledge. */
 /** Visual Mode supports text-only routes using canonical room text and performance cues. */

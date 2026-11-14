@@ -22,7 +22,7 @@ const active = (status: string) => ["queued", "rendering", "verifying"].includes
 type StoredScene = typeof schema.visualScenes.$inferSelect;
 type StagingPlan = Pick<StoredScene["plan"], "placements" | "allianceGroups" | "cues"> & {
   cast: readonly Pick<StoredScene["plan"]["cast"][number], "id" | "name">[];
-  direction?: { purpose?: string } | null;
+  direction?: { purpose?: string; doctorSaved?: boolean } | null;
 };
 
 /** Canonical staging discovery needs cast identity and choreography, never reference bytes or prompts. */
@@ -33,7 +33,7 @@ export function readVisualSceneStaging(db: DrizzleDB, gameId: string) {
     plan: sql<StagingPlan>`jsonb_build_object(
       'cast', (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', member->'id', 'name', member->'name')), '[]'::jsonb) FROM jsonb_array_elements(${scenes.plan}->'cast') member),
       'placements', ${scenes.plan}->'placements', 'allianceGroups', ${scenes.plan}->'allianceGroups',
-      'cues', ${scenes.plan}->'cues', 'direction', jsonb_build_object('purpose', ${scenes.plan}->'direction'->'purpose'))`,
+      'cues', ${scenes.plan}->'cues', 'direction', jsonb_build_object('purpose', ${scenes.plan}->'direction'->'purpose', 'doctorSaved', ${scenes.plan}->'direction'->'doctorSaved'))`,
   }).from(scenes).where(eq(scenes.gameId, gameId)).orderBy(asc(scenes.boundarySequence), asc(scenes.id));
 }
 

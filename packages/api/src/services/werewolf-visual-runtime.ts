@@ -61,7 +61,7 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
         return;
       }
       const previous = await readCurrentVisualScene(db, gameId, roomId);
-      const unchanged = previous && previous.plan.direction?.purpose === `werewolf-${descriptor.purpose}`
+      const unchanged = descriptor.purpose !== "hunt" && previous && previous.plan.direction?.purpose === `werewolf-${descriptor.purpose}`
         && previous.plan.cast.length === ids.length && previous.plan.cast.every(p => ids.includes(p.id));
       let scene = previous;
       if (!unchanged) {

@@ -113,7 +113,7 @@ function canonicalWerewolfScenes(gameId:string,events:readonly WerewolfEvent[],s
   return descriptors.map(descriptor => {
     const { roomId, boundarySequence, purpose } = descriptor;
     const scene = stored.filter(row => row.roomId === roomId && row.boundarySequence <= boundarySequence
-      && (purpose !== "hunt" || row.plan.direction?.purpose === "werewolf-hunt")
+      && (purpose !== "hunt" || row.plan.direction?.purpose === "werewolf-hunt" && (row.plan.direction.doctorSaved === true) === (descriptor.doctorSaved === true))
       && row.plan.cast.length === descriptor.participantIds.length && row.plan.cast.every(p => descriptor.participantIds.includes(p.id))).at(-1);
     const participants = descriptor.participantIds.map(id => ({ id, name: state.players.find(player => player.id === id)!.name }));
     const data = { sceneId: scene?.id ?? null, roomId, round: descriptor.day, boundarySequence, afterDialogueSequence: boundarySequence,

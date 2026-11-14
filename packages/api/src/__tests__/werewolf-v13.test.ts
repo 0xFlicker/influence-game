@@ -1,3 +1,4 @@
+import {eq} from "drizzle-orm";
 import { beforeEach, expect, test } from "bun:test";
 import OpenAI from "openai";
 import { createProviderAdapter, fixtureRetrospectiveCapacity, fixtureWerewolfRetrospective, modelCatalogEntryById, type LlmProviderRuntime } from "@influence/engine";
@@ -23,14 +24,20 @@ const scripted: WerewolfAgent = { prepareRetrospectiveCapacity:fixtureRetrospect
   return {kind:"speech",text:"My introduction.",cue:null};
 }};
 
-for (const boundary of [2,3,5]) test(`v13 owner recovery at pack beat ${boundary} preserves agreement and journaled strategy without redispatch`, async()=>{
+for (const version of [13,14] as const) for (const boundary of [2,3,5]) test(`v${version} owner recovery at pack beat ${boundary} preserves agreement and journaled strategy without redispatch`, async()=>{
   const game = await createWerewolfGame(db,"v13-owner",{preset:"two_wolves",agentProfileIds:[],providerManifest:[{catalogId:"katana:glm-5-2"}],maxDays:2});
+  // Pin the synthetic starting event before exercising historical recovery.
+  const [started] = await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId,game.id));
+  if (!started || started.event.type !== "werewolf.started") throw new Error("Missing fixture start");
+  await db.update(schema.werewolfEvents).set({event:{...started.event,payload:{...started.event.payload,config:{...started.event.payload.config,rulesVersion:version}}}}).where(eq(schema.werewolfEvents.gameId,game.id));
+  const [row] = await db.select().from(schema.games).where(eq(schema.games.id,game.id));
+  await db.update(schema.games).set({config:JSON.stringify({...JSON.parse(row!.config),rulesVersion:version})}).where(eq(schema.games.id,game.id));
   const claim = await claimWerewolfGame(db,game.id); if (!claim.ok) throw new Error(claim.error);
   const store = createWerewolfStore(db,game.id,claim.claim.ownerEpoch);
   let state = replayWerewolf(await store.read());
   while (state.phase !== "pack" || state.actions.length < boundary) state = await advanceWerewolf(store,scripted);
   const locked = state.pack!.targetId;
-  expect(state.config.rulesVersion).toBe(13); expect(locked).not.toBeNull();
+  expect(state.config.rulesVersion).toBe(version); expect(locked).not.toBeNull();
   expect(state.pack?.discussion?.agreementBeat).toBe(2);
   const publicBefore = await readWerewolfView(db,game.id,"mystery");
   const next = nextWerewolfStep(state); if (next.kind !== "action") throw new Error("Missing strategy slot");

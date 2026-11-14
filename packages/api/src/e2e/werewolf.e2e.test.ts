@@ -178,7 +178,7 @@ test("CLI creates a v13 API Werewolf game and reports the public majority ballot
     expect(games[0]!.maxPlayers).toBe(6);
     const publicView = (await (await fetch(`${servers.apiUrl}/api/werewolf/${games[0]!.slug}/presentation?audience=mystery`)).json() as { view: WerewolfPresentation["view"] }).view;
     const ballotIndex = publicView.entries.findLastIndex(entry => entry.kind === "ballot");
-    expect(publicView.rulesVersion).toBe(13);
+    expect(publicView.rulesVersion).toBe(14);
     expect(publicView.entries.filter(entry => entry.kind === "ballot")).toHaveLength(publicView.players.filter(player => player.alive || player.elimination?.kind === "vote").length);
     // Retrospective speech may follow the canonical result in completed replay.
     expect(publicView.entries.some(entry => entry.kind === "result")).toBe(true);
@@ -335,7 +335,7 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     await page.waitForSelector('button[aria-label="Remove Arden Vale from cast"]');
     const [waiting] = await database.db.select().from(schema.games).where(eq(schema.games.slug, slug));
     expect(waiting!.status).toBe("waiting");
-    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 13 });
+    expect(JSON.parse(waiting!.config ?? "{}")).toMatchObject({ rulesVersion: 14 });
     expect(await database.db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, waiting!.id))).toHaveLength(0);
     await page.goto(`${servers.webUrl}/games`, { waitUntil: "domcontentloaded" });
     await page.waitForSelector('select[aria-label="Game type"]');
@@ -616,7 +616,7 @@ test("v13 post-agreement pack strategy is playable on desktop and mobile and sta
     },
   });
   const window = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=omniscient&fromCursor=1&limit=64`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
-  expect(window.rulesVersion).toBe(13);
+  expect(window.rulesVersion).toBe(14);
   const strategy = window.moments.find(m=>m.entry.kind === "proposal" && m.entry.beat === 3);
   if (!strategy) throw new Error("Missing post-agreement strategy");
   const passes = window.moments.filter(m=>m.entry.kind === "proposal" && !m.entry.text);

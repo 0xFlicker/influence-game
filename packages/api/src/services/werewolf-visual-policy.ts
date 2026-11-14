@@ -89,6 +89,7 @@ export async function readPublishedWerewolfRepair(db: DrizzleDB | VisualTransact
       : (version.localization.verifiedParticipantIds?.length ?? 0) === descriptor.participantIds.length;
     return usable
       && version.plan.direction?.purpose === `werewolf-${descriptor.purpose}`
+      && (descriptor.purpose !== "hunt" || (version.plan.direction.doctorSaved === true) === (descriptor.doctorSaved === true))
       && version.plan.cast.length === descriptor.participantIds.length
       && version.plan.cast.every(member => descriptor.participantIds.includes(member.id))
       && descriptor.wolfIds.every(id => version.plan.cast.some(member => member.id === id && member.variant?.resolved));

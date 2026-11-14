@@ -190,10 +190,10 @@ test("a lone wolf prepares a form before targeting without creating a meeting sc
 });
 
 test("Doctor saves ignore previously published hunt composites while retaining permitted wolf forms", async () => {
-  const { werewolfResultsFixture } = await import("@influence/engine/fixtures/werewolf-results");
+  const { completedWerewolfResultsFixture } = await import("@influence/engine/fixtures/werewolf-results");
   const { planVisualScene } = await import("@influence/engine/visual-scene-plan");
   const { prepareVisualScene } = await import("../services/visual-scene-store.js");
-  const id = "saved-hunt-publication", events = await werewolfResultsFixture("saved", id);
+  const id = "saved-hunt-publication", events = await completedWerewolfResultsFixture("saved", id);
   const night = events.find(event => event.type === "werewolf.night_resolved")!;
   if (night.type !== "werewolf.night_resolved") throw new Error("Missing night");
   const before = replayWerewolf(events.filter(event => event.sequence < night.sequence));
@@ -219,5 +219,29 @@ test("Doctor saves ignore previously published hunt composites while retaining p
   expect(presentation.presentation.scene).toBeNull();
   expect(presentation.permitted.has(image)).toBe(false);
   expect(presentation.permitted.has(form)).toBe(true);
-  expect((await readWerewolfProduction(db, id, id)).scenes.some(scene => scene.roomId === "mingle-2")).toBe(false);
+  expect((await readWerewolfProduction(db, id, id)).scenes.some(scene => scene.roomId === "mingle-2")).toBe(true);
+  const {planWerewolfScene} = await import("../services/werewolf-scene-plan.js");
+  const {werewolfHuntScene} = await import("@influence/engine/werewolf/visual-scenes");
+  const descriptor = werewolfHuntScene(before, night)!;
+  const {readPublishedWerewolfRepair} = await import("../services/werewolf-visual-policy.js");
+  expect(await readPublishedWerewolfRepair(db,id,descriptor)).toBeNull();
+  const savedPlan = await planWerewolfScene(db, id, descriptor, plan.cast);
+  expect(savedPlan.direction).toMatchObject({doctorSaved:true});
+  expect(savedPlan.direction!.roomDirection).toContain("No Doctor figure");
+  expect(savedPlan.placements.find(p=>p.playerId===night.payload.attackTargetId)!.position).toContain("safe inside");
+  const savedImage = await storeVisualArtifact(db,id,await sharp({create:{width:160,height:90,channels:3,background:"#445522"}}).png().toBuffer());
+  await db.insert(schema.visualMediaVersions).values({id:`${id}-save`,gameId:id,sceneId:scene.id,version:2,plan:{...savedPlan,cast:plan.cast},imageArtifactId:savedImage,annotatedArtifactId:savedImage,
+    localization:{count:3,verifiedParticipantIds:plan.cast.map(p=>p.id),anchors:[]},verificationVersion:"fixture",createdAt:"2026-02-01T00:00:00.000Z"});
+  await db.insert(schema.visualMediaPublications).values({id:`${id}-save`,gameId:id,sceneId:scene.id,versionId:`${id}-save`,revision:2,operatorId:"owner",createdAt:"2026-02-01T00:00:00.000Z"});
+  expect(await readPublishedWerewolfRepair(db,id,descriptor)).not.toBeNull();
+  const refreshed = await readWerewolfWatch(db,id,"omniscient",1,64);
+  const refreshedMoment = refreshed.moments.find(m=>m.cursor===saved.cursor)!;
+  expect(refreshed.media[refreshedMoment.mediaKey!]!.imageUrl).toContain(savedImage);
+  const historical = await readWerewolfPresentation(db,id,"omniscient",saved.cursor,"2026-01-15T00:00:00.000Z");
+  expect(historical.presentation.scene).toBeNull();
+  const mystery = await readWerewolfWatch(db,id,"mystery",1,64);
+  expect(JSON.stringify(mystery)).not.toContain(savedImage);
+  const {readWerewolfProductionSource} = await import("../services/werewolf-production-source.js");
+  const source = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:false,fromCursor:saved.cursor,limit:1});
+  expect(JSON.stringify(source)).toContain(savedImage);
 });

@@ -34,7 +34,7 @@ function fixture(version: 9 | 10 | 11 | 12 | 13 = 13, wolves: 1 | 2 = 2) {
 
 test("fresh v13 setup keeps Hunter optional and lone wolves keep one solo explanation", () => {
   const c = fixture(13,1), request = c.request();
-  expect(werewolfConfig("two_wolves").rulesVersion).toBe(13);
+  expect(werewolfConfig("two_wolves").rulesVersion).toBe(14);
   expect(Object.values(c.state().roles)).not.toContain("hunter");
   expect(request).toMatchObject({solo:true,action:"pack_propose"});
   expect(request).not.toHaveProperty("packTurn");

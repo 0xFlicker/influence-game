@@ -17,7 +17,7 @@ import { DEFAULT_ROOM_BACKDROP, RoomBackdrop } from "./stage-backdrop";
 import backdropStyles from "./stage-backdrop.module.css";
 
 /** Frozen character art, never a generated talking-head clip or an inferred crop. */
-export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo", imageOpacity, onImageReady, backgroundUrl, hideSpeech = false, reserveSpeechSpace = !hideSpeech, staticSpeech = false }: {
+export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo", imageOpacity, onImageReady, backgroundUrl, hideSpeech = false, reserveSpeechSpace = !hideSpeech, staticSpeech = false, compactSideBySide = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   elapsedMs: number;
   readingElapsedMs?: number;
@@ -33,6 +33,8 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   backgroundUrl?: string;
   /** Canonical ballot labels are short receipt facts, not timed dialogue pages. */
   staticSpeech?: boolean;
+  /** Keep full-body pack art legible in short, narrow players. */
+  compactSideBySide?: boolean;
   onImageReady?: (source: string | null) => void;
 }) {
   const { player, speech } = beat;
@@ -66,7 +68,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   }, []);
   const thought = useSceneThinking();
   const geometry = layoutSoloPresentation(size.width, size.height, loaded.source === source ? loaded.width : 0,
-    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 440, player.headRectangle, reserveSpeechSpace);
+    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 440, player.headRectangle, reserveSpeechSpace, compactSideBySide);
   const headRect = validHeadRectangle(player.headRectangle) ? player.headRectangle : {x:.4, y:.04, width:.2, height:.16};
   const available = Math.max(0, size.height - controlsInset);
   const face = fullBody ? headRect : {x:.24,y:.12,width:.52,height:.52};
@@ -74,7 +76,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
     top:geometry.image.top + geometry.image.height * face.y, width:geometry.image.width * face.width, height:geometry.image.height * face.height},
     thought?.focus ?? 0, !fullBody, reducedMotion);
   const speechBox = geometry.bubble;
-  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", available < 300 || size.width < 480 && available < 340, beat.roleLabel ? 48 : 28);
+  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", available < 300 || size.width < 480 && available < 340, beat.roleLabel ? 48 : 28, compactSideBySide ? `${player.name}\n${beat.roleLabel ?? beat.caption ?? beat.purpose}` : undefined);
   const fittedSpeechWidth = speechFit.typography?.width ?? speechBox.width;
   const bubble = {...speechBox, width:fittedSpeechWidth, height:speechFit.typography?.height ?? speechBox.height,
     left:speechBox.left + (geometry.beside ? 0 : (speechBox.width - fittedSpeechWidth) / 2),
@@ -96,7 +98,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
       })}
       className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? portraitOpacity }} />
     </div>
-    {!thought && !hideSpeech && motion.speechOpacity > 0 && <SpeechBubble speaker={player.name} caption={beat.caption ?? beat.purpose} roleLabel={beat.roleLabel} itemLabels={player.items}
+    {!thought && !hideSpeech && motion.speechOpacity > 0 && <SpeechBubble wrapSpeaker={compactSideBySide} speaker={player.name} caption={beat.caption ?? beat.purpose} roleLabel={beat.roleLabel} itemLabels={player.items}
       text={speech.text} box={bubble} opacity={motion.speechOpacity} typography={speechFit.typography} padding={speechFit.padding} staticSpeech={staticSpeech}
       elapsedMs={speechPresentation === "scene" ? readingElapsedMs - SCENE_SPEECH_START_MS : soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs}
       tail={{side:geometry.beside ? "left" : geometry.above ? "bottom" : "top",style:geometry.beside ? {top:Math.min(bubble.height - 16,fullBody ? geometry.tailTop : bubble.height / 2) - 8} : {left:tailLeft - 8}}}/>}

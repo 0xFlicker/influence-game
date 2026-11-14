@@ -20,6 +20,8 @@ export interface VisualPlacement {
 }
 export interface VisualSceneDirection {
   purpose: "werewolf-village" | "werewolf-pack" | "werewolf-hunt";
+  /** Canonical failed attack; absent on historical successful hunts. */
+  doctorSaved?: boolean;
   revision: string;
   style: string;
   roomName: string;

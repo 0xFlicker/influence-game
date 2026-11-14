@@ -6,7 +6,7 @@ const OUTPUT_DIRECTORY = process.env.MADE_FOR_VIDEO_OUTPUT_DIRECTORY?.trim()
   || "/private/tmp/sharp-tan-reef-producer-capture/katana-proof";
 const AVATAR_DIRECTORY = process.env.MADE_FOR_VIDEO_AVATAR_DIRECTORY?.trim()
   || "/private/tmp/sharp-tan-reef-producer-capture/avatars";
-const MODEL = "imgnh3";
+const MODEL = "imgn-h3";
 const CLIENT_REQUEST_ID = "sharp-tan-reef-arden-mara-h3-proof-v1";
 
 const scene = {
@@ -239,7 +239,58 @@ async function katanaFetch(endpoint: string, init: RequestInit = {}): Promise<Re
   const text = await response.text();
   const body = text ? JSON.parse(text) as Record<string, unknown> : {};
   if (!response.ok) throw new Error(`Katana HTTP ${response.status}: ${JSON.stringify(body)}`);
+  if (init.method === "POST" && endpoint === "/v1/generation-requests?wait=false") {
+    const submitted = JSON.parse(String(init.body)) as { requests: ConditioningRequest[] };
+    const receiptPath = path.join(OUTPUT_DIRECTORY, `receipt-${crypto.randomUUID()}.json`);
+    try {
+      await writeFile(receiptPath, JSON.stringify({ submitted, result: body }, null, 2), {
+        flag: "wx", mode: 0o600,
+      });
+    } catch (error) {
+      throw new Error(`Katana request ${String(body.request_id)} was submitted but receipt persistence failed. Do not resubmit.`, { cause: error });
+    }
+    assertRetainedConditioning(submitted.requests, body, receiptPath);
+  }
   return body;
+}
+
+interface ConditioningRequest {
+  id: string;
+  image_urls?: string[];
+  video_image_data?: {
+    reference_image_urls?: string[];
+    first_frame_image_url?: string;
+    last_frame_image_url?: string;
+  };
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : {};
+}
+
+// Katana stages inline images as URLs; verify presence/count, not byte equality.
+function assertRetainedConditioning(
+  submitted: ConditioningRequest[], result: Record<string, unknown>, receiptPath: string,
+): void {
+  const returned = Array.isArray(result.requests) ? result.requests.map(record) : [];
+  const hasImages = (value: unknown, count: number) => Array.isArray(value)
+    && value.length === count && value.every((image) => typeof image === "string" && image.trim().length > 0);
+  for (const request of submitted) {
+    const accepted = returned.find((item) => item.id === request.id);
+    const video = record(accepted?.video_image_data);
+    const missing = [
+      ...(request.image_urls?.length && !hasImages(accepted?.image_urls, request.image_urls.length) ? ["image_urls"] : []),
+      ...(request.video_image_data?.reference_image_urls?.length
+        && !hasImages(video.reference_image_urls, request.video_image_data.reference_image_urls.length)
+        ? ["video_image_data.reference_image_urls"] : []),
+      ...(["first_frame_image_url", "last_frame_image_url"] as const).filter((field) =>
+        request.video_image_data?.[field] && (typeof video[field] !== "string" || !video[field].trim())),
+    ];
+    if (missing.length) {
+      throw new Error(`Katana request ${String(result.request_id)} item ${request.id} returned missing conditioning: ${missing.join(", ")}. Receipt: ${receiptPath}. Do not resubmit; the request may already be charged.`);
+    }
+  }
 }
 
 async function dataUrl(filename: string): Promise<string> {
@@ -265,10 +316,10 @@ async function submit(): Promise<void> {
       duration_seconds: 5,
       prompt: scene.prompt,
       negative_prompt: scene.negativePrompt,
-      input_images: await Promise.all([
+      video_image_data: { reference_image_urls: await Promise.all([
         dataUrl("07-arden-voss.jpg"),
         dataUrl("09-mara-voss.jpg"),
-      ]),
+      ]) },
       metadata: {
         source: "sharp-tan-reef-private-transcript",
         scene: "arden-redirection-mara-commitment",
@@ -304,7 +355,7 @@ async function submitAngles(): Promise<void> {
       duration_seconds: 10,
       prompt: angle.prompt,
       negative_prompt: angleNegativePrompt,
-      input_image: await dataUrl(angle.avatar),
+      video_image_data: { first_frame_image_url: await dataUrl(angle.avatar) },
       metadata: {
         source: "sharp-tan-reef-private-transcript",
         scene: "arden-redirection-mara-commitment",
@@ -341,7 +392,7 @@ async function submitReferenceOnly(): Promise<void> {
       duration_seconds: 5,
       prompt: referenceOnly.prompt,
       negative_prompt: angleNegativePrompt,
-      input_images: [await dataUrl("07-arden-voss.jpg")],
+      video_image_data: { reference_image_urls: [await dataUrl("07-arden-voss.jpg")] },
       metadata: {
         source: "sharp-tan-reef-private-transcript",
         test: true,
@@ -405,7 +456,7 @@ async function submitCompositeAnchoredAngles(): Promise<void> {
       duration_seconds: 10,
       prompt: angle.prompt,
       negative_prompt: angleNegativePrompt,
-      input_image: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png"),
+      video_image_data: { first_frame_image_url: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png") },
       metadata: {
         source: "sharp-tan-reef-private-transcript",
         scene: "arden-redirection-mara-commitment",
@@ -442,7 +493,7 @@ async function submitImageComposedKeyframe(): Promise<void> {
       output_format: "png",
       prompt: imageComposedKeyframe.prompt,
       negative_prompt: "portrait card, collage, floating head, duplicate person, other people, text, letters, logos, watermarks, screen UI, map",
-      input_images: [
+      image_urls: [
         await dataUrl("07-arden-voss.jpg"),
         await dataUrlAt(path.join(OUTPUT_DIRECTORY, "coastal-room-background.png"), "image/png"),
       ],
@@ -474,7 +525,7 @@ async function submitImageComposedShotKeyframes(): Promise<void> {
       output_format: "png",
       prompt: keyframe.prompt,
       negative_prompt: "portrait card, collage, floating head, duplicate person, other people, text, letters, logos, watermarks, screen UI, map",
-      input_images: [
+      image_urls: [
         await dataUrl(keyframe.avatar),
         await dataUrlAt(path.join(OUTPUT_DIRECTORY, "coastal-room-background.png"), "image/png"),
       ],
@@ -507,7 +558,7 @@ async function submitImageComposedVideoAngles(): Promise<void> {
       duration_seconds: 10,
       prompt: angle.prompt,
       negative_prompt: angleNegativePrompt,
-      input_image: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png"),
+      video_image_data: { first_frame_image_url: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png") },
       metadata: {
         source: "sharp-tan-reef-private-transcript",
         scene: "arden-redirection-mara-commitment",
@@ -544,7 +595,7 @@ async function submitOverTheShoulderKeyframes(): Promise<void> {
       output_format: "png",
       prompt: keyframe.prompt,
       negative_prompt: "portrait card, collage, empty table, single person, talking to camera, facing camera, duplicate person, extra people, floating head, text, letters, logos, watermarks, screen UI, map",
-      input_images: keyframe.id.startsWith("arden")
+      image_urls: keyframe.id.startsWith("arden")
         ? [
           await dataUrl("07-arden-voss.jpg"),
           await dataUrl("09-mara-voss.jpg"),
@@ -584,7 +635,7 @@ async function submitOverTheShoulderVideoAngles(): Promise<void> {
       duration_seconds: 10,
       prompt: angle.prompt,
       negative_prompt: "text, captions, subtitles, logos, watermarks, music, score, singing, music video, direct-to-camera, empty table, solo shot, duplicate characters, face swapping, changing identities, exaggerated acting, shouting, violence, weapon, political campaign, low resolution, flicker",
-      input_image: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png"),
+      video_image_data: { first_frame_image_url: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png") },
       metadata: {
         source: "sharp-tan-reef-private-transcript",
         scene: "arden-redirection-mara-commitment",
@@ -624,7 +675,7 @@ async function retryOverTheShoulderVideoAngle(angleId: string): Promise<void> {
       duration_seconds: 10,
       prompt: angle.prompt,
       negative_prompt: "text, captions, subtitles, logos, watermarks, music, score, singing, music video, direct-to-camera, empty table, solo shot, duplicate characters, face swapping, changing identities, exaggerated acting, shouting, violence, weapon, political campaign, low resolution, flicker",
-      input_image: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png"),
+      video_image_data: { first_frame_image_url: await dataUrlAt(path.join(OUTPUT_DIRECTORY, angle.keyframe), "image/png") },
       metadata: {
         source: "sharp-tan-reef-private-transcript",
         scene: "arden-redirection-mara-commitment",
