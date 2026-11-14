@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import sharp from "sharp";
-import { getPrivateTraceStorageConfig } from "./private-trace-storage.js";
+import { objectStorageBucket, objectStorageClient } from "../lib/object-storage-config.js";
 
 export const GAME_ASSET_LIMITS = { fileBytes: 10 * 1024 * 1024, bodyBytes: 12 * 1024 * 1024, dimension: 4096 } as const;
 export class GameAssetError extends Error {
@@ -61,10 +61,9 @@ export async function readBoundedBytes(stream: ReadableStream<Uint8Array> | null
 export class S3GameAssetStorage implements GameAssetStorage {
   private config() {
     try {
-      const config = getPrivateTraceStorageConfig();
-      if (config.bucket === process.env.LINODE_OBJ_BUCKET) throw new Error("Private and public buckets must differ");
-      const client = new S3Client({ region: "us-iad", endpoint: config.endpoint, credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }, forcePathStyle: true });
-      return { client, bucket: config.bucket };
+      const bucket = objectStorageBucket("data");
+      if (bucket === process.env.LINODE_OBJ_BUCKET || bucket === process.env.HOUSE_PUBLIC_BUCKET) throw new Error("Private and public buckets must differ");
+      return { client: objectStorageClient("data"), bucket };
     } catch { throw new GameAssetError("asset_storage_unavailable", 503, "Private content storage is not configured"); }
   }
   async put(key: string, image: NormalizedGameImage): Promise<void> {
@@ -74,7 +73,7 @@ export class S3GameAssetStorage implements GameAssetStorage {
     } catch (error) {
       const status = error && typeof error === "object" && "$metadata" in error ? (error.$metadata as { httpStatusCode?: number }).httpStatusCode : undefined;
       if (status !== 412 || imageHash(await this.get(key)) !== image.sha256) throw new GameAssetError("asset_storage_unavailable", 503, "Private image upload did not complete; inspect the operation receipt");
-    } finally { client.destroy(); }
+    }
   }
   async get(key: string): Promise<Uint8Array> {
     const { client, bucket } = this.config();
@@ -83,12 +82,10 @@ export class S3GameAssetStorage implements GameAssetStorage {
       if (!result.Body || (result.ContentLength ?? 0) > GAME_ASSET_LIMITS.fileBytes) throw new Error("Invalid stored content");
       return await readBoundedBytes(result.Body.transformToWebStream(), GAME_ASSET_LIMITS.fileBytes);
     } catch { throw new GameAssetError("asset_storage_unavailable", 503, "Private image could not be read"); }
-    finally { client.destroy(); }
   }
   async delete(key: string): Promise<void> {
     const { client, bucket } = this.config();
     try { await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: AbortSignal.timeout(25_000) }); }
     catch { throw new GameAssetError("asset_storage_unavailable", 503, "Object cleanup is pending; retry this operation's cleanup"); }
-    finally { client.destroy(); }
   }
 }

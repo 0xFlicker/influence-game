@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { getAuthToken, listAgents, type SavedAgent } from "@/lib/api";
-import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
+import { useAgentAvatarUrl } from "@/components/agent-avatar";
 import { getPersonaLabel } from "@/lib/personas";
 import { AgentModelLabel, agentModelLabel } from "@/components/agent-model-label";
 import { agentEditForEntryHref, agentPreparationHref, hasFullBodyAgentArt, type AgentEntryIntent } from "@/lib/agent-entry";
@@ -25,6 +25,7 @@ interface AgentSelectorProps {
 
 export function AgentSelector({ description, createHref, onClose, onSelect, excludedIds = [], gameKind = "influence", submitLabel, pendingLabel, intent }: AgentSelectorProps) {
   const router = useRouter();
+  const resolveAgentAvatarUrl = useAgentAvatarUrl();
   const analyticsEnabled = useSyncExternalStore(subscribeAnalyticsActivity, analyticsActive, () => false);
   const capturedOpening = useRef<string | null>(null);
   useEffect(() => {

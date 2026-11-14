@@ -10,6 +10,7 @@ import {
   getStorageBackend,
   LocalUploadError,
   readLocalUpload,
+  localObjectStorageEnabled,
   releaseLocalConstrainedUpload,
   verifyLocalConstrainedUploadToken,
   verifyLocalUploadToken,
@@ -126,7 +127,7 @@ export function createUploadRoutes() {
   }));
 
   app.on(["GET", "HEAD"], "/api/uploads/local", async (c) => {
-    if (getStorageBackend() !== "local") {
+    if (getStorageBackend() !== "local" && !localObjectStorageEnabled()) {
       return c.json({ error: "Local file upload is not enabled" }, 404);
     }
 

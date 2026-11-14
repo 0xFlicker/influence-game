@@ -1,3 +1,4 @@
+import { isPrivateEvidenceProvider } from "../lib/object-storage-config.js";
 import { createHash, randomUUID } from "crypto";
 import type {
   PrivateDecisionTrace,
@@ -12,7 +13,7 @@ import {
   createPrivateTraceStorageAdapter,
   getPrivateTraceBucket,
   PRIVATE_TRACE_CONTENT_TYPE,
-  PRIVATE_TRACE_STORAGE_PROVIDER,
+  getPrivateTraceStorageProvider,
   type PrivateTraceStorageAdapter,
 } from "./private-trace-storage.js";
 
@@ -60,7 +61,7 @@ export type WritePrivateTraceResult =
     ok: true;
     manifestId: string;
     storage: {
-      provider: typeof PRIVATE_TRACE_STORAGE_PROVIDER;
+      provider: ReturnType<typeof getPrivateTraceStorageProvider>;
       bucket: string;
       key: string;
     };
@@ -96,7 +97,7 @@ export type WriteProviderAttemptEvidenceResult =
       ok: true;
       manifestId: string;
       storage: {
-        provider: typeof PRIVATE_TRACE_STORAGE_PROVIDER;
+        provider: ReturnType<typeof getPrivateTraceStorageProvider>;
         bucket: string;
         key: string;
       };
@@ -265,11 +266,11 @@ export async function writePrivateDecisionTrace(
   const bucket = getPrivateTraceBucket();
   const key = traceStorageKey(input.gameId, input.trace, now);
   const storage: {
-    provider: typeof PRIVATE_TRACE_STORAGE_PROVIDER;
+    provider: ReturnType<typeof getPrivateTraceStorageProvider>;
     bucket: string;
     key: string;
   } = {
-    provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+    provider: getPrivateTraceStorageProvider(),
     bucket,
     key,
   };
@@ -420,7 +421,7 @@ export async function writePreparedProviderAttemptObject(
 ): Promise<WriteProviderAttemptEvidenceResult> {
   const bucket = getPrivateTraceBucket();
   const storage = {
-    provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+    provider: getPrivateTraceStorageProvider(),
     bucket,
     key: prepared.storageKey,
   } as const;
@@ -435,7 +436,7 @@ export async function writePreparedProviderAttemptObject(
     .where(eq(schema.gameEvidenceManifests.id, prepared.manifestId)))[0];
   if (existing) {
     if (
-      existing.storageProvider !== PRIVATE_TRACE_STORAGE_PROVIDER ||
+      !isPrivateEvidenceProvider(existing.storageProvider) ||
       !existing.storageBucket ||
       existing.storageKey !== prepared.storageKey
     ) {
@@ -448,7 +449,7 @@ export async function writePreparedProviderAttemptObject(
       ok: true,
       manifestId: prepared.manifestId,
       storage: {
-        provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+        provider: existing.storageProvider,
         bucket: existing.storageBucket,
         key: existing.storageKey,
       },

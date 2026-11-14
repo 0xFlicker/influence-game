@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getPrivateTraceStorageConfig } from "./private-trace-storage.js";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { objectStorageBucket, objectStorageClient } from "../lib/object-storage-config.js";
 import type { SQLWrapper } from "drizzle-orm";
 
 /** Private, immutable body. Authorization belongs to the owning relational row. */
@@ -23,17 +23,12 @@ export interface PayloadObjectStore {
 }
 
 class S3PayloadObjectStore implements PayloadObjectStore {
-  private cached: { bucket: string; client: S3Client } | undefined;
   private connection() {
-    if (this.cached) return this.cached;
-    const config = getPrivateTraceStorageConfig();
-    if (config.bucket === process.env.LINODE_OBJ_BUCKET) throw new Error("Payload storage requires a separate private bucket");
-    this.cached = { bucket: config.bucket, client: new S3Client({
-      region: "us-iad", endpoint: config.endpoint, forcePathStyle: true,
-      credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-    }) };
-    return this.cached;
+    const bucket = objectStorageBucket("data");
+    if (bucket === process.env.LINODE_OBJ_BUCKET || bucket === process.env.HOUSE_PUBLIC_BUCKET) throw new Error("Payload storage requires a separate private bucket");
+    return { bucket, client: objectStorageClient("data") };
   }
+
   async putIfAbsent(key: string, bytes: Uint8Array): Promise<boolean> {
     const { bucket, client } = this.connection();
     try {

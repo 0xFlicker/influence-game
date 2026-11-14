@@ -45,7 +45,7 @@
     "dev:api": "doppler run --project social-strategy-agent --config dev -- env PORT=${PORT:-3000} INFLUENCE_API_ROLE=gateway POSTGAME_MEDIA_WORKER_TOKEN=${POSTGAME_MEDIA_WORKER_TOKEN:-local-render-worker} POSTGAME_MEDIA_PUBLIC_BASE_URL=${POSTGAME_MEDIA_PUBLIC_BASE_URL:-http://127.0.0.1:3000} bun run dev:api:service",
     "dev:web": "doppler run --project social-strategy-agent --config dev -- env PORT=${PORT:-3001} API_URL=${API_URL:-http://127.0.0.1:3000} WS_URL=${WS_URL:-ws://127.0.0.1:3000} API_BACKEND_URL=${API_BACKEND_URL:-http://127.0.0.1:3000} bun run dev:web:service",
     "dev:render-worker": "doppler run --project social-strategy-agent --config dev -- env POSTGAME_MEDIA_API_URL=${POSTGAME_MEDIA_API_URL:-http://127.0.0.1:3000} POSTGAME_MEDIA_WORKER_TOKEN=${POSTGAME_MEDIA_WORKER_TOKEN:-local-render-worker} bun run dev:render-worker:service",
-    "dev:api:service": "cd packages/api && bun run dev",
+    "dev:api:service": "bun scripts/with-local-storage.ts bun run --cwd packages/api dev",
     "dev:gateway": "bun run dev:api",
     "dev:web:service": "cd packages/web && bun run dev",
     "dev:render-worker:service": "cd packages/web && POSTGAME_MEDIA_DRAIN_ACK_FILE=${POSTGAME_MEDIA_DRAIN_ACK_FILE:-../../.renders/render-worker/drain-ack.json} bun run render-worker:poll",
@@ -63,7 +63,8 @@
     "storage:cutover": "bun run packages/api/src/scripts/migrate-storage-payloads.ts cutover",
     "simulate:models": "bun run packages/engine/src/mixed-model-simulate.ts",
     "audit:models": "bun run scripts/audit-model-catalog.ts",
-    "cutouts:backfill": "bun run --cwd packages/api cutouts:backfill"
+    "cutouts:backfill": "bun run --cwd packages/api cutouts:backfill",
+    "storage:local": "bun packages/api/src/scripts/local-storage.ts"
   },
   "devDependencies": {
     "typescript-json-schema": "0.65.1",

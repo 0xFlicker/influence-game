@@ -16,7 +16,7 @@ import type { AvatarChangeSource } from "../db/schema.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 import { isLegacyIdentityBearingAvatarStorageKey } from "../lib/avatar-storage-keys.js";
 import { isPostgresCheckViolation, isPostgresUniqueViolation } from "../lib/postgres-errors.js";
-import { normalizeUploadedAvatarUrl, ownedPublicAvatarStorageKey } from "../lib/storage.js";
+import { normalizeUploadedAvatarUrl, ownedPublicAvatarStorageKey, resolvePublicObjectDeliveryUrl } from "../lib/storage.js";
 import {
   recordAvatarChange,
   type AvatarCompletionRead,
@@ -1362,8 +1362,8 @@ function serializeAgent(
     strategyStyle: profile.strategyStyle,
     werewolfStrategyStyle: profile.werewolfStrategyStyle,
     gender: profile.gender,
-    avatarUrl: profile.avatarUrl,
-    fullBodyReferenceUrl: profile.fullBodyReferenceUrl,
+    avatarUrl: resolvePublicObjectDeliveryUrl(profile.avatarUrl),
+    fullBodyReferenceUrl: resolvePublicObjectDeliveryUrl(profile.fullBodyReferenceUrl),
     headPosition: profile.headPosition,
     performanceInstructions: profile.performanceInstructions,
     stats: {

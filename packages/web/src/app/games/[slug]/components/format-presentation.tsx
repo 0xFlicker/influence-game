@@ -1,5 +1,7 @@
 import {getFormatRegistration} from "@influence/engine/format-rules";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
+import { publicMediaDeliveryView } from "@/lib/public-media-delivery";
+import { usePublicMediaDelivery } from "@/lib/public-media-delivery-context";
 import type { FormatPresentationCue, FormatPresentationRosterPlayer } from "./types";
 import { ActiveFormatLabel } from "./active-format-label";
 import { FormatBallotReveal } from "./format-ballot-reveal";
@@ -30,7 +32,10 @@ export function formatPresentationOwnsBackdrop(cue: FormatPresentationCue, curre
   return Boolean(cue.resultsPresentation && !specialized);
 }
 
-export function FormatPresentation(props: Parameters<typeof FormatPresentationContent>[0]) {
+export function FormatPresentation(sourceProps: Parameters<typeof FormatPresentationContent>[0]) {
+  const publicDelivery = usePublicMediaDelivery();
+  const delivery = useMemo(() => publicMediaDeliveryView({cue:sourceProps.cue, roster:sourceProps.roster}, publicDelivery), [sourceProps.cue, sourceProps.roster, publicDelivery]);
+  const props = {...sourceProps, ...delivery};
   const {cue, roster} = props;
   if (cue.kind === "format_selected" && cue.stage === "rules_reveal" && !props.currentStateEntry) {
     const metadata = FORMAT_PRESENTATION_METADATA[cue.formatId];

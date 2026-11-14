@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
-import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
+import { useAgentAvatarUrl } from "@/components/agent-avatar";
 import { getGamePlayerAvatarPreviewModel } from "@/components/game-player-avatar-preview";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -22,6 +22,7 @@ export function GamePreShow({ game, onGameUpdated }: {
   onGameUpdated: (game: GameDetail) => void;
 }) {
   const router = useRouter();
+  const resolveAgentAvatarUrl = useAgentAvatarUrl();
   const { ready, authenticated, account } = useAuth();
   const [joining, setJoining] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -171,6 +172,7 @@ function castRecord(player: GamePlayer): string {
 }
 
 function CastPortrait({ player, onClose }: { player: GamePlayer; onClose: () => void }) {
+  const resolveAgentAvatarUrl = useAgentAvatarUrl();
   const model = getGamePlayerAvatarPreviewModel(player);
   const owner = player.currentAgent?.owner;
   return <CastPortraitDialog name={player.name} src={resolveAgentAvatarUrl(model.avatarUrl,player.persona,player.name,player.personaKey)} eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)} onClose={onClose}>

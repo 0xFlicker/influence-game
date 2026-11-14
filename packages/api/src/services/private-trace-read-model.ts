@@ -1,3 +1,4 @@
+import { isPrivateEvidenceProvider } from "../lib/object-storage-config.js";
 import { and, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { createHash } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
@@ -12,7 +13,6 @@ import { getDurableRunInspection, type DurableRunInspectionResponse } from "./ga
 import { getTrustedCanonicalEventPrefix } from "./game-event-read-model.js";
 import {
   createPrivateTraceStorageAdapter,
-  PRIVATE_TRACE_STORAGE_PROVIDER,
   type PrivateTraceStorageAdapter,
 } from "./private-trace-storage.js";
 import {
@@ -573,7 +573,7 @@ export class PrivateTraceReadModel {
       return { ok: false, status: "not_found", error: "Provider attempt evidence not found" };
     }
     if (
-      manifest.storageProvider !== PRIVATE_TRACE_STORAGE_PROVIDER ||
+      !isPrivateEvidenceProvider(manifest.storageProvider) ||
       !manifest.storageBucket ||
       !manifest.storageKey
     ) {

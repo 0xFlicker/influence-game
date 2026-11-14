@@ -315,6 +315,31 @@ describe("House Highlights media worker bundle", () => {
     expect(order).toEqual(["visual:start", "visual:end", "poster", "mux"]);
   });
 
+  it("resolves frozen public media only for renderer inputs and preserves the original manifest", async () => {
+    const keys = ["HOUSE_OBJECT_STORAGE_PROVIDER", "HOUSE_PUBLIC_BASE_URL", "HOUSE_LEGACY_PUBLIC_BASE_URLS"];
+    const prior = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    const root = await mkdtemp(join(tmpdir(), "house-storage-render-input-"));
+    try {
+      Object.assign(process.env, { HOUSE_OBJECT_STORAGE_PROVIDER: "aws", HOUSE_PUBLIC_BASE_URL: "https://assets-staging.thehouse.game", HOUSE_LEGACY_PUBLIC_BASE_URLS: "https://influence-assets-stg.us-iad-10.linodeobjects.com" });
+      const manifest = manifestFixture();
+      manifest.cast[0]!.avatarUrl = "https://influence-assets-stg.us-iad-10.linodeobjects.com/pfp/fixture.png";
+      const before = JSON.stringify(manifest), seen: string[] = [];
+      const musicDir = join(root, "music"); await mkdir(musicDir);
+      await Bun.write(join(musicDir, "golden-verdict-0-cuts-6-players-28.8s.m4a"), "prepared score");
+      const bundle = await renderHouseHighlightsTrailerMediaBundle({ manifest, outputDir: join(root, "out"), musicDir, temporaryRoot: root, renderer: {
+        renderVisual: async ({manifest:view,outputPath}) => { seen.push(view.cast[0]!.avatarUrl); await Bun.write(outputPath,"synthetic visual"); },
+        renderPoster: async ({manifest:view,outputPath}) => { seen.push(view.cast[0]!.avatarUrl); await Bun.write(outputPath,"synthetic poster"); },
+        mux: async ({outputPath}) => { await Bun.write(outputPath,"synthetic mux"); },
+      } });
+      expect(seen).toEqual(["https://assets-staging.thehouse.game/pfp/fixture.png", "https://assets-staging.thehouse.game/pfp/fixture.png"]);
+      expect(bundle.manifest).toBe(manifest);
+      expect(JSON.stringify(manifest)).toBe(before);
+    } finally {
+      for (const key of keys) { if (prior[key] === undefined) delete process.env[key]; else process.env[key] = prior[key]; }
+      await rm(root,{recursive:true,force:true});
+    }
+  });
+
   it("renders a stored snapshot without live game endpoints and cleans temporary output", async () => {
     const root = await mkdtemp(join(tmpdir(), "house-highlights-worker-test-"));
     const musicDir = join(root, "music");

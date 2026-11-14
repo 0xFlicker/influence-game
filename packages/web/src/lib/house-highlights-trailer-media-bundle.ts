@@ -1,4 +1,5 @@
 import { bundle } from "@remotion/bundler";
+import { publicMediaDeliveryView } from "./public-media-delivery";
 import { renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -96,8 +97,9 @@ export async function renderHouseHighlightsTrailerMediaBundle(input: {
   const posterFrame = posterFrameForManifest(input.manifest);
   try {
     await input.onStage?.("rendering");
-    await renderer.renderVisual({ manifest: input.manifest, outputPath: visualPath });
-    await renderer.renderPoster({ manifest: input.manifest, frame: posterFrame, outputPath: posterTempPath });
+    const deliveryManifest = publicMediaDeliveryView(input.manifest);
+    await renderer.renderVisual({ manifest: deliveryManifest, outputPath: visualPath });
+    await renderer.renderPoster({ manifest: deliveryManifest, frame: posterFrame, outputPath: posterTempPath });
     await input.onStage?.("composing");
     await renderer.mux({ visualPath, outputPath: muxPath, music });
     const captions = captionsForManifest(input.manifest);

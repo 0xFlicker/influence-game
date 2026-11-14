@@ -11,7 +11,7 @@ import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type FrozenVisualProfile } from "@inf
 import { schema, type DrizzleDB } from "../db/index.js";
 import { getHousePortraitKey, HOUSE_PORTRAIT_KEYS } from "@influence/engine";
 import { bundledHouseBody } from "@influence/engine/house-character-art";
-import { readLocalUpload } from "../lib/storage.js";
+import { readLocalUpload, ownedPublicAvatarStorageKey, resolvePublicObjectDeliveryUrl } from "../lib/storage.js";
 import { renderVisualAssetBestEffort } from "./visual-render-journal.js";
 import { readVisualArtifact, storeVisualArtifact } from "./visual-scene-store.js";
 import { CUTOUT_RECIPE } from "./character-cutouts.js";
@@ -51,12 +51,10 @@ export async function readVisualProfileImage(url: string | null, profile: Pick<F
     if (!image) throw new Error("Visual upload is unavailable");
     return image.body;
   }
-  const endpoint = process.env.LINODE_OBJ_ENDPOINT;
-  const bucket = process.env.LINODE_OBJ_BUCKET;
-  const host = endpoint ? new URL(endpoint).host : null;
-  if (parsed.protocol !== "https:" || !host || !bucket || ![host, `${bucket}.${host}`].includes(parsed.host)) throw new Error("Visual reference must use application image storage");
-  const maxBytes = /^\/characters\/[a-f0-9]{64}\.png$/.test(parsed.pathname) ? 32 * 1024 * 1024 : 16_000_000;
-  const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(30_000) });
+  const key = ownedPublicAvatarStorageKey(url);
+  if (!key) throw new Error("Visual reference must use application image storage");
+  const maxBytes = /^characters\/[a-f0-9]{64}\.png$/.test(key) ? 32 * 1024 * 1024 : 16_000_000;
+  const response = await fetch(resolvePublicObjectDeliveryUrl(url), { redirect: "error", signal: AbortSignal.timeout(30_000) });
   if (!response.ok || Number(response.headers.get("content-length") ?? 0) > maxBytes) throw new Error("Visual reference download failed");
   const image = Buffer.from(await response.arrayBuffer());
   if (image.length > maxBytes) throw new Error("Visual reference exceeds the image upload limit");

@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
   },
   images: {
     remotePatterns: [
+      { protocol: "https", hostname: "assets.thehouse.game" },
+      { protocol: "https", hostname: "assets-staging.thehouse.game" },
       {
         protocol: "https",
         hostname: "**.linodeobjects.com",

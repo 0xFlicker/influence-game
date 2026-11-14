@@ -15,7 +15,7 @@ import {
   createPrivateTraceStorageAdapter,
   getPrivateTraceBucket,
   PRIVATE_TRACE_CONTENT_TYPE,
-  PRIVATE_TRACE_STORAGE_PROVIDER,
+  getPrivateTraceStorageProvider,
   type PrivateTraceStorageAdapter,
 } from "./private-trace-storage.js";
 import {
@@ -137,7 +137,7 @@ async function finalizeStored(
     const now = new Date().toISOString();
     const updatedManifest = await tx.update(schema.agentLearningReviewFailureManifests).set({
       state: "stored",
-      storageProvider: PRIVATE_TRACE_STORAGE_PROVIDER,
+      storageProvider: getPrivateTraceStorageProvider(),
       storageBucket: bucket,
       storageKey: row.storageKey,
       lastStorageError: null,
