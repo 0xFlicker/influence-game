@@ -6,12 +6,15 @@ import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {SampledStageProvider} from "../components/watch/sampled-stage";
 import {WEREWOLF_ROOMS} from "../components/games/werewolf/werewolf-rooms";
 import {WerewolfContentFrame, WerewolfWatchStage} from "../components/games/werewolf/werewolf-watch-stage";
-import {werewolfMomentCues, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfCueMoment, werewolfMomentCues, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
 import {WerewolfOpeningFrame} from "../components/games/werewolf/werewolf-opening-frame";
 import type {WerewolfOpeningCue} from "../components/games/werewolf/werewolf-opening";
 import {PresentationDirector} from "../components/watch/watch-director";
 import {useWatchMusic} from "../components/watch/use-watch-music";
 import {SCENE_READ_START_MS} from "../app/games/[slug]/components/scene-speech-timing";
+import {completedHunterFixture} from "@influence/engine/fixtures/werewolf-hunter";
+import {projectWerewolfProductionWatch} from "@influence/engine/werewolf/watch";
+import {werewolfPortraitRoom} from "../components/games/werewolf/werewolf-room-presentation";
 import {SOLO_IMAGE_FADE_MS, SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
@@ -216,6 +219,21 @@ test("private pack composes only living wolves from frozen body art, never trans
   expect(roomIds(view.container)).toEqual(["a", "b"]);
   expect(view.getByRole("img", {name: "Arden"}).getAttribute("src")).toBe("/body.png");
   expect(view.container.querySelector('[src="/wolf-form.png"]')).toBeNull();
+});
+
+test.each(["omniscient","mystery"] as const)("composed village rooms retain audience-filtered Hunter items for %s", async audience => {
+  Object.defineProperty(dom.HTMLElement.prototype,"clientWidth",{configurable:true,get:()=>1280});
+  Object.defineProperty(dom.HTMLElement.prototype,"clientHeight",{configurable:true,get:()=>720});
+  const projected=projectWerewolfProductionWatch(await completedHunterFixture("held",{conversation:true}),audience);
+  const moment=projected.moments.find(moment=>werewolfMomentCues(moment).some(cue=>!werewolfCueMoment(cue).pack && werewolfPortraitRoom(cue)));
+  if(!moment)throw new Error("Expected Hunter village conversation");
+  moment.snapshot.players=moment.snapshot.players.map(player=>({...player,fullBodyReferenceUrl:"/body.png"}));
+  const allowed=moment.snapshot.players.filter(player=>player.alive && player.items?.includes("snipe"));
+  expect(allowed).toHaveLength(audience==="omniscient" ? 1 : 0);
+  const view=render(<SampledStageProvider value={{images:{"/body.png":{width:600,height:900},[WEREWOLF_ROOMS.village]:{width:1600,height:900}},previousScene:null,previousSpeaker:null,firstInScene:true}}>{frame(moment)}</SampledStageProvider>);
+  expect(view.container.querySelector("[data-composed-room]")).not.toBeNull();
+  expect(view.container.querySelectorAll('[data-item-badge="snipe"]')).toHaveLength(allowed.length);
+  if(allowed.length)expect(view.container.querySelector('[data-composed-item-player]')?.getAttribute("data-composed-item-player")).toBe(allowed[0]!.id);
 });
 
 test("an accepted visual discussion still uses its scene, while an uncovered speaker uses the room", () => {

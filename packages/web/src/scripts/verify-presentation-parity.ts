@@ -153,6 +153,19 @@ for (const suite of suites) for (const audience of ["mystery","omniscient"] as c
   }
 }
 if (process.env.COMPOSED_ROOM_PARITY === "1") {
+  const {completedHunterFixture} = await import("@influence/engine/fixtures/werewolf-hunter");
+  const heldEvents=await completedHunterFixture("held",{conversation:true});
+  for(const audience of ["omniscient","mystery"] as const) {
+    const projected=projectWerewolfProductionWatch(heldEvents,audience);
+    for(const moment of projected.moments)for(const player of moment.snapshot.players) {
+      player.avatarUrl="/avatars/personas/strategic.png";
+      player.fullBodyReferenceUrl="/avatars/personas/full-body-v1/strategic.webp";
+    }
+    const held=buildExportCues({kind:"werewolf",windows:[{...projected,audience,status:"completed",slug:"hunter-held",publicationCutoff:"fixture",media:{}}],thoughts:[]})
+      .find(cue=>cue.picture.kind==="werewolf" && werewolfPortraitRoom(cue.picture.cue) && (audience==="mystery" || cue.picture.cue.moment.snapshot.players.some(player=>player.id===cue.speech?.speakerId && player.items?.includes("snipe"))));
+    if(!held)throw new Error(`Missing composed Hunter ${audience} conversation`);
+    cases.push({name:`composed-hunter-held-${audience}`,reference:held,cue:held});
+  }
   const historical = projectWerewolfProductionWatch(await completedWerewolfResultsFixture("saved","composed-historical",1),"omniscient");
   for (const moment of historical.moments) for (const player of moment.snapshot.players) {
     player.avatarUrl = "/avatars/personas/strategic.png";
@@ -505,7 +518,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
         if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",imageFormat:item.name.startsWith("composed-") ? "png" : undefined,crf:item.name === "influence-winner" || item.name.startsWith("composed-") ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});

@@ -7,6 +7,7 @@ import {thinkingFocus, ThinkingFocusOverlay} from "@/components/watch/thinking-f
 import {resolveAgentAvatarUrl} from "@/components/agent-avatar";
 import { useLayoutEffect, useRef, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
+import {ItemBadges} from "@/components/watch/item-badges";
 import { selectVisualShot, type AcceptedVisualScene } from "@influence/engine/visual-mode";
 import { frameVisualScene, placeSceneBubble, sceneCameraProgress, type PanelTreatment, type SceneFrame, type HeadRect } from "./visual-scene-layout";
 import { TimedSpeech } from "./timed-speech";
@@ -20,7 +21,7 @@ const OVERVIEW_HOLD_MS = 200;
 
 export interface SceneComposition {
   width:number; height:number; ready:boolean;
-  cast: Array<{id:string;name:string;source:string;frame:SceneFrame;head:HeadRect}>;
+  cast: Array<{id:string;name:string;items?:readonly string[];source:string;frame:SceneFrame;head:HeadRect}>;
 }
 
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
@@ -171,6 +172,16 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
           top:layer.frame.top + player.frame.top / composition.height * layer.frame.height,
           width:player.frame.width / composition.width * layer.frame.width,height:player.frame.height / composition.height * layer.frame.height,
           filter:"drop-shadow(0 12px 12px #0007)"}} />)}
+      {composition.cast.filter(player=>player.items?.length).map(player => {
+        const x=layer.frame.left+(player.head.x+player.head.width/2)*layer.frame.width;
+        const y=layer.frame.top+(player.head.y+player.head.height/2)*layer.frame.height;
+        if(x<0 || x>size.width || y<0 || y>available) return null;
+        const left=x>size.width/2 ? x-player.head.width*layer.frame.width/2-68 : x+player.head.width*layer.frame.width/2+4;
+        return <div key={player.id} data-composed-item-player={player.id} aria-label={`${player.name} held items`} className="absolute"
+          style={{left:Math.max(8,Math.min(size.width-72,left)),top:Math.max(8,Math.min(available-24,y-10))}}>
+          <ItemBadges items={player.items}/>
+        </div>;
+      })}
     </div>)}
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen speaker portrait when scene head geometry is unavailable */}
     {thinkingReady && thought && fallback && portraitActor && <img alt={portraitActor.name} src={resolveAgentAvatarUrl(portraitActor.avatarUrl,portraitActor.persona,portraitActor.name,portraitActor.personaKey)}

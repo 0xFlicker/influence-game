@@ -29,6 +29,10 @@ Independent thoughts retain only allowed cast/artwork/room framing. They do not
 carry omitted speech, future choices or private room members. Pack rooms continue
 to contain only living wolves and use their frozen character art. They do not
 substitute wolf transformation images.
+Carry the audience-filtered held-item metadata into the composition as well as
+the body/head geometry. Shared item badges stay beside their owner's visible
+head through camera movement; Mystery must never gain an omniscient Hunter's
+held Snipe. Item information comes only from the projected roster.
 
 Cold loads must hold the director until both scenery and cutouts are known.
 Deterministic exports use cached dimensions and canonical predecessor identities;

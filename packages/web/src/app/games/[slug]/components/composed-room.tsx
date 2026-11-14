@@ -32,7 +32,7 @@ export function composeRoomCast(players: readonly Player[], images: Record<strin
     const frame = {left:center - width / 2,
       top:790 - depth * 170 - actualHeight, width, height:actualHeight};
     const head = player.headRectangle ?? {x:.4,y:.04,width:.2,height:.16};
-    return {id:player.id,name:player.name,source,frame,
+    return {id:player.id,name:player.name,items:player.items,source,frame,
       head:{x:(frame.left + head.x * width)/1600,y:(frame.top + head.y * actualHeight)/900,
         width:head.width * width/1600,height:head.height * actualHeight/900}};
   });
