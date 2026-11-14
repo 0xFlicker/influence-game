@@ -18,9 +18,12 @@ Werewolf already pins content revisions in its started roster. New Influence own
 seats now retain their content revision ID alongside the frozen persona. Prepared
 Influence cast artifacts already retain an exact source hash. Their ordinary reads
 select the matching transparent derivative without querying cutout jobs or demands,
-checking publication dates, or requiring acceptance. Historical Influence games with
-neither a pinned content revision nor a prepared reference remain on their original
-image. There is no historical reconstruction or inferred character matching.
+checking publication dates, or requiring acceptance. Older Influence personas can
+also pin the exact source hash in their confirmed head position: when its source URL
+matches the frozen body URL and its rectangle and SHA-256 are valid, ordinary reads
+select that source's derivative. Prepared artifacts and revision asset hashes take
+precedence. Games without any frozen source identity retain their original image.
+There is no historical reconstruction or inferred character matching.
 
 Completion retains finished bytes, uploads to `characters/<sha256>.png`, verifies
 public readback hash and length, then commits the derivative URL and completion marker
@@ -59,8 +62,14 @@ failed jobs are reported together and remain retryable on rerun. `--verify` reje
 pending finished-image saves. Complete conversion before switching readers. This
 command is not part of API startup or playback.
 
-No development, staging or production conversion has been performed as part of this
-PR. Isolated fixture tests are not deployment evidence.
+The 2026-11-13 local development conversion used the pinned BiRefNet container on
+local CPU against `influence_dev` and localhost object storage. It completed 68
+conversions (60 public images and eight private wolf forms), preserving originals
+and frozen records. All 32 full-body profiles and all readable full-body game
+references resolved transparent artwork after the confirmed-source reader fix.
+Three existing championship artwork-binding errors remain separate from conversion.
+The local evidence is retained in `.renders/local-cutouts-2026-11-13/README.md`.
+This is local evidence only; staging and production were not changed.
 
 ## Environments
 
