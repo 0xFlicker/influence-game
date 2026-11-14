@@ -485,7 +485,7 @@ try {
       const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
       const cameraSamples = item.name.startsWith("composed-camera-") ? timeline.flatMap(row=>[0,3,7,13,14].map(offset=>Math.min(row.endFrame-1,row.startFrame+offset))) : [];
       const roomCast=item.cue.picture.kind==="thinking" ? item.cue.picture.room?.players ?? [] : item.cue.picture.kind==="influence" && item.cue.picture.beat?.kind==="portrait-room" ? item.cue.picture.beat.participants : item.cue.picture.kind==="werewolf" ? werewolfPortraitRoom(item.cue.picture.cue)?.participants ?? [] : [];
-      const verifyNames=item.name.startsWith("composed-") && !item.sequence && !(item.cue.picture.kind==="thinking" && width>=640 && height>=394 && roomCast.length<=8);
+      const verifyNames=item.name.startsWith("composed-") && !item.sequence && !(item.cue.picture.kind==="thinking" && width>=640 && height>=394);
       const nameSamples:number[]=[];
       if(verifyNames)for(const player of roomCast) {
         const namePages=Object.values(pages).findLast(value=>value.join("")===player.name);
