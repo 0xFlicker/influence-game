@@ -10,7 +10,7 @@ import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { sceneSpeechDurationMs } from "./scene-speech-timing";
 import { isSafetyBounceSceneCue, safetyBounceLobbyScene } from "./safety-bounce-scene-model";
 import { allianceIntroductionDurationMs } from "@influence/engine/alliance-introductions";
-import {portraitRoomDurationMs, compactRoomReadingMs, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_HOLD_MS} from "./portrait-room-pagination";
+import {portraitRoomDurationMs, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_HOLD_MS} from "./portrait-room-pagination";
 
 /** Historical speaker/audience fields are seat IDs or exact frozen names, never dialogue prose. */
 export function resolveTranscriptPlayer(token: string | null | undefined, players: readonly GamePlayer[]) {
@@ -35,7 +35,7 @@ export function transcriptPresentationDurationMs(message: TranscriptEntry, playe
   if (message.allianceIntroduction) return allianceIntroductionDurationMs(message.text, message.allianceIntroduction.memberIds.length);
   const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
   const lobbyCount=largeLobbyCastCount(message,players,frames);
-  if(lobbyCount>8)return Math.max(sceneSpeechDurationMs(text),compactRoomReadingMs(lobbyCount)+1050);
+  if(lobbyCount>8)return portraitRoomDurationMs(text,lobbyCount);
   return isSoloTranscript(message) ? soloPresentationDurationMs(text)
     : message.anonymous || message.speakerPlayerId || message.fromPlayerId
       ? largeSocialCastCount(message) > 4 ? portraitRoomDurationMs(text, largeSocialCastCount(message)) : sceneSpeechDurationMs(text) : visualSpeechDurationMs(text);

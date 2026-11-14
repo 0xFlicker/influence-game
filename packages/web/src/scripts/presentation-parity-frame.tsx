@@ -173,7 +173,7 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
         winnerMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-winner-player]")).map(member=>member.dataset.winnerPlayer)}));
       continueRender(handle);
     })().catch(cancelRender);
-  },[frame,handle,expectedFormat,expectedPaged,expectedItemPlayers]);
+  },[frame,handle,expectedFormat,expectedPaged,expectedItemPlayers,controlsInset]);
   return result ? <Artifact filename={`format-audit-${frame}.json`} content={result} /> : null;
 }
 

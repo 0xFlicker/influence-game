@@ -408,7 +408,7 @@ try {
       }
       const expectedCast = item.name === "format-huddle-five" ? fiveMembers : huddleMembers;
       const castPages = portraitRoomPageCount(expectedCast.length);
-      const castSamples = ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
+      const castSamples = item.name==="composed-lobby-fallback" ? Array.from({length:portraitRoomPageCount(largePlayers.length)},(_,page)=>Math.floor((650+(item.cue.timing.baseDurationMs-1050)*(page+.5)/portraitRoomPageCount(largePlayers.length))*fps/1000)) : ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
         : (item.name.startsWith("format-huddle-large-thought") || item.name === "format-huddle-six-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
       let dialogueSamples:number[]=[];
       let roomSamples:number[]=[];

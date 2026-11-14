@@ -156,9 +156,9 @@ function CircularPortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion
   // A short two-person room needs room for complete names and speech.
   // Reuse the compact cast layout; both participants fit on its single page.
   const compactPair = beat.participants.length === 2 && speakerIndex >= 0 && size.width > 0 && available < 340;
-  const paginated = compactPair || paginateLargeCast && beat.participants.length > 4 && size.width > 0 && (size.width < 600 || available < 340 || beat.participants.length > 8);
+  const paginated = beat.participants.length>8 || compactPair || paginateLargeCast && beat.participants.length > 4 && size.width > 0 && (size.width < 600 || available < 340 || beat.participants.length > 8);
   return <section ref={frame} aria-label={beat.roomLabel ?? (beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`)} data-portrait-room={!paginated || undefined}
-    className={`relative min-h-0 w-full flex-1 overflow-hidden ${paginated ? "flex flex-col" : ""}`} style={{ perspective: 1200 }}>
+    className={`relative min-h-0 w-full flex-1 overflow-hidden ${paginated ? "flex flex-col" : ""}`} style={{ perspective: 1200,paddingBottom:paginated ? controlsInset : 0 }}>
     {paginated ? <PaginatedPortraitRoom beat={beat} elapsedMs={elapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} backgroundUrl={backgroundUrl} hideSpeech={hideSpeech} onImageReady={onImageReady} /> : <>
     <div data-thinking-camera className="absolute inset-0" style={{...focus.mediaStyle,perspective:1200}}>
     <RoomBackdrop source={backgroundUrl ?? DEFAULT_ROOM_BACKDROP} />

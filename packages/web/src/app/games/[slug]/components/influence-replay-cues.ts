@@ -3,7 +3,7 @@ import type {ClassicPresentationCue, FormatPresentationCue, PresentationCue, Rep
 import {phaseToRoomType} from "./constants";
 import {MATCH_WATCH_FORMAT_PHASES, REPLAY_FRAME_PHASE_ORDER} from "./match-watch-model";
 import {transcriptPresentationDurationMs, isSoloTranscript, largeLobbyCastCount, largeSocialCastCount, socialCastMinimumThinkingMs} from "./visual-watch-model";
-import {compactRoomReadingMs} from "./portrait-room-pagination";
+import {portraitRoomPageCount,PORTRAIT_ROOM_PAGE_HOLD_MS} from "./portrait-room-pagination";
 import {voteSceneIdentity} from "./vote-ledger-model";
 import { isInfluenceProductionSocialTranscript } from "@influence/engine/production-moments/influence-source";
 
@@ -40,7 +40,7 @@ export function buildClassicPresentationCues(
       stage: "done" as const,
       baseDurationMs: transcriptPresentationDurationMs(message, players,replayFrames),
       ...(largeSocialCastCount(message) > 4 && {minimumDurationMs:transcriptPresentationDurationMs(message, players,replayFrames), readingHold:true as const, minimumThinkingMs:socialCastMinimumThinkingMs(message)}),
-      ...(largeLobbyCastCount(message,players,replayFrames)>8 && {minimumDurationMs:transcriptPresentationDurationMs(message,players,replayFrames),readingHold:true as const,minimumThinkingMs:compactRoomReadingMs(largeLobbyCastCount(message,players,replayFrames))}),
+      ...(largeLobbyCastCount(message,players,replayFrames)>8 && {minimumDurationMs:transcriptPresentationDurationMs(message,players,replayFrames),readingHold:true as const,minimumThinkingMs:portraitRoomPageCount(largeLobbyCastCount(message,players,replayFrames))*PORTRAIT_ROOM_PAGE_HOLD_MS}),
       speechPresentation: isSoloTranscript(message) ? "solo" as const
         : message.anonymous || message.speakerPlayerId || message.fromPlayerId ? "scene" as const : undefined,
       sceneIndex,

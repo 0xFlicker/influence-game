@@ -22,12 +22,7 @@ export function portraitRoomPage(elapsedMs: number, durationMs: number, count: n
   return Math.min(pages - 1, Math.max(0, Math.floor(Math.max(0, elapsedMs - 650) / Math.max(1, durationMs - 1050) * pages)));
 }
 
-/** Compact full-body pages keep seven guests beside the persistent speaker. */
-export function compactRoomReadingMs(count:number):number {
-  return Math.max(1,Math.ceil((count-1)/7))*PORTRAIT_ROOM_PAGE_HOLD_MS;
-}
-
 export function roomSpeechDurationMs(text:string,count:number,paginateLargeCast:boolean):number {
   return paginateLargeCast && count>4 ? portraitRoomDurationMs(text,count)
-    : count>8 ? Math.max(sceneSpeechDurationMs(text),compactRoomReadingMs(count)+1050) : sceneSpeechDurationMs(text);
+    : count>8 ? portraitRoomDurationMs(text,count) : sceneSpeechDurationMs(text);
 }

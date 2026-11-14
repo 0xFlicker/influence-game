@@ -48,9 +48,9 @@ test("short large Lobby contributions reserve complete cast pages through viewer
   const players=Array.from({length:12},(_,index)=>({id:`p${index}`,name:`Player ${index}`,persona:"",status:"alive" as const,shielded:false}));
   const message:TranscriptEntry={id:1,entrySequence:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:"p0",fromPlayerId:"p0",fromPlayerName:"Player 0",toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
   const cue=buildClassicPresentationCues(buildStoryScenes([message]),[],players)[0]!;
-  expect(cue.baseDurationMs).toBe(8050);
-  expect(cue.minimumDurationMs).toBe(8050);
-  expect(cue.minimumThinkingMs).toBe(7000);
+  expect(cue.baseDurationMs).toBe(15050);
+  expect(cue.minimumDurationMs).toBe(15050);
+  expect(cue.minimumThinkingMs).toBe(14000);
   expect(cue.readingHold).toBe(true);
   expect(roomSpeechDurationMs(message.text,12,false)).toBe(cue.baseDurationMs);
   const exported=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},messages:[message],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies:Object.fromEntries(players.map(player=>[player.id,"/body.png"]))}}).find(row=>row.speech?.text===message.text)!;
@@ -58,5 +58,5 @@ test("short large Lobby contributions reserve complete cast pages through viewer
   expect(exported.timing.minimumDurationMs).toBe(cue.minimumDurationMs);
   expect(exported.timing.minimumThinkingMs).toBe(cue.minimumThinkingMs);
   const [timeline]=compileTiming([{...exported.timing,recording:{assetId:"voice",durationMs:500}}],parseTimingProfile({motionScale:.1}),30);
-  expect(timeline!.endMs-timeline!.startMs).toBeGreaterThanOrEqual(8050);
+  expect(timeline!.endMs-timeline!.startMs).toBeGreaterThanOrEqual(15050);
 });
