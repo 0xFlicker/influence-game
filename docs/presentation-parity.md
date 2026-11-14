@@ -300,7 +300,9 @@ head/label bounds leave insufficient room for a readable speech line. Names are
 literal identity text; each guest completes its name pages during its own cast
 page, while the persistent speaker uses the whole contribution clock. Large
 Lobby cues reserve at least 3.5 seconds per compact cast page in their canonical
-presentation timing, including recorded speech and isolated thinking cuts.
+presentation timing, including recorded speech and isolated thinking cuts. Circular portraits retain
+the same caption hold when a body reference is missing. Compact composed rooms
+reserve the visible transport-control inset before sizing cast and captions.
 No provider request or generated image is involved. Saved head boxes follow the
 source image; older art uses the same presentation head position as solo shots.
 

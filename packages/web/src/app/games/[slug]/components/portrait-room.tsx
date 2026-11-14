@@ -15,7 +15,7 @@ import { soloPresentationMotion } from "./solo-presentation-timing";
 import { DEFAULT_ROOM_BACKDROP, RoomBackdrop } from "./stage-backdrop";
 import {PaginatedPortraitRoom} from "./paginated-portrait-room";
 import {ItemBadges} from "@/components/watch/item-badges";
-import {portraitRoomDurationMs} from "./portrait-room-pagination";
+import {roomSpeechDurationMs} from "./portrait-room-pagination";
 
 function portraitRoomTurn(count: number, index: number, speakerIndex: number, deep: boolean) {
   // Rotate the saved circular order so the current speaker stays in front.
@@ -135,7 +135,7 @@ function CircularPortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion
   const speakerTop = size.height / 2 + (centerY - diameter / 2 - size.height / 2) * 1200 / (1200 - 60);
   const bubbleBottom = speakerTop - 20;
   const bubbleHeight = Math.max(0, beside ? available - 56 : bubbleBottom - 44);
-  const extendedDuration = paginateLargeCast && beat.participants.length > 4 ? portraitRoomDurationMs(beat.speech.text,beat.participants.length) : undefined;
+  const extendedDuration = paginateLargeCast && beat.participants.length > 4 || beat.participants.length>8 ? roomSpeechDurationMs(beat.speech.text,beat.participants.length,paginateLargeCast) : undefined;
   const opacity = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, elapsedMs, false, reducedMotion).speechOpacity
     : extendedDuration === undefined ? sceneSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion)
       : elapsedMs <= SCENE_SPEECH_START_MS ? 0 : reducedMotion ? 1 : Math.max(0,Math.min(1,(elapsedMs - SCENE_SPEECH_START_MS)/200,(extendedDuration - 400 - elapsedMs)/200));

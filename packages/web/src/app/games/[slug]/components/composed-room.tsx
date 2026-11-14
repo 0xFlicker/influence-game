@@ -74,7 +74,7 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
   const actor = beat.participants.find(player => player.id === beat.speech.playerId);
   const duration=roomSpeechDurationMs(beat.speech.text,beat.participants.length,Boolean(paginateLargeCast));
   const roomProgress=thought ? thought.elapsedMs/Math.max(1,thought.durationMs) : Math.max(0,(props.readingElapsedMs-650)/Math.max(1,duration-1050));
-  return <section ref={frame} aria-label={compact ? undefined : beat.roomLabel ?? "Mingle room"} data-composed-room className="relative flex min-h-0 flex-1 flex-col">
+  return <section ref={frame} aria-label={compact ? undefined : beat.roomLabel ?? "Mingle room"} data-composed-room style={{paddingBottom:compact ? props.controlsInset : 0}} className="relative flex min-h-0 flex-1 flex-col">
     {/* eslint-disable @next/next/no-img-element -- frozen cutouts must expose natural dimensions before shared camera layout */}
     {beat.participants.map(player => <img key={player.id} src={player.fullBodyReferenceUrl!} alt="" aria-hidden="true" data-composed-preload
       className="hidden" onError={event => void characterImageError(event,() => setMissing(player.fullBodyReferenceUrl!))} onLoad={event => {

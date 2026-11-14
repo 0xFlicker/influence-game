@@ -17,9 +17,9 @@ import {ProductionPreview} from "../app/admin/production/production-preview";
 import {PortraitRoom} from "../app/games/[slug]/components/portrait-room";
 import {werewolfPortraitRoom, werewolfBackdrop} from "../components/games/werewolf/werewolf-room-presentation";
 
-export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; references?:ExportCue[]; prepare?:boolean};
+export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; references?:ExportCue[]; controlsInset?:number; prepare?:boolean};
 
-function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers}: {expectedFormat?:string; expectedPaged:boolean; expectedItemPlayers?:string[]}) {
+function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, controlsInset=0}: {expectedFormat?:string; expectedPaged:boolean; expectedItemPlayers?:string[];controlsInset?:number}) {
   const frame = useCurrentFrame();
   const [handle] = useState(() => delayRender("Format context geometry"));
   const [result,setResult] = useState<string|null>(null);
@@ -152,6 +152,9 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers}: {expe
           if(bubble && caption && Number(getComputedStyle(bubble).opacity)>.1 && head.left<caption.right && head.right>caption.left && head.top<caption.bottom && head.bottom>caption.top)throw new Error(`Crowded caption obscures an attendee's head: ${image.alt}`);
         }
       }
+      if(controlsInset)for(const node of document.querySelectorAll<HTMLElement>("[data-room-player], [data-room-player-name], [data-speech-bubble]")) {
+        if(node.getBoundingClientRect().bottom>window.innerHeight-controlsInset+1)throw new Error("Required room content overlaps transport controls");
+      }
       const nameNodes=Array.from(document.querySelectorAll<HTMLElement>("[data-room-player-name]"));
       if(!document.querySelector("[data-thinking-shot]"))for(const [index,name] of nameNodes.entries()) {
         const rect=name.getBoundingClientRect();
@@ -174,7 +177,7 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers}: {expe
   return result ? <Artifact filename={`format-audit-${frame}.json`} content={result} /> : null;
 }
 
-function ViewerFrame({manifest,reference:singleReference,references}:ParityProps) {
+function ViewerFrame({manifest,reference:singleReference,references,controlsInset=0}:ParityProps) {
   const frame = useCurrentFrame();
   const time = frame * 1000 / manifest.fps;
   const index = cueIndexAt(manifest.timeline,time);
@@ -223,10 +226,10 @@ function ViewerFrame({manifest,reference:singleReference,references}:ParityProps
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
       <div data-influence-stage className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
         {reference.activeFormatId && <ActiveFormatOverlay formatId={reference.activeFormatId} onOpen={() => {}} />}
-        <VisualPresentationFrame previousSpeakerId={reference.previousRoomSpeakerId !== undefined ? reference.previousRoomSpeakerId : previousPortraitRoomSpeaker(picture.beat, previousPicture?.kind === "influence" ? previousPicture.beat ?? null : null)} beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={0} roster={picture.roster} voteLedger={picture.ledger ?? undefined}/>
+        <VisualPresentationFrame previousSpeakerId={reference.previousRoomSpeakerId !== undefined ? reference.previousRoomSpeakerId : previousPortraitRoomSpeaker(picture.beat, previousPicture?.kind === "influence" ? previousPicture.beat ?? null : null)} beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={controlsInset} roster={picture.roster} voteLedger={picture.ledger ?? undefined}/>
       </SceneThinkingProvider></div>
     </> : null}
-    <FormatAudit key={frame} expectedItemPlayers={manifest.game.slug.startsWith("composed-hunter-held-") && picture.kind==="werewolf" ? picture.cue.moment.snapshot.players.filter(player=>player.alive && player.items?.length).map(player=>player.id) : undefined} expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
+    <FormatAudit key={frame} controlsInset={controlsInset} expectedItemPlayers={manifest.game.slug.startsWith("composed-hunter-held-") && picture.kind==="werewolf" ? picture.cue.moment.snapshot.players.filter(player=>player.alive && player.items?.length).map(player=>player.id) : undefined} expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
   </div>;
 }
 

@@ -627,3 +627,23 @@ test.each([[390,700],[360,240],[640,360]])("crowded composed rooms retain the co
     for(const [key,descriptor] of dimensions){if(descriptor)Object.defineProperty(prototype,key,descriptor);else Reflect.deleteProperty(prototype,key);}
   }
 });
+
+test("compact full-body rooms reserve the expanded player's transport inset",()=>{
+ const prototype=dom.HTMLElement.prototype;
+ const dimensions=new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
+ try {
+  Object.defineProperty(prototype,"clientWidth",{configurable:true,get:()=>390});
+  Object.defineProperty(prototype,"clientHeight",{configurable:true,get:()=>700});
+  const participants=Array.from({length:8},(_,index)=>({id:String(index),name:`P${index}`,persona:"",fullBodyReferenceUrl:"/body.png"}));
+  const view=render(<SampledStageProvider value={{images:{"/body.png":{width:400,height:900}},previousScene:null,previousSpeaker:null,firstInScene:true}}><VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",participants,speech:{id:"inset",playerId:"0",speaker:"P0",text:"Yes."}}} rooms={[]} elapsedMs={2000} controlsInset={140}/></SampledStageProvider>);
+  expect(view.container.querySelector<HTMLElement>("[data-composed-room]")?.style.paddingBottom).toBe("140px");
+  expect(view.container.querySelectorAll("[data-room-player]")).toHaveLength(8);
+ }finally {cleanup();for(const [key,descriptor]of dimensions){if(descriptor)Object.defineProperty(prototype,key,descriptor);else Reflect.deleteProperty(prototype,key);}}
+});
+
+test("large Lobby portrait fallback keeps captions throughout the shared reading hold",()=>{
+ const participants=Array.from({length:12},(_,index)=>({id:String(index),name:`P${index}`,persona:""}));
+ const view=render(<VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",participants,speech:{id:"fallback",playerId:"0",speaker:"P0",text:"Yes."}}} rooms={[]} elapsedMs={6000} controlsInset={0}/>);
+ expect(view.container.querySelector("[data-speech-bubble]")?.textContent).toContain("Yes.");
+ expect(Number(view.container.querySelector<HTMLElement>("[data-speech-bubble]")?.style.opacity)).toBeGreaterThan(.9);
+});
