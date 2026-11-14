@@ -3,6 +3,11 @@ import {sceneSpeechDurationMs} from "./scene-speech-timing";
 export const PORTRAIT_ROOM_PAGE_SIZE = 3;
 export const PORTRAIT_ROOM_PAGE_HOLD_MS = 3500;
 
+/** Guests read their complete name during their own cast page; the speaker stays throughout. */
+export function portraitRoomNameProgress(progress: number, page: number, pages: number, speaker: boolean): number {
+  return Math.max(0,Math.min(1,speaker ? progress : progress*pages-page));
+}
+
 /** Keep the speaker visible while rotating through the other attendees. */
 export function portraitRoomPageCount(count: number): number {
   return count > 4 ? Math.ceil((count - 1) / PORTRAIT_ROOM_PAGE_SIZE) : 1;

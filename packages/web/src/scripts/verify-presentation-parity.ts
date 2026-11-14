@@ -488,7 +488,12 @@ try {
         if(!namePages?.length)throw new Error(`Missing measured participant name: ${player.name}`);
         const weights=namePages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)),total=weights.reduce((a,b)=>a+b,0);let before=0;
         for(const weight of weights) {
-          const progress=(before+weight/2)/total;before+=weight;
+          let progress=(before+weight/2)/total;before+=weight;
+          const actorId=item.cue.picture.kind==="thinking" ? item.cue.picture.actor.id : item.cue.speech?.speakerId;
+          if((width<640 || height<394) && player.id!==actorId) {
+            const guests=roomCast.filter(player=>player.id!==actorId),castPages=Math.max(1,Math.ceil(guests.length/7));
+            progress=(Math.floor(guests.findIndex(guest=>guest.id===player.id)/7)+progress)/castPages;
+          }
           if(thought)nameSamples.push(Math.round((thought.insertAt+thought.readAtMs+progress*(thought.hideAtMs-thought.readAtMs))*fps/1000));
           else {
             const source=650+progress*(item.cue.timing.baseDurationMs-1050);
@@ -542,7 +547,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-large-reduced","composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
         if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",imageFormat:item.name.startsWith("composed-") ? "png" : undefined,crf:item.name === "influence-winner" || item.name.startsWith("composed-") ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});

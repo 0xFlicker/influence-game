@@ -1,9 +1,17 @@
 import {expect, test} from "bun:test";
-import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_HOLD_MS} from "../app/games/[slug]/components/portrait-room-pagination";
+import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, portraitRoomNameProgress, PORTRAIT_ROOM_PAGE_HOLD_MS} from "../app/games/[slug]/components/portrait-room-pagination";
 import {buildClassicPresentationCues} from "../app/games/[slug]/components/influence-replay-cues";
 import {buildStoryScenes} from "../app/games/[slug]/components/house-story";
 import {compileTiming, parseTimingProfile, sampleTiming} from "../lib/replay-export/timing";
 import type {TranscriptEntry} from "../lib/api";
+
+test("guest names finish inside their own cast page while the speaker keeps the shared clock",()=>{
+  expect(portraitRoomNameProgress(.375,0,2,false)).toBe(.75);
+  expect(portraitRoomNameProgress(.875,1,2,false)).toBe(.75);
+  expect(portraitRoomNameProgress(.875,1,2,true)).toBe(.875);
+  expect(portraitRoomNameProgress(.5,0,2,false)).toBe(1);
+  expect(portraitRoomNameProgress(.5,1,2,false)).toBe(0);
+});
 
 test("large social rooms hold each cast page and sample identically on reverse seek", () => {
   const members = Array.from({length:11},(_,index)=>`p${index}`);

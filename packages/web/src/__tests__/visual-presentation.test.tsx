@@ -12,6 +12,7 @@ import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/compone
 import {composeRoomCast} from "../app/games/[slug]/components/composed-room";
 import { PortraitRoom, portraitRoomSeats, portraitRoomTransitionSeats } from "../app/games/[slug]/components/portrait-room";
 import { SampledStageProvider } from "../components/watch/sampled-stage";
+import {TimedSpeech} from "../app/games/[slug]/components/timed-speech";
 import { panelTransition } from "../app/games/[slug]/components/scene-image";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
@@ -47,6 +48,14 @@ function loadScene(container: HTMLElement) {
     fireEvent.load(image);
   }
 }
+
+test("structured name labels retain text that resembles speech delivery tags", () => {
+  const view=render(<TimedSpeech literal text="[laugh] Atlas" elapsedMs={0} progress={0} pageCounter={false}/>);
+  expect(view.getByText("[laugh] Atlas")).not.toBeNull();
+  view.rerender(<TimedSpeech text="[laugh] Hello" elapsedMs={0} progress={0}/>);
+  expect(view.getByText("Hello")).not.toBeNull();
+  expect(view.queryByText("[laugh] Hello")).toBeNull();
+});
 function render(element: Parameters<typeof renderReact>[0]) {
   const view = renderReact(element);
   loadScene(view.container);
@@ -594,22 +603,22 @@ test.each([0,100,225,449,450])("Influence room picture at %i ms matches sampled 
   }
 });
 
-test.each([[390,700],[360,240]])("crowded composed rooms retain the complete cast at %i by %i", (width,height) => {
+test.each([[390,700],[360,240],[640,360]])("crowded composed rooms retain the complete cast at %i by %i", (width,height) => {
   const prototype=dom.HTMLElement.prototype;
   const dimensions=new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
   try {
     Object.defineProperty(prototype,"clientWidth",{configurable:true,get:()=>width});
     Object.defineProperty(prototype,"clientHeight",{configurable:true,get:()=>height});
-    const participants=Array.from({length:8},(_,index)=>({id:String(index),name:`Player ${index}`,persona:"",fullBodyReferenceUrl:"/body.png"}));
+    const participants=Array.from({length:width===640 ? 12 : 8},(_,index)=>({id:String(index),name:`Player ${index}`,persona:"",fullBodyReferenceUrl:"/body.png"}));
     const images={"/body.png":{width:400,height:900},[INFLUENCE_ROOMS.lobby]:{width:1600,height:900}};
     for(const paginateLargeCast of [false,true]) {
     const view=render(<SampledStageProvider value={{images,previousScene:null,previousSpeaker:null,firstInScene:true}}><VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",paginateLargeCast:paginateLargeCast ? true : undefined,participants,
-      speech:{id:"crowd",playerId:"0",speaker:"Player 0",text:"Let us hear everyone."}}} rooms={[]} elapsedMs={3000} controlsInset={0}/></SampledStageProvider>);
+      speech:{id:"crowd",playerId:"0",speaker:"Player 0",text:"Let us hear everyone."}}} rooms={[]} elapsedMs={1000} controlsInset={0}/></SampledStageProvider>);
     expect(view.container.querySelector("[data-paginated-portrait-room]")).not.toBeNull();
     const bodies=view.container.querySelectorAll<HTMLImageElement>("[data-room-player]");
     expect(bodies).toHaveLength(8);
     expect(view.container.querySelectorAll("[data-room-player-name]")).toHaveLength(8);
-    expect(Array.from(bodies).map(body=>body.getAttribute("data-room-player"))).toEqual(participants.map(player=>player.id));
+    expect(Array.from(bodies).map(body=>body.getAttribute("data-room-player"))).toEqual(participants.slice(0,8).map(player=>player.id));
     for(const body of bodies)expect(body.querySelector("img")?.getAttribute("src")).toBe("/body.png");
     view.unmount();
     }

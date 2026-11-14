@@ -9,7 +9,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import {ItemBadges} from "@/components/watch/item-badges";
 import { selectVisualShot, type AcceptedVisualScene } from "@influence/engine/visual-mode";
-import { frameVisualScene, placeSceneBubble, sceneCameraProgress, type PanelTreatment, type SceneFrame, type HeadRect } from "./visual-scene-layout";
+import { composedCastHead, frameVisualScene, placeSceneBubble, sceneCameraProgress, type PanelTreatment, type SceneFrame, type HeadRect } from "./visual-scene-layout";
 import { TimedSpeech } from "./timed-speech";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity, sceneSpeechDurationMs } from "./scene-speech-timing";
 import { soloPresentationMotion } from "./solo-presentation-timing";
@@ -142,14 +142,7 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
   const framing = currentLayer.frame;
   const transitioning = imageKnown && from.url !== to.url && sceneCameraProgress(cameraElapsedMs) < 1;
   const thinkingReady = imageKnown && !transitioning && currentLayer.url === scene.imageUrl;
-  const castHeads = composition?.fitCast ? composition.cast.map(player=>player.head) : [];
-  const castHead = castHeads.length ? {x:Math.min(...castHeads.map(head=>head.x)),y:Math.min(...castHeads.map(head=>head.y)),
-    width:Math.max(...castHeads.map(head=>head.x+head.width))-Math.min(...castHeads.map(head=>head.x)),
-    height:Math.max(...castHeads.map(head=>head.y+head.height))-Math.min(...castHeads.map(head=>head.y))} : undefined;
-  if(castHead && composition) {
-    const top=Math.min(castHead.y,...composition.cast.map(player=>player.labelTop/composition.height-36/Math.max(1,framing.height)));
-    castHead.height+=castHead.y-top;castHead.y=top;
-  }
+  const castHead = composition?.fitCast ? composedCastHead(composition.cast,composition.height,framing) : undefined;
   const rawBubble = placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), framing, castHead ?? head);
   const thought = useSceneThinking();
   const available = Math.max(0,size.height - controlsInset);
@@ -195,7 +188,7 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
         const progress=thought ? thought.elapsedMs/Math.max(1,thought.durationMs) : Math.max(0,(readingElapsedMs-650)/Math.max(1,(speechDurationMs ?? sceneSpeechDurationMs(speech?.text ?? ""))-1050));
         return <div key={player.id} data-room-player-name={player.id} data-composed-item-player={player.items?.length ? player.id : undefined} aria-label={player.name} className="absolute flex h-8 items-center gap-0.5 rounded bg-black/80 px-1 text-center text-sm leading-4 text-white"
           style={{left:Math.max(8,Math.min(size.width-120,x-56)),top:Math.max(8,Math.min(available-40,y)),width:112}}>
-          <TimedSpeech text={player.name} elapsedMs={readingElapsedMs} progress={progress} pageCounter={false} className="h-full min-w-0 text-sm leading-4"/><ItemBadges items={player.items} compact/>
+          <TimedSpeech literal text={player.name} elapsedMs={readingElapsedMs} progress={progress} pageCounter={false} className="h-full min-w-0 text-sm leading-4"/><ItemBadges items={player.items} compact/>
         </div>;
       })}
     </div>)}

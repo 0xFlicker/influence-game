@@ -13,6 +13,9 @@ import {DEFAULT_ROOM_BACKDROP} from "./stage-backdrop";
 import {PaginatedPortraitRoom} from "./paginated-portrait-room";
 import {sceneSpeechDurationMs} from "./scene-speech-timing";
 
+import {composedCastHead,frameVisualScene,placeSceneBubble} from "./visual-scene-layout";
+import {BUBBLE_BORDER_INSET,bubbleFontRange} from "@/components/watch/bubble-typography";
+
 type RoomProps = Parameters<typeof PortraitRoom>[0];
 type Player = RoomProps["beat"]["participants"][number];
 type Dimensions = {width:number;height:number};
@@ -60,7 +63,10 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
   const images = {...loaded,...sampled?.images};
   const composition = {...composeRoomCast(beat.participants,images),fitCast:beat.participants.length>1};
   const available=Math.max(0,size.height-props.controlsInset);
-  const compact=size.width>0 && beat.participants.length>1 && (size.width<640 || available<360);
+  const framing=frameVisualScene(size.width,size.height,composition.width,composition.height);
+  const speechBox=placeSceneBubble(size.width,available,framing,composedCastHead(composition.cast,composition.height,framing));
+  const minimumSpeechHeight=36+BUBBLE_BORDER_INSET+28+bubbleFontRange(speechBox.width,false).minFont*1.4;
+  const compact=size.width>0 && beat.participants.length>1 && (size.width<640 || available<360 || speechBox.height<minimumSpeechHeight);
   const compactReady=composition.ready && Boolean(images[backgroundUrl]);
   useLayoutEffect(()=>{if(compact){onReadyChange?.(compactReady);if(compactReady)onImageReady?.();}},[compact,compactReady,onReadyChange,onImageReady]);
   const scene: AcceptedVisualScene = {id:`composed:${backgroundUrl}:${beat.participants.map(player=>player.id).join(":")}`,
@@ -85,7 +91,7 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
       speech={hideSpeech ? null : {...beat.speech,portrait:actor}} onReadyChange={ready => {onReadyChange?.(ready); if (ready) onImageReady?.();}} />
     }
     {!compact && <div data-room-context-label className={`pointer-events-none absolute inset-x-0 h-4 text-center text-xs font-medium text-[#e6ce9a] ${composition.fitCast ? "top-0" : "top-3"}`}>
-      <TimedSpeech text={beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`} elapsedMs={props.readingElapsedMs} progress={roomProgress} pageCounter={false} className="h-full text-xs leading-4"/>
+      <TimedSpeech literal text={beat.roomLabel ?? `Mingle${beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}`} elapsedMs={props.readingElapsedMs} progress={roomProgress} pageCounter={false} className="h-full text-xs leading-4"/>
     </div>}
   </section>;
 }

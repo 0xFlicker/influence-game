@@ -6,7 +6,7 @@ import {useSampledStage} from "@/components/watch/sampled-stage";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {RoomBackdrop, DEFAULT_ROOM_BACKDROP} from "./stage-backdrop";
 import {TimedSpeech} from "./timed-speech";
-import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, PORTRAIT_ROOM_PAGE_SIZE} from "./portrait-room-pagination";
+import {portraitRoomDurationMs, portraitRoomPage, portraitRoomPageCount, portraitRoomNameProgress, PORTRAIT_ROOM_PAGE_SIZE} from "./portrait-room-pagination";
 import type {VisualPresentationBeat} from "./visual-presentation";
 import {ItemBadges} from "@/components/watch/item-badges";
 import {characterImageError} from "@/components/character/image-error";
@@ -51,7 +51,7 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
     className="relative isolate flex min-h-0 w-full flex-1 flex-col overflow-hidden">
     <RoomBackdrop source={backgroundUrl ?? DEFAULT_ROOM_BACKDROP} />
     <div data-room-context-label aria-label={roomName} className="absolute left-3 top-0.5 z-10 flex h-11 w-[calc(100%-12rem)] min-w-0 text-left text-white/70">
-      <TimedSpeech text={roomName} elapsedMs={readingElapsedMs} progress={roomProgress} className="text-sm font-medium uppercase leading-4" />
+      <TimedSpeech literal text={roomName} elapsedMs={readingElapsedMs} progress={roomProgress} className="text-sm font-medium uppercase leading-4" />
     </div>
     <div className="relative grid min-h-0 flex-1 grid-cols-2 gap-2 px-3 pb-2 pt-12">
       <div data-speech-bubble className="flex min-h-0 flex-col rounded-xl border-2 border-white/60 bg-black/90 p-2 text-white" style={{opacity:thought ? thought.opacity : hideSpeech ? 0 : speechOpacity}}>
@@ -70,7 +70,7 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
               onError={event => composed ? void characterImageError(event,()=>setFailed(previous=>new Set(previous).add(saved))) : setFailed(previous => new Set(previous).add(saved))}
               className={composed ? short ? "h-7 w-4 shrink-0 object-contain" : "min-h-0 w-full flex-1 object-contain" : "h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-white/40"} />
             {composed ? <div ref={player.id===speaker.id ? activeLabel : undefined} data-room-player-name={player.id} data-composed-item-player={player.items?.length ? player.id : undefined} className={`flex h-8 min-h-0 min-w-0 items-center gap-0.5 text-sm leading-4 text-white ${short ? "flex-1" : "w-full shrink-0"}`} aria-label={player.name}>
-              <TimedSpeech text={player.name} elapsedMs={readingElapsedMs} progress={roomProgress} pageCounter={false} className="h-full min-w-0 text-sm leading-4"/><ItemBadges items={player.items} compact/>
+              <TimedSpeech literal text={player.name} elapsedMs={readingElapsedMs} progress={portraitRoomNameProgress(roomProgress,page,pages,player.id===speaker.id)} pageCounter={false} className="h-full min-w-0 text-sm leading-4"/><ItemBadges items={player.items} compact/>
             </div> : <p className="flex min-w-0 items-center gap-1.5 break-words text-xs leading-4 text-white"><span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">{player.name}</span><ItemBadges items={player.items} compact /></p>}
           </div>;
         })}
@@ -80,7 +80,7 @@ export function PaginatedPortraitRoom({beat, elapsedMs, readingElapsedMs, reduce
     {composed && sampled?.capturePages && labelWidth>0 && <div aria-hidden="true" className="pointer-events-none invisible fixed left-[-10000px] top-0" style={{width:labelWidth}}>
       {/* Prepare every frozen name, including attendees on later cast pages. */}
       {beat.participants.map(player=><div key={player.id} className="flex h-8 min-w-0 items-center gap-0.5 text-sm leading-4">
-        <TimedSpeech text={player.name} elapsedMs={0} pageCounter={false} className="h-full min-w-0 text-sm leading-4"/><ItemBadges items={player.items} compact/>
+        <TimedSpeech literal text={player.name} elapsedMs={0} pageCounter={false} className="h-full min-w-0 text-sm leading-4"/><ItemBadges items={player.items} compact/>
       </div>)}
     </div>}
   </section>;
