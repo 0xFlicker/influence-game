@@ -24,14 +24,16 @@ its sampled camera. Coordinates never become contestant observations, accepted
 scene records or gameplay authority. A missing reference anywhere in the full
 game roster retains portraits, even when that player is outside the current room.
 Accepted generated scene bindings remain authoritative.
-Crowded social rooms marked `paginateLargeCast` keep their complete composed
-cast framed together, rather than using the speaker-centered portrait crop.
-Captions reserve the union of the cast's head boxes and keep their pointer on
-the speaker. Short players lift the room picture to retain caption space.
-This preserves all attendees through ordinary speech and isolated speech cuts;
-the existing thinking close-up remains the deliberate focus treatment.
-The room label occupies a reserved line above the cast; long labels use the
-shared reading clock without a counter or scrolling.
+Room fitting is independent of Influence's `paginateLargeCast` timing flag, so
+Lobby and Werewolf rooms receive the same protection. Larger players compose
+bodies on the floor with bounded, shared-clock name labels and audience-safe
+item badges. Captions reserve those labels and head boxes and retain the speaker
+pointer. Narrow/short players reuse the compact room
+renderer with full-body cutouts and name labels in a two-column cast grid. The
+speaker stays on every page; seven other attendees fit per page, so existing
+speech holds remain sufficient and no game timing policy changes. The compact
+renderer uses the actual cue's speech duration, including Werewolf, and the
+thought's own sampled clock. Labels paginate without a counter or scrolling.
 
 Independent thoughts retain only allowed cast/artwork/room framing. They do not
 carry omitted speech, future choices or private room members. Pack rooms continue
@@ -39,7 +41,7 @@ to contain only living wolves and use their frozen character art. They do not
 substitute wolf transformation images.
 Carry the audience-filtered held-item metadata into the composition as well as
 the body/head geometry. Shared item badges stay beside their owner's visible
-head through camera movement; Mystery must never gain an omniscient Hunter's
+name through camera movement and compact cast pages; Mystery must never gain an omniscient Hunter's
 held Snipe. Item information comes only from the projected roster.
 
 Cold loads must hold the director until both scenery and cutouts are known.

@@ -152,8 +152,18 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers}: {expe
           if(bubble && caption && Number(getComputedStyle(bubble).opacity)>.1 && head.left<caption.right && head.right>caption.left && head.top<caption.bottom && head.bottom>caption.top)throw new Error(`Crowded caption obscures an attendee's head: ${image.alt}`);
         }
       }
+      const nameNodes=Array.from(document.querySelectorAll<HTMLElement>("[data-room-player-name]"));
+      if(!document.querySelector("[data-thinking-shot]"))for(const [index,name] of nameNodes.entries()) {
+        const rect=name.getBoundingClientRect();
+        if(rect.left<0 || rect.top<0 || rect.right>window.innerWidth+1 || rect.bottom>window.innerHeight+1)throw new Error("Participant name leaves the picture");
+        for(const other of nameNodes.slice(index+1)) {
+          const next=other.getBoundingClientRect();
+          if(rect.left<next.right-1 && rect.right>next.left+1 && rect.top<next.bottom-1 && rect.bottom>next.top+1)throw new Error("Participant names overlap");
+        }
+      }
       setResult(JSON.stringify({geometry:Array.from(document.querySelectorAll<HTMLElement>("[data-solo-image], [data-solo-portrait], [data-night-hunt], [data-doctor-save]")).map(node=>({tag:node.tagName,rect:node.getBoundingClientRect().toJSON()})),frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
         itemPlayers,
+        castNames:nameNodes.filter(node=>{const r=node.getBoundingClientRect();return r.left>=0 && r.top>=0 && r.right<=window.innerWidth+1 && r.bottom<=window.innerHeight+1;}).map(node=>{const copy=node.querySelector<HTMLElement>("[data-speech-page-copy]");return {id:node.dataset.roomPlayerName,page:Number(copy?.dataset.speechPage ?? 0),text:copy?.textContent ?? ""};}),
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,
         speechPages:Array.from(document.querySelectorAll<HTMLElement>("[data-speech-page]")).map(page=>({page:page.dataset.speechPage,text:page.textContent})),
         castMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-room-player]")).map(member=>member.dataset.roomPlayer),

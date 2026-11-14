@@ -544,14 +544,14 @@ test("a paused composed-room seek matches a fresh frame instead of panning from 
       }
     };
     const view = render(draw("a",0)); ready(view.container);
-    const left = () => view.container.querySelector<HTMLElement>("[data-scene-layer] img")!.style.left;
+    const left = () => JSON.stringify(Array.from(view.container.querySelectorAll<HTMLElement>("[data-room-player]")).map(player=>player.dataset.roomPlayer));
     const initial = left();
     view.rerender(draw("b",1));
     const sought = left();
     expect(sought).not.toBe(initial);
     view.unmount();
     const fresh = render(draw("b",1)); ready(fresh.container);
-    expect(fresh.container.querySelector<HTMLElement>("[data-scene-layer] img")!.style.left).toBe(sought);
+    expect(JSON.stringify(Array.from(fresh.container.querySelectorAll<HTMLElement>("[data-room-player]")).map(player=>player.dataset.roomPlayer))).toBe(sought);
   } finally {
     cleanup();
     for (const [key,descriptor] of dimensions) {
@@ -561,7 +561,7 @@ test("a paused composed-room seek matches a fresh frame instead of panning from 
   }
 });
 
-test.each([0,100,225,449,450])("Influence room camera at %i ms matches sampled exports on cold load and paused seeks", elapsedMs => {
+test.each([0,100,225,449,450])("Influence room picture at %i ms matches sampled exports on cold load and paused seeks", elapsedMs => {
   const prototype = dom.HTMLElement.prototype;
   const dimensions = new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
   try {
@@ -578,7 +578,7 @@ test.each([0,100,225,449,450])("Influence room camera at %i ms matches sampled e
         fireEvent.load(image);
       }
     };
-    const camera = (container:HTMLElement) => container.querySelector<HTMLElement>("[data-scene-layer] img")!.getAttribute("style");
+    const camera = (container:HTMLElement) => JSON.stringify(Array.from(container.querySelectorAll<HTMLElement>("[data-room-player]")).map(player=>[player.dataset.roomPlayer,player.querySelector("img")?.getAttribute("src")]));
     const exported = render(<SampledStageProvider value={{images,previousScene:null,previousSpeaker:"a",firstInScene:false}}>{frame(false,0)}</SampledStageProvider>);
     const expected = camera(exported.container); exported.unmount();
     const viewer = render(frame(false,0)); ready(viewer.container);
@@ -602,16 +602,16 @@ test.each([[390,700],[360,240]])("crowded composed rooms retain the complete cas
     Object.defineProperty(prototype,"clientHeight",{configurable:true,get:()=>height});
     const participants=Array.from({length:8},(_,index)=>({id:String(index),name:`Player ${index}`,persona:"",fullBodyReferenceUrl:"/body.png"}));
     const images={"/body.png":{width:400,height:900},[INFLUENCE_ROOMS.lobby]:{width:1600,height:900}};
-    const view=render(<SampledStageProvider value={{images,previousScene:null,previousSpeaker:null,firstInScene:true}}><VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",paginateLargeCast:true,participants,
+    for(const paginateLargeCast of [false,true]) {
+    const view=render(<SampledStageProvider value={{images,previousScene:null,previousSpeaker:null,firstInScene:true}}><VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",paginateLargeCast:paginateLargeCast ? true : undefined,participants,
       speech:{id:"crowd",playerId:"0",speaker:"Player 0",text:"Let us hear everyone."}}} rooms={[]} elapsedMs={3000} controlsInset={0}/></SampledStageProvider>);
-    expect(view.container.querySelector('[data-fit-cast="true"]')).not.toBeNull();
+    expect(view.container.querySelector("[data-paginated-portrait-room]")).not.toBeNull();
     const bodies=view.container.querySelectorAll<HTMLImageElement>("[data-room-player]");
     expect(bodies).toHaveLength(8);
-    for(const body of bodies) {
-      expect(parseFloat(body.style.left)).toBeGreaterThanOrEqual(0);
-      expect(parseFloat(body.style.top)).toBeGreaterThanOrEqual(0);
-      expect(parseFloat(body.style.left)+parseFloat(body.style.width)).toBeLessThanOrEqual(width);
-      expect(parseFloat(body.style.top)+parseFloat(body.style.height)).toBeLessThanOrEqual(height);
+    expect(view.container.querySelectorAll("[data-room-player-name]")).toHaveLength(8);
+    expect(Array.from(bodies).map(body=>body.getAttribute("data-room-player"))).toEqual(participants.map(player=>player.id));
+    for(const body of bodies)expect(body.querySelector("img")?.getAttribute("src")).toBe("/body.png");
+    view.unmount();
     }
   } finally {
     cleanup();

@@ -11,7 +11,7 @@ import {ItemBadges} from "@/components/watch/item-badges";
 import { selectVisualShot, type AcceptedVisualScene } from "@influence/engine/visual-mode";
 import { frameVisualScene, placeSceneBubble, sceneCameraProgress, type PanelTreatment, type SceneFrame, type HeadRect } from "./visual-scene-layout";
 import { TimedSpeech } from "./timed-speech";
-import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
+import { SCENE_SPEECH_START_MS, sceneSpeechOpacity, sceneSpeechDurationMs } from "./scene-speech-timing";
 import { soloPresentationMotion } from "./solo-presentation-timing";
 import { StageBackdrop, sceneBackdropSources } from "./stage-backdrop";
 import { SceneImage, panelTransition, sceneImageLayers, type SceneCameraView } from "./scene-image";
@@ -23,7 +23,7 @@ export interface SceneComposition {
   width:number; height:number; ready:boolean;
   /** Crowded social rooms retain their entire cast through ordinary speech. */
   fitCast?:boolean;
-  cast: Array<{id:string;name:string;items?:readonly string[];source:string;frame:SceneFrame;head:HeadRect}>;
+  cast: Array<{id:string;name:string;items?:readonly string[];source:string;frame:SceneFrame;head:HeadRect;labelTop:number}>;
 }
 
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
@@ -91,7 +91,6 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
     target = frameVisualScene(size.width, size.height, loaded.width, loaded.height);
     head = undefined;
   }
-  if(composition?.fitCast && size.height-controlsInset<340) target={...target,top:target.top-Math.min(48,target.height*.3)};
   const viewKey = `${scene.id}:${scene.version}:${scene.imageUrl}:${speechKey}:${imageKnown}:${loaded.width}:${loaded.height}:${target.left}:${target.top}:${target.width}:${target.height}:${head?.x}:${head?.width}:${treatment}:${navigationRevision}:${reducedMotion}`;
   const nextView: SceneCameraView = { url: imageKnown ? scene.imageUrl : "", frame: target, focusX: head ? head.x + head.width / 2 : .5, panelTreatment: treatment, shots: roomScene.shots };
   const [camera, setCamera] = useState({ key: viewKey, speechKey, from: nextView, target: nextView, startedAt: elapsedMs, direction: 0, navigationRevision, size });
@@ -147,6 +146,10 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
   const castHead = castHeads.length ? {x:Math.min(...castHeads.map(head=>head.x)),y:Math.min(...castHeads.map(head=>head.y)),
     width:Math.max(...castHeads.map(head=>head.x+head.width))-Math.min(...castHeads.map(head=>head.x)),
     height:Math.max(...castHeads.map(head=>head.y+head.height))-Math.min(...castHeads.map(head=>head.y))} : undefined;
+  if(castHead && composition) {
+    const top=Math.min(castHead.y,...composition.cast.map(player=>player.labelTop/composition.height-36/Math.max(1,framing.height)));
+    castHead.height+=castHead.y-top;castHead.y=top;
+  }
   const rawBubble = placeSceneBubble(size.width, Math.max(0, size.height - controlsInset), framing, castHead ?? head);
   const thought = useSceneThinking();
   const available = Math.max(0,size.height - controlsInset);
@@ -185,14 +188,14 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
           top:layer.frame.top + player.frame.top / composition.height * layer.frame.height,
           width:player.frame.width / composition.width * layer.frame.width,height:player.frame.height / composition.height * layer.frame.height,
           filter:"drop-shadow(0 12px 12px #0007)"}} />)}
-      {composition.cast.filter(player=>player.items?.length).map(player => {
-        const x=layer.frame.left+(player.head.x+player.head.width/2)*layer.frame.width;
-        const y=layer.frame.top+(player.head.y+player.head.height/2)*layer.frame.height;
+      {composition.cast.map(player => {
+        const x=layer.frame.left+(player.frame.left+player.frame.width/2)/composition.width*layer.frame.width;
+        const y=layer.frame.top+player.labelTop/composition.height*layer.frame.height-36;
         if(x<0 || x>size.width || y<0 || y>available) return null;
-        const left=x>size.width/2 ? x-player.head.width*layer.frame.width/2-68 : x+player.head.width*layer.frame.width/2+4;
-        return <div key={player.id} data-composed-item-player={player.id} aria-label={`${player.name} held items`} className="absolute"
-          style={{left:Math.max(8,Math.min(size.width-72,left)),top:Math.max(8,Math.min(available-24,y-10))}}>
-          <ItemBadges items={player.items}/>
+        const progress=thought ? thought.elapsedMs/Math.max(1,thought.durationMs) : Math.max(0,(readingElapsedMs-650)/Math.max(1,(speechDurationMs ?? sceneSpeechDurationMs(speech?.text ?? ""))-1050));
+        return <div key={player.id} data-room-player-name={player.id} data-composed-item-player={player.items?.length ? player.id : undefined} aria-label={player.name} className="absolute flex h-8 items-center gap-0.5 rounded bg-black/80 px-1 text-center text-sm leading-4 text-white"
+          style={{left:Math.max(8,Math.min(size.width-120,x-56)),top:Math.max(8,Math.min(available-40,y)),width:112}}>
+          <TimedSpeech text={player.name} elapsedMs={readingElapsedMs} progress={progress} pageCounter={false} className="h-full min-w-0 text-sm leading-4"/><ItemBadges items={player.items} compact/>
         </div>;
       })}
     </div>)}

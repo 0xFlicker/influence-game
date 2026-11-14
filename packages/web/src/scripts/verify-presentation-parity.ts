@@ -480,8 +480,26 @@ try {
       const winnerRemaining = item.cue.picture.kind === "influence" && item.cue.picture.beat?.kind === "winner" ? item.cue.picture.beat.standings.length : 0;
       const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
       const cameraSamples = item.name.startsWith("composed-camera-") ? timeline.flatMap(row=>[0,3,7,13,14].map(offset=>Math.min(row.endFrame-1,row.startFrame+offset))) : [];
-      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...(item.name.startsWith("lone-wolf-") ? [Math.floor(manifest.range.untilFrame*.65)] : []),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...cameraSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
+      const roomCast=item.cue.picture.kind==="thinking" ? item.cue.picture.room?.players ?? [] : item.cue.picture.kind==="influence" && item.cue.picture.beat?.kind==="portrait-room" ? item.cue.picture.beat.participants : item.cue.picture.kind==="werewolf" ? werewolfPortraitRoom(item.cue.picture.cue)?.participants ?? [] : [];
+      const verifyNames=item.name.startsWith("composed-") && !item.sequence && !(item.cue.picture.kind==="thinking" && width>=640 && height>=394 && roomCast.length<=8);
+      const nameSamples:number[]=[];
+      if(verifyNames)for(const player of roomCast) {
+        const namePages=Object.values(pages).findLast(value=>value.join("")===player.name);
+        if(!namePages?.length)throw new Error(`Missing measured participant name: ${player.name}`);
+        const weights=namePages.map(page=>Math.max(1,page.trim().split(/\s+/u).length)),total=weights.reduce((a,b)=>a+b,0);let before=0;
+        for(const weight of weights) {
+          const progress=(before+weight/2)/total;before+=weight;
+          if(thought)nameSamples.push(Math.round((thought.insertAt+thought.readAtMs+progress*(thought.hideAtMs-thought.readAtMs))*fps/1000));
+          else {
+            const source=650+progress*(item.cue.timing.baseDurationMs-1050);
+            const part=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
+            if(part)nameSamples.push(Math.round((part.startMs+(source-part.sourceStartMs)/(part.sourceEndMs-part.sourceStartMs)*(part.endMs-part.startMs))*fps/1000));
+          }
+        }
+      }
+      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...(item.name.startsWith("lone-wolf-") ? [Math.floor(manifest.range.untilFrame*.65)] : []),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...cameraSamples,...nameSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
       const observedCast = new Set<string>();
+      const observedNames=new Map<string,Map<number,string>>();
       const observedWinnerCast = new Set<string>();
       const observedDialoguePages = new Set<string>(), observedRoomPages = new Set<string>();
       for(const frame of samples) {
@@ -489,7 +507,7 @@ try {
         const frameAudits:unknown[]=[];
         await renderStill({serveUrl,composition:viewer,inputProps,frame,output:paths.viewer,imageFormat:"png",puppeteerInstance:browser});
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:paths.export,imageFormat:"png",puppeteerInstance:browser,
-          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); frameAudits.push(data); for (const id of data.castMembers ?? []) observedCast.add(id); for (const id of data.winnerMembers ?? []) observedWinnerCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
+          onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); frameAudits.push(data); for(const name of data.castNames ?? []){if(!observedNames.has(name.id))observedNames.set(name.id,new Map());observedNames.get(name.id)!.set(name.page,name.text);} for (const id of data.castMembers ?? []) observedCast.add(id); for (const id of data.winnerMembers ?? []) observedWinnerCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
         await writeFile(`${prefix}-${frame}-audit.json`,JSON.stringify(frameAudits,null,2));
         const meanDifference=difference(await pixels(paths.viewer),await pixels(paths.export));
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
@@ -507,6 +525,12 @@ try {
       if(item.name === "influence-winner" && winnerPlayers.slice(1).some(player=>!observedWinnerCast.has(player.id))) throw new Error(`Not every winner-scene cast member appeared: ${[...observedWinnerCast].join(", ")}`);
       if((item.name.startsWith("format-huddle-large") || item.name === "format-huddle-six-thought") && (observedRoomPages.size !== expectedRoomPages || observedDialoguePages.size !== expectedDialoguePages))
         throw new Error(`Not every huddle page appeared: room ${observedRoomPages.size}/${expectedRoomPages}, dialogue ${observedDialoguePages.size}/${expectedDialoguePages}`);
+      if(verifyNames)for(const player of roomCast) {
+        if(!observedCast.has(player.id))throw new Error(`Participant never appeared: ${player.id}`);
+        const seen=observedNames.get(player.id);
+        const text=seen ? [...seen].sort(([a],[b])=>a-b).map(([,text])=>text).join("") : "";
+        if(text.replace(/\s/gu,"")!==player.name.replace(/\s/gu,""))throw new Error(`Participant name was not fully shown: ${player.name} => ${text}`);
+      }
       pageCoverage.push({name:item.name,width,height,expectedDialoguePages,observedDialoguePages:[...observedDialoguePages],samples});
       await writeFile(join(output,"page-coverage.json"),JSON.stringify(pageCoverage,null,2));
       if (expectedDialoguePages > 0 && (item.name === "page-werewolf-ballot" || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-") || item.name.startsWith("composed-")) && observedDialoguePages.size !== expectedDialoguePages)

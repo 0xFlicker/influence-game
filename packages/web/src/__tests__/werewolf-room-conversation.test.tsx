@@ -222,18 +222,22 @@ test("private pack composes only living wolves from frozen body art, never trans
 });
 
 test.each(["omniscient","mystery"] as const)("composed village rooms retain audience-filtered Hunter items for %s", async audience => {
-  Object.defineProperty(dom.HTMLElement.prototype,"clientWidth",{configurable:true,get:()=>1280});
-  Object.defineProperty(dom.HTMLElement.prototype,"clientHeight",{configurable:true,get:()=>720});
   const projected=projectWerewolfProductionWatch(await completedHunterFixture("held",{conversation:true}),audience);
   const moment=projected.moments.find(moment=>werewolfMomentCues(moment).some(cue=>!werewolfCueMoment(cue).pack && werewolfPortraitRoom(cue)));
   if(!moment)throw new Error("Expected Hunter village conversation");
   moment.snapshot.players=moment.snapshot.players.map(player=>({...player,fullBodyReferenceUrl:"/body.png"}));
   const allowed=moment.snapshot.players.filter(player=>player.alive && player.items?.includes("snipe"));
   expect(allowed).toHaveLength(audience==="omniscient" ? 1 : 0);
+  for(const [width,height] of [[1280,720],[390,700],[360,240]]) {
+  Object.defineProperty(dom.HTMLElement.prototype,"clientWidth",{configurable:true,get:()=>width});
+  Object.defineProperty(dom.HTMLElement.prototype,"clientHeight",{configurable:true,get:()=>height});
   const view=render(<SampledStageProvider value={{images:{"/body.png":{width:600,height:900},[WEREWOLF_ROOMS.village]:{width:1600,height:900}},previousScene:null,previousSpeaker:null,firstInScene:true}}>{frame(moment)}</SampledStageProvider>);
   expect(view.container.querySelector("[data-composed-room]")).not.toBeNull();
   expect(view.container.querySelectorAll('[data-item-badge="snipe"]')).toHaveLength(allowed.length);
   if(allowed.length)expect(view.container.querySelector('[data-composed-item-player]')?.getAttribute("data-composed-item-player")).toBe(allowed[0]!.id);
+  expect(view.container.querySelectorAll("[data-room-player-name]")).toHaveLength(moment.snapshot.players.filter(player=>player.alive).length);
+  view.unmount();
+  }
 });
 
 test("an accepted visual discussion still uses its scene, while an uncovered speaker uses the room", () => {
