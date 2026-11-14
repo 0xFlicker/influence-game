@@ -641,9 +641,10 @@ test("compact full-body rooms reserve the expanded player's transport inset",()=
  }finally {cleanup();for(const [key,descriptor]of dimensions){if(descriptor)Object.defineProperty(prototype,key,descriptor);else Reflect.deleteProperty(prototype,key);}}
 });
 
-test("large Lobby portrait fallback keeps captions throughout the shared reading hold",()=>{
+test("large Lobby without full-body art retains the circular gallery and original caption timing",()=>{
  const participants=Array.from({length:12},(_,index)=>({id:String(index),name:`P${index}`,persona:""}));
  const view=render(<VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:null,roomLabel:"Lobby",participants,speech:{id:"fallback",playerId:"0",speaker:"P0",text:"Yes."}}} rooms={[]} elapsedMs={6000} controlsInset={0}/>);
- expect(view.container.querySelector("[data-speech-bubble]")?.textContent).toContain("Yes.");
- expect(Number(view.container.querySelector<HTMLElement>("[data-speech-bubble]")?.style.opacity)).toBeGreaterThan(.9);
+ expect(view.container.querySelector("[data-paginated-portrait-room]")).toBeNull();
+ expect(view.container.querySelectorAll("[data-thinking-camera] [data-room-player]")).toHaveLength(12);
+ expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
 });

@@ -6,10 +6,9 @@ import type { VisualWatchData } from "./visual-watch-model";
 
 const resolveShot = (shot: VisualShot): VisualShot => ({ ...shot, imageUrl: resolveApiUrl(shot.imageUrl) });
 
-/** Fetch current publications quietly; an active beat always keeps its initial media. */
-export function useVisualWatch(gameId: string, enabled: boolean, live: boolean, beatKey: string | undefined, anonymous = false) {
+/** Fetch frozen-game publications before compiling artwork-dependent presentation timing. */
+export function useVisualWatchSnapshot(gameId: string, enabled: boolean, live: boolean, anonymous = false) {
   const [snapshot, setSnapshot] = useState<{ gameId: string; data: VisualWatchData } | null>(null);
-  const [choice, setChoice] = useState<{ gameId: string; beatKey: string | undefined; data: VisualWatchData | null } | null>(null);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
@@ -36,10 +35,14 @@ export function useVisualWatch(gameId: string, enabled: boolean, live: boolean, 
     void refresh();
     return () => { cancelled = true; controller.abort(); if (timer) clearTimeout(timer); };
   }, [gameId, enabled, live, anonymous]);
-  if (!choice || choice.gameId !== gameId || choice.beatKey !== beatKey || (enabled && !choice.data && snapshot?.gameId === gameId)) {
-    const next = { gameId, beatKey, data: enabled && snapshot?.gameId === gameId ? snapshot.data : null };
-    setChoice(next);
-    return next.data;
+  return enabled && snapshot?.gameId === gameId ? snapshot.data : null;
+}
+
+/** Freeze visible media for the active beat after compiling cues from the same asset snapshot. */
+export function useVisualWatchChoice(gameId:string,beatKey:string|undefined,data:VisualWatchData|null) {
+  const [choice,setChoice]=useState<{gameId:string;beatKey:string|undefined;data:VisualWatchData|null}|null>(null);
+  if(!choice || choice.gameId!==gameId || choice.beatKey!==beatKey || (!choice.data && data)) {
+    const next={gameId,beatKey,data};setChoice(next);return data;
   }
-  return enabled ? choice.data : null;
+  return choice.data;
 }

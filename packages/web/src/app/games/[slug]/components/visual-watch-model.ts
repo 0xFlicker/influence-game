@@ -31,11 +31,11 @@ export function isSoloTranscript(message: TranscriptEntry): boolean {
     && (message.phase === "RETROSPECTIVE" || message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && message.phase !== "LOBBY" && !isMingleDialogue(message))))));
 }
 
-export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = [], frames: readonly GameWatchReplayFrame[] = []) {
+export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = [], frames: readonly GameWatchReplayFrame[] = [], composeRooms = false) {
   if (message.allianceIntroduction) return allianceIntroductionDurationMs(message.text, message.allianceIntroduction.memberIds.length);
   const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
   const lobbyCount=largeLobbyCastCount(message,players,frames);
-  if(lobbyCount>8)return portraitRoomDurationMs(text,lobbyCount);
+  if(composeRooms && lobbyCount>8)return portraitRoomDurationMs(text,lobbyCount);
   return isSoloTranscript(message) ? soloPresentationDurationMs(text)
     : message.anonymous || message.speakerPlayerId || message.fromPlayerId
       ? largeSocialCastCount(message) > 4 ? portraitRoomDurationMs(text, largeSocialCastCount(message)) : sceneSpeechDurationMs(text) : visualSpeechDurationMs(text);

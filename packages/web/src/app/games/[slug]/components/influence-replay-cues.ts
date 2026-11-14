@@ -17,6 +17,7 @@ export function buildClassicPresentationCues(
   scenes: ReplayScene[],
   replayFrames: readonly GameWatchReplayFrame[],
   players: readonly GamePlayer[] = [],
+  composeRooms = false,
 ): ClassicPresentationCue[] {
   const framesByRound = new Map<number, GameWatchReplayFrame[]>();
   for (const frame of replayFrames) {
@@ -38,9 +39,9 @@ export function buildClassicPresentationCues(
       phase: scene.phase,
       kind: "classic_transcript" as const,
       stage: "done" as const,
-      baseDurationMs: transcriptPresentationDurationMs(message, players,replayFrames),
-      ...(largeSocialCastCount(message) > 4 && {minimumDurationMs:transcriptPresentationDurationMs(message, players,replayFrames), readingHold:true as const, minimumThinkingMs:socialCastMinimumThinkingMs(message)}),
-      ...(largeLobbyCastCount(message,players,replayFrames)>8 && {minimumDurationMs:transcriptPresentationDurationMs(message,players,replayFrames),readingHold:true as const,minimumThinkingMs:portraitRoomPageCount(largeLobbyCastCount(message,players,replayFrames))*PORTRAIT_ROOM_PAGE_HOLD_MS}),
+      baseDurationMs: transcriptPresentationDurationMs(message, players,replayFrames,composeRooms),
+      ...(largeSocialCastCount(message) > 4 && {minimumDurationMs:transcriptPresentationDurationMs(message, players,replayFrames,composeRooms), readingHold:true as const, minimumThinkingMs:socialCastMinimumThinkingMs(message)}),
+      ...(composeRooms && largeLobbyCastCount(message,players,replayFrames)>8 && {minimumDurationMs:transcriptPresentationDurationMs(message,players,replayFrames,composeRooms),readingHold:true as const,minimumThinkingMs:portraitRoomPageCount(largeLobbyCastCount(message,players,replayFrames))*PORTRAIT_ROOM_PAGE_HOLD_MS}),
       speechPresentation: isSoloTranscript(message) ? "solo" as const
         : message.anonymous || message.speakerPlayerId || message.fromPlayerId ? "scene" as const : undefined,
       sceneIndex,

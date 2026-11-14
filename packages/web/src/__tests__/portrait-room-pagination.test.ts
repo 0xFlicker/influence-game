@@ -47,7 +47,7 @@ test("recorded speech and thinking leave enough clock time for large cast pages"
 test("short large Lobby contributions reserve complete cast pages through viewer and export timing",()=>{
   const players=Array.from({length:12},(_,index)=>({id:`p${index}`,name:`Player ${index}`,persona:"",status:"alive" as const,shielded:false}));
   const message:TranscriptEntry={id:1,entrySequence:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:"p0",fromPlayerId:"p0",fromPlayerName:"Player 0",toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
-  const cue=buildClassicPresentationCues(buildStoryScenes([message]),[],players)[0]!;
+  const cue=buildClassicPresentationCues(buildStoryScenes([message]),[],players,true)[0]!;
   expect(cue.baseDurationMs).toBe(15050);
   expect(cue.minimumDurationMs).toBe(15050);
   expect(cue.minimumThinkingMs).toBe(14000);
@@ -59,4 +59,27 @@ test("short large Lobby contributions reserve complete cast pages through viewer
   expect(exported.timing.minimumThinkingMs).toBe(cue.minimumThinkingMs);
   const [timeline]=compileTiming([{...exported.timing,recording:{assetId:"voice",durationMs:500}}],parseTimingProfile({motionScale:.1}),30);
   expect(timeline!.endMs-timeline!.startMs).toBeGreaterThanOrEqual(15050);
+});
+
+test("portrait-only and mixed-art games keep original Lobby timing in viewer and exports",()=>{
+ const players=Array.from({length:12},(_,index)=>({id:`p${index}`,name:`P${index}`,persona:"",status:"alive" as const,shielded:false}));
+ const message:TranscriptEntry={id:1,entrySequence:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:"p0",fromPlayerId:"p0",fromPlayerName:"P0",toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
+ const viewer=buildClassicPresentationCues(buildStoryScenes([message]),[],players)[0]!;
+ expect(viewer.baseDurationMs).toBeLessThan(5000);
+ expect(viewer.minimumDurationMs).toBeUndefined();expect(viewer.minimumThinkingMs).toBeUndefined();expect(viewer.readingHold).toBeUndefined();
+ for(const fullBodies of [{},Object.fromEntries(players.slice(0,-1).map(player=>[player.id,"/body.png"]))]){
+  const cue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},messages:[message],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies}}).find(row=>row.speech?.text===message.text)!;
+  expect(cue.timing.baseDurationMs).toBe(viewer.baseDurationMs);expect(cue.timing.minimumDurationMs).toBeUndefined();expect(cue.timing.minimumThinkingMs).toBeUndefined();
+  if(cue.picture.kind!=="influence" || cue.picture.beat?.kind!=="portrait-room")throw new Error("Expected the original portrait room");
+  expect(cue.picture.beat.participants.every(player=>!player.fullBodyReferenceUrl)).toBe(true);
+ }
+});
+
+test("a huddle with complete room artwork still keeps portraits when another frozen contestant lacks a body",()=>{
+ const players=Array.from({length:12},(_,index)=>({id:`p${index}`,name:`P${index}`,persona:"",status:"alive" as const,shielded:false}));
+ const message:TranscriptEntry={id:1,entrySequence:1,gameId:"g",round:1,phase:"MINGLE",scope:"huddle",speakerPlayerId:"p0",fromPlayerId:"p0",fromPlayerName:"P0",toPlayerIds:["p1","p2","p3"],text:"Let us talk.",timestamp:1};
+ const cue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},messages:[message],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies:Object.fromEntries(players.slice(0,-1).map(player=>[player.id,"/body.png"]))}}).find(row=>row.speech?.text===message.text)!;
+ if(cue.picture.kind!=="influence" || cue.picture.beat?.kind!=="portrait-room")throw new Error("Expected the original portrait room");
+ expect(cue.picture.beat.participants).toHaveLength(4);
+ expect(cue.picture.beat.participants.every(player=>!player.fullBodyReferenceUrl)).toBe(true);
 });

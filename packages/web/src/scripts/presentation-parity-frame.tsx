@@ -19,7 +19,7 @@ import {werewolfPortraitRoom, werewolfBackdrop} from "../components/games/werewo
 
 export type ParityProps = {manifest:ReplayManifest; reference:ExportCue; references?:ExportCue[]; controlsInset?:number; prepare?:boolean};
 
-function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, controlsInset=0}: {expectedFormat?:string; expectedPaged:boolean; expectedItemPlayers?:string[];controlsInset?:number}) {
+function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, controlsInset=0, expectedCircular=false}: {expectedFormat?:string; expectedPaged:boolean; expectedItemPlayers?:string[];controlsInset?:number;expectedCircular?:boolean}) {
   const frame = useCurrentFrame();
   const [handle] = useState(() => delayRender("Format context geometry"));
   const [result,setResult] = useState<string|null>(null);
@@ -40,6 +40,10 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
         const missing = expectedFormat && !document.querySelector("[data-active-format-overlay]") || expectedPaged && !document.querySelector("[data-paginated-portrait-room], [data-composed-room]");
         if (!pending && !roomPending && !missing) break;
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      }
+      if(expectedCircular) {
+        if(document.querySelector("[data-paginated-portrait-room], [data-composed-room]"))throw new Error("Portrait-only Lobby was replaced with compact staging");
+        if(document.querySelectorAll("[data-thinking-camera] [data-room-player]").length!==12)throw new Error("Portrait-only Lobby lost its twelve-player ring");
       }
       const pill = document.querySelector<HTMLElement>("[data-active-format-overlay]");
       const label = document.querySelector<HTMLElement>("[data-room-context-label]");
@@ -65,7 +69,7 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
         }
       }
       const names = Array.from(document.querySelectorAll<HTMLElement>("[data-room-player] > p"));
-      if (names.length > 5 || document.querySelector("[data-paginated-portrait-room]")) {
+      if (!expectedCircular && (names.length > 5 || document.querySelector("[data-paginated-portrait-room]"))) {
         const stage = document.querySelector<HTMLElement>("[data-influence-stage], [data-werewolf-stage]")!.getBoundingClientRect();
         const overlaps = (a:DOMRect,b:DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
         const speech = document.querySelector<HTMLElement>("[data-speech-bubble]");
@@ -173,7 +177,7 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
         winnerMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-winner-player]")).map(member=>member.dataset.winnerPlayer)}));
       continueRender(handle);
     })().catch(cancelRender);
-  },[frame,handle,expectedFormat,expectedPaged,expectedItemPlayers,controlsInset]);
+  },[frame,handle,expectedFormat,expectedPaged,expectedItemPlayers,controlsInset,expectedCircular]);
   return result ? <Artifact filename={`format-audit-${frame}.json`} content={result} /> : null;
 }
 
@@ -229,7 +233,7 @@ function ViewerFrame({manifest,reference:singleReference,references,controlsInse
         <VisualPresentationFrame previousSpeakerId={reference.previousRoomSpeakerId !== undefined ? reference.previousRoomSpeakerId : previousPortraitRoomSpeaker(picture.beat, previousPicture?.kind === "influence" ? previousPicture.beat ?? null : null)} beat={picture.beat} rooms={picture.rooms} elapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} fullscreen controlsInset={controlsInset} roster={picture.roster} voteLedger={picture.ledger ?? undefined}/>
       </SceneThinkingProvider></div>
     </> : null}
-    <FormatAudit key={frame} controlsInset={controlsInset} expectedItemPlayers={manifest.game.slug.startsWith("composed-hunter-held-") && picture.kind==="werewolf" ? picture.cue.moment.snapshot.players.filter(player=>player.alive && player.items?.length).map(player=>player.id) : undefined} expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
+    <FormatAudit key={frame} expectedCircular={manifest.game.slug.startsWith("composed-lobby-fallback")} controlsInset={controlsInset} expectedItemPlayers={manifest.game.slug.startsWith("composed-hunter-held-") && picture.kind==="werewolf" ? picture.cue.moment.snapshot.players.filter(player=>player.alive && player.items?.length).map(player=>player.id) : undefined} expectedFormat={reference.activeFormatId} expectedPaged={picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true && picture.beat.participants.length > 4 && (manifest.width < 600 || manifest.height < 374 || picture.beat.participants.length > 8)} />
   </div>;
 }
 
@@ -238,7 +242,7 @@ function ExportFrame(props:ParityProps) {
   const cue=props.manifest.cues[cueIndexAt(props.manifest.timeline,time)]!, picture=cue.picture;
   const count=picture.kind === "thinking" ? picture.room?.players.length ?? 0 : picture.kind === "influence" && picture.beat?.kind === "portrait-room" ? picture.beat.participants.length : 0;
   const paginatable=picture.kind === "thinking" ? picture.room?.paginateLargeCast === true : picture.kind === "influence" && picture.beat?.kind === "portrait-room" && picture.beat.paginateLargeCast === true;
-  return <><ReplayFrame {...props} />{!props.prepare && <FormatAudit key={frame} expectedItemPlayers={props.manifest.game.slug.startsWith("composed-hunter-held-") && picture.kind==="werewolf" ? picture.cue.moment.snapshot.players.filter(player=>player.alive && player.items?.length).map(player=>player.id) : undefined} expectedFormat={cue.activeFormatId} expectedPaged={paginatable && count > 4 && (props.manifest.width < 600 || props.manifest.height < 374 || count > 8)} />}</>;
+  return <><ReplayFrame {...props} />{!props.prepare && <FormatAudit key={frame} expectedCircular={props.manifest.game.slug.startsWith("composed-lobby-fallback")} expectedItemPlayers={props.manifest.game.slug.startsWith("composed-hunter-held-") && picture.kind==="werewolf" ? picture.cue.moment.snapshot.players.filter(player=>player.alive && player.items?.length).map(player=>player.id) : undefined} expectedFormat={cue.activeFormatId} expectedPaged={paginatable && count > 4 && (props.manifest.width < 600 || props.manifest.height < 374 || count > 8)} />}</>;
 }
 
 /** Exercise the real Studio Player with an isolated selected moment. */

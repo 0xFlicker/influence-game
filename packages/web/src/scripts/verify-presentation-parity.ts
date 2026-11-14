@@ -90,8 +90,10 @@ if (process.env.COMPOSED_ROOM_PARITY === "1") {
   cases.push({name:"composed-lobby-short",reference:lobbyCue,cue:lobbyCue});
   cases.push({name:"composed-lobby-short-thought",reference:lobbyCue,cue:thinkingSegment(lobbyCue,"composed-lobby-short-thought",lobby.thinking!,largePlayers[0]!.id)});
   const fallbackPlayers=largePlayers.map((player,index)=>({...player,name:`P${index}`}));
-  const fallbackCue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:fallbackPlayers},messages:[{...lobby,fromPlayerName:"P0"}],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}}).find(cue=>cue.speech?.text===lobby.text)!;
+  const fallbackMessage={...lobby,fromPlayerName:"P0",text:"I want to hear what everyone thinks before we make a decision.",thinking:"I want to answer with a small, genuine detail that builds our shared connection. A sensory memory feels warmer than turning the moment toward strategy."};
+  const fallbackCue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:fallbackPlayers},messages:[fallbackMessage],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}}).find(cue=>cue.speech?.text===fallbackMessage.text)!;
   cases.push({name:"composed-lobby-fallback",reference:fallbackCue,cue:fallbackCue});
+  cases.push({name:"composed-lobby-fallback-thought",reference:fallbackCue,cue:thinkingSegment(fallbackCue,"composed-lobby-fallback-thought",fallbackMessage.thinking,largePlayers[0]!.id)});
   const eightPlayers = largePlayers.slice(0,8);
   const eightHuddle:TranscriptEntry = {...largeHuddle,toPlayerIds:eightPlayers.slice(1).map(player=>player.id),
     allianceSession:{...largeHuddle.allianceSession!,memberIds:eightPlayers.map(player=>player.id)}};
@@ -408,7 +410,7 @@ try {
       }
       const expectedCast = item.name === "format-huddle-five" ? fiveMembers : huddleMembers;
       const castPages = portraitRoomPageCount(expectedCast.length);
-      const castSamples = item.name==="composed-lobby-fallback" ? Array.from({length:portraitRoomPageCount(largePlayers.length)},(_,page)=>Math.floor((650+(item.cue.timing.baseDurationMs-1050)*(page+.5)/portraitRoomPageCount(largePlayers.length))*fps/1000)) : ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
+      const castSamples = ["format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-recorded"].includes(item.name) ? Array.from({length:castPages},(_,page) => Math.floor((650 + (item.cue.timing.baseDurationMs - 1050) * (page + .5) / castPages) * fps / 1000))
         : (item.name.startsWith("format-huddle-large-thought") || item.name === "format-huddle-six-thought") && thought ? Array.from({length:castPages},(_,page) => Math.floor((thought.readAtMs + (thought.hideAtMs - thought.readAtMs) * (page + .5) / castPages) * fps / 1000)) : [];
       let dialogueSamples:number[]=[];
       let roomSamples:number[]=[];
@@ -486,7 +488,7 @@ try {
       }
       const winnerRemaining = item.cue.picture.kind === "influence" && item.cue.picture.beat?.kind === "winner" ? item.cue.picture.beat.standings.length : 0;
       const winnerSamples = item.name === "influence-winner" ? Array.from({length:Math.ceil(winnerRemaining/WINNER_PAGE_SIZE)},(_,page)=>Math.min(manifest.range.untilFrame-1,Math.floor((page+.5)*WINNER_PAGE_MS*fps/1000))) : [];
-      const cameraSamples = item.name==="composed-lobby-fallback" ? [180] : item.name.startsWith("composed-camera-") ? timeline.flatMap(row=>[0,3,7,13,14].map(offset=>Math.min(row.endFrame-1,row.startFrame+offset))) : [];
+      const cameraSamples = item.name.startsWith("composed-camera-") ? timeline.flatMap(row=>[0,3,7,13,14].map(offset=>Math.min(row.endFrame-1,row.startFrame+offset))) : [];
       const roomCast=item.cue.picture.kind==="thinking" ? item.cue.picture.room?.players ?? [] : item.cue.picture.kind==="influence" && item.cue.picture.beat?.kind==="portrait-room" ? item.cue.picture.beat.participants : item.cue.picture.kind==="werewolf" ? werewolfPortraitRoom(item.cue.picture.cue)?.participants ?? [] : [];
       const verifyNames=item.name.startsWith("composed-") && roomCast.every(player=>player.fullBodyReferenceUrl) && !item.sequence && !(item.cue.picture.kind==="thinking" && width>=640 && height>=394);
       const nameSamples:number[]=[];
@@ -563,7 +565,7 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-lobby-fallback","composed-lobby-short","composed-lobby-short-thought","composed-large-reduced","composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-lobby-fallback","composed-lobby-fallback-thought","composed-lobby-short","composed-lobby-short-thought","composed-large-reduced","composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
         if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",imageFormat:item.name.startsWith("composed-") ? "png" : undefined,crf:item.name === "influence-winner" || item.name.startsWith("composed-") ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});

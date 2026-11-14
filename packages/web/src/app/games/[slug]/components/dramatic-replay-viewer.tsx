@@ -32,7 +32,7 @@ import { WatchTransport } from "@/components/watch/watch-transport";
 import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
 import { VisualPresentation, presentationBeatOwnsBackdrop } from "./visual-presentation";
 import { compileVoteLedgers } from "./vote-ledger-model";
-import { useVisualWatch } from "./use-visual-watch";
+import { useVisualWatchSnapshot,useVisualWatchChoice } from "./use-visual-watch";
 import { previousPortraitRoomSpeaker, visualWatchPresentation } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
 import type {
@@ -136,6 +136,8 @@ function DramaticReplayTheater({
   anonymous = false,
   shared,
 }: DramaticReplayViewerProps & {shared?:ReplayShareState; preferences: ReturnType<typeof useWatchPreferences>}) {
+  const visualSnapshot=useVisualWatchSnapshot(game.id,true,live,anonymous);
+  const composeRooms=players.length>0 && players.every(player=>visualSnapshot?.fullBodies?.[player.id]);
   const initialSequenceSeekAppliedRef = useRef(false);
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
@@ -158,8 +160,8 @@ function DramaticReplayTheater({
   );
   const scenes = useMemo(() => buildStoryScenes(filteredMessages), [filteredMessages]);
   const classicCues = useMemo(
-    () => buildClassicPresentationCues(scenes, replayFrames, players),
-    [replayFrames, scenes, players],
+    () => buildClassicPresentationCues(scenes, replayFrames, players,composeRooms),
+    [replayFrames, scenes, players,composeRooms],
   );
   const formatCompilation = useMemo(
     () => compileFormatPresentationPrefix({
@@ -326,7 +328,7 @@ function DramaticReplayTheater({
     [canonicalReplayFrame, eliminatedIds, isFormatGame, players, live, openingCue],
   );
 
-  const visualData = useVisualWatch(game.id, true, live, activeCue?.key, anonymous);
+  const visualData = useVisualWatchChoice(game.id,activeCue?.key,visualSnapshot);
   const priorLobbyMessages = formatCue ? lobbyMessages(formatCue.round, formatCue.canonicalSequence) : [];
   const visual = visualWatchPresentation(
     visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, replayPlayers, priorLobbyMessages, replayFrames,

@@ -301,10 +301,13 @@ identity labels would overlap at the requested geometry. Names are
 literal identity text; each guest completes its name pages during its own cast
 page, while the persistent speaker uses the whole contribution clock. Large
 Lobby cues reserve at least 3.5 seconds per compact cast page in their canonical
-presentation timing, including recorded speech and isolated thinking cuts. Large portrait-only Lobby rooms use their existing timed cast pages and retain
-the same caption hold when a body reference is missing. The shared hold covers
-the smaller portrait page capacity as well as full-body pages. Compact composed rooms
-reserve the visible transport-control inset before sizing cast and captions.
+presentation timing, including recorded speech and isolated thinking cuts, only
+when the entire frozen game cast has full-body references. The viewer compiles
+this timing from the same media snapshot used by export preparation, then freezes
+visible images for each active beat. Games with any missing full-body reference
+retain their existing portrait-ring layout, thinking focus, caption timing and
+existing Mingle/huddle pagination rules. Full-body compact rooms reserve the
+visible transport-control inset before sizing cast and captions.
 No provider request or generated image is involved. Saved head boxes follow the
 source image; older art uses the same presentation head position as solo shots.
 
