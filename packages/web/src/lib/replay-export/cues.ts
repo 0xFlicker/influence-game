@@ -159,7 +159,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
   }
   const { game, messages, frames, visual } = source;
   const scenes = buildStoryScenes(messages);
-  const classic = buildClassicPresentationCues(scenes, frames, game.players,game.players.length>0 && game.players.every(player=>visual.fullBodies?.[player.id]));
+  const classic = buildClassicPresentationCues(scenes, frames, game.players,{composeRooms:game.players.length>0 && game.players.every(player=>visual.fullBodies?.[player.id]),gameKernel:game.gameKernel ?? "classic",messages});
   const roster = game.players.map((player) => ({
     id: player.id,
     name: player.name,

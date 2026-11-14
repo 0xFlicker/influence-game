@@ -17,8 +17,9 @@ export function buildClassicPresentationCues(
   scenes: ReplayScene[],
   replayFrames: readonly GameWatchReplayFrame[],
   players: readonly GamePlayer[] = [],
-  composeRooms = false,
+  context?:{composeRooms:boolean;gameKernel:"classic"|"format";messages:readonly TranscriptEntry[]},
 ): ClassicPresentationCue[] {
+  const composeRooms=context?.composeRooms ?? false;
   const framesByRound = new Map<number, GameWatchReplayFrame[]>();
   for (const frame of replayFrames) {
     const roundFrames = framesByRound.get(frame.round) ?? [];
@@ -27,26 +28,37 @@ export function buildClassicPresentationCues(
   }
   const messagesBySequence = new Map(scenes.flatMap(scene => scene.messages.map(message => [message.entrySequence, message] as const)));
   return scenes.flatMap((scene, sceneIndex) =>
-    scene.messages.map((message, messageIndex) => ({
-      source: "classic" as const,
-      liveCatchUp: message.liveCatchUp,
-      key: `classic:${message.entrySequence ?? message.id}:done`,
-      houseSummary: message.dialogueKind === "house_summary",
-      canonicalSequence: (message.allianceIntroduction ? messagesBySequence.get(message.allianceIntroduction.beforeEntrySequence)?.firstDurableEventSequence : undefined) ?? message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
-        framesByRound.get(scene.round) ?? [], message.timestamp,
-      ),
-      round: scene.round,
-      phase: scene.phase,
-      kind: "classic_transcript" as const,
-      stage: "done" as const,
-      baseDurationMs: transcriptPresentationDurationMs(message, players,replayFrames,composeRooms),
-      ...(largeSocialCastCount(message) > 4 && {minimumDurationMs:transcriptPresentationDurationMs(message, players,replayFrames,composeRooms), readingHold:true as const, minimumThinkingMs:socialCastMinimumThinkingMs(message)}),
-      ...(composeRooms && largeLobbyCastCount(message,players,replayFrames)>8 && {minimumDurationMs:transcriptPresentationDurationMs(message,players,replayFrames,composeRooms),readingHold:true as const,minimumThinkingMs:portraitRoomPageCount(largeLobbyCastCount(message,players,replayFrames))*PORTRAIT_ROOM_PAGE_HOLD_MS}),
-      speechPresentation: isSoloTranscript(message) ? "solo" as const
-        : message.anonymous || message.speakerPlayerId || message.fromPlayerId ? "scene" as const : undefined,
-      sceneIndex,
-      messageIndex,
-    })),
+    scene.messages.map((message, messageIndex) => {
+      let timingPlayers=players;
+      if(composeRooms && context?.gameKernel==="classic" && message.phase==="LOBBY") {
+        const index=context.messages.findIndex(entry=>entry.id===message.id);
+        if(index<0)throw new Error(`Lobby ${message.id} is missing from its historical transcript`);
+        const eliminated=classicEliminatedPlayerIds(context.messages.slice(0,index+1),players);
+        timingPlayers=players.map(player=>({...player,status:eliminated.has(player.id) ? "eliminated" as const : "alive" as const}));
+      }
+      const duration=transcriptPresentationDurationMs(message,timingPlayers,replayFrames,composeRooms);
+      const lobbyCount=composeRooms ? largeLobbyCastCount(message,timingPlayers,replayFrames) : 0;
+      return {
+        source: "classic" as const,
+        liveCatchUp: message.liveCatchUp,
+        key: `classic:${message.entrySequence ?? message.id}:done`,
+        houseSummary: message.dialogueKind === "house_summary",
+        canonicalSequence: (message.allianceIntroduction ? messagesBySequence.get(message.allianceIntroduction.beforeEntrySequence)?.firstDurableEventSequence : undefined) ?? message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
+          framesByRound.get(scene.round) ?? [], message.timestamp,
+        ),
+        round: scene.round,
+        phase: scene.phase,
+        kind: "classic_transcript" as const,
+        stage: "done" as const,
+        baseDurationMs: duration,
+        ...(largeSocialCastCount(message) > 4 && {minimumDurationMs:duration, readingHold:true as const, minimumThinkingMs:socialCastMinimumThinkingMs(message)}),
+        ...(lobbyCount>8 && {minimumDurationMs:duration,readingHold:true as const,minimumThinkingMs:portraitRoomPageCount(lobbyCount)*PORTRAIT_ROOM_PAGE_HOLD_MS}),
+        speechPresentation: isSoloTranscript(message) ? "solo" as const
+          : message.anonymous || message.speakerPlayerId || message.fromPlayerId ? "scene" as const : undefined,
+        sceneIndex,
+        messageIndex,
+      };
+    }),
   );
 }
 

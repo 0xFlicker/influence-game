@@ -15,7 +15,10 @@ close-up, producing a large, sparsely filled text panel beside tiny portrait row
 Restore the circular renderer's original selection, focus and timing rules.
 Artwork-dependent Lobby cue holds must be conditional on complete **game-roster**
 artwork in both browser and export compilation. Room-only completeness is not
-enough: a huddle cannot switch a mixed-art game into full-body composition.
+enough: a huddle cannot switch a mixed-art game into full-body composition. For
+classic games without replay frames, calculate full-body Lobby holds using the
+existing transcript-prefix elimination reader, matching the rendered historical
+cast instead of final standings. Format games never use that parser.
 
 Fetch the frozen-game media snapshot before compiling artwork-dependent cues;
 retain per-beat media freezing separately so background refreshes do not replace

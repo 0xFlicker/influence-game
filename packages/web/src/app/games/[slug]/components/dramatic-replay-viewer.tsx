@@ -160,8 +160,8 @@ function DramaticReplayTheater({
   );
   const scenes = useMemo(() => buildStoryScenes(filteredMessages), [filteredMessages]);
   const classicCues = useMemo(
-    () => buildClassicPresentationCues(scenes, replayFrames, players,composeRooms),
-    [replayFrames, scenes, players,composeRooms],
+    () => buildClassicPresentationCues(scenes, replayFrames, players,{composeRooms,gameKernel:isFormatGame ? "format" : "classic",messages:filteredMessages}),
+    [replayFrames, scenes, players,composeRooms,isFormatGame,filteredMessages],
   );
   const formatCompilation = useMemo(
     () => compileFormatPresentationPrefix({

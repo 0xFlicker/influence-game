@@ -47,7 +47,7 @@ test("recorded speech and thinking leave enough clock time for large cast pages"
 test("short large Lobby contributions reserve complete cast pages through viewer and export timing",()=>{
   const players=Array.from({length:12},(_,index)=>({id:`p${index}`,name:`Player ${index}`,persona:"",status:"alive" as const,shielded:false}));
   const message:TranscriptEntry={id:1,entrySequence:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:"p0",fromPlayerId:"p0",fromPlayerName:"Player 0",toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
-  const cue=buildClassicPresentationCues(buildStoryScenes([message]),[],players,true)[0]!;
+  const cue=buildClassicPresentationCues(buildStoryScenes([message]),[],players,{composeRooms:true,gameKernel:"classic",messages:[message]})[0]!;
   expect(cue.baseDurationMs).toBe(15050);
   expect(cue.minimumDurationMs).toBe(15050);
   expect(cue.minimumThinkingMs).toBe(14000);
@@ -83,4 +83,24 @@ test("a huddle with complete room artwork still keeps portraits when another fro
  if(cue.picture.kind!=="influence" || cue.picture.beat?.kind!=="portrait-room")throw new Error("Expected the original portrait room");
  expect(cue.picture.beat.participants).toHaveLength(4);
  expect(cue.picture.beat.participants.every(player=>!player.fullBodyReferenceUrl)).toBe(true);
+});
+
+test("historical full-body Lobby holds use the prefix cast rather than final standings",()=>{
+ const players=Array.from({length:12},(_,index)=>({id:`p${index}`,name:`Contestant ${index+100}`,persona:"",status:index<2 ? "alive" as const : "eliminated" as const,shielded:false}));
+ const opening:TranscriptEntry={id:1,entrySequence:1,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:"p0",fromPlayerId:"p0",fromPlayerName:"P0",toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
+ const exit:TranscriptEntry={...opening,id:2,entrySequence:2,phase:"REVEAL",scope:"system",speakerPlayerId:null,fromPlayerId:null,text:"ELIMINATED: Contestant 111",timestamp:2};
+ const later:TranscriptEntry={...opening,id:3,entrySequence:3,round:2,timestamp:3};
+ const messages=[opening,exit,later],fullBodies=Object.fromEntries(players.map(player=>[player.id,"/body.png"]));
+ const viewer=buildClassicPresentationCues(buildStoryScenes(messages),[],players,{composeRooms:true,gameKernel:"classic",messages});
+ const exported=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players},messages,frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],fullBodies}}).filter(row=>row.speech?.text==="Yes.");
+ for(const [index,count]of [12,11].entries()) {
+  const cue=viewer.find(cue=>cue.round===index+1 && cue.phase==="LOBBY")!;
+  expect(cue.baseDurationMs).toBe(portraitRoomDurationMs("Yes.",count));expect(cue.minimumThinkingMs).toBe(portraitRoomPageCount(count)*3500);
+  expect(exported[index]!.timing.baseDurationMs).toBe(cue.baseDurationMs);
+  const picture=exported[index]!.picture;if(picture.kind!=="influence" || picture.beat?.kind!=="portrait-room")throw new Error("Expected historical Lobby");
+  expect(picture.beat.participants).toHaveLength(count);
+  if(index===1){expect(picture.beat.participants.map(player=>player.id)).not.toContain("p11");expect(picture.beat.participants.map(player=>player.id)).toContain("p1");}
+ }
+ const format=buildClassicPresentationCues(buildStoryScenes(messages),[],players,{composeRooms:true,gameKernel:"format",messages});
+ expect(format.find(cue=>cue.phase==="LOBBY")!.minimumThinkingMs).toBeUndefined();
 });

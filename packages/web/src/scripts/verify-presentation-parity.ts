@@ -86,10 +86,11 @@ if (process.env.COMPOSED_ROOM_PARITY === "1") {
   cases.push({name:"composed-large-reduced",reference:cue,cue,reducedMotion:true});
   cases.push({name:"composed-thought",reference:cue,cue:thinkingSegment(cue,"composed-thought",largeHuddle.thinking!,"atlas")});
   const lobby:TranscriptEntry={id:110,entrySequence:110,gameId:"g",round:1,phase:"LOBBY",scope:"public",speakerPlayerId:largePlayers[0]!.id,fromPlayerId:largePlayers[0]!.id,fromPlayerName:largePlayers[0]!.name,toPlayerIds:[],text:"Yes.",thinking:"Listen.",timestamp:1};
-  const lobbyCue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:largePlayers},messages:[lobby],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},fullBodies:bodies,scenes:[]}}).find(cue=>cue.speech?.text===lobby.text)!;
+  const historicalLobbyPlayers=largePlayers.map((player,index)=>({...player,status:index<2 ? "alive" as const : "eliminated" as const}));
+  const lobbyCue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:historicalLobbyPlayers},messages:[lobby],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},fullBodies:bodies,scenes:[]}}).find(cue=>cue.speech?.text===lobby.text)!;
   cases.push({name:"composed-lobby-short",reference:lobbyCue,cue:lobbyCue});
   cases.push({name:"composed-lobby-short-thought",reference:lobbyCue,cue:thinkingSegment(lobbyCue,"composed-lobby-short-thought",lobby.thinking!,largePlayers[0]!.id)});
-  const fallbackPlayers=largePlayers.map((player,index)=>({...player,name:`P${index}`}));
+  const fallbackPlayers=historicalLobbyPlayers.map((player,index)=>({...player,name:`P${index}`}));
   const fallbackMessage={...lobby,fromPlayerName:"P0",text:"I want to hear what everyone thinks before we make a decision.",thinking:"I want to answer with a small, genuine detail that builds our shared connection. A sensory memory feels warmer than turning the moment toward strategy."};
   const fallbackCue=buildExportCues({kind:"influence",game:{id:"g",slug:"g",status:"completed",gameKernel:"classic",players:fallbackPlayers},messages:[fallbackMessage],frames:[],thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[]}}).find(cue=>cue.speech?.text===fallbackMessage.text)!;
   cases.push({name:"composed-lobby-fallback",reference:fallbackCue,cue:fallbackCue});
