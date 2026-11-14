@@ -296,7 +296,8 @@ thoughts. `VisualSceneView` supplies the existing camera, thinking focus, speech
 pagination and sampled clock. Composition coordinates are presentation data;
 they never become accepted scene records, contestant observations or model input.
 Short or narrow stages use shared-clock full-body cast pages when the composed
-head/label bounds leave insufficient room for a readable speech line. Names are
+head/label bounds leave insufficient room for a readable speech line or fixed
+identity labels would overlap at the requested geometry. Names are
 literal identity text; each guest completes its name pages during its own cast
 page, while the persistent speaker uses the whole contribution clock. Large
 Lobby cues reserve at least 3.5 seconds per compact cast page in their canonical

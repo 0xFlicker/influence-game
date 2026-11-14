@@ -65,7 +65,10 @@ export function ComposedRoom({beat, backgroundUrl = DEFAULT_ROOM_BACKDROP, onIma
   const framing=frameVisualScene(size.width,size.height,composition.width,composition.height);
   const speechBox=placeSceneBubble(size.width,available,framing,composedCastHead(composition.cast,composition.height,framing));
   const minimumSpeechHeight=36+BUBBLE_BORDER_INSET+28+bubbleFontRange(speechBox.width,false).minFont*1.4;
-  const compact=size.width>0 && beat.participants.length>1 && (size.width<640 || available<360 || speechBox.height<minimumSpeechHeight);
+  const labels=composition.cast.map(player=>({left:Math.max(8,Math.min(size.width-120,framing.left+(player.frame.left+player.frame.width/2)/composition.width*framing.width-56)),
+    top:Math.max(8,Math.min(available-40,framing.top+player.labelTop/composition.height*framing.height-36))}));
+  const crowdedLabels=labels.some((label,index)=>labels.slice(index+1).some(other=>Math.abs(label.left-other.left)<116 && Math.abs(label.top-other.top)<36));
+  const compact=size.width>0 && beat.participants.length>1 && (size.width<640 || available<360 || speechBox.height<minimumSpeechHeight || crowdedLabels);
   const compactReady=composition.ready && Boolean(images[backgroundUrl]);
   useLayoutEffect(()=>{if(compact){onReadyChange?.(compactReady);if(compactReady)onImageReady?.();}},[compact,compactReady,onReadyChange,onImageReady]);
   const scene: AcceptedVisualScene = {id:`composed:${backgroundUrl}:${beat.participants.map(player=>player.id).join(":")}`,

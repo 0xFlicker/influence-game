@@ -603,7 +603,7 @@ test.each([0,100,225,449,450])("Influence room picture at %i ms matches sampled 
   }
 });
 
-test.each([[390,700],[360,240],[640,360]])("crowded composed rooms retain the complete cast at %i by %i", (width,height) => {
+test.each([[390,700],[360,240],[640,360],[640,700]])("crowded composed rooms retain the complete cast at %i by %i", (width,height) => {
   const prototype=dom.HTMLElement.prototype;
   const dimensions=new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
   try {

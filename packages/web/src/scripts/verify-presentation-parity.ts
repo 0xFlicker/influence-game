@@ -362,7 +362,7 @@ try {
     const narrow = process.env.FORMAT_CONTEXT_NARROW === "1";
     const portrait = process.env.FORMAT_CONTEXT_PORTRAIT === "1";
     const formatOnly = process.env.FORMAT_CONTEXT_ONLY === "1";
-    const geometries: readonly (readonly [number, number])[] = process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(process.env.COMPOSED_ROOM_PARITY === "1" || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
+    const geometries: readonly (readonly [number, number])[] = process.env.FORMAT_CONTEXT_MEDIUM === "1" ? [[640,700]] : process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(process.env.COMPOSED_ROOM_PARITY === "1" || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
     const geometryCases = (narrow || portrait) && !suppliedCases ? cases.filter(item => item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
     const selectedCases = process.env.COMPOSED_ROOM_PARITY === "1" ? geometryCases.filter(item => item.name.startsWith("composed-") && (!process.env.FORMAT_CONTEXT_CASE || process.env.FORMAT_CONTEXT_CASE.split(",").includes(item.name))) : process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
@@ -497,15 +497,19 @@ try {
         for(const weight of weights) {
           let progress=(before+weight/2)/total;before+=weight;
           const actorId=item.cue.picture.kind==="thinking" ? item.cue.picture.actor.id : item.cue.speech?.speakerId;
-          if((width<640 || height<394) && player.id!==actorId) {
+          const progressOptions=[progress];
+          if(roomCast.length>8 && player.id!==actorId) {
             const guests=roomCast.filter(player=>player.id!==actorId),castPages=Math.max(1,Math.ceil(guests.length/7));
             progress=(Math.floor(guests.findIndex(guest=>guest.id===player.id)/7)+progress)/castPages;
           }
+          progressOptions.push(progress);
+          for(const progress of new Set(progressOptions)) {
           if(thought)nameSamples.push(Math.round((thought.insertAt+thought.readAtMs+progress*(thought.hideAtMs-thought.readAtMs))*fps/1000));
           else {
             const source=650+progress*(item.cue.timing.baseDurationMs-1050);
             const part=timeline[0]!.segments.find(part=>part.sourceStartMs<=source && part.sourceEndMs>=source && part.sourceStartMs!==part.sourceEndMs);
             if(part)nameSamples.push(Math.round((part.startMs+(source-part.sourceStartMs)/(part.sourceEndMs-part.sourceStartMs)*(part.endMs-part.startMs))*fps/1000));
+          }
           }
         }
       }
