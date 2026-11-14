@@ -84,6 +84,16 @@ test("Influence room thoughts preserve the speech environment and floor framing"
   const thought = thinkingPicture(speech,"a");
   expect(thought.room).toMatchObject({floorPerspective:true,backgroundUrl:"/visual/influence/rooms-v1/lobby.jpg"});
 });
+test("independent room thoughts retain cutouts and head boxes without copying omitted speech", () => {
+  const source: Extract<ReplaySource,{kind:"influence"}> = {kind:"influence",
+    game:{id:"composite",slug:"composite",status:"completed",gameKernel:"classic",players:[{id:"a",name:"Ada",persona:"",status:"alive",shielded:false}]},
+    frames:[],messages:[{id:1,gameId:"composite",round:1,phase:"LOBBY",scope:"public",fromPlayerId:"a",fromPlayerName:"Ada",toPlayerIds:null,text:"OMITTED SPEECH",timestamp:1}],
+    thoughts:{},visual:{enabled:false,status:null,portraits:{},fullBodies:{a:"/frozen-body.png"},fullBodyHeads:{a:{x:.4,y:.04,width:.2,height:.16}},scenes:[]}};
+  const speech = buildExportCues(source).find(cue=>cue.picture.kind === "influence" && cue.picture.beat?.kind === "portrait-room")!;
+  const thought = thinkingPicture(speech,"a");
+  expect(thought.room?.players).toMatchObject([{id:"a",fullBodyReferenceUrl:"/frozen-body.png",headRectangle:source.visual!.fullBodyHeads!.a}]);
+  expect(JSON.stringify(thought)).not.toContain("OMITTED SPEECH");
+});
 test("a frozen pre-audio cut binds its original catalog without new House speech or closing reprise", async () => {
   const input=await fixture("omniscient",true);
   const catalog={...assembleProductionCatalog({gameId:input.catalog.gameId,gameKind:"werewolf",audience:"omniscient",werewolfCatalogVersion:1,

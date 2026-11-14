@@ -266,3 +266,38 @@ explicitly to adopt a subsequently published saved-hunt image or wolf cutout, th
 reselect/rebuild and encode. Existing MP4s never update. No history or media is
 regenerated automatically. Older saved hunts without imagery retain portrait
 fallbacks; public Mystery exports never receive the private hunt composite.
+
+## Realtime full-body room composition
+
+When every player in the frozen game roster has a full-body reference, portrait
+rooms compose the room's audience-safe cast from those transparent images on the
+existing static `rooms-v1` backgrounds. Full-body references are treated as
+transparent following the artwork migration. A missing reference anywhere in the
+game roster retains the circular portraits. Accepted generated scenes keep their
+published images and bindings.
+
+`PortraitRoom` selects the shared composition for Influence Lobby/Mingle/huddles
+and Werewolf village/pack conversations, including independent Studio/export
+thoughts. `VisualSceneView` supplies the existing camera, thinking focus, speech
+pagination and sampled clock. Composition coordinates are presentation data;
+they never become accepted scene records, contestant observations or model input.
+No provider request or generated image is involved. Saved head boxes follow the
+source image; older art uses the same presentation head position as solo shots.
+
+Run the provider-free proof from `packages/web`:
+
+```sh
+COMPOSED_ROOM_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts ../../.renders/composed-room-parity
+```
+
+This covers full-body room composition, reduced motion, independent thoughts,
+recorded speech and both Werewolf audiences at wide, short, narrow and tall
+geometries. It compares viewer, Studio Source/Selected cut and fresh export frames,
+reverse samples and fresh encoded clips. No game rules, source order, audience
+membership or pinned art changes. House Cuts has no circular conversation-room
+consumer and is unaffected.
+
+Reprepare existing Studio selections and rebuild bundles from the same frozen
+source/selection to pick up this renderer. A source that predates full-body room
+metadata needs an explicit source refresh to adopt available artwork; it remains
+playable with portraits until then. Existing MP4s must be encoded again.

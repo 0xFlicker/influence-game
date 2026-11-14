@@ -5,11 +5,12 @@ import {ThoughtBubble, useSceneThinking} from "./watch-thinking";
 import {useBubbleTypography} from "./use-bubble-typography";
 
 /** Screen-space camera: normal framing is unchanged outside a thought shot. */
-export function thinkingFocus(width: number, height: number, face: SceneFrame, progress: number, portrait = false, reducedMotion = false, faceSide?: "left" | "right") {
+export function thinkingFocus(width: number, height: number, face: SceneFrame, progress: number, portrait = false, reducedMotion = false, faceSide?: "left" | "right", fitShortFrame = false) {
   const margin = 20, gap = 24;
-  const beside = width >= 640 && width >= height;
+  const compact = fitShortFrame && height < 340 && width >= height;
+  const beside = (width >= 640 || compact) && width >= height;
   const faceOnRight = beside && (faceSide ? faceSide === "right" : face.left + face.width / 2 > width / 2);
-  const square = Math.max(0, Math.min(beside ? width * .48 : width - margin * 2, beside ? height - margin * 2 : height * .48));
+  const square = Math.max(0, Math.min(beside ? width * (compact ? .3 : .48) : width - margin * 2, beside ? height - margin * 2 : height * .48));
   const textWidth = Math.max(0, Math.min(760, beside ? width - square - gap - margin * 2 : width - margin * 2));
   const left = beside ? (width - square - gap - textWidth) / 2 : (width - square) / 2;
   const top = beside ? (height - square) / 2 : margin;
@@ -30,9 +31,9 @@ export function thinkingFocus(width: number, height: number, face: SceneFrame, p
 }
 export type ThinkingFocusLayout = ReturnType<typeof thinkingFocus>;
 
-export function ThinkingFocusOverlay({frame, layout}: {frame: RefObject<HTMLElement | null>; layout: ThinkingFocusLayout}) {
+export function ThinkingFocusOverlay({frame, layout, wrapSpeaker = false}: {wrapSpeaker?:boolean;frame: RefObject<HTMLElement | null>; layout: ThinkingFocusLayout}) {
   const thought = useSceneThinking();
-  const fit = useBubbleTypography(frame, thought?.text ?? "", layout.box, "thought", layout.box.height < 180, thought?.roleLabel ? 48 : 28);
+  const fit = useBubbleTypography(frame, thought?.text ?? "", layout.box, "thought", layout.box.height < 180, thought?.roleLabel ? 48 : 28, wrapSpeaker && thought ? `••• ${thought.speaker} thinks${thought.roleLabel ? `\n${thought.roleLabel}` : ""}` : undefined);
   if (!thought) return null;
   const {head, radius} = layout;
   const fittedWidth = fit.typography?.width ?? layout.box.width;
@@ -44,6 +45,6 @@ export function ThinkingFocusOverlay({frame, layout}: {frame: RefObject<HTMLElem
     <div aria-hidden="true" className="pointer-events-none absolute z-[176] rounded-full"
       style={{left:head.x-radius,top:head.y-radius,width:radius*2,height:radius*2,opacity:thought.focus*.3,
         boxShadow:`0 0 ${radius*.4}px rgba(213,226,255,.28), inset 0 0 ${radius*.3}px rgba(213,226,255,.12)`}} />
-    {thought.opacity > 0 && <ThoughtBubble box={box} head={{x:head.x + (layout.faceOnRight ? -1 : 1)*radius*.75,y:head.y}} typography={fit.typography} padding={fit.padding} />}
+    {thought.opacity > 0 && <ThoughtBubble wrapSpeaker={wrapSpeaker} box={box} head={{x:head.x + (layout.faceOnRight ? -1 : 1)*radius*.75,y:head.y}} typography={fit.typography} padding={fit.padding} />}
   </>;
 }

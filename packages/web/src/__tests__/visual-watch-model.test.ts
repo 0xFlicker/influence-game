@@ -347,3 +347,16 @@ test("farewell uses the council room while private diaries use a House room", as
     expect(influenceRoomBackground({...farewell, purpose:"Diary"})).toBe(INFLUENCE_ROOMS.mingle[4]);
   }
 });
+
+test("room composition requires full-body art for the entire frozen game cast, even outside this huddle", () => {
+  const roster = [player,{...player,id:"b",name:"Bea"},{...player,id:"c",name:"Cy"}];
+  const speech: TranscriptEntry = {...message,visualScene:undefined,phase:"MINGLE",scope:"mingle",toPlayerIds:["b"]};
+  const visual: VisualWatchData = {enabled:false,status:null,portraits:{a:"/head.png"},scenes:[],fullBodies:{a:"/a.png",b:"/b.png"},fullBodyHeads:{a:{x:.4,y:.04,width:.2,height:.16}}};
+  const incomplete = visualWatchPresentation(visual,null,speech,roster).beat;
+  expect(incomplete?.kind).toBe("portrait-room");
+  if (incomplete?.kind !== "portrait-room") throw new Error("Missing room");
+  expect(incomplete.participants.every(player => !player.fullBodyReferenceUrl)).toBe(true);
+  const complete = visualWatchPresentation({...visual,fullBodies:{...visual.fullBodies,c:"/c.png"}},null,speech,roster).beat;
+  expect(complete).toMatchObject({kind:"portrait-room",participants:[{id:"a",fullBodyReferenceUrl:"/a.png",headRectangle:visual.fullBodyHeads!.a},{id:"b",fullBodyReferenceUrl:"/b.png"}]});
+  expect(complete?.kind === "portrait-room" && complete.participants.some(player => player.id === "c")).toBe(false);
+});

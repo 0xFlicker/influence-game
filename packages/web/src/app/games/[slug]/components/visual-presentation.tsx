@@ -45,7 +45,7 @@ export type VisualPresentationBeat =
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
-  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; paginateLargeCast?: true; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null; items?: readonly string[]}>; speech: VisualSpeech }
+  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; paginateLargeCast?: true; participants: Array<{fullBodyReferenceUrl?: string | null; headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null; items?: readonly string[]}>; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; roomLabel?: string; speechDurationMs?: number; speech: VisualSpeech | null }
   | { kind: "portrait"; thinkingAllowed?: boolean; purpose: "Decision" | "Night decision" | "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; ballotPurpose?: "empower" | "council"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null; items?: readonly string[] }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string; backgroundUrl?:string }
@@ -92,10 +92,11 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   const onSceneReadyChange = useCallback((ready: boolean) => {
     if (cueKey) director.setReady(cueKey, ready);
   }, [director, cueKey]);
+  const waitsForMedia = props.beat.kind === "scene" || props.beat.kind === "portrait-room" && props.beat.participants.length > 0 && props.beat.participants.every(player => player.fullBodyReferenceUrl);
   useLayoutEffect(() => {
-    if (props.beat.kind !== "scene") onSceneReadyChange(true);
+    if (!waitsForMedia) onSceneReadyChange(true);
     return () => onSceneReadyChange(true);
-  }, [props.beat.kind, onSceneReadyChange]);
+  }, [waitsForMedia, onSceneReadyChange]);
   const [clock, setClock] = useState(() => ({ elapsedMs: director.getElapsedBaseMs(), paused: !director.getSnapshot().isPlaying }));
   useEffect(() => {
     return sampleWatch(director, () => {
@@ -171,7 +172,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {
-    content = <PortraitRoom paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
+    content = <PortraitRoom navigationRevision={navigationRevision} paused={paused} onReadyChange={onSceneReadyChange} paginateLargeCast={beat.paginateLargeCast} floorPerspective backgroundUrl={backgroundUrl} beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
     content = voteLedger ? <VotePresentation backgroundUrl={backgroundUrl} beat={beat} ledger={voteLedger} roster={roster} controlsInset={controlsInset}
       paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} />

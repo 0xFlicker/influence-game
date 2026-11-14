@@ -39,3 +39,13 @@ for (const width of [1280, 3440]) test(`right-side scene heads keep thoughts on 
  expect(mobile.faceOnRight).toBe(false);
  expect(mobile.head.y).toBeLessThan(mobile.box.top);
 });
+
+test("composed short rooms keep a readable thought beside the head without changing tall framing", () => {
+ const face = {left:70,top:50,width:30,height:35};
+ const compact = thinkingFocus(360,208,face,1,false,false,"left",true);
+ expect(compact.box.height).toBeGreaterThan(100);
+ expect(compact.box.width).toBeGreaterThan(160);
+ expect(compact.box.left).toBeGreaterThan(compact.head.x);
+ expect(compact.box.top + compact.box.height).toBeLessThanOrEqual(208);
+ expect(thinkingFocus(390,700,face,1,false,false,"left",true)).toEqual(thinkingFocus(390,700,face,1,false,false,"left"));
+});

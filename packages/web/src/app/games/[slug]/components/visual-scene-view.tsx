@@ -8,7 +8,7 @@ import {resolveAgentAvatarUrl} from "@/components/agent-avatar";
 import { useLayoutEffect, useRef, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { selectVisualShot, type AcceptedVisualScene } from "@influence/engine/visual-mode";
-import { frameVisualScene, placeSceneBubble, sceneCameraProgress, type PanelTreatment } from "./visual-scene-layout";
+import { frameVisualScene, placeSceneBubble, sceneCameraProgress, type PanelTreatment, type SceneFrame, type HeadRect } from "./visual-scene-layout";
 import { TimedSpeech } from "./timed-speech";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
 import { soloPresentationMotion } from "./solo-presentation-timing";
@@ -18,10 +18,17 @@ import { SceneImage, panelTransition, sceneImageLayers, type SceneCameraView } f
 // Finish the 450ms room-to-speaker move before speech/thinking starts at 650ms.
 const OVERVIEW_HOLD_MS = 200;
 
+export interface SceneComposition {
+  width:number; height:number; ready:boolean;
+  cast: Array<{id:string;name:string;source:string;frame:SceneFrame;head:HeadRect}>;
+}
+
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
 
 /** Camera, bubble pages and speech share the director's presentation time. */
-export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", speechDurationMs, panelTreatment = "separate", onReadyChange, focusPlayerId, focusActor }: {
+export function VisualSceneView({ scene: roomScene, composition, previousFocusPlayerId, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", speechDurationMs, panelTreatment = "separate", onReadyChange, focusPlayerId, focusActor }: {
+  composition?: SceneComposition;
+  previousFocusPlayerId?: string | null;
   scene: AcceptedVisualScene; speech: VisualSpeech | null; elapsedMs: number;
   /** Frame a silent performance or elimination without inventing speech. */
   focusPlayerId?: string;
@@ -66,9 +73,10 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
     return () => observer.disconnect();
   }, []);
   const known = sampled?.images[scene.imageUrl];
-  const loaded = known ? {url: scene.imageUrl, ...known} : browserLoaded;
+  const backgroundLoaded = known ? {url: scene.imageUrl, ...known} : browserLoaded;
+  const loaded = composition ? {...backgroundLoaded,width:composition.width,height:composition.height} : backgroundLoaded;
   const imageFailed = failedUrl === scene.imageUrl;
-  const imageKnown = loaded.url === scene.imageUrl || imageFailed;
+  const imageKnown = (backgroundLoaded.url === scene.imageUrl || imageFailed) && (!composition || composition.ready);
   // Hold the shared clock before paint so cold image loads cannot consume the
   // room's settling interval or the following thought/speech shot.
   useLayoutEffect(() => { onReadyChange?.(imageKnown); }, [imageKnown, onReadyChange]);
@@ -112,6 +120,19 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
       direction = panelTransition(from.url, to.url, roomScene.shots);
     }
   }
+  // A composed room has no persisted scene predecessor. Its canonical room
+  // predecessor still drives the same camera path on fresh/isolated samples.
+  if (composition && imageKnown && (sampled || previousFocusPlayerId !== undefined)) {
+    const previousId = sampled ? sampled.previousSpeaker : previousFocusPlayerId;
+    const previousHead = scene.anchors.find(anchor => anchor.playerId === previousId)?.head;
+    to = nextView; from = nextView; startedAt = 0; direction = 0;
+    if (previousHead) {
+      let previousFrame = frameVisualScene(size.width,size.height,composition.width,composition.height,previousHead);
+      const canFrameHead = placeSceneBubble(size.width,Math.max(0,size.height-controlsInset),previousFrame,previousHead).height >= 110;
+      if (!canFrameHead) previousFrame = frameVisualScene(size.width,size.height,composition.width,composition.height);
+      from = {...nextView,frame:previousFrame,focusX:canFrameHead ? previousHead.x + previousHead.width / 2 : .5};
+    }
+  }
   const cameraElapsedMs = reducedMotion || !imageKnown && camera.speechKey !== speechKey ? 450 : elapsedMs - startedAt;
   const layers = sceneImageLayers(from, to, cameraElapsedMs, direction);
   const currentLayer = layers[layers.length - 1]!;
@@ -129,9 +150,9 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
   const faceFrame = fallback ? fallbackFrame : {left:framing.left + framing.width * face.x, top:framing.top + framing.height * face.y,
     width:framing.width * (face.width || .1),height:framing.height * (face.height || .12)};
   const focus = thinkingFocus(size.width, available, faceFrame, thinkingReady ? thought?.focus ?? 0 : 0, fallback, reducedMotion,
-    !fallback && face.x + face.width / 2 > .5 ? "right" : "left");
+    !fallback && face.x + face.width / 2 > .5 ? "right" : "left", Boolean(composition));
   const speechBox = rawBubble;
-  const speechFit = useBubbleTypography(frameRef, speech?.text ?? "", speechBox, "speech", available < 300);
+  const speechFit = useBubbleTypography(frameRef, speech?.text ?? "", speechBox, "speech", available < 300, 28, composition ? speech?.speaker : undefined);
   const bubble = {...speechBox,width:speechFit.typography?.width ?? speechBox.width,height:speechFit.typography?.height ?? speechBox.height};
   return <section ref={frameRef} aria-label="Current room" data-panel-treatment={treatment} data-scene-loading={!imageKnown || undefined} data-panel-transition={transitioning || undefined} className="relative min-h-0 w-full flex-1 overflow-hidden">
     <div data-thinking-camera className="absolute inset-0" style={focus.mediaStyle}>
@@ -143,20 +164,28 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
       setLoaded({ url: scene.imageUrl, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
     }} />}
     <SceneImage layers={layers} failedUrl={failedUrl} />
+    {composition && imageKnown && layers.map(layer => <div key={layer.url} data-composed-cast className="pointer-events-none absolute inset-0" style={{opacity:layer.opacity}}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- frozen transparent characters share the scene camera */}
+      {composition.cast.map(player => <img key={player.id} data-room-player={player.id} src={player.source} alt={player.name}
+        className="absolute max-w-none" style={{left:layer.frame.left + player.frame.left / composition.width * layer.frame.width,
+          top:layer.frame.top + player.frame.top / composition.height * layer.frame.height,
+          width:player.frame.width / composition.width * layer.frame.width,height:player.frame.height / composition.height * layer.frame.height,
+          filter:"drop-shadow(0 12px 12px #0007)"}} />)}
+    </div>)}
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen speaker portrait when scene head geometry is unavailable */}
     {thinkingReady && thought && fallback && portraitActor && <img alt={portraitActor.name} src={resolveAgentAvatarUrl(portraitActor.avatarUrl,portraitActor.persona,portraitActor.name,portraitActor.personaKey)}
       className="absolute rounded-full object-cover" style={{...fallbackFrame,opacity:thought.focus}} />}
     </div>
     {!thought && speech && imageKnown && !transitioning && opacity > 0 && <div data-speech-bubble className="absolute z-10 flex flex-col rounded-2xl border border-white/20 bg-black/90 px-4 py-3 text-white shadow-xl"
       style={{ opacity, width: bubble.width, height: bubble.height, left: bubble.left, top: bubble.top, padding:speechFit.padding }}>
-      <div className={`mb-2 flex h-5 shrink-0 items-center gap-3 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
+      <div className={`mb-2 flex shrink-0 items-center gap-3 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
         {(imageFailed || !anchor && !pointer) && speech.playerId && <div data-headshot-fallback><AgentAvatar {...speech.portrait} persona={speech.portrait?.persona ?? ""} name={speech.speaker} size="12" /></div>}
-        <p className="truncate text-base font-semibold text-white/80">{speech.playerId === null ? "Anonymous" : speech.speaker}</p>
+        <p className={`${composition ? "whitespace-normal break-words [overflow-wrap:anywhere]" : "truncate"} text-base font-semibold leading-5 text-white/80`}>{speech.playerId === null ? "Anonymous" : speech.speaker}</p>
       </div>
       <TimedSpeech advancePart="speech" typography={speechFit.typography} text={speech.text} elapsedMs={speechPresentation === "solo" ? soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs : readingElapsedMs - SCENE_SPEECH_START_MS} progressDurationMs={speechDurationMs !== undefined ? Math.max(1,speechDurationMs - 1450) : undefined}
         progress={speechDurationMs !== undefined && sampled?.speech?.text !== speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,speechDurationMs - 1450)) : undefined} className="text-sm leading-relaxed" />
       {head && <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/20 bg-black/90 ${bubble.below ? "border-t border-l" : "border-b border-r"}`} style={{ left: bubble.arrowLeft, top: bubble.below ? -8 : undefined, bottom: bubble.below ? undefined : -8 }} />}
     </div>}
-    {thinkingReady && <ThinkingFocusOverlay frame={frameRef} layout={focus} />}
+    {thinkingReady && <ThinkingFocusOverlay wrapSpeaker={Boolean(composition)} frame={frameRef} layout={focus} />}
   </section>;
 }

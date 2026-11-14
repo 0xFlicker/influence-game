@@ -1,5 +1,6 @@
 "use client";
 
+import {ComposedRoom} from "./composed-room";
 import {useSampledStage} from "@/components/watch/sampled-stage";
 import {sceneCameraProgress} from "./visual-scene-layout";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
@@ -69,11 +70,14 @@ export function portraitRoomTransitionSeats(width: number, count: number, previo
 }
 
 /** Saved audience membership supplies the cast; asset availability never changes the game. */
-export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, backgroundUrl, floorPerspective = false, hideSpeech = false, previousSpeakerId, paginateLargeCast = false }: {
+function CircularPortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, backgroundUrl, floorPerspective = false, hideSpeech = false, previousSpeakerId, paginateLargeCast = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait-room" }>;
   elapsedMs: number; readingElapsedMs: number; reducedMotion: boolean; controlsInset: number;
   speechPresentation?: "solo" | "scene";
+  navigationRevision?: number;
+  paused?: boolean;
   onImageReady?: () => void;
+  onReadyChange?: (ready:boolean) => void;
   hideSpeech?: boolean;
   backgroundUrl?: string;
   /** A shallow ring aligned with a furnished environment’s floor plane. */
@@ -187,4 +191,10 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     <ThinkingFocusOverlay frame={frame} layout={focus} />
     </>}
   </section>;
+}
+
+/** Every consumer, including isolated export thoughts, makes the same artwork choice. */
+export function PortraitRoom(props: Parameters<typeof CircularPortraitRoom>[0]) {
+  return props.beat.participants.length > 0 && props.beat.participants.every(player => player.fullBodyReferenceUrl)
+    ? <ComposedRoom {...props} /> : <CircularPortraitRoom {...props} />;
 }

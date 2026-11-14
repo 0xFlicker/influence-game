@@ -71,6 +71,10 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       else if (rooms[index]!.version < scene.version) rooms[index] = accepted;
     }
   }
+  const composeRooms = players.every(member => data.fullBodies?.[member.id]);
+  const roomPlayer = (player: GamePlayer) => ({ ...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl,
+    ...(composeRooms && {
+      fullBodyReferenceUrl:data.fullBodies?.[player.id], headRectangle:data.fullBodyHeads?.[player.id]}) });
   let beat: VisualPresentationBeat | null = null;
   if (cue?.source === "classic" && cue.houseResultCue && message) {
     const result = visualWatchPresentation(data, cue.houseResultCue, null, players, priorMessages, frames);
@@ -208,7 +212,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       const aliveIds = frame ? new Set(frame.players.filter(player => player.status === "alive").map(player => player.id)) : null;
       const participants = players.filter(player => aliveIds ? aliveIds.has(player.id) : player.status === "alive");
       return { rooms, beat: { kind: "portrait-room", roomNumber: null, roomLabel: "Lobby",
-        participants: participants.map(player => ({ ...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl })),
+        participants: participants.map(roomPlayer),
         speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
     }
     if (isMingleDialogue(message) && speaker) {
@@ -221,7 +225,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       if (!target || participants.some(player => !data.fullBodies?.[player.id])) {
         return { rooms, beat: { kind: "portrait-room", roomNumber: message.roomId ?? null, paginateLargeCast:true,
           roomLabel: message.allianceSession?.allianceName,
-          participants: participants.map(player => ({ ...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl })),
+          participants: participants.map(roomPlayer),
           speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
       }
     }

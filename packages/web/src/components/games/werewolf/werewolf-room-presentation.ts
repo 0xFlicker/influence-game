@@ -8,10 +8,12 @@ export function werewolfPortraitRoom(cue: WerewolfWatchCue): Extract<VisualPrese
   if (!moment.actor || !moment.spoken || moment.retrospective || cue.ballot || cue.nightAction ||
     !(entry.kind === "discussion" || entry.kind === "conversation" || entry.kind === "proposal" || entry.kind === "speech" && moment.pack)) return null;
   if (moment.pack && cue.moment.snapshot.players.filter(player => player.alive && player.role === "werewolf").length === 1) return null;
+  const composeRooms = cue.moment.snapshot.players.every(member => member.fullBodyReferenceUrl);
   return {kind:"portrait-room",roomNumber:null,
     roomLabel:moment.pack ? `Night ${cue.moment.snapshot.day} · Pack conversation` : `Day ${cue.moment.snapshot.day} · Village conversation`,
     participants:cue.moment.snapshot.players.filter(player => player.alive && (!moment.pack || player.role === "werewolf"))
-      .map(player => ({id:player.id,name:player.name,avatarUrl:player.avatarUrl,personaKey:player.personaKey,persona:"",items:player.items})),
+      .map(player => ({id:player.id,name:player.name,avatarUrl:player.avatarUrl,personaKey:player.personaKey,persona:"",items:player.items,
+        ...(composeRooms && {fullBodyReferenceUrl:player.fullBodyReferenceUrl,headRectangle:player.headRectangle})})),
     speech:{id:cue.key,playerId:moment.actor.id,speaker:moment.speaker,text:moment.text}};
 }
 export function werewolfBackdrop(cue: WerewolfWatchCue) {

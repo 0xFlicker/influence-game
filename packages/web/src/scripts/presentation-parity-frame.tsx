@@ -35,8 +35,8 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
           .some(page => page.getBoundingClientRect().width === 0 || page.getBoundingClientRect().bottom > page.parentElement!.getBoundingClientRect().bottom + 1);
         const stage = document.querySelector<HTMLElement>("[data-influence-stage]");
         const roomPending = !!stage && stage.clientWidth < 600 && document.querySelectorAll("[data-room-player]").length > 4
-          && !document.querySelector("[data-paginated-portrait-room]");
-        const missing = expectedFormat && !document.querySelector("[data-active-format-overlay]") || expectedPaged && !document.querySelector("[data-paginated-portrait-room]");
+          && !document.querySelector("[data-paginated-portrait-room], [data-composed-room]");
+        const missing = expectedFormat && !document.querySelector("[data-active-format-overlay]") || expectedPaged && !document.querySelector("[data-paginated-portrait-room], [data-composed-room]");
         if (!pending && !roomPending && !missing) break;
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       }
@@ -47,7 +47,7 @@ function FormatAudit({expectedFormat, expectedPaged}: {expectedFormat?:string; e
         if ([style.overflowX,style.overflowY].some(value=>value === "auto" || value === "scroll")) throw new Error("Scrollable player content");
       }
       if (expectedFormat && !pill) throw new Error(`Missing active format: ${expectedFormat}`);
-      if (expectedPaged && !document.querySelector("[data-paginated-portrait-room]")) throw new Error("Missing paginated cast");
+      if (expectedPaged && !document.querySelector("[data-paginated-portrait-room], [data-composed-room]")) throw new Error("Missing paginated cast");
       if (pill) {
         if (getComputedStyle(pill).position !== "absolute") throw new Error("Format context changes scene geometry");
         const box = pill.getBoundingClientRect();
@@ -223,7 +223,7 @@ function StudioFrame({manifest,view}:ParityProps & {view:"source"|"cut"}) {
   useLayoutEffect(()=>{
     let active=true;
     void (async()=>{
-      for(let attempt=0;attempt<180;attempt++) {
+      for(let attempt=0;attempt<360;attempt++) {
         const content=document.querySelector<HTMLElement>(`[data-composition-frame="${frame}"]`);
         if(content && Array.from(content.querySelectorAll("img")).every(image=>image.complete && image.naturalWidth>0)) {
           await document.fonts.ready;
@@ -234,7 +234,10 @@ function StudioFrame({manifest,view}:ParityProps & {view:"source"|"cut"}) {
         }
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
       }
-      throw new Error(`Studio Player did not present frame ${frame}`);
+      throw new Error(`Studio Player did not present frame ${frame}: ${JSON.stringify({
+        presented:Array.from(document.querySelectorAll<HTMLElement>("[data-composition-frame]")).map(node=>node.dataset.compositionFrame),
+        pendingImages:Array.from(document.images).filter(image=>!image.complete || !image.naturalWidth).map(image=>image.src),
+      })}`);
     })().catch(cancelRender);
     return ()=>{active=false;};
   },[frame,ready]);

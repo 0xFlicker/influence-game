@@ -9,6 +9,7 @@ import {INFLUENCE_ROOMS} from "../app/games/[slug]/components/influence-rooms";
 import { VisualPresentationFrame, presentationBeatOwnsBackdrop, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 import { VisualSceneView } from "../app/games/[slug]/components/visual-scene-view";
 import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/components/stage-backdrop";
+import {composeRoomCast} from "../app/games/[slug]/components/composed-room";
 import { PortraitRoom, portraitRoomSeats, portraitRoomTransitionSeats } from "../app/games/[slug]/components/portrait-room";
 import { SampledStageProvider } from "../components/watch/sampled-stage";
 import { panelTransition } from "../app/games/[slug]/components/scene-image";
@@ -480,4 +481,70 @@ test("recorded House captions never remove the result, affected cast, or scenery
   expect(view.container.querySelector("[data-room-backdrop]")).not.toBeNull();
   fireEvent.error(view.container.querySelector('[data-room-backdrop] img')!);
   expect(view.container.querySelector("[data-room-backdrop]")?.getAttribute("data-room-backdrop")).toBe("/visual/influence/rooms-v1/lobby.jpg");
+});
+
+test("complete frozen room art composes full bodies on the portrait-room plate and incomplete art keeps portraits", () => {
+  const beat: Extract<VisualPresentationBeat,{kind:"portrait-room"}> = {kind:"portrait-room",roomNumber:2,participants:[
+    {id:"a",name:"Arden",persona:"",fullBodyReferenceUrl:"/a-body.png",headRectangle:{x:.4,y:.04,width:.2,height:.16}},
+    {id:"b",name:"Marlow",persona:"",fullBodyReferenceUrl:"/b-body.png"}],speech:{id:"speech",playerId:"a",speaker:"Arden",text:"Let us talk."}};
+  const images = {"/a-body.png":{width:600,height:900},"/b-body.png":{width:600,height:900},[INFLUENCE_ROOMS.mingle[1]]:{width:1600,height:900}};
+  const view = render(<SampledStageProvider value={{images,previousScene:null,previousSpeaker:null,firstInScene:true}}>
+    <VisualPresentationFrame beat={beat} rooms={[]} elapsedMs={1200} reducedMotion controlsInset={0}/>
+  </SampledStageProvider>);
+  expect(view.container.querySelector("[data-composed-room]")).not.toBeNull();
+  expect(view.container.querySelector("[data-portrait-room]")).toBeNull();
+  expect(view.container.querySelector('[data-scene-layer] img')?.getAttribute("src")).toBe(INFLUENCE_ROOMS.mingle[1]);
+  expect([...view.container.querySelectorAll("[data-room-player]")].map(image=>image.getAttribute("src"))).toEqual(["/a-body.png","/b-body.png"]);
+  view.rerender(<VisualPresentationFrame beat={{...beat,participants:[beat.participants[0]!,{...beat.participants[1]!,fullBodyReferenceUrl:null}]}} rooms={[]} elapsedMs={1200} controlsInset={0}/>);
+  expect(view.container.querySelector("[data-composed-room]")).toBeNull();
+  expect(view.container.querySelector("[data-portrait-room]")).not.toBeNull();
+});
+
+test.each([2,8,12])("composed %i-player cast fits the floor and retains image aspect ratios", count => {
+  const participants = Array.from({length:count},(_,index)=>({id:String(index),name:`Player ${index}`,persona:"",fullBodyReferenceUrl:`/body-${index}.png`,headRectangle:{x:.4,y:.04,width:.2,height:.16}}));
+  const images = Object.fromEntries(participants.map((player,index)=>[player.fullBodyReferenceUrl,{width:400 + index * 10,height:900}]));
+  const composition = composeRoomCast(participants,images);
+  expect(composition.ready).toBe(true);
+  expect(composition.cast.map(player=>player.id)).toEqual(participants.map(player=>player.id));
+  for (const player of composition.cast) {
+    expect(player.frame.left).toBeGreaterThanOrEqual(0);
+    expect(player.frame.top).toBeGreaterThanOrEqual(0);
+    expect(player.frame.left+player.frame.width).toBeLessThanOrEqual(composition.width);
+    expect(player.frame.top+player.frame.height).toBeLessThanOrEqual(composition.height);
+    expect(player.frame.width/player.frame.height).toBeCloseTo(images[player.source]!.width/images[player.source]!.height);
+  }
+  expect(composeRoomCast(participants,{}).ready).toBe(false);
+});
+
+test("a paused composed-room seek matches a fresh frame instead of panning from the previous speaker", () => {
+  const prototype = dom.HTMLElement.prototype;
+  const dimensions = new Map(["clientWidth","clientHeight"].map(key=>[key,Object.getOwnPropertyDescriptor(prototype,key)]));
+  try {
+    Object.defineProperty(prototype,"clientWidth",{configurable:true,get:()=>390});
+    Object.defineProperty(prototype,"clientHeight",{configurable:true,get:()=>700});
+    const participants = [{id:"a",name:"Arden",persona:"",fullBodyReferenceUrl:"/a.png"},{id:"b",name:"Marlow",persona:"",fullBodyReferenceUrl:"/b.png"}];
+    const draw = (id:string,revision:number) => <VisualPresentationFrame beat={{kind:"portrait-room",roomNumber:1,participants,
+      speech:{id,playerId:id,speaker:id,text:"Our next contribution."}}} rooms={[]} paused elapsedMs={100} navigationRevision={revision} controlsInset={0}/>;
+    const ready = (container:HTMLElement) => {
+      for (const image of container.querySelectorAll<HTMLImageElement>("[data-composed-preload]")) {
+        Object.defineProperties(image,{naturalWidth:{configurable:true,value:600},naturalHeight:{configurable:true,value:900}});
+        fireEvent.load(image);
+      }
+    };
+    const view = render(draw("a",0)); ready(view.container);
+    const left = () => view.container.querySelector<HTMLElement>("[data-scene-layer] img")!.style.left;
+    const initial = left();
+    view.rerender(draw("b",1));
+    const sought = left();
+    expect(sought).not.toBe(initial);
+    view.unmount();
+    const fresh = render(draw("b",1)); ready(fresh.container);
+    expect(fresh.container.querySelector<HTMLElement>("[data-scene-layer] img")!.style.left).toBe(sought);
+  } finally {
+    cleanup();
+    for (const [key,descriptor] of dimensions) {
+      if (descriptor) Object.defineProperty(prototype,key,descriptor);
+      else Reflect.deleteProperty(prototype,key);
+    }
+  }
 });
