@@ -148,12 +148,10 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
       await visualImageJournal(db, operation).begin({ provider: "openai", model: "gpt-image-2", requestHash: "fixture-no-provider" });
       await db.update(schema.visualRepairJobs).set({status: "needs_reconciliation", leaseUntil: null, finishedAt: new Date().toISOString()}).where(eq(schema.visualRepairJobs.id, interrupted.id));
       await click(page, "Refresh selected scene", '[aria-label="Scene inspector"]');
-      await text(page, "Needs reconciliation:");
+      await text(page, "Review provider receipts and record reconciliation below");
       await click(page, "Correct images", '[aria-label="Scene inspector"]');
       await text(page, "Reject and regenerate");
       await click(page, "Reject and regenerate");
-      await text(page, "may already have been charged");
-      await page.evaluate("Array.from(document.querySelectorAll('dialog[open]')).at(-1).querySelector('button:last-child').click()");
       await text(page, "Version 2 queued for rendering");
       expect((await readVisualMedia(db, game!.id)).publications).toHaveLength(0);
       const job = await claimVisualMediaJob(db, 'browser-fake-renderer');

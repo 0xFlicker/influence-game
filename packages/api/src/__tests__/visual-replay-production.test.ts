@@ -16,6 +16,7 @@ import { readVisualMedia, controlVisualMedia } from "../services/visual-media-re
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
+import { readVisualSceneAttempts, reserveVisualRender, visualImageJournal } from "../services/visual-render-journal.js";
 import { createVisualRoutes } from "../routes/visual.js";
 import { createProductionGameMcpServer } from "../game-mcp/server.js";
 import { createMcpRoutes } from "../routes/mcp.js";
@@ -298,6 +299,28 @@ test("producer MCP generates and reviews media, publishes the exact version, and
   expect(frozen.preparation.descriptor.recordings).toHaveLength(1);
   expect(frozen.preparation.descriptor.sourceSnapshot).toMatchObject({mediaReferences: {sceneIds: [job.sceneId]}});
   expect(await read("get_production_render", {jobId: ordered.job.id})).toMatchObject({job: ordered.job});
+
+  if (!job.sceneId) throw new Error("Expected a scene repair job");
+  const firstRegeneration = { ...sceneArgs, action: "regenerate", expectedVersion: 1, requestId: "mcp-interrupted-scene" };
+  const interrupted = await read<{receipt: {jobId: string}}>("generate_production_image", firstRegeneration);
+  const interruptedJob = await claimVisualMediaJob(db, "interrupted-worker");
+  expect(interruptedJob).toMatchObject({id: interrupted.receipt.jobId});
+  const operation = await reserveVisualRender(db, gameId, `media:${interrupted.receipt.jobId}:composition`, {
+    operation: "create", background: "opaque", prompt: "Interrupted fixture", width: 640, height: 360, references: [],
+  }, job.sceneId, interrupted.receipt.jobId);
+  await visualImageJournal(db, operation).begin({ provider: "openai", model: "gpt-image-2", requestHash: "fixture" });
+  await db.update(schema.visualRepairJobs).set({status: "needs_reconciliation", owner: null, leaseUntil: null})
+    .where(eq(schema.visualRepairJobs.id, interrupted.receipt.jobId));
+  const oldAttempts = await readVisualSceneAttempts(db, gameId, job.sceneId, 0, 25);
+  expect(oldAttempts.attempts).toEqual([expect.objectContaining({status: "needs_reconciliation", reconciliation: null})]);
+  const regenerate = { ...sceneArgs, action: "regenerate", expectedVersion: 2, requestId: "mcp-fresh-scene" };
+  expect((await call("generate_production_image", regenerate, ordinary)).body.error?.message).toBe("Unknown or unauthorized MCP tool");
+  const fresh = await read<{receipt: {accepted: boolean; code: string; version: number; jobId: string}}>("generate_production_image", regenerate);
+  expect(fresh).toMatchObject({receipt: {accepted: true, code: "queued", version: 3}});
+  expect(await read<typeof fresh>("generate_production_image", regenerate)).toEqual(fresh);
+  expect((await complete()).id).toBe(fresh.receipt.jobId);
+  expect(await readVisualSceneAttempts(db, gameId, job.sceneId, 0, 25)).toEqual(oldAttempts);
+  expect((await db.select().from(schema.visualRepairJobs)).filter(row => row.version === 3)).toHaveLength(1);
   await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
   expect((await call("read_production_audio", game)).status).toBe(401);
   expect((await call("publish_production_image", publish)).status).toBe(401);
@@ -315,14 +338,10 @@ test("Production refuses unfinished games and caller-authored scene fields", asy
   expect(await db.select().from(schema.visualScenes)).toHaveLength(0);
 });
 
-test("regeneration acknowledgement is an exact bounded list and cannot be supplied to other actions", async () => {
+test("the production API rejects retired regeneration acknowledgement inputs", async () => {
   const headers = await operator("producer"), app = createVisualReplayProductionRoutes(db);
   const url = `/api/admin/production/games/${gameId}/visual/media`;
-  for (const ids of [null, "attempt", [1], [""], ["same", "same"], Array.from({length: 101}, (_, i) => String(i))]) {
-    const result = await app.request(url, {method: "POST", headers, body: JSON.stringify({requestId: crypto.randomUUID(), sceneId: "scene", expectedVersion: 0, action: "regenerate", acknowledgeUncertainAttempts: ids})});
-    expect(result.status).toBe(400);
-  }
-  const result = await app.request(url, {method: "POST", headers, body: JSON.stringify({requestId: crypto.randomUUID(), sceneId: "scene", expectedVersion: 0, action: "continue", acknowledgeUncertainAttempts: []})});
+  const result = await app.request(url, {method: "POST", headers, body: JSON.stringify({requestId: crypto.randomUUID(), sceneId: "scene", expectedVersion: 0, action: "regenerate", acknowledgeUncertainAttempts: ["attempt"]})});
   expect(result.status).toBe(400);
   expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(0);
 });

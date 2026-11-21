@@ -75,12 +75,12 @@ test("rejections are beside the scene and lost responses reuse the same request 
 test("pending provider calls do not show reconciliation; interrupted calls and identity failures stay visible", () => {
   const attempt: MediaAttempt = { id: "attempt", operationKey: "media:job:section:0", status: "pending", costMicrousd: null, receipt: null, reconciliation: null };
   const mounted = render(<SceneRepairPanel {...props({ ...empty(), jobs: [job("rendering")] })} attempts={[attempt]} />);
-  expect(mounted.queryByText(/Needs reconciliation:/)).toBeNull();
+  expect(mounted.queryByText(/Review provider receipts/)).toBeNull();
   mounted.rerender(<SceneRepairPanel {...props({ ...empty(), jobs: [job("needs_reconciliation")] })} attempts={[{ ...attempt, status: "needs_reconciliation" }]} />);
-  expect(mounted.getByText(/Needs reconciliation: 1/)).not.toBeNull();
+  expect(mounted.getByText(/Review provider receipts/)).not.toBeNull();
   mounted.rerender(<SceneRepairPanel {...props({ ...empty(), jobs: [{ ...job("failed"), failure: "Character identity could not be verified: Vera" }] })}
     attempts={[{ ...attempt, status: "finished", receipt: { status: 200, chargeUncertain: false, failure: { kind: "identity", message: "Character identity could not be verified: Vera" } } }]} />);
-  expect(mounted.queryByText(/Needs reconciliation:/)).toBeNull();
+  expect(mounted.queryByText(/Review provider receipts/)).toBeNull();
   expect(mounted.getByText("Character identity could not be verified: Vera")).not.toBeNull();
   expect(mounted.getByText(/The image was generated, but character identities/)).not.toBeNull();
 });
@@ -213,22 +213,16 @@ test("harmonization binds the selected panels and deduplicates clicks without pu
   expect(writes).toHaveLength(1);
 });
 
-test("regeneration acknowledges uncertain costs only after explicit confirmation; cancellation sends nothing", async () => {
+test("regeneration queues immediately when a previous provider receipt is uncertain", async () => {
   const writes: Record<string, unknown>[] = [];
   respond(async (_, init) => { writes.push(JSON.parse(String(init?.body))); return Response.json({ accepted: true, code: "queued", message: "Queued", jobId: "new-job" }); });
   const attempt: MediaAttempt = { id: "old-attempt", sceneId: "scene", operationKey: "original-composition", status: "needs_reconciliation", costMicrousd: null, receipt: null, reconciliation: null };
   const mounted = render(<SceneRepairPanel {...props({...empty(),jobs:[job("ready")]})} attempts={[attempt]} />);
+  expect(mounted.getByText(/previous provider request has an uncertain cost/)).not.toBeNull();
   fireEvent.click(mounted.getByRole("button", { name: "Regenerate scene" }));
-  expect(mounted.getByRole("dialog", { name: "Regenerate this scene?" }).textContent).toContain("may already have been charged");
-  expect(writes).toHaveLength(0);
-  fireEvent.click(mounted.getByRole("button", { name: "Cancel" }));
-  expect(writes).toHaveLength(0);
-  fireEvent.click(mounted.getByRole("button", { name: "Regenerate scene" }));
-  const dialog = mounted.getByRole("dialog");
-  fireEvent.click(dialog.querySelectorAll("button")[1]!);
   await waitFor(() => expect(writes).toHaveLength(1));
-  expect(writes[0]).toMatchObject({action:"regenerate",sceneId:"scene",expectedVersion:1,acknowledgeUncertainAttempts:["old-attempt"]});
-  expect(writes.some(write => write.action === "publish" || write.action === "review")).toBe(false);
+  expect(writes[0]).toEqual({action:"regenerate",sceneId:"scene",expectedVersion:1,requestId:expect.any(String)});
+  expect(mounted.queryByRole("dialog")).toBeNull();
 });
 
 test("a failed queued render releases controls even when its promised version was never produced", async () => {

@@ -114,7 +114,7 @@ The complete accepted source is reduced before selection. Omitted movie events c
 
 ## Scene and game operations
 
-The inspector pages scene inventory and exact version/evidence detail separately. Comparison images and on-demand character framing are silent stills from the exact inspected version, separate from the source/cut Player. Review, reject, regenerate, supported harmonization and publication use the existing media owner and immutable versions. A bad candidate may be regenerated without falsely approving it. Uncertain outcomes require acknowledgement of the exact attempt IDs, including attempts outside the current receipt page. More than 100 unresolved attempts blocks another render while receipt pages remain available for reconciliation.
+The inspector pages scene inventory and exact version/evidence detail separately. Comparison images and on-demand character framing are silent stills from the exact inspected version, separate from the source/cut Player. Review, reject, regenerate, supported harmonization and publication use the existing media owner and immutable versions. A bad candidate may be regenerated without falsely approving it. Regenerate scene and Reject and regenerate queue a fresh candidate directly. Previous uncertain charges remain visible on the provider receipt pages for reconciliation.
 
 Game production/recovery tools preserve the game-owned Influence asset/finals repair and Werewolf scene/form pause validation. Publication and **Resume** remain separate actions. Suspended games preview a fixed accepted prefix; export requires completed history.
 

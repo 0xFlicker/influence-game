@@ -62,7 +62,7 @@ test("scene index is bounded metadata and detail selects an exact game-owned ver
   await expect(readProductionScenes(db, gameId, { audience: "omniscient" })).rejects.toThrow("audience");
 });
 
-test("bounded scene receipts retain the complete exact uncertain-attempt acknowledgement set", async () => {
+test("scene receipt pages retain uncertainty and only expose request metadata", async () => {
   const gameId = await fixture();
   const index = await readProductionScenes(db, gameId);
   for (const id of ["old-uncertain", "new-uncertain"]) {
@@ -71,13 +71,16 @@ test("bounded scene receipts retain the complete exact uncertain-attempt acknowl
   }
   const detail = await readProductionScene(db, gameId, index.items[0]!.key, { limit: 1 });
   expect(detail.attempts).toHaveLength(1);
-  expect(new Set(detail.uncertainAttemptIds)).toEqual(new Set(["old-uncertain", "new-uncertain"]));
+  expect(detail.attempts[0]?.status).toBe("needs_reconciliation");
   expect(detail.pages.nextAttemptOffset).toBe(1);
+  const next = await readProductionScene(db, gameId, index.items[0]!.key, { offset: 1, limit: 1 });
+  expect(next.attempts[0]?.status).toBe("needs_reconciliation");
+  expect(new Set([...detail.attempts, ...next.attempts].map(attempt => attempt.id))).toEqual(new Set(["old-uncertain", "new-uncertain"]));
   expect(JSON.stringify(detail)).not.toMatch(/SECRET_|BASE64_PRIVATE_CAST|PRIVATE_REQUEST_HASH|PRIVATE_HASH|"request"|"usage"/);
   await db.insert(schema.visualMediaRequests).values(await storeFields({ id: "ack", gameId, operatorId: "operator", requestId: "ack-request", inputHash: "hash", sceneId:"scene-0",action:"regenerate",acknowledgedAttemptIds:["old-uncertain"], input: { action: "regenerate", sceneId: "scene-0", acknowledgeUncertainAttempts: ["old-uncertain"], private: "SECRET_REQUEST_EXTRA" }, receipt: { accepted: true, code: "queued", message: "Fixture accepted" }, createdAt: "2026-09-01T00:00:00.000Z" }, {"input":"json-gzip"}));
   const acknowledged = await readProductionScene(db, gameId, index.items[0]!.key, { limit: 1 });
-  expect(acknowledged.uncertainAttemptIds).toEqual(["new-uncertain"]);
-  expect(acknowledged.media.requests[0]!.input.acknowledgeUncertainAttempts).toEqual(["old-uncertain"]);
+  expect(acknowledged.attempts).toEqual(detail.attempts);
+  expect(acknowledged.media.requests[0]!.input).toEqual({ sceneId: "scene-0", action: "regenerate" });
   expect(JSON.stringify(acknowledged)).not.toContain("SECRET_REQUEST_EXTRA");
 });
 
@@ -101,9 +104,8 @@ test("more than 100 uncertain requests preserves bounded receipt pages for recon
   await db.insert(schema.visualRenderOperations).values(await storeFields({id:operationId,gameId,sceneId:"scene-0",operationKey:"scene-0:render:many",inputHash:"PRIVATE_HASH",request:{prompt:"SECRET_PROMPT"}}, {"request":"json-gzip"}));
   await db.insert(schema.visualRenderAttempts).values(await storeFields(Array.from({length:101},(_,index)=>({id:`uncertain-${String(index).padStart(3,"0")}`,operationId,generation:index+1,provider:"openai" as const,model:"fixture",requestHash:"PRIVATE_HASH"})), {"image":"binary"}));
   const scene=(await readProductionScenes(db,gameId)).items[0]!,detail=await readProductionScene(db,gameId,scene.key,{offset:50,limit:2});
-  expect(detail.requiresReconciliation).toBe(true);expect(detail.uncertainAttemptIds).toHaveLength(100);
-  expect(detail.uncertainAttemptIds[0]).toBe("uncertain-000");expect(detail.uncertainAttemptIds.at(-1)).toBe("uncertain-099");
   expect(detail.attempts).toHaveLength(2);expect(detail.pages.nextAttemptOffset).toBe(52);expect(detail.selectedVersion?.version).toBe(0);
+  expect(detail.attempts.every(attempt=>attempt.status==="needs_reconciliation")).toBe(true);
   expect(JSON.stringify(detail)).not.toMatch(/SECRET_|PRIVATE_HASH/);
 });
 
@@ -148,7 +150,7 @@ test("scene SQL reads scope and page metadata while exact selected and current p
   expect(older.pages.nextPublicationOffset).toBe(3);
 });
 
-test("scene uncertainty SQL includes historical job bindings outside the page and excludes live/acknowledged/foreign attempts",async () => {
+test("scene receipt pages include historical bindings and distinguish live and uncertain charges",async () => {
   const gameId=await fixture(),plan=(await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id,"scene-0")))[0]!.plan;
   await db.insert(schema.visualRepairJobs).values(await storeFields([
     {id:"old-job",gameId,sceneId:"scene-0",version:1,operatorId:"operator",mode:"regenerate",plan,renderContext:{style:"Fixture",roomName:"Fixture",roomDirection:"Fixture"},status:"failed",createdAt:"2026-09-01T00:00:00.000Z"},
@@ -163,8 +165,9 @@ test("scene uncertainty SQL includes historical job bindings outside the page an
     await db.insert(schema.visualRenderAttempts).values({id,operationId:`operation-${id}`,generation:1,provider:"openai",model:"fixture",requestHash:"PRIVATE_REQUEST_HASH"});
   }
   await db.insert(schema.visualMediaRequests).values(await storeFields({id:"old-ack",gameId,operatorId:"operator",requestId:"old-ack",inputHash:"hash",sceneId:"scene-0",action:"regenerate",acknowledgedAttemptIds:["acknowledged"],input:{sceneId:"scene-0",action:"regenerate",acknowledgeUncertainAttempts:["acknowledged"]},receipt:{accepted:true,code:"queued",message:"Fixture"},createdAt:"2026-09-01T00:00:00.000Z"}, {"input":"json-gzip"}));
-  const index=await readProductionScenes(db,gameId),detail=await readProductionScene(db,gameId,index.items[0]!.key,{offset:2,limit:1});
-  expect(detail.attempts).toHaveLength(1);expect(detail.pages.nextAttemptOffset).toBe(3);
-  expect(new Set(detail.uncertainAttemptIds)).toEqual(new Set(["old-prefix","old-job-binding"]));
+  const index=await readProductionScenes(db,gameId),detail=await readProductionScene(db,gameId,index.items[0]!.key,{limit:10});
+  expect(Object.fromEntries(detail.attempts.map(attempt=>[attempt.id,attempt.status]))).toEqual({
+    "old-prefix":"needs_reconciliation","old-job-binding":"needs_reconciliation",live:"pending",acknowledged:"needs_reconciliation",
+  });
   expect(JSON.stringify(detail)).not.toMatch(/SECRET_|PRIVATE_|"foreign"/);
 });

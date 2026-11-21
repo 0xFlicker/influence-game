@@ -454,16 +454,14 @@ test("explicit fresh regeneration bypasses uncertain billing without settling it
   const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { operation: "create" as const, background: "opaque" as const, prompt: "old render", width: 512, height: 864, references: [] }, scene.id);
   await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "old" });
   const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id)));
-  expect(await send()).toMatchObject({ accepted: false, code: "needs_reconciliation" });
-  expect(await send({ acknowledgeUncertainAttempts: ["another-scene-attempt"] })).toMatchObject({ code: "invalid_attempt_acknowledgement" });
-  const request = { requestId: "confirmed-fresh-render", acknowledgeUncertainAttempts: [attempt!.id] };
+  const request = { requestId: "fresh-render" };
   const result = await send(request);
   expect(result).toMatchObject({ accepted: true, version: 1 });
   expect(await send(request)).toEqual(result);
-  expect(await send({ expectedVersion: 1, acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });
+  expect(await send({ expectedVersion: 1 })).toMatchObject({ code: "already_pending" });
   expect(calls).toHaveLength(0);
   const [saved] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id)));
-  expect(saved).toEqual(attempt); // Acknowledgement is not billing reconciliation.
+  expect(saved).toEqual(attempt);
   let media = await readVisualMedia(db, "media");
   expect(media.jobs).toHaveLength(1);
   expect(media.jobs[0]?.reusePrefix).toBeNull();
@@ -477,16 +475,13 @@ test("explicit fresh regeneration bypasses uncertain billing without settling it
   expect(media.requests.find(row => row.requestId === request.requestId)?.input).toMatchObject(request);
 });
 
-test("uncertain request acknowledgement cannot bypass an original render still in progress", async () => {
+test("fresh regeneration cannot bypass an original render still in progress", async () => {
   await db.update(schema.games).set({ status: "in_progress" }).where(eq(schema.games.id, "media"));
-  const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { operation: "create" as const, background: "opaque" as const, prompt: "in flight", width: 512, height: 864, references: [] }, scene.id);
-  await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "in-flight" });
-  const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id)));
-  expect(await send({ acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });
+  expect(await send()).toMatchObject({ code: "already_pending" });
   expect((await readVisualMedia(db, "media")).jobs).toHaveLength(0);
 });
 
-test("scene receipt acknowledgement accepts historical bindings and rejects conflicting scene or game ownership",async () => {
+test("historical scene receipts block continuation but remain visible after a fresh regeneration",async () => {
   await db.update(schema.visualScenes).set({status:"failed"}).where(eq(schema.visualScenes.id,scene.id));
   const other=await prepareVisualScene(db,{gameId:"media",boundarySequence:3,plan:planVisualScene({roomId:"mingle-1",backgroundArtifactId:imageId,cast:scene.plan.cast})});
   await db.insert(schema.games).values({id:"foreign-game",slug:"foreign-game",status:"completed",config:"{}"});
@@ -502,18 +497,11 @@ test("scene receipt acknowledgement accepts historical bindings and rejects conf
     await db.insert(schema.visualRenderOperations).values(await storeFields({id:`operation-${id}`,gameId,sceneId,repairJobId,operationKey,inputHash:"fixture-hash",request:{prompt:"Private fixture"}}, {"request":"json-gzip"}));
     await db.insert(schema.visualRenderAttempts).values({id,operationId:`operation-${id}`,generation:1,provider:"openai",model:"fixture",requestHash:"fixture-hash"});
   }
-  const receipt=await readVisualSceneAttempts(db,"media",scene.id,0,1),ids=receipt.uncertainAttemptIds;
-  expect(receipt.attempts).toHaveLength(1);expect(new Set(ids)).toEqual(new Set(["scene-prefix","job-binding","job-prefix"]));
-  expect(await send({expectedVersion:1})).toMatchObject({accepted:false,code:"needs_reconciliation"});
-  for (const id of ["foreign-scene","foreign-game"])
-    expect(await send({expectedVersion:1,acknowledgeUncertainAttempts:[...ids,id]})).toMatchObject({accepted:false,code:"invalid_attempt_acknowledgement"});
-  const result=await send({expectedVersion:1,requestId:"historical-bindings-ack",acknowledgeUncertainAttempts:ids});
+  const receipt=await readVisualSceneAttempts(db,"media",scene.id,0,10);
+  expect(new Set(receipt.attempts.map(attempt=>attempt.id))).toEqual(new Set(["scene-prefix","job-binding","job-prefix"]));
+  expect(receipt.attempts.every(attempt=>attempt.status==="needs_reconciliation")).toBe(true);
+  expect(await send({action:"continue",expectedVersion:1,sourceJobId:"historical-job"})).toMatchObject({accepted:false,code:"needs_reconciliation"});
+  const result=await send({expectedVersion:1});
   expect(result).toMatchObject({accepted:true,code:"queued",version:2});expect(calls).toEqual([]);
-  expect((await readVisualSceneAttempts(db,"media",scene.id,0,1)).uncertainAttemptIds).toEqual([]);
-  const saved=await loadPayloads(db.select().from(schema.visualRenderAttempts));
-  expect(saved.every(attempt=>attempt.receipt===null && attempt.reconciliation===null)).toBe(true);
-});
-
-test("fresh regeneration rejects unrelated acknowledgement even when the scene has no uncertainty", async () => {
-  expect(await send({ acknowledgeUncertainAttempts: ["foreign"] })).toMatchObject({ code: "invalid_attempt_acknowledgement" });
+  expect(await readVisualSceneAttempts(db,"media",scene.id,0,10)).toEqual(receipt);
 });

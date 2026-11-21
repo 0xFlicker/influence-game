@@ -4029,6 +4029,7 @@ export const visualMediaRequests = pgTable("visual_media_requests", {
   operatorId: text("operator_id").notNull(), requestId: text("request_id").notNull(), inputHash: text("input_hash").notNull(),
   sceneId: text("scene_id"),
   action: text("action"),
+  // Historical metadata from the storage cutover. Fresh regeneration does not consult it.
   acknowledgedAttemptIds: jsonb("acknowledged_attempt_ids").notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
   input: payloadColumn("input_object", "json-gzip").notNull().$type<StoredPayload<Record<string, unknown>>>(),
   receipt: jsonb("receipt").notNull().$type<{ accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number; publicationId?: string }>(),

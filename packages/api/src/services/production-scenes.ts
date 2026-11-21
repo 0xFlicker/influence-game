@@ -51,12 +51,11 @@ export async function readProductionScene(db:DrizzleDB,gameId:string,sceneKey:st
   const [summaries,detail,accounting]=await Promise.all([
     readVisualSceneSummaries(db,gameId,sceneId ? [sceneId] : []),
     sceneId ? readVisualSceneMedia(db,gameId,sceneId,{offset,limit,versionId:options.versionId}) : {selectedVersion:null,media:{versions:[],jobs:[],publications:[],requests:[]},pages:{nextVersionOffset:null,nextJobOffset:null,nextPublicationOffset:null,nextRequestOffset:null}},
-    sceneId ? readVisualSceneAttempts(db,gameId,sceneId,offset,limit) : {attempts:[],uncertainAttemptIds:[],nextOffset:null},
+    sceneId ? readVisualSceneAttempts(db,gameId,sceneId,offset,limit) : {attempts:[],nextOffset:null},
   ]);
   if (options.versionId && !detail.selectedVersion) throw new ReplayVisualError("Version not found for this scene","version_missing",404);
   const root=`/api/admin/production/games/${encodeURIComponent(gameId)}/visual`;
   return {scene:sceneMetadata(scene,sceneId ? summaries.get(sceneId) : undefined),media:detail.media,selectedVersion:detail.selectedVersion,
     attempts:accounting.attempts.map(attempt=>({...attempt,...(attempt.imageHash ? {imageEvidenceUrl:`${root}/evidence/attempt/${encodeURIComponent(attempt.id)}`} : {})})),
-    uncertainAttemptIds:accounting.uncertainAttemptIds.slice(0,100),requiresReconciliation:accounting.uncertainAttemptIds.length>100,
     pages:{...detail.pages,nextAttemptOffset:accounting.nextOffset}};
 }

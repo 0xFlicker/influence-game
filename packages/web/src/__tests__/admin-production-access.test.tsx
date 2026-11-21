@@ -88,7 +88,7 @@ test("cached Producer capabilities cannot retain editorial or Werewolf recovery 
   await waitFor(() => expect(within(view.getByRole("dialog", { name: "Game production and recovery" })).getByRole("heading", { name: "Visual production" })).toBeTruthy());
   const scene={key:"scene",sceneId:"scene",roomName:"Paused room",participants:[],originalFailed:true};
   globalThis.fetch=Object.assign(async(input:string|URL|Request)=>Response.json(String(input).includes("/scenes/scene?")
-    ? {scene,media:{versions:[],jobs:[],publications:[],requests:[]},attempts:[{id:"attempt",operationKey:"scene:render:0",sceneId:"scene",status:"needs_reconciliation",costMicrousd:null}],uncertainAttemptIds:["attempt"],requiresReconciliation:true,pages:{nextVersionOffset:null,nextJobOffset:null,nextPublicationOffset:null,nextRequestOffset:null,nextAttemptOffset:null}}
+    ? {scene,media:{versions:[],jobs:[],publications:[],requests:[]},attempts:[{id:"attempt",operationKey:"scene:render:0",sceneId:"scene",status:"needs_reconciliation",costMicrousd:null}],pages:{nextVersionOffset:null,nextJobOffset:null,nextPublicationOffset:null,nextRequestOffset:null,nextAttemptOffset:null}}
     : {gameId:"paused",items:[scene],total:1,nextOffset:null}),{preconnect:originalFetch.preconnect}) as typeof fetch;
   const paused:ProductionLibraryGame={id:"paused",slug:"paused",gameKind:"influence",status:"suspended",createdAt:"2026-10-09T00:00:00Z",hidden:false,playerCount:6,title:null,namingStatus:null,needsAttention:true,recovery:"influence",
     capabilities:{visualRead:true,sceneRepair:true,editorial:true,policy:true,resume:true,influenceRecovery:true,formRepair:false,episodeRead:true,episodeEdit:true,trailerRead:false,trailerRender:false}};
@@ -96,8 +96,8 @@ test("cached Producer capabilities cannot retain editorial or Werewolf recovery 
   const pausedUi=()=><QueryClientProvider client={client}><AdminShell><ProductionSceneInspector game={paused} audience="public" onOpenGameTools={()=>{}}/></AdminShell></QueryClientProvider>;
   view.rerender(pausedUi());
   await waitFor(()=>expect(view.getByRole("button",{name:"Correct images"})).toBeTruthy());
-  expect(view.getByRole("button",{name:"Regenerate scene"}).hasAttribute("disabled")).toBe(true);
-  expect(view.getByText("More than 100 provider requests need reconciliation. Reconcile receipts before requesting another render.")).toBeTruthy();
+  expect(view.getByRole("button",{name:"Regenerate scene"}).hasAttribute("disabled")).toBe(false);
+  expect(view.getByText(/previous provider request has an uncertain cost/)).toBeTruthy();
   expect(view.getByRole("button",{name:"Record reconciliation"})).toBeTruthy();
   permissions=["view_admin","manage_postgame_media"];view.rerender(pausedUi());
   expect(view.queryByRole("button",{name:"Correct images"})).toBeNull();
