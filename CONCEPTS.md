@@ -892,7 +892,7 @@ An optional Visual Mode scene plan stages a canonical set of participants agains
 
 ## Visual paid-attempt journal
 
-A durable reservation written before image generation or localization leaves the process. Receipt, generated pixels or verified localization are retained atomically. A missing response or a server failure leaves a potentially charged attempt requiring reconciliation before a same-operation retry. Provider fallback is a separate recorded attempt. Unpriced work is reported separately from known spend; missing price information is never represented as a free request.
+A durable reservation written before image generation or localization leaves the process. Receipt, generated pixels or verified localization are retained atomically. A missing response or a server failure leaves a potentially charged attempt requiring reconciliation before a same-operation retry. A producer’s fresh scene regeneration creates a new operation chain and retains the earlier receipt. Provider fallback is a separate recorded attempt. Unpriced work is reported separately from known spend; missing price information is never represented as a free request.
 
 ## Timed visual speech
 

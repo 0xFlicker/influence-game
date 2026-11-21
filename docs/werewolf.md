@@ -437,7 +437,7 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 
 Starting requires a current Game Operator (`gamer`), Admin, or Sysop role plus `start_game`; lobby ownership alone is insufficient. Start is disabled until every seat is filled; the API rejects an incomplete roster. Fill AI is a separate action on both library cards and the casting lobby. Both games use the same library control renderer for Start, Fill AI, Stop/End, and Hide.
 
-Use **Regenerate scene**, or **Correct images → Reject and regenerate**, to replace bad art without marking heads or saving/publishing the unwanted version. If a scene request has an uncertain charge, confirm another paid render in the same dialog. Its exact attempt IDs are retained in the accepted request, and the original accounting remains unresolved until real receipt evidence arrives. Active work still blocks regeneration. Review and publish the new version, then explicitly resume a game paused for required visuals. Wolf-form uncertainty retains its separate recovery policy.
+Use **Regenerate scene**, or **Correct images → Reject and regenerate**, to replace bad art without marking heads or saving/publishing the unwanted version. The action queues a fresh render directly. Earlier uncertain charges remain unresolved until real receipt evidence arrives. Active work still blocks regeneration. Review and publish the new version, then explicitly resume a game paused for required visuals. Wolf-form uncertainty retains its separate recovery policy.
 
 ## Retrospective contract layer
 

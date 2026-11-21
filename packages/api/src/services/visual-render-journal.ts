@@ -5,7 +5,7 @@ import { VISUAL_LOCALIZATION_MODEL, VISUAL_LOCALIZATION_VERSION } from "./visual
 import { visualReceiptCostMicrousd } from "./visual-pricing.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { stableJson } from "./stable-hash.js";
 import { generateVisualImage, visualImageSettings, type VisualImageJournal, type VisualImageReceipt, type VisualImageRequest } from "./visual-image-provider.js";
@@ -36,7 +36,7 @@ function visualAttemptRunning() {
     AND ${jobs.gameId} = ${operations.gameId} AND ${jobs.status} IN ('rendering','verifying') AND ${jobs.leaseUntil}::timestamptz > now())`;
 }
 
-/** Current in-flight dispatches are pending; every other unresolved charge needs an exact acknowledgement. */
+/** Current in-flight dispatches are pending. Unresolved charges block reuse during repair. */
 export function visualUncertainAttemptScope() {
   return sql<boolean>`${attempts.reconciliation} IS NULL
     AND (${attempts.receipt} IS NULL OR ${attempts.receipt}->>'chargeUncertain' = 'true')
@@ -250,14 +250,9 @@ export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string, 
 /** Scene evidence pages never select provider inputs, native usage, localization or image bytes. */
 export async function readVisualSceneAttempts(db:DrizzleDB,gameId:string,sceneId:string,offset:number,limit:number) {
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("Invalid scene attempt page");
-  const requests=schema.visualMediaRequests,running=visualAttemptRunning(),scope=visualSceneOperationScope(gameId,sceneId);
-  const uncertain=sql<boolean>`${visualUncertainAttemptScope()}
-    AND NOT EXISTS (SELECT 1 FROM ${requests} WHERE ${requests.gameId} = ${gameId}
-      AND ${requests.sceneId} = ${sceneId} AND ${requests.action} = 'regenerate'
-      AND ${requests.receipt}->>'accepted' = 'true' AND ${requests.acknowledgedAttemptIds} ? ${attempts.id})`;
+  const running=visualAttemptRunning(),scope=visualSceneOperationScope(gameId,sceneId);
   type ReceiptMetadata=Pick<VisualImageReceipt,"provider"|"model"|"requestId"|"status"|"elapsedMs"|"chargeUncertain"> & {failure?:Pick<NonNullable<VisualImageReceipt["failure"]>,"kind"|"message">};
-  const [page,unresolved] = await Promise.all([
-    db.select({id:attempts.id,generation:attempts.generation,provider:attempts.provider,model:attempts.model,costMicrousd:attempts.costMicrousd,
+  const page = await db.select({id:attempts.id,generation:attempts.generation,provider:attempts.provider,model:attempts.model,costMicrousd:attempts.costMicrousd,
       createdAt:attempts.createdAt,finishedAt:attempts.finishedAt,reconciliation:attempts.reconciliation,imageHash:attempts.imageHash,
       receipt:sql<ReceiptMetadata|null>`CASE WHEN ${attempts.receipt} IS NULL THEN NULL ELSE jsonb_strip_nulls(jsonb_build_object(
         'provider', ${attempts.receipt}->'provider', 'model', ${attempts.receipt}->'model', 'requestId', ${attempts.receipt}->'requestId',
@@ -265,12 +260,9 @@ export async function readVisualSceneAttempts(db:DrizzleDB,gameId:string,sceneId
         'failure', CASE WHEN ${attempts.receipt}->'failure' IS NOT NULL THEN jsonb_build_object('kind', ${attempts.receipt}->'failure'->'kind', 'message', ${attempts.receipt}->'failure'->'message') END)) END`,
       operationKey:operations.operationKey,sceneId:operations.sceneId,repairJobId:operations.repairJobId,operationGeneration:operations.generation,running,
     }).from(attempts).innerJoin(operations,eq(attempts.operationId,operations.id))
-      .where(scope).orderBy(desc(attempts.createdAt),desc(attempts.id)).limit(limit+1).offset(offset),
-    db.select({id:attempts.id}).from(attempts).innerJoin(operations,eq(attempts.operationId,operations.id))
-      .where(and(scope,uncertain)).orderBy(asc(attempts.id)).limit(101),
-  ]);
+      .where(scope).orderBy(desc(attempts.createdAt),desc(attempts.id)).limit(limit+1).offset(offset);
   return {attempts:page.slice(0,limit).map(({operationGeneration,running,...attempt})=>({...attempt,status:visualAttemptStatus(attempt,operationGeneration,running)})),
-    nextOffset:page.length > limit ? offset+limit : null,uncertainAttemptIds:unresolved.map(attempt=>attempt.id)};
+    nextOffset:page.length > limit ? offset+limit : null};
 }
 
 

@@ -78,7 +78,7 @@ export const productionMediaOutputs = {
   generate_production_audio: output({ trackId: id }),
   list_production_scenes: output({ items: { type: "array", maxItems: 50, items: sceneSummary }, nextOffset: nullable(integer), total: integer }),
   read_production_scene: output({
-    scene: sceneSummary, expectedVersion: nullable(integer), expectedPublication: integer, requiresReconciliation: bool,
+    scene: sceneSummary, expectedVersion: nullable(integer), expectedPublication: integer,
     jobs: { type: "array", items: job }, versions: { type: "array", items: sceneVersion },
     selectedVersion: nullable(sceneVersion),
     publications: { type: "array", items: object({ id, versionId: id, revision: integer, audience: publicationAudience }) },
@@ -152,7 +152,7 @@ export async function executeProductionMedia(db: DrizzleDB, userId: string, name
     }
     const detail = await readProductionScene(db, gameId, sceneKey, { audience, offset, limit, versionId });
     if (name === "read_production_scene") {
-      const { media, selectedVersion, pages, requiresReconciliation } = detail;
+      const { media, selectedVersion, pages } = detail;
       let preview: Buffer | undefined;
       if (versionId && selectedVersion) {
         const group = args.groupIndex === undefined ? undefined : selectedVersion.shots?.groups[args.groupIndex];
@@ -162,7 +162,7 @@ export async function executeProductionMedia(db: DrizzleDB, userId: string, name
       }
       return result({
         ...ok, scene: summarizeScene(detail.scene), expectedVersion: offset ? null : media.jobs[0]?.version ?? 0,
-        expectedPublication: media.publications[0]?.revision ?? 0, requiresReconciliation,
+        expectedPublication: media.publications[0]?.revision ?? 0,
         jobs: media.jobs.map(({ id, status, step, version }) => ({ id, status, step, version })),
         versions: media.versions.map(summarizeVersion), selectedVersion: selectedVersion ? summarizeVersion(selectedVersion) : null,
         publications: media.publications.map(({ id, versionId, revision, audience }) => ({ id, versionId, revision, audience })),

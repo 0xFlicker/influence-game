@@ -12,7 +12,7 @@ import { visualSceneOperationScope, visualUncertainAttemptScope } from "./visual
 
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
 export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
-  { action: "review"; review: VisualShotReview } | { action: "regenerate"; regenerateForms?: boolean; acknowledgeUncertainAttempts?: string[] } | { action: "harmonize" | "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
+  { action: "review"; review: VisualShotReview } | { action: "regenerate"; regenerateForms?: boolean } | { action: "harmonize" | "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
   { action: "publish"; versionId: string; expectedPublication: number; audience?: "public" | "private" }
 );
 class Rejected extends Error { constructor(readonly code: string, message: string) { super(message); } }
@@ -129,27 +129,14 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
           if (pending) return reject("game_pending", "An image is already queued or rendering for this game. Wait for it to finish before rendering another.");
         }
         if (history.some(j => active(j.status))) return reject("already_pending", "A repair is already active for this scene");
-        const uncertain = await tx.select({ id: schema.visualRenderAttempts.id }).from(schema.visualRenderAttempts)
-          .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))
-          .where(and(visualSceneOperationScope(gameId,scene.id),visualUncertainAttemptScope()));
-        const acknowledged = input.action === "regenerate" && input.acknowledgeUncertainAttempts !== undefined ? input.acknowledgeUncertainAttempts : [];
-        if (!Array.isArray(acknowledged) || acknowledged.length > 100 || acknowledged.some(id => typeof id !== "string")
-          || new Set(acknowledged).size !== acknowledged.length || acknowledged.some(id => !uncertain.some(attempt => attempt.id === id)))
-          return reject("invalid_attempt_acknowledgement", "Refresh the scene before acknowledging its uncertain requests");
-        // A fresh render can be explicitly authorized without claiming the old
-        // provider bill is settled. The accepted request is the durable receipt.
-        if (uncertain.length) {
-          if (input.action !== "regenerate") return reject("needs_reconciliation", "Reconcile uncertain requests before continuing the old repair");
+        if (input.action === "regenerate") {
           if (scene.status === "preparing" && execution?.status === "in_progress")
             return reject("already_pending", "The original scene is still rendering. Wait before regenerating.");
-          const acknowledgements = await loadPayloads(tx.select({input: schema.visualMediaRequests.input, receipt: schema.visualMediaRequests.receipt})
-            .from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId),
-              sql`${schema.visualMediaRequests.sceneId} = ${scene.id} AND ${schema.visualMediaRequests.action} = 'regenerate'`)));
-          const authorized = new Set(acknowledgements.filter(row => row.receipt.accepted)
-            .flatMap(row => Array.isArray(row.input.acknowledgeUncertainAttempts) ? row.input.acknowledgeUncertainAttempts as string[] : []));
-          const remaining = uncertain.filter(attempt => !authorized.has(attempt.id));
-          if (remaining.some(attempt => !acknowledged.includes(attempt.id)))
-            return reject("needs_reconciliation", `Previous render cost is uncertain. Confirm Regenerate scene to authorize a fresh render, or reconcile ${remaining.length} provider request(s).`);
+        } else {
+          const [uncertain] = await tx.select({ id: schema.visualRenderAttempts.id }).from(schema.visualRenderAttempts)
+            .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))
+            .where(and(visualSceneOperationScope(gameId, scene.id), visualUncertainAttemptScope())).limit(1);
+          if (uncertain) return reject("needs_reconciliation", "Reconcile uncertain requests before continuing the old repair");
         }
         let renderContext = { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction };
         let plan = regeneratedPlan ?? scene.plan, sourceImageId: string | null = null, sourceVersionId: string | null = null, reusePrefix: string | null = null;
@@ -190,7 +177,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
       if (!(error instanceof Rejected)) throw error;
       receipt = { accepted: false, code: error.code, message: error.message };
     }
-    await tx.insert(schema.visualMediaRequests).values(await storeFields({ id: randomUUID(), gameId, operatorId, requestId: input.requestId, inputHash: hash, sceneId: input.sceneId, action: input.action, acknowledgedAttemptIds: "acknowledgeUncertainAttempts" in input && Array.isArray(input.acknowledgeUncertainAttempts) ? input.acknowledgeUncertainAttempts.filter((id): id is string => typeof id === "string") : [], input, receipt, createdAt: new Date().toISOString() }, {"input":"json-gzip"}));
+    await tx.insert(schema.visualMediaRequests).values(await storeFields({ id: randomUUID(), gameId, operatorId, requestId: input.requestId, inputHash: hash, sceneId: input.sceneId, action: input.action, input, receipt, createdAt: new Date().toISOString() }, {"input":"json-gzip"}));
     return receipt;
   });
 }
@@ -276,7 +263,7 @@ export async function readVisualSceneMedia(db:DrizzleDB,gameId:string,sceneId:st
     db.select(versionMetadataColumns).from(versions).where(scope).orderBy(desc(versions.version),desc(versions.id)).limit(limit+1).offset(offset),
     db.select(jobMetadataColumns).from(jobs).where(and(eq(jobs.gameId,gameId),eq(jobs.sceneId,sceneId))).orderBy(desc(jobs.version),desc(jobs.id)).limit(limit+1).offset(offset),
     db.select(publicationMetadataColumns).from(publications).where(and(eq(publications.gameId,gameId),eq(publications.sceneId,sceneId))).orderBy(desc(publications.revision),desc(publications.id)).limit(limit+1).offset(offset),
-    db.select({id:requests.id,createdAt:requests.createdAt,receipt:requests.receipt,input:{sceneId:requests.sceneId,action:requests.action,acknowledgeUncertainAttempts:requests.acknowledgedAttemptIds}})
+    db.select({id:requests.id,createdAt:requests.createdAt,receipt:requests.receipt,input:{sceneId:requests.sceneId,action:requests.action}})
       .from(requests).where(and(eq(requests.gameId,gameId),eq(requests.sceneId,sceneId))).orderBy(desc(requests.createdAt),desc(requests.id)).limit(limit+1).offset(offset),
     db.selectDistinctOn([publications.audience],publicationMetadataColumns).from(publications).where(and(eq(publications.gameId,gameId),eq(publications.sceneId,sceneId)))
       .orderBy(asc(publications.audience),desc(publications.revision),desc(publications.id)).limit(2),
@@ -300,8 +287,7 @@ export async function readVisualSceneMedia(db:DrizzleDB,gameId:string,sceneId:st
   pagePublications.sort((a,b)=>b.revision-a.revision || b.id.localeCompare(a.id));
   const next=(hasMore:boolean)=>hasMore ? offset+limit : null;
   return {selectedVersion,media:{versions:pageVersions,jobs:jobPage.slice(0,limit),publications:pagePublications,
-    requests:requestPage.slice(0,limit).map(request=>({...request,input:{sceneId:request.input.sceneId,action:request.input.action,
-      ...(Array.isArray(request.input.acknowledgeUncertainAttempts) ? {acknowledgeUncertainAttempts:request.input.acknowledgeUncertainAttempts.filter((id):id is string=>typeof id==="string")} : {})}}))},
+    requests:requestPage.slice(0,limit)},
     pages:{nextVersionOffset:next(offset+limit<total),nextJobOffset:next(jobPage.length>limit),nextPublicationOffset:next(publicationPage.length>limit),nextRequestOffset:next(requestPage.length>limit)}};
 }
 
