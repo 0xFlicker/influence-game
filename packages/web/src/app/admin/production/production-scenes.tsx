@@ -39,8 +39,9 @@ export function ProductionSceneInspector({game, source, audience, contextSceneId
 function SelectedScene({game, source, audience, sceneKey, versionId, onOpen, onVersionChange, onOpenGameTools}: {game: ProductionLibraryGame; source?: LoadedProductionSource; audience: string; sceneKey: string; versionId: string | null; onOpen: (url: string, label: string) => void; onVersionChange: (id: string) => void; onOpenGameTools: () => void}) {
   const root = productionGameRoot(game.id), session = useAdminSession(), [offset, setOffset] = useState(0);
   const {roles,hasPermission} = usePermissions();
-  const canRepair = game.capabilities.sceneRepair && (game.gameKind === "influence" && game.status !== "completed"
-    ? hasPermission("start_game") : roles.includes("producer") || roles.includes("sysop"));
+  const producer = roles.includes("producer") || roles.includes("sysop");
+  const canRepair = game.capabilities.sceneRepair && producer
+    && (game.gameKind !== "influence" || game.status === "completed" || hasPermission("start_game"));
   const query = new URLSearchParams({audience, offset: String(offset), limit: "25"}); if (versionId) query.set("versionId", versionId);
   const detailUrl = `${root}/scenes/${encodeURIComponent(sceneKey)}?${query}`;
   const detail = useAdminRead<SceneDetail>(detailUrl);

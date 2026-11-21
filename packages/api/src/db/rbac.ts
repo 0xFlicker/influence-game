@@ -14,6 +14,10 @@ export interface ResolvedPermissions {
   permissions: string[];
 }
 
+export function hasProductionRole(roles: readonly string[]): boolean {
+  return roles.includes("producer") || roles.includes("sysop");
+}
+
 export async function userHasRole(
   db: Pick<DrizzleDB, "select">,
   userId: string,

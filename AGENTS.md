@@ -30,6 +30,8 @@
 
 ## Current Operating Context
 
+- When asked to generate House game audio or images, publish scene images, or start a video export, use the [producer MCP tools](docs/game-mcp-production-oauth.md#studio-production-for-agents). Studio links are for human review. After publishing images, read a fresh source snapshot. Wait for ready recordings before ordering the exact cut. Report the verified track, publication, or render job state.
+
 - This repo is maintained with Codex-oriented workflows. Paperclip references in older docs are historical and should not be treated as active process requirements.
 - Prefer Compound Engineering skills for planning, implementation, review, and PR work. Speckit may be used only if its workflow/tooling is explicitly available and selected for the task.
 - Old `INF-###` identifiers are not authoritative anymore. Use GitHub, git history, and current repo docs as the source of truth unless the user provides extra context.

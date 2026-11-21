@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { getPermissionsForUser } from "../db/rbac.js";
+import { getPermissionsForUser, hasProductionRole } from "../db/rbac.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { projectCurrentLegalAcceptance } from "./legal-acceptance.js";
 import {
@@ -1875,7 +1875,8 @@ function normalizeResourceUri(value: string): string | null {
   }
 }
 
-/** Asset grants follow current permission, independently of producer trace scope. */
+/** Editorial assets require production authority independently of trace scope. */
 export async function hasGameAssetPermission(db: Pick<DrizzleDB, "select">, user: Pick<AuthUser, "id">): Promise<boolean> {
-  return (await getPermissionsForUser(db, user.id)).permissions.includes("manage_game_assets");
+  const { roles, permissions } = await getPermissionsForUser(db, user.id);
+  return hasProductionRole(roles) && permissions.includes("manage_game_assets");
 }

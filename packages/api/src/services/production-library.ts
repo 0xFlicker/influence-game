@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
+import { hasProductionRole } from "../db/rbac.js";
 import { readInfluenceVisualPause } from "./visual-policy.js";
 import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 
@@ -13,7 +14,7 @@ export type ProductionLibraryQuery = {
 };
 
 export function canDiscoverProduction(access: ProductionLibraryAccess) {
-  return access.roles.some(role => role === "producer" || role === "sysop")
+  return hasProductionRole(access.roles)
     || access.permissions.some(permission => permission === "view_admin" || permission === "manage_roles");
 }
 
@@ -70,7 +71,7 @@ export async function readProductionLibrary(db: DrizzleDB, query: ProductionLibr
         and(sql`${created} = ${query.cursor.createdAt}::timestamptz`, sql`${games.id} < ${query.cursor.id}`)) : undefined,
     )).orderBy(desc(created), desc(games.id)).limit(query.limit + 1);
   const candidates = rows.slice(0, query.limit);
-  const producer = access.roles.some(role => role === "producer" || role === "sysop");
+  const producer = hasProductionRole(access.roles);
   const permission = (name: string) => access.permissions.includes(name);
   const episodeRead = permission("view_admin") || permission("manage_roles");
   const episodeEdit = permission("manage_postgame_media") || permission("manage_roles");
@@ -97,7 +98,7 @@ export async function readProductionLibrary(db: DrizzleDB, query: ProductionLibr
       needsAttention: Boolean(row.needsAttention), recovery: producer ? recovery : recovery ? "visual" : null,
       capabilities: {
         visualRead: influence ? permission("view_admin") || producer && completed : producer,
-        sceneRepair: influence ? permission("start_game") || producer && completed : producer && recovery !== "form",
+        sceneRepair: producer && (influence ? completed || permission("start_game") : recovery !== "form"),
         editorial: producer && (completed || recovery !== null),
         policy: permission("start_game") && !completed && (influence || producer),
         resume: permission("start_game") && !completed && (influence || producer),

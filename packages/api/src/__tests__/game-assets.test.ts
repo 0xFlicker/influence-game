@@ -1,5 +1,5 @@
 import { loadPayloads } from "../services/payload-storage.js";
-import { testUserIdForWallet } from "./rbac-fixtures.js";
+import { grantTestAuthority, testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -74,6 +74,8 @@ describe("editorial game assets", () => {
   test("producer and sysop can write; admin alone and forged JWT permission cannot", async () => {
     const admin = await user("admin"), sysop = await user("sysop");
     expect((await upload("admin", {}, admin.token)).status).toBe(403);
+    await grantTestAuthority(db, admin.id, ["manage_game_assets"]);
+    expect((await upload("permission-only", {}, admin.token)).status).toBe(403);
     const forged = await createSessionToken(viewer, { permissions: ["manage_game_assets"], roles: ["sysop"] });
     expect((await upload("forged", {}, forged)).status).toBe(403);
     expect((await upload("sysop", {}, sysop.token)).status).toBe(201);

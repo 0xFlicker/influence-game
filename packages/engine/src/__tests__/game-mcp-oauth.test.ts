@@ -118,7 +118,7 @@ describe("Game MCP OAuth helper utilities", () => {
         access_token: "resource-token",
         token_type: "Bearer",
         expires_in: 3600,
-        scope: "producer",
+        scope: "producer producer:media",
         audience: "game-mcp",
         purpose: "mcp_access",
         resource: "http://localhost:3000/mcp",
@@ -129,14 +129,15 @@ describe("Game MCP OAuth helper utilities", () => {
     }) as typeof fetch;
 
     try {
-      const token = await exchangeAuthorizationCode({
+      const options = {
         apiBaseUrl: new URL("http://127.0.0.1:3000"),
         clientId: MCP_OAUTH_CLIENT_ID,
         code: "code-123",
         redirectUri: "http://127.0.0.1:34567/oauth/callback",
         resourceUri,
         codeVerifier: "verifier-123",
-      });
+      };
+      const token = await exchangeAuthorizationCode({ ...options, scope: "producer producer:media" });
 
       expect(token.access_token).toBe("resource-token");
       expect(token.resource).toBe("http://localhost:3000/mcp");
@@ -144,6 +145,8 @@ describe("Game MCP OAuth helper utilities", () => {
       expect(form.get("resource")).toBe(resourceUri);
       expect(form.get("code")).toBe("code-123");
       expect(form.get("code_verifier")).toBe("verifier-123");
+      await expect(exchangeAuthorizationCode({ ...options, scope: "producer producer:render producer:media" }))
+        .rejects.toThrow("OAuth consent omitted requested scopes: producer:render");
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { gameModelPolicy } from "@influence/engine";
 import { schema } from "../db/index.js";
 import { createMcpRoutes } from "../routes/mcp.js";
@@ -9,25 +9,42 @@ import {
   hashOpaqueSecret, MCP_OAUTH_AUDIENCE, MCP_OAUTH_CLIENT_ID, MCP_OAUTH_PURPOSE,
   resolveMcpOAuthClientScopeEnvelope,
 } from "../services/mcp-oauth.js";
-import { MCP_OAUTH_SCOPE_CHECK_VALUES, parseAndValidateMcpOAuthScopes } from "../services/mcp-scope-policy.js";
+import { canonicalMcpOAuthScopeCheck, MCP_OAUTH_SCOPE_VALUES, parseAndValidateMcpOAuthScopes } from "../services/mcp-scope-policy.js";
 import { CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION } from "../services/legal-acceptance.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { setupTestDB } from "./test-utils.js";
 
-test("render scope migration preserves every old grant and matches all four canonical constraints", async () => {
+test("media scope migration preserves canonical grants and validates the complete scope set", async () => {
+  const db = await setupTestDB();
+  const candidates = Array.from({ length: 1 << MCP_OAUTH_SCOPE_VALUES.length }, (_, mask) =>
+    MCP_OAUTH_SCOPE_VALUES.filter((_, index) => mask & (1 << index)).join(" "));
+  const canonical = (scope: string) => {
+    const result = parseAndValidateMcpOAuthScopes(scope);
+    return result.ok && result.scope === scope;
+  };
   const migration = await readFile(new URL("../../drizzle/0144_producer_render_scope.sql", import.meta.url), "utf8");
   const previous = await readFile(new URL("../../drizzle/0139_producer_routing_scope.sql", import.meta.url), "utf8");
   const constraints = [...migration.matchAll(/CHECK \(scope IN \((.*?)\)\)/g)];
   expect(constraints).toHaveLength(4);
   for (const constraint of constraints) {
     const values = [...constraint[1]!.matchAll(/'([^']+)'/g)].map(match => match[1]!);
-    expect(values).toEqual([...MCP_OAUTH_SCOPE_CHECK_VALUES]);
+    expect(values).toEqual(candidates.filter(scope => canonical(scope) && !scope.includes("producer:media")));
     for (const [, oldScope] of previous.matchAll(/'([^']+)'/g)) expect(values).toContain(oldScope!);
   }
   expect(parseAndValidateMcpOAuthScopes("producer:routing").ok).toBe(false);
   expect(parseAndValidateMcpOAuthScopes("producer producer:routing").ok).toBe(true);
   expect(parseAndValidateMcpOAuthScopes("producer:render").ok).toBe(false);
   expect(parseAndValidateMcpOAuthScopes("producer producer:render").ok).toBe(true);
+  candidates.push("producer producer", "producer:media producer", "producer\n", " producer", "producer ", "producer\tproducer:media");
+  const check = canonicalMcpOAuthScopeCheck("scope");
+  const current = await readFile(new URL("../../drizzle/0174_producer_media_scope.sql", import.meta.url), "utf8");
+  expect(current.split(`CHECK (${check})`)).toHaveLength(5);
+  const checked = await db.execute<{scope: string; valid: boolean}>(sql`
+    SELECT scope, ${sql.raw(check)} AS valid
+    FROM jsonb_array_elements_text(${JSON.stringify(candidates)}::jsonb) AS scopes(scope)
+  `);
+  expect(checked).toHaveLength(candidates.length);
+  for (const row of checked) expect(row.valid, row.scope).toBe(canonical(row.scope));
 });
 
 test("HTTP MCP routing edits require explicit consent, current sysop authority, and a waiting game", async () => {

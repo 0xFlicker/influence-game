@@ -7,6 +7,7 @@ export const MCP_OAUTH_SCOPES = [
   "producer:edit",
   "producer:render",
   "producer:routing",
+  "producer:media",
 ] as const;
 export const MCP_OAUTH_DEFAULT_SCOPE = "agents:read games:read";
 export const MCP_OAUTH_SCOPE = MCP_OAUTH_DEFAULT_SCOPE;

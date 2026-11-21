@@ -273,9 +273,11 @@ test("immutable inputs, versions and publication evidence reject updates; failed
 
 test("API queues once, returns durable rejection, and keeps candidates behind admin authorization", async () => {
   await db.insert(schema.users).values({ id: "operator", displayName: "Operator" });
-    await grantTestAuthority(db, "operator", ["view_admin", "start_game"]);
+  await grantTestAuthority(db, "operator", ["view_admin", "start_game"]);
   const token = await createSessionToken("operator", { roles: ["admin"], permissions: ["view_admin", "start_game"] });
   const app = createVisualRoutes(db); const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  expect((await app.request("/api/admin/games/media/visual/media", { method: "POST", headers, body: "{}" })).status).toBe(403);
+  await grantTestAuthority(db, "operator", [], "producer");
   const invalid = await app.request("/api/admin/games/media/visual/media", { method: "POST", headers, body: "{" });
   expect(invalid.status).toBe(400); expect(await invalid.json()).toMatchObject({ accepted: false, code: "invalid_media_request", auditId: expect.any(String) });
   const body = { action: "regenerate", sceneId: scene.id, requestId: "api", expectedVersion: 0 };
@@ -417,18 +419,15 @@ test("harmonization rejects unavailable or ineligible sources before queueing", 
   expect((await readVisualMedia(db, "media")).jobs).toEqual([]); expect(calls).toEqual([]);
 });
 
-test.each(["admin", "producer"])("%s media endpoint authorizes and validates the harmonization action", async role => {
+test.each(["legacy", "studio"])("%s media endpoint authorizes producers and validates harmonization", async route => {
   const source = await acceptedPanels();
   await db.insert(schema.users).values({ id: "operator", displayName: "Operator" });
   await grantTestAuthority(db, "operator", ["view_admin", "start_game"]);
-  if (role === "producer") {
-    await db.insert(schema.roles).values({ id: role, name: role }).onConflictDoNothing();
-    await db.insert(schema.userRoles).values({ userId: "operator", roleId: role });
-  }
-  const token = await createSessionToken("operator", { roles: [role], permissions: ["view_admin", "start_game"] });
+  await grantTestAuthority(db, "operator", [], "producer");
+  const token = await createSessionToken("operator");
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-  const app = role === "admin" ? createVisualRoutes(db) : createVisualReplayProductionRoutes(db);
-  const url = role === "admin" ? "/api/admin/games/media/visual/media" : "/api/admin/production/games/media/visual/media";
+  const app = route === "legacy" ? createVisualRoutes(db) : createVisualReplayProductionRoutes(db);
+  const url = route === "legacy" ? "/api/admin/games/media/visual/media" : "/api/admin/production/games/media/visual/media";
   const input = { action: "harmonize", sceneId: scene.id, expectedVersion: 0, requestId: "harmonize-api", sourceVersionId: source.id };
   expect((await app.request(url, { method: "POST", body: JSON.stringify(input) })).status).toBe(401);
   for (const sourceVersionId of [undefined, "", 42]) expect((await app.request(url, { method: "POST", headers, body: JSON.stringify({ ...input, sourceVersionId }) })).status).toBe(400);

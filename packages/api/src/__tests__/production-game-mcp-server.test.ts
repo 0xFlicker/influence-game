@@ -122,14 +122,14 @@ async function listToolDescriptors(
 
 describe("ProductionGameMcpJsonRpcServer", () => {
   test("every advertised output schema compiles with full JSON Schema validation", async () => {
-    const scopes: GameMcpAuthContext["scopes"] = ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"];
+    const scopes: GameMcpAuthContext["scopes"] = ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"];
     const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
       clientScopes: scopes, hasProducerRole: true, hasModerationRole: true, hasRetrospectiveRecoveryAccess: true,
     }));
     const tools = await listToolDescriptors(server, { ...PRODUCER_AUTH, scope: scopes.join(" "), scopes });
     const validator = new Ajv({ strict: false });
     const typedTools = tools.filter(tool => tool.outputSchema);
-    expect(typedTools).toHaveLength(43);
+    expect(typedTools).toHaveLength(49);
     for (const tool of typedTools) {
       expect(() => validator.compile(tool.outputSchema!)).not.toThrow();
     }
@@ -812,7 +812,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -830,7 +830,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"],
       hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
@@ -1629,6 +1629,23 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(instructions).toContain("Use update_agent for any existing owned competitor regardless of enrollment");
     expect(instructions).toContain("Use create_agent only for a distinctly named separate career");
     expect(instructions).toContain("must not be used for active-match actions");
+    expect(instructions).not.toContain("/admin/production");
+    expect(instructions).not.toContain("producer:media");
+  });
+
+  test("producer initialization directs agents through MCP and explains the granted media tools", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const request = {
+      jsonrpc: "2.0" as const, id: "studio-guidance", method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } },
+    };
+    const readOnly = await server.handle(request, PRODUCER_AUTH);
+    expect(readOnly?.result).toMatchObject({ instructions: expect.stringContaining("Run agent-operated production through MCP") });
+    expect(readOnly?.result).not.toMatchObject({ instructions: expect.stringContaining("publish_production_image") });
+    const media = await server.handle(request, {
+      ...PRODUCER_AUTH, scope: "producer producer:media", scopes: ["producer", "producer:media"],
+    });
+    expect(media?.result).toMatchObject({ instructions: expect.stringContaining("publish_production_image") });
   });
 
   test("advertises list_games as the user-facing MCP App entry point", async () => {

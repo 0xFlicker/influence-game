@@ -117,3 +117,15 @@ Logs are `/tmp/global-render-monitor-*.log`; the completed provider-free rerun i
 PostgreSQL service is removed after validation; existing local services remain.
 AWS scheduling, reserved lanes, deployed OAuth/tailnet behavior and long-runtime
 acceptance remain staging work. No staging or production activation occurred.
+
+## Scoped media production
+
+Agent media tools run through the MCP authorization registry with the opt-in
+`producer:media` grant and the current Producer role. Studio's browser routes
+use application sessions. Both invoke the same generation, publication and
+render owners. The HTTP MCP test queues audio and an image, inspects the exact
+verified version, publishes it, and orders an export that pins the new media.
+The same test checks that an ordinary subject cannot discover or invoke these
+operations. Legacy game operators retain live recovery controls, and
+independent scene production requires current Producer or Sysop authority.
+[Agent workflow and consent](../../game-mcp-production-oauth.md#studio-production-for-agents)

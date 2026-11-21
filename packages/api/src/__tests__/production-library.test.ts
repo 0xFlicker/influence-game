@@ -117,7 +117,7 @@ test.each(adminCases)("admin discovery grants %j do not grant producer details",
   expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store");
   const result = await response.json() as Awaited<ReturnType<typeof readProductionLibrary>>;
   expect(result.items[0]?.recovery).toBe("visual");
-  expect(result.items[0]?.capabilities).toMatchObject({ editorial: false, resume: permissions.includes("start_game"), sceneRepair: permissions.includes("start_game"), visualRead: permissions.includes("view_admin") });
+  expect(result.items[0]?.capabilities).toMatchObject({ editorial: false, resume: permissions.includes("start_game"), sceneRepair: false, visualRead: permissions.includes("view_admin") });
   for (const path of ["/api/admin/production/games", "/api/admin/production/games/influence-paused/visual", "/api/admin/production/games/influence-paused/visual/evidence/artifact/private"]) expect((await app.request(path, { headers: authorization })).status).toBe(403);
   expect((await app.request("/api/admin/production/games/influence-paused/visual/media", { method: "POST", headers: authorization, body: "{}" })).status).toBe(403);
   await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, "operator"));

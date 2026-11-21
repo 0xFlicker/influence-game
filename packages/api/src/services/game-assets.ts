@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { getPermissionsForUser } from "../db/rbac.js";
+import { hasGameAssetPermission } from "./mcp-oauth.js";
 import type { GameAssetActor } from "../middleware/game-asset-auth.js";
 import { requireAssetManager } from "../middleware/game-asset-auth.js";
 import { isViewerGame } from "./game-visibility.js";
@@ -28,7 +28,7 @@ function fingerprint(kind: Operation["kind"], gameId: string, assetId: string | 
 async function lock(db: AssetDB, key: string): Promise<void> { await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`); }
 async function freshManager(db: AssetDB, actor: GameAssetActor): Promise<void> {
   const [user] = await db.select().from(schema.users).where(eq(schema.users.id, actor.id));
-  if (!user || !(await getPermissionsForUser(db, user.id)).permissions.includes("manage_game_assets")) {
+  if (!user || user.deletedAt || !await hasGameAssetPermission(db, user)) {
     throw new GameAssetError("asset_forbidden", 403, "Current game asset permission is required");
   }
 }
@@ -54,14 +54,11 @@ export class GameAssetsService {
     const asset = await this.read(gameId, assetId);
     const bytes = await this.storage.get(asset.objectKey);
     // Recheck the game and live association after storage; replacements/deletions may race the read.
-    let currentActor = actor;
     if (actor) {
       const [user] = await this.db.select().from(schema.users).where(eq(schema.users.id, actor.id));
-      if (!user) notFound();
-      const permissions = (await getPermissionsForUser(this.db, user.id)).permissions;
-      currentActor = { ...actor, walletAddress: user.walletAddress, permissions };
+      if (!user || user.deletedAt) notFound();
     }
-    const currentGame = await this.game(gameId, currentActor);
+    const currentGame = await this.game(gameId, actor);
     const current = await this.read(currentGame.id, assetId);
     if (current.revision !== asset.revision) conflict("Image changed during download; retry");
     return bytes;

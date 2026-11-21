@@ -35,6 +35,10 @@ OAuth consent in addition to current Producer/Sysop authority. `producer:edit`
 continues to cover tags only. No missing media is generated. See [the staging
 runbook](deployment/batch-render-staging.md) for activation, consent and CORS setup.
 
+Agents use the production MCP tools with `producer:media` for generation and
+publication and `producer:render` for export ordering. Studio is the human
+editing interface. [MCP workflow and consent](game-mcp-production-oauth.md#studio-production-for-agents)
+
 **Contributor requirement:** every presentation change must also reach Studio
 Source, Selected cut and encoded exports in the same branch. Follow the mandatory
 [presentation parity checklist](presentation-parity.md), including isolated cuts,

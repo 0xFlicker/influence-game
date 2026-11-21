@@ -4,7 +4,7 @@ Game assets attach externally produced PNG, JPEG, or WebP images to existing gam
 
 ## Management authority and spoiler labels
 
-Producer and sysop receive `manage_game_assets` through RBAC seeding. Admin alone does not receive asset writes. Upload, update, replacement, deletion, capabilities, and operation recovery require current database permission; external clients also require explicit OAuth scope `assets:manage`. Existing producer trace scope does not authorize asset management, and an asset-only token does not grant producer trace access.
+Upload, update, replacement, deletion, capabilities, and operation recovery require a current Producer or Sysop role with `manage_game_assets`. External clients also need explicit consent for the `assets:manage` OAuth scope. That scope authorizes editorial asset operations independently of producer trace access.
 
 Asset `visibility` is presentation metadata: `public` or `spoiler`. CLI uploads default to `spoiler`; `private` is not an accepted asset value. Neither label adds an access restriction or requires sign-in. All viewers of the game receive the same live asset metadata and bytes. Public-game assets are readable anonymously. Existing private-game creator/seated-player/admin access and hidden-game rules still apply to the game itself. Management roles grant writes, not a separate asset viewing audience.
 

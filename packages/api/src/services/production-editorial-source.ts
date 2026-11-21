@@ -11,7 +11,7 @@ export function productionOptions(body:Record<string,unknown>):{audience:"public
   return {audience:audience as "public"|"mystery"|"omniscient",thinking};
 }
 export async function productionGame(db:Pick<DrizzleDB,"select">,id:string) {
-  const [game]=await db.select({id:schema.games.id,gameKind:schema.games.gameKind}).from(schema.games).where(or(eq(schema.games.id,id),eq(schema.games.slug,id)));
+  const [game]=await db.select({id:schema.games.id,gameKind:schema.games.gameKind,status:schema.games.status}).from(schema.games).where(or(eq(schema.games.id,id),eq(schema.games.slug,id)));
   if (!game) throw new WerewolfGameError("Production game not found",404);
   return game;
 }
