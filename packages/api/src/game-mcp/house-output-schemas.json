@@ -243,10 +243,6 @@
                   "audience": {
                     "$ref": "#/definitions/WerewolfAudience"
                   },
-                  "cursor": {
-                    "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
-                    "type": "number"
-                  },
                   "rulesVersion": {
                     "enum": [
                       10,
@@ -268,6 +264,10 @@
                     "type": "string"
                   },
                   "maxDays": {
+                    "type": "number"
+                  },
+                  "cursor": {
+                    "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
                     "type": "number"
                   }
                 },
@@ -482,10 +482,6 @@
                     "audience": {
                       "$ref": "#/definitions/WerewolfAudience"
                     },
-                    "cursor": {
-                      "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
-                      "type": "number"
-                    },
                     "rulesVersion": {
                       "enum": [
                         10,
@@ -507,6 +503,10 @@
                       "type": "string"
                     },
                     "maxDays": {
+                      "type": "number"
+                    },
+                    "cursor": {
+                      "description": "Audience-local cursor; private action counts/coordinates never leave the server.",
                       "type": "number"
                     }
                   },
