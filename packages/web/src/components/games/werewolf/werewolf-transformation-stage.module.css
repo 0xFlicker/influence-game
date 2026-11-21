@@ -1,0 +1,33 @@
+.stage {
+  container: transformation / size;
+}
+
+.content {
+  gap: 16px;
+  padding: 24px;
+}
+
+.cast {
+  gap: 20px;
+  padding-block: 20px;
+}
+
+.wolf {
+  gap: 12px;
+}
+
+@container transformation (max-height: 270px) {
+  .content {
+    gap: 6px;
+    padding: 8px 12px;
+  }
+
+  .cast {
+    gap: 12px;
+    padding-block: 4px;
+  }
+
+  .wolf {
+    gap: 4px;
+  }
+}

@@ -138,6 +138,18 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
       const namePage = room?.querySelector<HTMLElement>("[data-room-context-label] [data-speech-page]");
       const speechBox = room?.querySelector<HTMLElement>("[data-speech-bubble], [data-in-scene-thinking]") ?? document.querySelector<HTMLElement>("[data-speech-bubble], [data-in-scene-thinking]");
       const speechPage = speechBox && Number(getComputedStyle(speechBox).opacity) > .1 ? speechBox.querySelector<HTMLElement>("[data-speech-page]") : null;
+      const transformation = document.querySelector<HTMLElement>("[data-wolf-transformation]");
+      if (transformation) {
+        const bounds = transformation.getBoundingClientRect();
+        for (const caption of transformation.querySelectorAll("figcaption")) {
+          const box = caption.getBoundingClientRect();
+          if (box.bottom > bounds.bottom + 1 || box.left < bounds.left - 1 || box.right > bounds.right + 1)
+            throw new Error("Wolf transformation name leaves the picture");
+        }
+        for (const portrait of transformation.querySelectorAll("figure img")) {
+          if (portrait.getBoundingClientRect().height < 48) throw new Error("Wolf transformation portrait has too little space");
+        }
+      }
       const itemPlayers=Array.from(document.querySelectorAll<HTMLElement>("[data-composed-item-player]")).map(node=>node.dataset.composedItemPlayer!);
       if(expectedItemPlayers && JSON.stringify([...itemPlayers].sort()) !== JSON.stringify([...expectedItemPlayers].sort()))throw new Error(`Audience-safe item badges differ: ${JSON.stringify({itemPlayers,expectedItemPlayers})}`);
       for(const item of document.querySelectorAll<HTMLElement>("[data-composed-item-player]")) {
@@ -172,6 +184,8 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
         itemPlayers,
         castNames:nameNodes.filter(node=>{const r=node.getBoundingClientRect();return r.left>=0 && r.top>=0 && r.right<=window.innerWidth+1 && r.bottom<=window.innerHeight+1;}).map(node=>{const copy=node.querySelector<HTMLElement>("[data-speech-page-copy]");return {id:node.dataset.roomPlayerName,page:Number(copy?.dataset.speechPage ?? 0),text:copy?.textContent ?? ""};}),
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,
+        wolfForms:transformation ? Array.from(transformation.querySelectorAll<HTMLElement>("[data-wolf-form]")).map(node=>node.dataset.wolfForm) : null,
+        visibleCopy:speechPage?.textContent,
         speechPages:Array.from(document.querySelectorAll<HTMLElement>("[data-speech-page]")).map(page=>({page:page.dataset.speechPage,text:page.textContent})),
         castMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-room-player]")).map(member=>member.dataset.roomPlayer),
         winnerMembers:Array.from(document.querySelectorAll<HTMLElement>("[data-winner-player]")).map(member=>member.dataset.winnerPlayer)}));
@@ -215,18 +229,20 @@ function ViewerFrame({manifest,reference:singleReference,references,controlsInse
     roleLabel:actor.kind === "thinking" ? actor.roleLabel : undefined} : null;
   // An isolated thought omits its neighboring speech. Derive reference framing
   // from the viewer's original source cue, independently of the export binding.
-  const thoughtRoom = actor.kind === "thinking" && picture.kind === "werewolf" ? werewolfPortraitRoom(picture.cue) : null;
+  const lead = picture.kind === "werewolf" ? picture.cue.transformation?.durationMs ?? 0 : 0;
+  const thoughtRoom = actor.kind === "thinking" && picture.kind === "werewolf" && !picture.scene && sample.elapsedMs >= lead
+    ? werewolfPortraitRoom(picture.cue) : null;
   return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black text-white">
     {thoughtRoom && picture.kind === "werewolf" ? <>
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
       <div data-werewolf-stage className="relative flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
-        <PortraitRoom beat={thoughtRoom} backgroundUrl={werewolfBackdrop(picture.cue)} floorPerspective hideSpeech elapsedMs={sample.elapsedMs} readingElapsedMs={sample.elapsedMs} reducedMotion={manifest.reducedMotion} controlsInset={0} />
+        <PortraitRoom beat={thoughtRoom} backgroundUrl={werewolfBackdrop(picture.cue)} floorPerspective hideSpeech elapsedMs={sample.elapsedMs-lead} readingElapsedMs={sample.elapsedMs-lead} reducedMotion={manifest.reducedMotion} controlsInset={0} />
       </SceneThinkingProvider></div>
-    </> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={manifest.reducedMotion} /> : picture.kind === "werewolf" ? <WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
+    </> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={manifest.reducedMotion} /> : picture.kind === "werewolf" ? <SceneThinkingProvider thought={thought}><WerewolfWatchStage cue={picture.cue} scene={picture.scene} elapsed={sample.elapsedMs}
       previousCue={previousPicture?.kind === "werewolf" && !previousPicture.scene ? previousPicture.cue : undefined}
       nextCue={nextPicture?.kind === "werewolf" && !nextPicture.scene ? nextPicture.cue : undefined}
       reduced={manifest.reducedMotion} director={{manualAdvance:()=>{},setReady:()=>{},getSnapshot:()=>({...director.getSnapshot(),isPlaying:true}),getSpeechElapsedBaseMs:()=>sample.elapsedMs}}
-      holding={false} contextLabel={reference.label} /> : picture.kind === "influence" && picture.beat ? <>
+      holding={false} contextLabel={reference.label} /></SceneThinkingProvider> : picture.kind === "influence" && picture.beat ? <>
       <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">{reference.label}</div>
       <div data-influence-stage className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><SceneThinkingProvider thought={thought}>
         {reference.activeFormatId && <ActiveFormatOverlay formatId={reference.activeFormatId} onOpen={() => {}} />}

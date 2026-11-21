@@ -19,8 +19,10 @@ export interface CompiledPresentation {
   audio: AudioSchedule;
 }
 
+type ThinkingPicture = Extract<ExportPicture, {kind:"thinking"}>;
+
 /** Extract framing context, never an omitted speech response, into a private thought shot. */
-export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId): Extract<ExportPicture, {kind:"thinking"}> {
+export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId): ThinkingPicture {
   const picture = cue.picture;
   if (!actorId) throw new Error(`Thinking has no accepted actor: ${cue.timing.key}`);
   const sourceElapsedMs = cue.timing.speech?.showAtMs ?? 650;
@@ -52,11 +54,15 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
     ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants,backgroundUrl,floorPerspective:true,paginateLargeCast:beat.paginateLargeCast}})};
 }
 
-export function thinkingSegment(cue: ExportCue, id: string, text: string, actorId?: string): ExportCue {
+export function thinkingSegment(cue: ExportCue, id: string, text: string, actorId?: string,
+  transformation?: ThinkingPicture["transformation"]): ExportCue & {picture: ThinkingPicture} {
   if (!text.trim()) throw new Error(`Empty thinking moment: ${id}`);
   const picture = thinkingPicture(cue, actorId);
+  if (transformation) picture.transformation = transformation;
+  const establishment = transformation ? picture.sourceElapsedMs - transformation.durationMs : picture.room ? 650 : 0;
   return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,activeFormatId:cue.activeFormatId,previousRoomSpeakerId:cue.previousRoomSpeakerId,
-    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,minimumThinkingMs:cue.timing.minimumThinkingMs,...(picture.room && {thinkingEstablishMs:650})}};
+    timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,minimumThinkingMs:cue.timing.minimumThinkingMs,
+      ...(transformation && {thinkingLeadInMs:transformation.durationMs}), ...(establishment && {thinkingEstablishMs:establishment})}};
 }
 
 /** The complete game-owned source is projected before this presentation-only selection. */
@@ -83,6 +89,14 @@ export function compilePresentation(input: {
     return moment.segments.map((cue,index): ExportCue => ({...cue,momentId:moment.id,
       timing:{...cue.timing,key:moment.segments.length === 1 ? moment.id : `${moment.id}:segment:${index}`}}));
   });
+  // The following response keeps its source clock and resumes at speech.
+  const establishedWolfCursors = new Set<number>();
+  for (const [index, cue] of cues.entries()) {
+    if (cue.source.kind !== "werewolf") continue;
+    if (cue.picture.kind === "thinking" && cue.picture.transformation) establishedWolfCursors.add(cue.source.cursor);
+    else if (cue.picture.kind === "werewolf" && cue.picture.cue.transformation && establishedWolfCursors.has(cue.source.cursor))
+      cues[index] = {...cue,timing:{...cue.timing,speechEstablished:true}};
+  }
   // A selected result must remain readable when its following announcement was omitted.
   for (let index = 0; index < cues.length; index++) {
     const cue = cues[index]!;

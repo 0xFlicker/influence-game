@@ -19,8 +19,10 @@ import {formatPresentationMetadata} from "@influence/engine/format-presentation-
 import {portraitRoomPageCount} from "../app/games/[slug]/components/portrait-room-pagination";
 import {WINNER_PAGE_MS, WINNER_PAGE_SIZE} from "../app/games/[slug]/components/winner-scene-timing";
 import {buildExportCues, type ExportCue} from "../lib/replay-export/cues";
-import {thinkingSegment} from "../lib/replay-export/presentation";
-import {compileTiming, parseTimingProfile} from "../lib/replay-export/timing";
+import {compilePresentation, thinkingSegment} from "../lib/replay-export/presentation";
+import {compileTiming, parseTimingProfile, sampleTiming} from "../lib/replay-export/timing";
+import {cueIndexAt} from "../lib/replay-export/manifest";
+import {wolfTransformationFrame} from "../components/games/werewolf/werewolf-night-motion";
 import {compileAudio} from "../lib/replay-export/audio";
 import {compareRecordingPcm} from "./recording-alignment";
 import type {ReplayManifest} from "../lib/replay-export/manifest";
@@ -277,7 +279,7 @@ if (process.env.PACK_STRATEGY_PARITY === "1") {
   const {packStrategyPresentationFixture} = await import("./pack-strategy-presentation-fixture");
   cases.length = 0;
   for (const audience of ["omniscient","mystery"] as const) {
-    const input = await packStrategyPresentationFixture(audience);
+    const input = await packStrategyPresentationFixture(audience,true);
     if (audience === "mystery") {
       if (JSON.stringify(input.catalog).includes("PRIVATE_PACK") || input.base.some(cue=>cue.speech?.text.startsWith("Tomorrow"))) throw new Error("Mystery leaked pack strategy");
       const cue = input.base.find(cue=>cue.picture.kind === "werewolf" && cue.picture.cue.moment.entry.kind === "night" && !cue.picture.cue.nightAction);
@@ -285,6 +287,18 @@ if (process.env.PACK_STRATEGY_PARITY === "1") {
       cases.push({name:"pack-mystery",cue,reference:cue});
       continue;
     }
+    const entrance = input.base.find(cue => cue.picture.kind === "werewolf" && cue.picture.cue.transformation);
+    if (!entrance || entrance.source.kind !== "werewolf") throw new Error("Missing viewer pack entrance");
+    const cursor = entrance.source.cursor;
+    const firstPack = input.bound.filter(moment => moment.segments.some(cue => cue.source.kind === "werewolf" && cue.source.cursor === cursor));
+    if (firstPack.length !== 2) throw new Error("Missing pack entrance thought or speech");
+    const {cues:paired} = compilePresentation({source:input.bound,selectedIds:firstPack.map(moment => moment.id),profile:parseTimingProfile(),fps:30,assets:{},music:false});
+    const thoughtOnly = compilePresentation({source:input.bound,selectedIds:[firstPack[0]!.id],profile:parseTimingProfile(),fps:30,assets:{},music:false}).cues[0]!;
+    if (thoughtOnly.picture.kind !== "thinking" || !thoughtOnly.picture.transformation || !paired[1]?.timing.speechEstablished)
+      throw new Error("The selected cuts must play the pack entrance once before thinking");
+    cases.push({name:"pack-transformation-pair",cue:paired[0]!,reference:entrance,sequence:paired,references:[entrance,entrance]});
+    cases.push({name:"pack-transformation-thought",cue:thoughtOnly,reference:entrance});
+    cases.push({name:"pack-transformation-thought-recorded",cue:{...thoughtOnly,timing:{...thoughtOnly.timing,recording:{assetId:"assets/format-context-voice.wav",durationMs:2000}}},reference:entrance,reducedMotion:true});
     const strategy = input.catalog.moments.find(moment=>moment.part.kind === "speech" && input.bound.find(bound=>bound.id === moment.id)?.segments.some(cue=>cue.speech?.text.startsWith("Tomorrow")));
     const thought = input.catalog.moments.find(moment=>moment.kind === "thinking" && moment.order.anchor === strategy?.order.anchor);
     const result = input.catalog.moments.find(moment=>moment.part.kind === "pack_vote");
@@ -368,7 +382,8 @@ try {
     const geometries: readonly (readonly [number, number])[] = process.env.FORMAT_CONTEXT_MEDIUM === "1" ? [[640,700]] : process.env.WINNER_AUDIO === "1" ? [[640,360]] : narrow ? [[360,240]] : portrait ? [[320,480]] : [[1280,720],[640,360],...(process.env.FORMAT_CONTEXT_CASE === "page-werewolf-ballot" ? [[320,480] as const] : []),...(process.env.COMPOSED_ROOM_PARITY === "1" || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || process.env.FORMAT_CONTEXT_CASE === "influence-winner" ? [[360,240] as const, [390,700] as const] : [])];
     const geometryCases = (narrow || portrait) && !suppliedCases ? cases.filter(item => item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || ["page-werewolf-ballot","influence-winner","format-mingle","format-huddle","format-huddle-five","format-huddle-large","format-huddle-large-reduced","format-huddle-large-thought","format-rules"].includes(item.name))
       : formatOnly ? cases.filter(item => item.name.startsWith("format-")) : cases;
-    const selectedCases = process.env.COMPOSED_ROOM_PARITY === "1" ? geometryCases.filter(item => item.name.startsWith("composed-") && (!process.env.FORMAT_CONTEXT_CASE || process.env.FORMAT_CONTEXT_CASE.split(",").includes(item.name))) : process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : process.env.FORMAT_CONTEXT_CASE ? geometryCases.filter(item => item.name === process.env.FORMAT_CONTEXT_CASE) : geometryCases;
+    const requestedCases = process.env.FORMAT_CONTEXT_CASE?.split(",");
+    const selectedCases = process.env.COMPOSED_ROOM_PARITY === "1" ? geometryCases.filter(item => item.name.startsWith("composed-") && (!requestedCases || requestedCases.includes(item.name))) : process.env.WINNER_SEQUENCE_ONLY === "1" ? [] : requestedCases ? geometryCases.filter(item => requestedCases.includes(item.name)) : geometryCases;
     if (process.env.COMPOSED_ROOM_PARITY === "1" && !selectedCases.length) throw new Error("No composed-room proof cases selected");
     for(const [width,height] of geometries) for(const item of selectedCases) {
       // The user requested restoration of the original gallery, not a portrait
@@ -387,7 +402,7 @@ try {
       const musicAssets = musicPath && item.cue.music ? {[item.cue.music.src]:{path:musicPath,sha256:sha256(await readFile(musicPath)),mediaType:"audio" as const,durationMs:musicDuration}} : {};
       if (winnerAudio && !musicPath) throw new Error("Winner fixture is missing its closing music");
       let manifest:ReplayManifest={schema:"house.replay-export",version:2,game:{id:"fixture",slug:item.name,kind:item.cue.picture.kind === "thinking" ? item.cue.picture.gameKind : item.cue.picture.kind === "influence" || item.cue.picture.kind === "influence-opening" ? "influence" : "werewolf"},
-        width,height,fps,reducedMotion:item.reducedMotion === true,thinking:item.cue.picture.kind === "thinking",profile,cues:preparedCues,timeline,assets:musicAssets,staticFiles:{},boundary:{},audio:compileAudio(preparedCues,timeline,musicAssets,profile,winnerAudio),
+        width,height,fps,reducedMotion:item.reducedMotion === true,thinking:preparedCues.some(cue=>cue.picture.kind === "thinking"),profile,cues:preparedCues,timeline,assets:musicAssets,staticFiles:{},boundary:{},audio:compileAudio(preparedCues,timeline,musicAssets,profile,winnerAudio),
         range:{fromFrame:0,untilFrame:timeline.at(-1)!.endFrame},revision:"fixture",dirty:true};
       const prefix=join(output,`${item.name}-${width}`);
       // The same layout prepass used by the local exporter freezes typography before encoding.
@@ -520,7 +535,9 @@ try {
           }
         }
       }
-      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...(item.name.startsWith("lone-wolf-") ? [Math.floor(manifest.range.untilFrame*.65)] : []),...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...cameraSamples,...nameSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
+      const packEntrance = item.name.startsWith("pack-transformation-") ? item.cue.timing.thinkingLeadInMs! : 0;
+      const entranceSamples = packEntrance ? [0,800,packEntrance-40,packEntrance+40].map(ms=>Math.round(ms*fps/1000)) : [];
+      const samples=[...new Set([...(rulesSamples ?? (thought ? [Math.round((thought.insertAt+thought.enterMs*.5)*fps/1000),Math.round((thought.insertAt+thought.readAtMs+500)*fps/1000),Math.round((thought.insertAt+thought.returnAtMs+450)*fps/1000)] : item.cue.picture.kind === "werewolf-opening" || item.cue.picture.kind === "werewolf" && (item.cue.picture.cue.reprise || item.cue.picture.cue.transformation) ? [0,15,60,120,manifest.range.untilFrame-1].map(frame=>Math.min(frame,manifest.range.untilFrame-1)) : (item.name.startsWith("composed-") || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("format-") && item.name !== "format-menu") ? [0,Math.min(60,manifest.range.untilFrame-1),manifest.range.untilFrame-1] : [Math.min(60,manifest.range.untilFrame-1)])),...(item.name.startsWith("lone-wolf-") ? [Math.floor(manifest.range.untilFrame*.65)] : []),...entranceSamples,...castSamples,...dialogueSamples,...roomSamples,...winnerSamples,...cameraSamples,...nameSamples,...(item.sequence ? timeline.flatMap(row=>[row.startFrame,Math.min(row.endFrame-1,row.startFrame+60),row.endFrame-1]) : [])])];
       const observedCast = new Set<string>();
       const observedNames=new Map<string,Map<number,string>>();
       const observedWinnerCast = new Set<string>();
@@ -537,6 +554,15 @@ try {
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:paths.export,imageFormat:"png",puppeteerInstance:browser,
           onArtifact:artifact=>{if (artifact.filename.startsWith("format-audit-")) {const data=JSON.parse(typeof artifact.content === "string" ? artifact.content : new TextDecoder().decode(artifact.content)); frameAudits.push(data); for(const name of data.castNames ?? []){if(!observedNames.has(name.id))observedNames.set(name.id,new Map());observedNames.get(name.id)!.set(name.page,name.text);} for (const id of data.castMembers ?? []) observedCast.add(id); for (const id of data.winnerMembers ?? []) observedWinnerCast.add(id); if(data.namePage !== undefined) observedRoomPages.add(data.namePage); if(data.speechPage !== undefined) observedDialoguePages.add(data.speechPage);}}});
         await writeFile(`${prefix}-${frame}-audit.json`,JSON.stringify(frameAudits,null,2));
+        if (packEntrance) {
+          const ms = frame*1000/fps, index = cueIndexAt(timeline,ms);
+          const sample = sampleTiming(timeline[index]!,ms);
+          const audit = frameAudits[0] as {wolfForms: string[] | null; visibleCopy?: string};
+          const forms = index === 0 && sample.elapsedMs < packEntrance
+            ? [0,1].map(wolf => wolfTransformationFrame(sample.elapsedMs,wolf,manifest.reducedMotion).wolf ? "wolf" : "original") : null;
+          if (JSON.stringify(audit.wolfForms) !== JSON.stringify(forms) || forms && audit.visibleCopy)
+            throw new Error(`Unexpected pack entrance or premature dialogue at frame ${frame}`);
+        }
         const meanDifference=difference(await pixels(paths.viewer),await pixels(paths.export));
         results.push({name:item.name,width,height,frame,meanDifference,exportHash:sha256(await readFile(paths.export)),...paths});
         await writeFile(join(output,"comparison.json"),JSON.stringify({source:proofSource,frames:results},null,2));
@@ -564,13 +590,13 @@ try {
       if (expectedDialoguePages > 0 && (item.name === "page-werewolf-ballot" || item.name.startsWith("hunter-") || item.name.startsWith("pack-") || item.name.startsWith("lone-wolf-") || item.name.startsWith("composed-")) && observedDialoguePages.size !== expectedDialoguePages)
         throw new Error(`Not every measured dialogue page appeared: ${observedDialoguePages.size}/${expectedDialoguePages}`);
       // Verify random-access stability independently of prior React/browser state.
-      if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
+      if (process.env.COMPOSED_ROOM_PARITY === "1" || packEntrance) await resetComparisonBrowser();
       for(const frame of samples.toReversed()) {
         const path=join(scratch,"reverse.png");
         await renderStill({serveUrl,composition:exported,inputProps,frame,output:path,imageFormat:"png",puppeteerInstance:browser});
         if(sha256(await readFile(path))!==results.find(row=>row.name===item.name && row.width===width && row.frame===frame)!.exportHash) throw new Error("Reverse-order render mismatch");
       }
-      if(width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-lobby-fallback","composed-lobby-fallback-thought","composed-lobby-short","composed-lobby-short-thought","composed-large-reduced","composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
+      if (packEntrance && width === 360 || width===640 && ((process.env.COMPOSED_ROOM_PARITY === "1" && ["composed-lobby-fallback","composed-lobby-fallback-thought","composed-lobby-short","composed-lobby-short-thought","composed-large-reduced","composed-hunter-held-omniscient","composed-camera-sequence","composed-eight","composed-eight-thought","composed-thought","composed-pair-recorded","composed-werewolf-omniscient","composed-pack-thought"].includes(item.name)) || process.env.HUNTER_PARITY === "1" || process.env.PACK_STRATEGY_PARITY === "1" || suppliedCases || ["page-werewolf-ballot","influence-winner","format-menu","format-rules","format-mingle","format-huddle-thought","format-huddle-large-recorded","format-huddle-large-thought-recorded","chain-0","winner-mystery-vote"].includes(item.name))) {
         const recorded = item.name.endsWith("-recorded");
         if (process.env.COMPOSED_ROOM_PARITY === "1") await resetComparisonBrowser();
         await renderMedia({serveUrl,composition:exported,inputProps,codec:"h264",imageFormat:item.name.startsWith("composed-") ? "png" : undefined,crf:item.name === "influence-winner" || item.name.startsWith("composed-") ? 10 : undefined,audioCodec:"aac",muted:!recorded && !winnerAudio,outputLocation:`${prefix}.mp4`,concurrency:2,puppeteerInstance:browser});

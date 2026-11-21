@@ -2,6 +2,7 @@ import {werewolfOpening, type WerewolfOpeningCue} from "../../components/games/w
 import {
   werewolfCues,
   werewolfWatchPolicy,
+  type werewolfTransformationCast,
   type WerewolfWatchCue,
 } from "../../components/games/werewolf/werewolf-watch-model";
 import { werewolfCueMoment } from "../../components/games/werewolf/werewolf-watch-model";
@@ -57,6 +58,7 @@ export type ExportPicture =
       roleLabel?: string;
       scene: AcceptedVisualScene | null;
       sourceElapsedMs: number;
+      transformation?: {durationMs: number; wolves: ReturnType<typeof werewolfTransformationCast>};
       backgroundUrl?: string;
       /** Reserve the response's ledger geometry without including its votes. */
       ballotFraming?: boolean;

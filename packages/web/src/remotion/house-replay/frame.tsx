@@ -23,6 +23,7 @@ import {
   useBufferState,
 } from "remotion";
 import { WerewolfContentFrame, WerewolfHouseLayout } from "../../components/games/werewolf/werewolf-watch-stage";
+import {WerewolfTransformationStage} from "../../components/games/werewolf/werewolf-transformation-stage";
 import { VisualPresentationFrame, hasInlineHouseMessage, presentationBeatOwnsBackdrop } from "../../app/games/[slug]/components/visual-presentation";
 import { FormatPresentation, formatPresentationOwnsBackdrop } from "../../app/games/[slug]/components/format-presentation";
 import { FitPresentation } from "../../app/games/[slug]/components/fit-presentation";
@@ -268,7 +269,7 @@ export function ReplayFrame({
 }
 
 /** Actor and scene context contain no omitted response payload. */
-function ThinkingFrame({picture, elapsedMs, reduced}: {
+function ThinkingFrame({picture, elapsedMs: sourceElapsedMs, reduced}: {
   picture: Extract<ExportCue["picture"], {kind: "thinking"}>;
   elapsedMs: number;
   reduced: boolean;
@@ -285,13 +286,17 @@ function ThinkingFrame({picture, elapsedMs, reduced}: {
     observer.observe(element);
     return () => observer.disconnect();
   }, [picture]);
+  const transformation = picture.transformation;
+  if (transformation && sourceElapsedMs < transformation.durationMs)
+    return <WerewolfTransformationStage wolves={transformation.wolves} elapsed={sourceElapsedMs} reduced={reduced} />;
+  const elapsedMs = sourceElapsedMs - (transformation?.durationMs ?? 0);
   if (picture.chain) return <SafetyChain beat={picture.chain} elapsedMs={elapsedMs} reducedMotion={reduced} />;
   if (picture.room) return <PortraitRoom paginateLargeCast={picture.room.paginateLargeCast} beat={{kind:"portrait-room",roomNumber:picture.room.number,roomLabel:picture.room.label,
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
     backgroundUrl={picture.room.backgroundUrl} floorPerspective={picture.room.floorPerspective}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
   if (picture.scene) return <VisualSceneView scene={picture.scene} speech={null}
-    focusPlayerId={actor.id} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
+    focusPlayerId={actor.id} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} fitShortThought={Boolean(transformation)} />;
   return <div ref={soloStage} className="relative flex min-h-0 flex-1 flex-col"><SoloPresentation beat={{kind:"portrait", purpose:"Conversation", player:actor,
     roleLabel:picture.roleLabel, speech:{id:actor.id, playerId:actor.id, speaker:actor.name, text:""}}}
     backgroundUrl={picture.backgroundUrl} reserveSpeechSpace
