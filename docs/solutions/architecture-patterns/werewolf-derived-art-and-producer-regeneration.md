@@ -42,6 +42,12 @@ An entrance is a prefix within the existing dialogue/hunt cue, not a new canonic
 
 A source cursor alone cannot identify the Doctor, Seer, hunt and dawn substeps of one resolved night. Scene navigation carries `{ cursor, step }` from the same typed action list as playback expansion; Previous/Next must preserve that step when seeking. Test a two-wolf pack becoming a lone survivor, both forward and backward, with a published solo hunt image. Mystery still exposes only its public outcome and no private navigation labels.
 
+Studio binds the first pack thought to the same canonical entrance when its
+cursor and actor match the pack speech. Freeze only the entrance cast and its
+art with that thought. If both parts are selected, start the speech at the
+canonical speech boundary so the transformation and room setup play once. A
+speech-only cut still starts at the entrance.
+
 ### Current hunt policy correction — 2026-10-09
 
 The original Solution paragraph records the earlier experiment. PR164 subsequently removed generated hunts when the Doctor protects the accepted attack target; null-target nights also require no hunt. Current scene inventory, automatic preparation and producer regeneration follow that policy. The named save explanation still uses original character art in permitted Omniscient playback. Do not generate a Doctor-save composite to fill a studio scene list. See `docs/werewolf.md` and `werewolf-visual-policy.test.ts` for the current contract.

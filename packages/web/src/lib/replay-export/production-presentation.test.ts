@@ -13,12 +13,14 @@ import {createFormatKernelViewerScenario,FORMAT_KERNEL_VIEWER_SCENARIO_IDS} from
 import type {GameWatchReplayFrame,TranscriptEntry,ViewerDecisionEvent} from "../api";
 import {buildExportCues} from "./cues";
 import {compilePresentation, thinkingPicture} from "./presentation";
-import {parseTimingProfile} from "./timing";
+import {parseTimingProfile, sampleTiming} from "./timing";
 import {werewolfBackdrop} from "../../components/games/werewolf/werewolf-room-presentation";
 import {WEREWOLF_ROOMS} from "../../components/games/werewolf/werewolf-rooms";
 import {exportContinuedActor,exportPreviousSpeaker} from "./room-continuity";
 import {thinkingSegment} from "./presentation";
 import type {ReplaySource} from "./source";
+import {packStrategyPresentationFixture} from "../../scripts/pack-strategy-presentation-fixture";
+import {ReplayAssets} from "./assets";
 
 async function fixture(audience:"mystery"|"omniscient", current = false) {
   const events = current ? await completedCurrentWerewolfFixture("production-binding") : await completedWerewolfResultsFixture("saved", "production-binding");
@@ -47,6 +49,62 @@ async function fixture(audience:"mystery"|"omniscient", current = false) {
   return {source,provenance,thoughts,catalog,base};
 }
 const settings = {profile:parseTimingProfile({ending:{holdMs:0}}),fps:30,assets:{},music:false};
+
+test("the first pack thought plays the canonical entrance even when its speech is omitted", async () => {
+  const {bound, base} = await packStrategyPresentationFixture("omniscient",true);
+  const firstPack = base.find(cue => cue.picture.kind === "werewolf" && cue.picture.cue.transformation);
+  if (firstPack?.picture.kind !== "werewolf" || firstPack.source.kind !== "werewolf" || !firstPack.speech || !firstPack.timing.speech)
+    throw new Error("Fixture is missing the first pack speech");
+  const cursor = firstPack.source.cursor;
+  const packMoments = bound.filter(moment => moment.segments.some(cue => cue.source.kind === "werewolf" && cue.source.cursor === cursor));
+  expect(packMoments).toHaveLength(2);
+  const [thought, speech] = packMoments;
+  const lead = firstPack.picture.cue.transformation!.durationMs;
+  const entrance = firstPack.timing.speech.showAtMs;
+  const compile = (selectedIds: string[]) => compilePresentation({...settings,source:bound,selectedIds});
+  const complete = compile([thought!.id,speech!.id]);
+  const thoughtOnly = compile([thought!.id]);
+  const speechOnly = compile([speech!.id]);
+  const [thinkingCue, speechCue] = complete.cues;
+  const [thinkingTime, speechTime] = complete.timeline;
+  if (thinkingCue?.picture.kind !== "thinking" || !thinkingTime?.thought || !speechTime) throw new Error("Missing pack timing");
+  expect(thinkingCue.picture.transformation?.durationMs).toBe(lead);
+  expect(thinkingTime.thought.insertAt).toBe(entrance);
+  expect(sampleTiming(thinkingTime,lead-1).elapsedMs).toBe(lead-1);
+  expect(sampleTiming(thinkingTime,thinkingTime.thought.insertAt + thinkingTime.thought.readAtMs).elapsedMs).toBe(entrance);
+  expect(complete.moments[0]!.contentFrame).toBeGreaterThan(Math.ceil(entrance * settings.fps / 1000));
+  expect(sampleTiming(speechTime,speechTime.startMs).elapsedMs).toBe(entrance);
+  expect(speechCue?.speech).toEqual(firstPack.speech);
+  expect(thoughtOnly.timeline).toEqual([thinkingTime]);
+  expect(thoughtOnly.cues[0]!.speech).toBeNull();
+  expect(JSON.stringify(thoughtOnly)).not.toContain(firstPack.speech.text);
+  class FixtureAssets extends ReplayAssets {
+    override async cache(source: string) { return `assets/${source.split("/").at(-1)}`; }
+  }
+  const freezer = new FixtureAssets("/tmp/unused-bundle","/tmp/unused-public",new URL("http://localhost"),new AbortController().signal);
+  const frozenThought = await freezer.freeze(thoughtOnly.cues[0]!.picture);
+  if (frozenThought.kind !== "thinking") throw new Error("Expected a frozen thought");
+  expect(frozenThought.transformation?.wolves).toEqual(thinkingCue.picture.transformation!.wolves.map(wolf => ({
+    ...wolf,originalUrl:"assets/strategic.webp",wolfUrl:"assets/aggressive.webp",
+  })));
+  expect(sampleTiming(speechOnly.timeline[0]!,0).elapsedMs).toBe(0);
+  expect(speechOnly.timeline[0]!.speech?.showAtMs).toBe(entrance);
+});
+
+test("the pack entrance keeps its motion time when the room hold is trimmed and a thought is voiced", async () => {
+  const {bound} = await packStrategyPresentationFixture("omniscient",true);
+  const thought = bound.find(moment => moment.segments[0]?.picture.kind === "thinking" && moment.segments[0].picture.transformation);
+  if (!thought) throw new Error("Expected a thought with a pack entrance");
+  const cue = thought.segments[0]!;
+  const assetId = "assets/first-pack-thought";
+  const recorded = {...thought,segments:[{...cue,timing:{...cue.timing,recording:{assetId,durationMs:2000}}}]};
+  const cut = compilePresentation({...settings,source:[recorded],selectedIds:[recorded.id],
+    profile:parseTimingProfile({establishingHoldMs:0,motionScale:.5,ending:{holdMs:0}})});
+  const row = cut.timeline[0]!;
+  expect(row.thought?.insertAt).toBe(cue.timing.thinkingLeadInMs! * .5);
+  expect(row.recording?.startMs).toBe(row.thought!.insertAt+row.thought!.readAtMs);
+  expect(cut.audio.clips.map(clip => clip.endMs-clip.startMs)).toEqual([2000]);
+});
 test("Studio voting thoughts keep the ballot backdrop through their close-up", async () => {
   const input = await fixture("omniscient", true);
   const moments = await bindWerewolfProductionPresentation(input);

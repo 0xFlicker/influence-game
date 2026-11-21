@@ -29,13 +29,14 @@ export interface SceneComposition {
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
 
 /** Camera, bubble pages and speech share the director's presentation time. */
-export function VisualSceneView({ scene: roomScene, composition, previousFocusPlayerId, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", speechDurationMs, panelTreatment = "separate", onReadyChange, focusPlayerId, focusActor }: {
+export function VisualSceneView({ scene: roomScene, composition, previousFocusPlayerId, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", speechDurationMs, panelTreatment = "separate", onReadyChange, focusPlayerId, focusActor, fitShortThought = false }: {
   composition?: SceneComposition;
   previousFocusPlayerId?: string | null;
   scene: AcceptedVisualScene; speech: VisualSpeech | null; elapsedMs: number;
   /** Frame a silent performance or elimination without inventing speech. */
   focusPlayerId?: string;
   focusActor?: {id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null};
+  fitShortThought?: boolean;
   onReadyChange?: (ready: boolean) => void;
   paused?: boolean;
   controlsInset?: number; reducedMotion?: boolean; navigationRevision?: number;
@@ -153,8 +154,9 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
   const fallbackFrame = {left:(size.width-fallbackSize)/2,top:available*.3-fallbackSize/2,width:fallbackSize,height:fallbackSize};
   const faceFrame = fallback ? fallbackFrame : {left:framing.left + framing.width * face.x, top:framing.top + framing.height * face.y,
     width:framing.width * (face.width || .1),height:framing.height * (face.height || .12)};
+  const compactThought = fitShortThought && size.width < 640 && size.width >= available && available < 340;
   const focus = thinkingFocus(size.width, available, faceFrame, thinkingReady ? thought?.focus ?? 0 : 0, fallback, reducedMotion,
-    !fallback && face.x + face.width / 2 > .5 ? "right" : "left", Boolean(composition));
+    !fallback && face.x + face.width / 2 > .5 ? "right" : "left", Boolean(composition) || compactThought);
   const speechBox = rawBubble;
   const speechFit = useBubbleTypography(frameRef, speech?.text ?? "", speechBox, "speech", available < 300, 28, composition ? speech?.speaker : undefined);
   const bubble = {...speechBox,width:speechFit.typography?.width ?? speechBox.width,height:speechFit.typography?.height ?? speechBox.height};
@@ -206,6 +208,6 @@ export function VisualSceneView({ scene: roomScene, composition, previousFocusPl
         progress={speechDurationMs !== undefined && sampled?.speech?.text !== speech.text ? Math.max(0,(readingElapsedMs - 850)/Math.max(1,speechDurationMs - 1450)) : undefined} className="text-sm leading-relaxed" />
       {head && <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/60 bg-black/90 ${bubble.below ? "border-t-2 border-l-2" : "border-b-2 border-r-2"}`} style={{ left: bubble.arrowLeft, top: bubble.below ? -8 : undefined, bottom: bubble.below ? undefined : -8 }} />}
     </div>}
-    {thinkingReady && <ThinkingFocusOverlay wrapSpeaker={Boolean(composition)} frame={frameRef} layout={focus} />}
+    {thinkingReady && <ThinkingFocusOverlay wrapSpeaker={Boolean(composition) || compactThought} frame={frameRef} layout={focus} />}
   </section>;
 }

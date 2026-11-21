@@ -7,6 +7,7 @@ import {buildExportCues,type ExportCue} from "./cues";
 import {assertMysteryWindow,assertNoPrivateFields,type ReplaySource} from "./source";
 import {thinkingSegment,type PresentationMoment} from "./presentation";
 import {influenceProductionReference} from "./influence-production-reference";
+import {werewolfTransformationCast} from "../../components/games/werewolf/werewolf-watch-model";
 
 export async function bindInfluenceProductionPresentation(input:{
   source:Extract<ReplaySource,{kind:"influence"}>;catalog:ProductionCatalog;thoughts:readonly InfluenceProductionThought[];
@@ -111,7 +112,13 @@ export async function bindWerewolfProductionPresentation(input: {
       const thought = thoughts.get(moment.source.eventSequence);
       const context = thought && framingAt(thought.cursor);
       if (!thought || !context || thought.actorId !== moment.actorId) throw new Error(`Unavailable accepted thinking: ${moment.id}`);
-      return [thinkingSegment(context,moment.id,thought.thinking,thought.actorId)];
+      // Only the thought attached to this first pack line may inherit its entrance.
+      const firstPackCue = context.source.kind === "werewolf" && context.source.cursor === thought.cursor
+        && context.picture.kind === "werewolf" && context.speech?.speakerId === thought.actorId ? context.picture.cue : undefined;
+      const transformation = firstPackCue?.transformation && {
+        durationMs:firstPackCue.transformation.durationMs, wolves:werewolfTransformationCast(firstPackCue),
+      };
+      return [thinkingSegment(context,moment.id,thought.thinking,thought.actorId,transformation)];
     }
     if (moment.source.kind !== "werewolf-event") throw new Error("Cross-game production picture");
     const cursor = cursors.get(moment.source.eventSequence);

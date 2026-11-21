@@ -13,6 +13,16 @@ export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment:
   houseNarration?: false;
   /** Playback-only reprise of the result after the final retrospective. */
   reprise?: boolean }
+
+/** The entrance only needs frozen character art and identities, including in a thought-only cut. */
+export function werewolfTransformationCast(cue: WerewolfWatchCue) {
+  return (cue.transformation?.wolfIds ?? []).map(id => {
+    const player = cue.moment.snapshot.players.find(player => player.id === id);
+    if (!player) throw new Error("Wolf transformation is missing a cast member");
+    return {id, name: player.name, originalUrl: player.fullBodyReferenceUrl ?? player.avatarUrl, wolfUrl: cue.moment.wolfForms?.[id]};
+  });
+}
+
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   position: cue => cue.moment.cursor,
   scrubAtMs: cue => cue.transformation ? 0 : cue.moment.entry.kind === "night" && !cue.nightAction && (cue.moment.entry.killedId || cue.moment.entry.snipeKilledId) ? NIGHT_CLAW_MS : cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.readAtMs ?? 0,

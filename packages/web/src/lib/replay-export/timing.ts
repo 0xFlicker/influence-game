@@ -22,8 +22,12 @@ export interface TimingInput {
   thinking: string | null;
   /** Silent framing position for an independently selected thought. */
   sourceElapsedMs?: number;
+  /** Canonical entrance before the room settles for a standalone thought. */
+  thinkingLeadInMs?: number;
   /** Settle the room turn before starting a standalone thought close-up. */
   thinkingEstablishMs?: number;
+  /** The selected thought already played this response's entrance and room setup. */
+  speechEstablished?: true;
   recording?: SpeechRecording;
   thinkingRecording?: SpeechRecording;
 }
@@ -125,7 +129,7 @@ export function compileTiming(
         add("thinking", input.sourceElapsedMs ?? thought.insertAt, input.sourceElapsedMs ?? thought.insertAt, thoughtDuration);
     };
     if (speech) {
-      add(
+      if (!input.speechEstablished) add(
         "establish",
         0,
         speech.showAtMs,
@@ -169,7 +173,9 @@ export function compileTiming(
         settings.conversationGapMs ?? 0,
       );
     } else if (input.kind === "thinking") {
-      if (input.thinkingEstablishMs) add("establish",0,input.sourceElapsedMs ?? input.thinkingEstablishMs,settings.establishingHoldMs ?? input.thinkingEstablishMs * motion);
+      const lead = input.thinkingLeadInMs ?? 0;
+      if (lead) add("establish",0,lead,lead * motion);
+      if (input.thinkingEstablishMs) add("establish",lead,input.sourceElapsedMs ?? lead + input.thinkingEstablishMs,settings.establishingHoldMs ?? input.thinkingEstablishMs * motion);
       addThought();
     } else {
       addThought();

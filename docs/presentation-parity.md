@@ -256,6 +256,23 @@ v13 speech. Reprepare a bundle from the same selection/source to update renderin
 and encode a new movie. Including additional accepted live strategy requires an
 explicit source/selection refresh. Never regenerate game history or pinned media.
 
+The first pack thought carries the canonical wolf transformation before its room
+and thought shots. If the cut includes its spoken response, the response starts
+at its speech entrance. With thinking omitted, that speech still carries the
+transformation. A thought-only cut retains the frozen transformation art and room
+without carrying the omitted speech. Existing selections can rebuild fresh
+bundles from their pinned source. Re-encode existing MP4s to update the order.
+In a short landscape picture, the generated first pack thought puts the
+caption beside the close-up and wraps the speaker's name to preserve reading space.
+
+To render just the transformation, paired speech and isolated thought cases:
+
+```sh
+PACK_STRATEGY_PARITY=1 FORMAT_CONTEXT_STUDIO=1 \
+  FORMAT_CONTEXT_CASE=pack-transformation-pair,pack-transformation-thought,pack-transformation-thought-recorded \
+  bun run src/scripts/verify-presentation-parity.ts /absolute/path/to/pack-entrance-proof
+```
+
 Shared room names wrap rather than ellipsize. Speech bubbles reserve the measured
 speaker-label width before tightening short dialogue; short two-person pictures
 reuse the compact room so names and speech fit. Taller rooms retain the circular
