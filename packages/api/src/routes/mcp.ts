@@ -99,11 +99,13 @@ export interface CreateMcpRoutesOptions {
   maxPostBytes?: number;
 }
 
+type McpEnv = { Bindings: { allowAudioPreparation?: () => void } };
+
 export function createMcpRoutes(
   db: DrizzleDB,
   options: CreateMcpRoutesOptions = {},
 ) {
-  const app = new Hono();
+  const app = new Hono<McpEnv>();
   const server = options.server ?? createProductionGameMcpServer(db);
   const auditLogger = options.auditLogger ?? defaultAuditLogger;
   const tokenValidator = options.tokenValidator ?? ((token) =>
@@ -126,7 +128,7 @@ export function createMcpRoutes(
 }
 
 function registerMcpResource(
-  app: Hono,
+  app: Hono<McpEnv>,
   params: {
     path: string;
     server: ProductionGameMcpJsonRpcServer;
@@ -276,9 +278,10 @@ function registerMcpResource(
       );
     }
 
+    const auditedTool = toolName(validation.request);
+    if (auditedTool === "read_production_audio" || auditedTool === "generate_production_audio") c.env?.allowAudioPreparation?.();
     const response = await params.server.handle(validation.request, auth.context);
     const auditOutcome = classifyJsonRpcResponseForAudit(response);
-    const auditedTool = toolName(validation.request);
     if (auditedTool === "list_trace_manifests" || auditedTool === "read_trace_content") {
       c.header("Cache-Control", "private, no-store");
       c.header("Pragma", "no-cache");

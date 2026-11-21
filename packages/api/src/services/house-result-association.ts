@@ -2,7 +2,7 @@ import type {CanonicalGameEvent, TranscriptDialogueContext} from "@influence/eng
 import {HOUSE_RESULT_EVENTS,selectHouseResultEvent} from "@influence/engine";
 import {and, eq, inArray} from "drizzle-orm";
 import {schema, type DrizzleDB} from "../db/index.js";
-import {loadPayloads} from "./payload-storage.js";
+import {loadPayloads, mapPayloadBatch} from "./payload-storage.js";
 import {hashCanonicalEvent} from "./game-events.js";
 import {getPersistedGameEvents} from "./game-event-read-model.js";
 
@@ -13,8 +13,9 @@ export async function readHistoricalHouseResults(db: Pick<DrizzleDB,"select">, g
   const summaries = rows.filter(row => row.dialogueKind === "house_summary" && row.gameTurnId && row.entrySequence !== null);
   const result = new Map<number, NonNullable<TranscriptDialogueContext["houseResult"]>>();
   if (!summaries.length) return result;
-  const turns = await loadPayloads(db.select({id:schema.gameTurns.id, result:schema.gameTurns.commitResult})
-    .from(schema.gameTurns).where(and(eq(schema.gameTurns.gameId,gameId),eq(schema.gameTurns.status,"committed"),inArray(schema.gameTurns.id,[...new Set(summaries.map(row=>row.gameTurnId!))]))));
+  const turnRefs = await db.select({id:schema.gameTurns.id, result:schema.gameTurns.commitResult})
+    .from(schema.gameTurns).where(and(eq(schema.gameTurns.gameId,gameId),eq(schema.gameTurns.status,"committed"),inArray(schema.gameTurns.id,[...new Set(summaries.map(row=>row.gameTurnId!))])));
+  const turns = await mapPayloadBatch(turnRefs, turn => loadPayloads(turn));
   const history = events ?? (await getPersistedGameEvents(db,gameId)).events.map(event=>event.envelope);
   const eventBySequence = new Map(history.map(event=>[event.sequence,event]));
   const turnById = new Map(turns.map(turn=>[turn.id,turn.result]));

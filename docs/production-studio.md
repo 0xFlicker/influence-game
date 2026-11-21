@@ -184,6 +184,12 @@ games use voices frozen at game start; historical first tracks use the reviewed
 current choices. Helios is the House voice. No custom voice creation or DSP is
 performed.
 
+Studio and MCP use the same first-track preparation. Preview reads delivery annotations
+only for matching accepted decisions or historical coordinates. Queue rechecks the
+exact source and voice hash, then uploads clip recipes in bounded batches before
+committing the track. If the acknowledgement is lost, read the track status or
+resubmit the same approved hash to recover its receipt.
+
 Newly ready audio does not alter an open cut: choose **Load ready audio into this
 preview**. Thinking remains independently selectable. Generated recordings pin
 version IDs, text hashes, speaker identity and measured durations in the same
