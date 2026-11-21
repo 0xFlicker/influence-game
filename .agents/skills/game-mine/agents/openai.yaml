@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Mine"
+  short_description: "Find a compelling game and export its story"
+  default_prompt: "Use $game-mine to run games matching my roster, setup, and gameplay criteria, then build the narrative, select interesting thinking, generate requested media, publish the visuals, and start a Studio export."
