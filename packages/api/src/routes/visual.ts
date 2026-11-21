@@ -13,8 +13,7 @@ import { and, asc, eq, or } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { reconcileVisualAttempt } from "../services/visual-render-journal.js";
-import { requireAuth, requirePermission } from "../middleware/auth.js";
-import { requireProductionAuth } from "../middleware/production-auth.js";
+import { requireAuth, requirePermission, requireRole } from "../middleware/auth.js";
 import type { AuthEnv } from "../middleware/auth.js";
 import { recordVisualOperationEvent } from "../services/visual-diagnostics.js";
 
@@ -98,7 +97,7 @@ export function createVisualRoutes(db: DrizzleDB) {
     c.header("Cache-Control", "private, no-store");
     return c.json({ expectedRevision: scene.renderRevision, planHash: scene.planHash, players: scene.plan.cast.map(m => ({ id: m.id, name: m.name })), sources: await readVisualReviewSources(db, scene) });
   });
-  app.post("/api/admin/games/:id/visual/media", requireProductionAuth(db), requirePermission("start_game"), async c => {
+  app.post("/api/admin/games/:id/visual/media", requireAuth(db), requireRole("producer", "sysop"), requirePermission("start_game"), async c => {
     const gameId = c.req.param("id"), operatorId = c.get("user").id;
     const [game] = await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.id, gameId));
     if (!game) return c.json({ error: "Game not found" }, 404);

@@ -14,6 +14,7 @@ import {
   resolveMcpOAuthClientScopeEnvelope,
 } from "../services/mcp-oauth.js";
 import type { GameMcpAuthContext } from "./auth.js";
+import { productionMediaScopes, productionMediaToolNames, type ProductionMediaToolName } from "./production-media-contracts.js";
 import {
   APPLY_LEARNING_REVIEW_TOOL,
   LIST_LEARNING_REVIEW_INPUTS_TOOL,
@@ -182,6 +183,7 @@ const PRODUCER_TOOLS = [
 ] as const;
 
 export type GameMcpToolName =
+  | ProductionMediaToolName
   | "order_production_render" | "cancel_production_render" | "retry_production_render"
   | "set_game_model_routing"
   | "update_production_moment_tags"
@@ -235,6 +237,9 @@ const OWNER_LEARNING_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
 };
 
 export const GAME_MCP_TOOL_ACCESS = {
+  ...specsFor(productionMediaToolNames, [{
+    requiredScopes: productionMediaScopes, catalogBaselineScopes: ["producer"], clientEnvelopeScopes: productionMediaScopes, requiredRole: "producer",
+  }]),
   ...specsFor(["order_production_render","cancel_production_render","retry_production_render"] as const,[{requiredScopes:["producer","producer:render"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:render"],requiredRole:"producer"}]),
   set_game_model_routing: {name:"set_game_model_routing",scopeAlternatives:[{requiredScopes:["producer","producer:routing"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:routing"],requiredRole:"producer"}]},
   update_production_moment_tags: {name:"update_production_moment_tags",scopeAlternatives:[{requiredScopes:["producer","producer:edit"],catalogBaselineScopes:["producer"],clientEnvelopeScopes:["producer","producer:edit"],requiredRole:"producer"}]},

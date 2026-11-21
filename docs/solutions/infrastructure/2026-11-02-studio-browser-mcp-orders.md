@@ -120,12 +120,12 @@ acceptance remain staging work. No staging or production activation occurred.
 
 ## Scoped media production
 
-Studio's media endpoints accept the exact opt-in `producer:media` grant and
-recheck the active OAuth client and current Producer role. The render order and
-selection endpoints require `producer:render`. Bind these checks to the exact
-routes. Hono mounts a subapp's wildcard middleware on the parent, so an auth
-wildcard shared by visual discovery and Studio can intercept the other
-subapp's requests. The mounted route test exercises both families and the
-general admin router together. Legacy game operators retain live recovery
-controls, and independent scene production requires current Producer or Sysop
-authority. [Operator workflow and API routes](../../game-mcp-production-oauth.md#studio-production-for-agents)
+Agent media tools run through the MCP authorization registry with the opt-in
+`producer:media` grant and the current Producer role. Studio's browser routes
+use application sessions. Both invoke the same generation, publication and
+render owners. The HTTP MCP test queues audio and an image, inspects the exact
+verified version, publishes it, and orders an export that pins the new media.
+The same test checks that an ordinary subject cannot discover or invoke these
+operations. Legacy game operators retain live recovery controls, and
+independent scene production requires current Producer or Sysop authority.
+[Agent workflow and consent](../../game-mcp-production-oauth.md#studio-production-for-agents)

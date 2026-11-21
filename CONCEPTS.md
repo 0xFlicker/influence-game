@@ -20,7 +20,7 @@ A human account holder or viewer interacting with Influence outside the game fic
 
 ## Studio producer grant
 
-An explicitly consented OAuth authorization for an account with the current Producer role. The base `producer` scope permits production reads. `producer:media` permits Studio audio and scene-image generation and explicit image publication. `producer:render` permits ordering an export of a frozen cut. Editorial uploads use the separate `assets:manage` grant. Agents doing production open the signed-in Studio browser to review source and media before they publish or export. [Studio production for agents](docs/game-mcp-production-oauth.md#studio-production-for-agents)
+An explicitly consented OAuth authorization for an account with the current Producer role. The base `producer` scope permits production reads. `producer:media` permits Studio audio and scene-image generation and explicit image publication. `producer:render` permits ordering an export of a frozen cut. Editorial uploads use the separate `assets:manage` grant. Agents review media and order exports through MCP. Studio provides the human editing interface. [Studio production for agents](docs/game-mcp-production-oauth.md#studio-production-for-agents)
 
 ## Discord connection
 

@@ -29,7 +29,7 @@ Player owns the preview clock. Keep its composition `inputProps` stable across p
 
 ## MCP proposals
 
-Agent-operated production starts by opening and interacting with the signed-in Studio browser. The scoped audio, image, publication and export API is documented in [Studio production for agents](../../../../../../docs/game-mcp-production-oauth.md#studio-production-for-agents).
+Agents can generate audio and images, publish reviewed image versions, and order exports over MCP. Studio review links are for human editors. [Studio production for agents](../../../../../../docs/game-mcp-production-oauth.md#studio-production-for-agents)
 
 Producer MCP clients can read the same catalog with `read_production_moments`, patch shared tags with `update_production_moment_tags`, and call `preview_production_cut` to create a review link. Writes require explicit `producer:edit` consent in addition to `producer`; existing connections need a scope upgrade. Smart may mean interesting or relevant thinking, including mistakes worth showing. Silent discussion passes remain outside playback even with thinking enabled.
 

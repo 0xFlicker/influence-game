@@ -30,7 +30,7 @@
 
 ## Current Operating Context
 
-- When asked to generate House game audio or video or start a Studio export, open the signed-in browser at the game's Studio workspace and interact with it. Use **Recordings** to generate and load audio, **Scene versions & production** to review and publish images, and **Export** on the reviewed **Selected cut** to start rendering. Refresh published visuals and load ready recordings before freezing the cut. Use the [producer API and MCP grants](docs/game-mcp-production-oauth.md#studio-production-for-agents) for companion operations and job tracking. Report the verified track, publication or export state.
+- When asked to generate House game audio or images, publish scene images, or start a video export, use the [producer MCP tools](docs/game-mcp-production-oauth.md#studio-production-for-agents). Studio links are for human review. After publishing images, read a fresh source snapshot. Wait for ready recordings before ordering the exact cut. Report the verified track, publication, or render job state.
 
 - This repo is maintained with Codex-oriented workflows. Paperclip references in older docs are historical and should not be treated as active process requirements.
 - Prefer Compound Engineering skills for planning, implementation, review, and PR work. Speckit may be used only if its workflow/tooling is explicitly available and selected for the task.

@@ -129,7 +129,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = await listToolDescriptors(server, { ...PRODUCER_AUTH, scope: scopes.join(" "), scopes });
     const validator = new Ajv({ strict: false });
     const typedTools = tools.filter(tool => tool.outputSchema);
-    expect(typedTools).toHaveLength(43);
+    expect(typedTools).toHaveLength(49);
     for (const tool of typedTools) {
       expect(() => validator.compile(tool.outputSchema!)).not.toThrow();
     }
@@ -1633,19 +1633,19 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(instructions).not.toContain("producer:media");
   });
 
-  test("producer initialization directs agents through browser Studio and describes the granted media API", async () => {
+  test("producer initialization directs agents through MCP and explains the granted media tools", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
     const request = {
       jsonrpc: "2.0" as const, id: "studio-guidance", method: "initialize",
       params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } },
     };
     const readOnly = await server.handle(request, PRODUCER_AUTH);
-    expect(readOnly?.result).toMatchObject({ instructions: expect.stringContaining("open and interact with the signed-in browser Studio") });
-    expect(readOnly?.result).not.toMatchObject({ instructions: expect.stringContaining("POST /visual/media") });
+    expect(readOnly?.result).toMatchObject({ instructions: expect.stringContaining("Run agent-operated production through MCP") });
+    expect(readOnly?.result).not.toMatchObject({ instructions: expect.stringContaining("publish_production_image") });
     const media = await server.handle(request, {
       ...PRODUCER_AUTH, scope: "producer producer:media", scopes: ["producer", "producer:media"],
     });
-    expect(media?.result).toMatchObject({ instructions: expect.stringContaining("POST /visual/media") });
+    expect(media?.result).toMatchObject({ instructions: expect.stringContaining("publish_production_image") });
   });
 
   test("advertises list_games as the user-facing MCP App entry point", async () => {

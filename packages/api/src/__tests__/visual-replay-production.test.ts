@@ -1,4 +1,4 @@
-import { Hydrated, loadPayloads, storeFields } from "../services/payload-storage.js";
+import { Hydrated, loadPayloads, readJson, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -17,8 +17,9 @@ import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-m
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
 import { createVisualRoutes } from "../routes/visual.js";
-import { createProductionStudioRoutes } from "../routes/production-studio.js";
-import { createAdminRoutes } from "../routes/admin.js";
+import { createProductionGameMcpServer } from "../game-mcp/server.js";
+import { createMcpRoutes } from "../routes/mcp.js";
+import { renderJob } from "../services/render-jobs.js";
 import { generateOpaqueSecret, getMcpOAuthResourceUri, hashOpaqueSecret, MCP_OAUTH_AUDIENCE, MCP_OAUTH_CLIENT_ID, MCP_OAUTH_PURPOSE } from "../services/mcp-oauth.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { runAudioTrack } from "../services/audio-tracks.js";
@@ -193,76 +194,113 @@ test("ordinary admin permissions cannot operate the Producer/Sysop panel", async
   expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(0);
 });
 
-test("scoped producer API generates audio and images, then explicitly publishes the reviewed scene", async () => {
+test("producer MCP generates and reviews media, publishes the exact version, and orders a frozen export", async () => {
   await operator("producer");
-  await operator("admin");
+  await operator("player");
   const userId = "user-producer";
+  const resource = getMcpOAuthResourceUri();
   const issueToken = async (id: string, scope: string, clientId = MCP_OAUTH_CLIENT_ID) => {
     await recordCurrentLegalAcceptance(db, id, "existing_account", "0123456789abcdef0123456789abcdef01234567");
     const raw = generateOpaqueSecret();
     await db.insert(schema.mcpOauthAccessTokens).values({
-      id: crypto.randomUUID(), tokenHash: hashOpaqueSecret(raw), userId: id, clientId, resourceUri: getMcpOAuthResourceUri(),
+      id: crypto.randomUUID(), tokenHash: hashOpaqueSecret(raw), userId: id, clientId, resourceUri: resource,
       scope, audience: MCP_OAUTH_AUDIENCE, purpose: MCP_OAUTH_PURPOSE, expiresAt: "2099-01-01T00:00:00.000Z",
     });
     return raw;
   };
-  const media = await issueToken(userId, "producer producer:media");
+  const producer = await issueToken(userId, "producer producer:render producer:media");
   const readOnly = await issueToken(userId, "producer");
-  const ordinary = await issueToken("user-admin", "games:read");
+  const ordinary = await issueToken("user-player", "games:read");
   const unknownClient = await issueToken(userId, "producer producer:media", "unregistered");
-  const app = new Hono().route("/", createVisualReplayProductionRoutes(db)).route("/", createProductionStudioRoutes(db))
-    .route("/", createVisualRoutes(db)).route("/", createAdminRoutes(db));
-  const root = `/api/admin/production/games/${gameId}`;
-  const request = (path: string, body?: unknown, token = media) => app.request(root + path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const previewResponse = await request("/audio");
-  expect(previewResponse.status).toBe(200);
-  expect(previewResponse.headers.get("cache-control")).toBe("private, no-store");
-  const { previewHash } = await previewResponse.json() as { previewHash: string };
-  const scenes = await request("/scenes?audience=public");
-  expect(scenes.status).toBe(200);
-  const { items: [scene] } = await scenes.json() as {items: {key: string; previewHash: string}[]};
-  const missing = { key: scene!.key, previewHash: scene!.previewHash, requestId: "scoped-scene" };
-  for (const denied of [readOnly, ordinary]) {
-    expect((await request("/audio", { previewHash }, denied)).status).toBe(403);
-    expect((await request("/visual/missing", missing, denied)).status).toBe(403);
-    expect((await request("/visual/media", { action: "publish" }, denied)).status).toBe(403);
+  const execution = { environment: "development", mode: "local", network: "direct", configDigest: `sha256:${"a".repeat(64)}` } as const;
+  const app = new Hono().route("/", createMcpRoutes(db, {
+    server: createProductionGameMcpServer(db, undefined, execution),
+    auditLogger: () => undefined, ownerLearningConnectionRecorder: async () => undefined,
+  })).route("/", createVisualRoutes(db));
+  type Reply<T> = { error?: { message: string }; result?: { isError?: boolean; structuredContent?: T; tools?: { name: string }[]; content?: Array<{type: string; mimeType?: string; data?: string}> } };
+  const rpc = async <T>(method: string, params: unknown, token = producer) => {
+    const response = await app.request(resource, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    return { status: response.status, body: await response.json() as Reply<T> };
+  };
+  const call = <T>(name: string, args: object, token?: string) => rpc<T>("tools/call", { name, arguments: args }, token);
+  const read = async <T>(name: string, args: object) => {
+    const response = await call<T & {status: string}>(name, args);
+    expect(response.body.error).toBeUndefined();
+    expect(response.body.result?.structuredContent).toMatchObject({status: "ok"});
+    return response.body.result!.structuredContent!;
+  };
+  const game = { gameIdOrSlug: gameId };
+  const audience = { ...game, audience: "public" };
+  const preview = await read<{previewHash: string; clipCount: number}>("read_production_audio", game);
+  expect(preview.clipCount).toBeGreaterThan(0);
+  const { items: [scene] } = await read<{items: Array<{key: string; previewHash: string}>}>("list_production_scenes", audience);
+  const sceneArgs = { ...audience, sceneKey: scene!.key };
+  const generateAudio = { ...game, action: "generate", previewHash: preview.previewHash };
+  const generateImage = { ...sceneArgs, action: "missing", previewHash: scene!.previewHash, requestId: "mcp-scene" };
+  const initial = await rpc("tools/list", {}, ordinary);
+  expect(initial.body.result?.tools?.map(tool => tool.name)).not.toContain("generate_production_image");
+  for (const [name, args] of [
+    ["generate_production_audio", generateAudio],
+    ["generate_production_image", generateImage],
+    ["publish_production_image", sceneArgs],
+    ["order_production_render", game],
+  ] as const) {
+    expect((await call(name, args, ordinary)).body.error?.message).toBe("Unknown or unauthorized MCP tool");
+    expect((await call(name, args, readOnly)).body.result?.isError).toBe(true);
   }
-  expect((await request("/audio", { previewHash }, unknownClient)).status).toBe(401);
-  expect((await request("/render-orders", {})).status).toBe(403);
-  expect((await request("/visual/control", { action: "resume" })).status).toBe(401);
+  expect((await call("generate_production_audio", generateAudio, unknownClient)).body.error?.message).toBe("Unknown or unauthorized MCP tool");
   expect(await db.select().from(schema.gameAudioTracks)).toHaveLength(0);
   expect(await db.select().from(schema.visualRepairJobs)).toHaveLength(0);
+  expect(await db.select().from(schema.renderJobs)).toHaveLength(0);
 
-  const audio = await request("/audio", { previewHash });
-  expect(audio.status).toBe(202);
-  const { trackId } = await audio.json() as { trackId: string };
+  const { trackId } = await read<{trackId: string}>("generate_production_audio", generateAudio);
+  expect(await read("generate_production_audio", generateAudio)).toMatchObject({trackId});
   const bytes = await readFile(new URL("../../../web/public/visual/werewolf/opening-v1/door-effects.mp3", import.meta.url));
   await runAudioTrack(db, async () => ({ bytes, evidence: { fixture: true } }), undefined, trackId);
-  expect(await (await request("/audio")).json()).toMatchObject({ tracks: [{ id: trackId, status: "ready" }] });
-  expect(await (await request("/audio/manifest?audience=public&thinking=off")).json()).toMatchObject({ clips: expect.arrayContaining([expect.objectContaining({ url: expect.any(String) })]) });
+  expect(await read("read_production_audio", game)).toMatchObject({ tracks: [{ id: trackId, status: "ready" }] });
 
-  const queued = await request("/visual/missing", missing);
-  expect(queued.status).toBe(200);
-  expect(await (await request("/visual/missing", missing)).json()).toEqual(await queued.json());
+  const queued = await read<{receipt: {accepted: boolean; jobId: string}}>("generate_production_image", generateImage);
+  expect(queued.receipt.accepted).toBe(true);
+  expect(await read<typeof queued>("generate_production_image", generateImage)).toEqual(queued);
   const job = await complete();
-  const detail = await request(`/scenes/${encodeURIComponent(missing.key)}?audience=public&versionId=${job.id}`);
-  expect(detail.status).toBe(200);
-  const { selectedVersion } = await detail.json() as { selectedVersion: { id: string; imageArtifactId: string } };
-  const privateImage = `/visual/artifacts/${selectedVersion.imageArtifactId}`;
-  const publicImage = `/api/games/${gameId}/visual/artifacts/${selectedVersion.imageArtifactId}`;
-  expect((await request(privateImage)).status).toBe(200);
-  expect((await request(privateImage, undefined, ordinary)).status).toBe(403);
+  expect(job.id).toBe(queued.receipt.jobId);
+  const versionArgs = { ...sceneArgs, versionId: job.id };
+  const detail = await call<{expectedVersion: number; expectedPublication: number; selectedVersion: {id: string}}>("read_production_scene", versionArgs);
+  expect(detail.body.result?.structuredContent).toMatchObject({expectedVersion: 1, expectedPublication: 0, selectedVersion: {id: job.id}});
+  const previewImage = detail.body.result?.content?.find(block => block.type === "image");
+  expect(previewImage?.mimeType).toBe("image/jpeg");
+  expect(await sharp(Buffer.from(previewImage!.data!, "base64")).metadata()).toMatchObject({width: 640, height: 360});
+  expect((await call("read_production_scene", versionArgs, ordinary)).body.result?.content).toBeUndefined();
+  const [version] = await db.select().from(schema.visualMediaVersions);
+  const publicImage = `/api/games/${gameId}/visual/artifacts/${version!.imageArtifactId}`;
   expect((await app.request(publicImage)).status).toBe(404);
-  const publish = { action: "publish", sceneId: job.sceneId, versionId: selectedVersion.id, expectedVersion: 1, expectedPublication: 0, audience: "public", requestId: "scoped-publication" };
-  expect(await (await request("/visual/media", publish)).json()).toMatchObject({ accepted: true, code: "published" });
+  const publish = { ...versionArgs, expectedVersion: 1, expectedPublication: 0, publicationAudience: "public", requestId: "mcp-publication" };
+  expect((await call("publish_production_image", publish, ordinary)).body.error?.message).toBe("Unknown or unauthorized MCP tool");
+  expect(await db.select().from(schema.visualMediaPublications)).toHaveLength(0);
+  const published = await read<{receipt: {accepted: boolean; publicationId: string}}>("publish_production_image", publish);
+  expect(published).toMatchObject({receipt: { accepted: true, code: "published", publicationId: expect.any(String) }});
+  expect(await read<typeof published>("publish_production_image", publish)).toEqual(published);
   expect((await app.request(publicImage)).status).toBe(200);
+
+  const moments = await read<{snapshot: unknown; moments: {momentId: string}[]}>("read_production_moments", { ...audience, thinking: true, kind: "speech", limit: 1 });
+  const order = { ...audience, thinking: true, snapshot: moments.snapshot, momentIds: [moments.moments[0]!.momentId],
+    settings: {width: 640, height: 360, fps: 24, reducedMotion: false, music: false, volume: 1, profile: { ending: "finish-score", overrides: {} }},
+    copy: {}, requestKey: "mcp-media-export" };
+  expect((await call("order_production_render", order, ordinary)).body.error?.message).toBe("Unknown or unauthorized MCP tool");
+  const ordered = await read<{job: {id: string; state: string}}>("order_production_render", order);
+  expect(ordered.job.state).toBe("queued");
+  const frozen = await readJson((await renderJob(db, ordered.job.id)).input);
+  if (!("preparation" in frozen)) throw new Error("Expected Studio export preparation");
+  expect(frozen.preparation.descriptor.recordings).toHaveLength(1);
+  expect(frozen.preparation.descriptor.sourceSnapshot).toMatchObject({mediaReferences: {sceneIds: [job.sceneId]}});
+  expect(await read("get_production_render", {jobId: ordered.job.id})).toMatchObject({job: ordered.job});
   await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
-  expect((await request("/audio")).status).toBe(401);
-  expect((await request("/visual/media", publish)).status).toBe(401);
+  expect((await call("read_production_audio", game)).status).toBe(401);
+  expect((await call("publish_production_image", publish)).status).toBe(401);
   expect(await db.select().from(schema.visualMediaPublications)).toHaveLength(1);
   expect(calls).toBe(0);
 });

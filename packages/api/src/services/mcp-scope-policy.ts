@@ -76,7 +76,7 @@ export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDef
   "producer:render": {scope:"producer:render",label:"Order Studio renders",description:"Order private cloud video renders from reviewed Studio cuts and cancel or retry them. Rendering can incur compute costs. Does not generate speech, images or gameplay.",group:"developer",defaultSelected:false,requiredScopes:["producer"],requiredRole:"producer"},
   "producer:media": {
     scope: "producer:media", label: "Generate and publish Studio media",
-    description: "Generate and retry Studio recordings and scene images, review image versions, and publish scene images to the selected audience. Generation can incur provider costs.",
+    description: "Use production tools to generate and retry recordings and scene images, inspect image versions, and publish scene images to the selected audience. Generation can incur provider costs.",
     group: "developer", defaultSelected: false, requiredScopes: ["producer"], requiredRole: "producer",
   },
   producer: {

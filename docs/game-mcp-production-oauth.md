@@ -23,8 +23,8 @@ Supported scopes:
 | `games:resume` | Explicitly resume a paused, required post-outcome retrospective through `resume_game_retrospective`. This may spend on remaining speeches. Requires `games:read`; opt-in at consent. | Current `admin`, `sysop` or `producer` role and `resume_game_retrospective` permission |
 | `producer` | Read global producer/debug views, producer evidence, private trace tooling, Admin Cost Detail through `read_producer_game_cost_detail`, and `read_producer_match_narrative`. | requires the logged-in subject to currently hold the `producer` role |
 | `producer:edit` | Edit Studio moment tags. Does not authorize model routing changes. | Requires `producer` and explicit consent |
-| `producer:media` | Generate and retry Studio audio and replay images, inspect versions, and explicitly publish scene images through the Studio API. | Requires `producer`, explicit consent, and the current Producer role |
-| `producer:render` | Freeze and order Studio exports through the API, or order, cancel and retry exports through MCP. | Requires `producer`, explicit consent, and the current Producer role |
+| `producer:media` | Generate and retry Studio audio and replay images, inspect versions, and explicitly publish scene images through MCP. | Requires `producer`, explicit consent, and the current Producer role |
+| `producer:render` | Order, cancel and retry Studio exports through MCP. | Requires `producer`, explicit consent, and the current Producer role |
 | `producer:routing` | Change waiting-game model routes, fallback limits, exclusions and cast overrides. Existing read-only tokens cannot call `set_game_model_routing`. | Requires `producer`, explicit consent, and current admin/sysop permission; running games remain frozen |
 
 Normal users can authorize the non-producer scopes they were asked for. If a client asks for `producer` and the user lacks the `producer` role, the authorization screen omits that scope because it cannot be granted. Users may also uncheck optional scopes, including write scopes, before approval. An approval with no selected scopes is rejected.
@@ -33,35 +33,22 @@ User-facing reasoning/thinking/strategy access uses first-class cognitive artifa
 
 ## Studio production for agents
 
-For audio, video or export requests, open the signed-in browser at `/admin/production/games/<game-id>` on the House web origin. When using `preview_production_cut`, open its `reviewPath` in that browser. Confirm the game, audience, selected moments and settings in Studio.
+Connect to `/mcp` with a current Producer account. Select `producer` and `producer:media` for generation and publication, and `producer:render` for ordering a video. Add `producer:edit` only if the agent needs to save shared moment tags. OAuth may open a user consent page when connecting or upgrading a grant. Agents then run the workflow through MCP. Studio links are available for human review.
 
-1. In **Recordings**, review the estimate, select **Generate full audio track**, wait for **Audio: ready**, then select **Load ready audio into this preview**. Check that the intended speech and thinking play.
-2. In **Scene versions & production**, select a scene, review the render plan and generate a missing image or regenerate an existing version. Inspect the finished version and explicitly publish it to the intended audience. Select **Refresh published visuals** and verify the new version in the preview.
-3. Play the **Selected cut** with the intended media. In **Export**, set output size and frame rate and select **Render video**. Save the job ID and verify its status in Studio or with MCP `get_production_render`. Use `get_production_render_download` after success. If the environment uses workstation export, download the selection and run the command shown in Studio. A downloaded selection alone is an editing artifact.
+Existing connections must consent to `producer:media`. Reconnect if the registered client envelope omits it. The server checks the active client envelope, exact grant and current role during tool invocation. Regular users cannot discover or invoke producer tools. A read-only Producer token is prompted for the missing scope before a media or render tool can run.
 
-For API access, request the exact producer scopes the task needs and approve them in the browser. Newly available scopes require consent. If a registered client omits a scope from its registration, reconnect with a registration that includes it. Browser sessions use current Producer or Sysop roles. Opaque OAuth tokens on the Studio API require the current Producer role, an active registered client envelope, and both `producer` and the endpoint scope.
+1. Call `read_production_audio` for the approved game's full-track estimate, voice assignments and `previewHash`. Call `generate_production_audio` with `action: "generate"` and that hash. Poll the returned track ID through `read_production_audio` until ready. Use `action: "retry"` and the saved track ID for an explicitly reviewed failed track.
+2. Call `list_production_scenes` for the intended audience. Queue one scene with `generate_production_image`, its exact scene key, `action: "missing"`, its preview hash and a fresh request ID. To regenerate an existing scene, use `action: "regenerate"` and the current `expectedVersion` from the first page of `read_production_scene`. Keep request IDs and inputs fixed on retries.
+3. Poll `read_production_scene`, then request the exact verified version ID to inspect its image content. Use zero-based `groupIndex` to inspect additional group shots. Call `publish_production_image` with the selected version ID, current `expectedVersion` and `expectedPublication`, explicit `publicationAudience`, and a fresh request ID. Confirm the accepted receipt and read the saved publication. Use `public` for Influence. Werewolf village scenes support public publication, and private scenes stay in Omniscient production.
+4. Read fresh `read_production_moments` without the previous snapshot after publishing. Preview the exact cut with `preview_production_cut`. Check recording coverage, audience, selected moment IDs and presentation settings. Pass those IDs, the fresh snapshot, and a stable request key to `order_production_render`. Save the job ID, poll `get_production_render`, and use `get_production_render_download` after success.
 
-For a CLI token, set `INFLUENCE_MCP_API_BASE_URL` and `INFLUENCE_MCP_WEB_BASE_URL` if the target differs from the localhost defaults. Use a separate `INFLUENCE_MCP_TOKEN_FILE` per environment. Run the following command to open browser consent.
+For a local HTTP MCP client, set `INFLUENCE_MCP_API_BASE_URL` and `INFLUENCE_MCP_WEB_BASE_URL` when the target differs from localhost. Use a separate `INFLUENCE_MCP_TOKEN_FILE` per environment. This command opens the one-time browser consent page.
 
 ```sh
 INFLUENCE_MCP_SCOPE='producer producer:render producer:media' INFLUENCE_MCP_OPEN_BROWSER=1 bun run mcp:game:login
 ```
 
-Send the token as an `Authorization: Bearer` header to the configured API origin. Use the canonical game ID under `/api/admin/production/games/<game-id>`.
-
-| API path or MCP tool | Scope | Operation |
-|---|---|---|
-| `GET /audio`, `POST /audio` | `producer:media` | Get the estimate, track status and `previewHash`. Queue with `{previewHash}`. Poll the same GET and match the returned `trackId`. |
-| `POST /audio/<track-id>/retry` | `producer:media` | Retry missing clips on a retryable track with an empty body object. |
-| `GET /audio/manifest?audience=<audience>&thinking=on` | `producer:media` | Inspect published clips. Use `thinking=off` where required and read each clip at its returned URL. |
-| `GET /scenes?audience=<audience>`, `GET /scenes/<key>?audience=<audience>` | `producer:media` | Page the canonical scene inventory and inspect scene jobs, candidate versions and publication revision. Use `public` for Influence and `mystery` or `omniscient` for Werewolf. |
-| `POST /visual/missing` | `producer:media` | Queue a missing image with the exact `{key, previewHash, requestId}` from the reviewed scene. Retain the request ID. |
-| `GET /visual/artifacts/<artifact-id>`, `GET /visual/scenes/<scene-id>/review` | `producer:media` | Fetch candidate pixels and the frozen review inputs. |
-| `POST /visual/media` | `producer:media` | Use `{action:"regenerate", sceneId, expectedVersion, requestId}` or `{action:"publish", sceneId, expectedVersion, expectedPublication, versionId, audience, requestId}`. Use the current revisions, the exact verified version ID and a fresh request ID for each different operation. Use `public` for viewer publication and `private` for private Werewolf production. |
-| `POST /selection`, `POST /render-orders` | `producer:render` | Freeze the reviewed selection through Studio and order with `{descriptor, requestKey, files:[]}` for Studio-managed media. Repeat the exact body and key after an ambiguous response. Use Studio when uploading local recordings. |
-| `order_production_render`, `get_production_render`, `get_production_render_download` | `producer:render` for ordering and `producer` for status/download | Use the reviewed moment IDs, source snapshot and settings. Record the job ID and follow it through the required state. |
-
-For publishing a banner or another uploaded editorial image, use the separately consented `assets:manage` grant and the game-assets API or CLI. This grant also requires a current Producer or Sysop role with asset management permission. [Game assets operating guide](game-assets.md)
+Editorial image uploads such as results banners continue to use the separate `assets:manage` grant and the game-assets API or CLI. [Game assets operating guide](game-assets.md)
 
 ## Server Surface
 
