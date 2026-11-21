@@ -62,6 +62,117 @@ async function influence(id = "studio-influence", retrospective = true) {
   const thought = source.catalog.moments.find(moment => moment.source.kind === "influence-transcript" && moment.source.transcriptId === String(transcript!.id) && moment.kind === "thinking")!;
   return { gameId, source, speech, thought };
 }
+test("first-time Studio and MCP audio share a bounded 532-clip preparation and a recoverable queue receipt", async () => {
+  const { compileAudioDelivery } = await import("@influence/engine/audio-delivery");
+  const { providerAcceptedDecisionId } = await import("@influence/engine");
+  const { storeJson, setPayloadObjectStoreForTests } = await import("../services/payload-storage.js");
+  const { testPayloadStore } = await import("./payload-test-store.js");
+  const { createMcpRoutes } = await import("../routes/mcp.js");
+  const { getMcpOAuthResourceUri, MCP_OAUTH_CLIENT_ID } = await import("../services/mcp-oauth.js");
+  const { runAudioTrack } = await import("../services/audio-tracks.js");
+  const { sha256StableJson } = await import("../services/stable-hash.js");
+  await producer();
+  const gameId = await insertGame(db, { id: "large-historical-recording", status: "completed" });
+  const speaker = "atlas";
+  await db.insert(schema.gamePlayers).values({ id: speaker, gameId, persona: '{"name":"Atlas"}', agentConfig: "{}" });
+  const lines = Array.from({ length: 532 }, (_, index) => ({
+    text: `Accepted line ${index}.`, attempt: `attempt-${index}`, timestamp: index + 1,
+  }));
+  await db.insert(schema.transcripts).values(lines.map(({ text, attempt, timestamp }) => ({
+    gameId, round: 1, phase: Phase.LOBBY, fromPlayerId: speaker, speakerPlayerId: speaker, text, timestamp,
+    safeContext: { version: 1 as const, decisionId: providerAcceptedDecisionId(attempt) },
+  })));
+  await db.insert(schema.providerLogicalCalls).values(await Promise.all(lines.map(async ({ text, attempt }) => ({
+    id: attempt, gameId, actorId: speaker, actorName: "Atlas", actorRole: "player", action: "lobby",
+    semanticCoordinate: {}, semanticCoordinateHash: attempt, acceptedAttemptId: attempt, acceptedCatalogId: "fixture",
+    acceptedValue: await storeJson({text}), acceptedValueSha256: sha256StableJson({text}), acceptedAt: new Date().toISOString(),
+    audioDelivery: await storeJson({ version: 1 as const, fields: [{path:["text"], delivery: compileAudioDelivery(`<soft>${text}</soft>`, "speech")}] }),
+  }))));
+  const mcpResource = getMcpOAuthResourceUri();
+  const mcp = createMcpRoutes(db, {
+    tokenValidator: async () => ({ok: true, context: {
+      userId: "operator", clientId: MCP_OAUTH_CLIENT_ID, resource: mcpResource,
+      scope: "producer producer:media", scopes: ["producer", "producer:media"],
+      authProfile: "subject", expiresAt: Math.floor(Date.now() / 1000) + 60,
+    }}),
+    auditLogger: () => undefined,
+  });
+  let extensions = 0;
+  const server = Bun.serve({
+    hostname: "127.0.0.1", port: 0, idleTimeout: 1,
+    fetch(req, listener) {
+      const router = new URL(req.url).pathname === new URL(mcpResource).pathname ? mcp : app;
+      return router.fetch(req, { allowAudioPreparation() { extensions++; listener.timeout(req, 90); } });
+    },
+  });
+  const studioAudio = (body?: object) => fetch(new URL(root(gameId) + "/audio", server.url), {
+    method: body ? "POST" : "GET", headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+    ...(body && { body: JSON.stringify(body) }),
+  });
+  const mcpAudio = async (name: string, args: object) => {
+    const response = await fetch(new URL(new URL(mcpResource).pathname, server.url), {
+      method: "POST", headers: {Authorization: "Bearer fixture", "Content-Type": "application/json", Accept: "application/json, text/event-stream"},
+      body: JSON.stringify({jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args }}),
+    });
+    const reply = await response.json() as {result?: {structuredContent?: {status: string; trackId?: string}}};
+    expect(reply.result?.structuredContent?.status).toBe("ok");
+    return reply.result!.structuredContent!;
+  };
+  let reads = 0, writes = 0, peakReads = 0, peakWrites = 0, puts = 0;
+  let failOnPut = 0;
+  setPayloadObjectStoreForTests({
+    async get(key) {
+      peakReads = Math.max(peakReads, ++reads);
+      try { await Bun.sleep(40); return await testPayloadStore.get(key); } finally { reads--; }
+    },
+    async putIfAbsent(key, bytes) {
+      if (++puts === failOnPut) throw new Error("Fixture interrupted recipe upload");
+      peakWrites = Math.max(peakWrites, ++writes);
+      try { await Bun.sleep(40); return await testPayloadStore.putIfAbsent(key, bytes); } finally { writes--; }
+    },
+  });
+  try {
+    const response = await studioAudio();
+    expect(response.status).toBe(200);
+    const preview = await response.json() as { previewHash: string; clipCount: number; tracks: unknown[] };
+    expect(preview).toMatchObject({clipCount: 532, tracks: []});
+    expect(puts).toBe(0);
+    const args = {gameIdOrSlug: gameId};
+    expect(await mcpAudio("read_production_audio", args))
+      .toMatchObject({previewHash: preview.previewHash, clipCount: 532});
+    failOnPut = 24;
+    const interrupted = await studioAudio({previewHash: preview.previewHash});
+    expect(interrupted.status).toBe(500);
+    expect(await db.select().from(schema.gameAudioTracks)).toHaveLength(0);
+    expect(await db.select().from(schema.gameAudioAttempts)).toHaveLength(0);
+
+    const queued = await mcpAudio("generate_production_audio", {...args, action: "generate", previewHash: preview.previewHash});
+    expect(queued).toMatchObject({status: "ok", trackId: expect.any(String)});
+    const writesAfterQueue = puts;
+    const retry = await studioAudio({previewHash: preview.previewHash});
+    expect(retry.status).toBe(202);
+    const receipt = await retry.json() as { trackId: string };
+    expect(queued).toMatchObject({ trackId: receipt.trackId });
+    expect(puts).toBe(writesAfterQueue);
+    expect(peakReads).toBeGreaterThan(1);
+    expect(peakReads).toBeLessThanOrEqual(16);
+    expect(peakWrites).toBeGreaterThan(1);
+    expect(peakWrites).toBeLessThanOrEqual(16);
+    expect(extensions).toBe(5);
+  } finally {
+    setPayloadObjectStoreForTests(testPayloadStore);
+    await server.stop(true);
+  }
+  const synthesized = new Set<string>();
+  await runAudioTrack(db, async recipe => {
+    expect(recipe.synthesisText).toBe(`<soft>${recipe.text}</soft>`);
+    synthesized.add(recipe.text);
+    return { bytes: new TextEncoder().encode(recipe.text), durationMs: 1000, evidence: { fixture: true } };
+  });
+  expect(synthesized.size).toBe(532);
+  expect(await (await request(root(gameId) + "/audio")).json()).toMatchObject({tracks: [{status: "ready"}]});
+}, 120_000);
+
 async function wolf() {
   const id = "studio-werewolf", events = await werewolfResultsFixture("saved", id, 2);
   await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", startedAt: "2026-09-01T00:00:00.000Z", config: "{}" });

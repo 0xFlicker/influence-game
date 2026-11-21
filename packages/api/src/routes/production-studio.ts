@@ -60,7 +60,7 @@ async function kind(db:Pick<DrizzleDB,"select">,id:string) {
 
 /** Editorial operations remain Producer/Sysop-only; legacy visual grants live in their existing routes. */
 export function createProductionStudioRoutes(db:DrizzleDB,config:{execution?:RenderExecution}={}) {
-  const app = new Hono<AuthEnv>(),root = "/api/admin/production/games/:id";
+  const app = new Hono<AuthEnv & { Bindings: { allowAudioPreparation?: () => void } }>(),root = "/api/admin/production/games/:id";
   app.use("/api/admin/production/*",requireAuth(db),createMiddleware<AuthEnv>(async (c,next) => {
     c.header("Cache-Control","private, no-store");
     let roles:string[];
@@ -108,6 +108,7 @@ export function createProductionStudioRoutes(db:DrizzleDB,config:{execution?:Ren
   });
   app.get(`${root}/audio`, async c => {
     const game = await kind(db,c.req.param("id"));
+    c.env?.allowAudioPreparation?.();
     const preview = await previewAudioTrack(db,game.id);
     return c.json({previewHash:preview.previewHash, voices:preview.voices, clipCount:preview.source.lines.length,
       characters:preview.characters, estimateUsd:preview.estimateUsd, retryBudgetUsd:preview.retryBudgetUsd, tracks:preview.existing,resumeOwnerEpoch:preview.resumeOwnerEpoch});
@@ -116,6 +117,7 @@ export function createProductionStudioRoutes(db:DrizzleDB,config:{execution?:Ren
     const body = object(await c.req.json()); fields(body,["previewHash"]);
     if (typeof body.previewHash !== "string") throw new StudioInputError("Review the audio preview before generating");
     const game = await kind(db,c.req.param("id"));
+    c.env?.allowAudioPreparation?.();
     return c.json({trackId:await queueAudioBackfill(db,game.id,c.get("user").id,body.previewHash)},202);
   });
   app.post(`${root}/audio/resume`,async c => {

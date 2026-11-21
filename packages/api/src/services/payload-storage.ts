@@ -106,6 +106,20 @@ export async function readPayload(ref: StoredPayload): Promise<Buffer> {
   if (bytes.byteLength !== ref.byteLength || payloadHash(bytes) !== ref.sha256) throw new Error("Decoded payload integrity mismatch");
   return bytes;
 }
+/** Bound independent bucket operations while retaining source order and stopping new batches on failure. */
+export async function mapPayloadBatch<T, R>(items: readonly T[], operation: (item: T) => Promise<R>): Promise<R[]> {
+  const result: R[] = [];
+  const batchSize = 16;
+  for (let offset = 0; offset < items.length; offset += batchSize) {
+    const batch = await Promise.allSettled(items.slice(offset, offset + batchSize).map(operation));
+    for (const item of batch) {
+      if (item.status === "rejected") throw item.reason;
+      result.push(item.value);
+    }
+  }
+  return result;
+}
+
 export async function storeJson<T>(value: T): Promise<StoredPayload<T>> {
   return storePayload(Buffer.from(JSON.stringify(value)), "json-gzip");
 }

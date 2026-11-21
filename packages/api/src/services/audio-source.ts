@@ -9,7 +9,7 @@ import type { ProductionAudience } from "@influence/engine/production-moments";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { buildInfluenceProductionSourceSnapshot } from "./influence-production-source.js";
 import { buildWerewolfProductionSourceSnapshot } from "./werewolf-production-source.js";
-import { readJson } from "./payload-storage.js";
+import { mapPayloadBatch, readJson } from "./payload-storage.js";
 import { sha256StableJson } from "./stable-hash.js";
 
 export interface AudioSourceLine {
@@ -153,16 +153,23 @@ export async function readAudioSource(db: DrizzleDB | Parameters<Parameters<Driz
     acceptedAttemptId: schema.providerLogicalCalls.acceptedAttemptId, turnId: schema.providerLogicalCalls.gameTurnId, committedAt: schema.providerLogicalCalls.gameTurnCommittedAt,
     semantic: schema.providerLogicalCalls.semanticCoordinate, delivery: schema.providerLogicalCalls.audioDelivery })
     .from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, gameId), isNotNull(schema.providerLogicalCalls.acceptedAttemptId), isNotNull(schema.providerLogicalCalls.audioDelivery)));
-  for (const call of calls) {
+  const modern = Map.groupBy(lines.filter(line => decisionByMoment.has(line.momentId)), line => decisionByMoment.get(line.momentId)!);
+  const historical = Map.groupBy(lines.filter(line => !decisionByMoment.has(line.momentId)), line => line.annotationSequence ?? line.eventSequence);
+  const matches = calls.flatMap(call => {
+    if (!call.delivery || call.turnId && !call.committedAt) return [];
     const semantic = call.semantic;
     const sequence = semantic && typeof semantic === "object" && "kind" in semantic && semantic.kind === "werewolf_action" && "eventSequence" in semantic
       ? semantic.eventSequence : call.sequence;
-    if (!call.delivery || call.turnId && !call.committedAt) continue;
-    const delivery = await readJson(call.delivery);
     const acceptedDecision = call.acceptedAttemptId ? providerAcceptedDecisionId(call.acceptedAttemptId) : null;
-    for (const line of lines.filter(line => line.speakerId === call.actorId && (decisionByMoment.has(line.momentId)
-      ? decisionByMoment.get(line.momentId) === acceptedDecision
-      : !call.turnId && typeof sequence === "number" && sequence <= throughEventSequence && (line.annotationSequence ?? line.eventSequence) === sequence))) {
+    const exact = acceptedDecision ? modern.get(acceptedDecision) : undefined;
+    const legacy = !call.turnId && typeof sequence === "number" && sequence <= throughEventSequence ? historical.get(sequence) : undefined;
+    const candidates = [...(exact ?? []), ...(legacy ?? [])].filter(line => line.speakerId === call.actorId);
+    return candidates.length ? [{ ref: call.delivery, candidates }] : [];
+  });
+  const deliveries = await mapPayloadBatch(matches, match => readJson(match.ref));
+  for (const [index, { candidates }] of matches.entries()) {
+    const delivery = deliveries[index]!;
+    for (const line of candidates) {
       const fields = delivery.fields.filter(field => field.delivery.cleanText === line.text && field.delivery.context === line.context);
       if (fields.length > 1 && new Set(fields.map(field => field.delivery.synthesisText)).size > 1) throw new Error("Ambiguous accepted audio annotations");
       if (fields[0]) line.synthesisText = compileAudioDelivery(fields[0].delivery.synthesisText, line.context).synthesisText;

@@ -3,7 +3,7 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readAudioSource, audioRecipe, audioSourceHash } from "./audio-source.js";
 import { previewGameVoices, persistGameVoiceDefaults } from "./audio-voices.js";
-import { readJson, storeJson, storeBinary, readPayload } from "./payload-storage.js";
+import { mapPayloadBatch, readJson, storeJson, storeBinary, readPayload } from "./payload-storage.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { audioCharacters, audioEstimateUsd, generateXaiAudio, measureAudio, AudioProviderFailure, type AudioProvider } from "./audio-provider.js";
 
@@ -20,7 +20,8 @@ export async function previewAudioTrack(db: DrizzleDB, gameId: string) {
   const [owner] = await db.select({epoch:schema.gameRunOwners.ownerEpoch,reason:schema.gameRunOwners.failureReason}).from(schema.gameRunOwners).where(eq(schema.gameRunOwners.gameId,gameId)).orderBy(desc(schema.gameRunOwners.createdAt)).limit(1);
   const resumeOwnerEpoch = game?.status === "suspended" && owner?.reason === "required_audio_failed" && stored?.mode === "live" && stored.status === "ready" ? owner.epoch : null;
   const existing = existingRows.map(({id,status,active,error,reservedCharacters,mode}) => ({id,status,active,error,reservedCharacters,retryable:status === "failed" && (mode === "backfill" || active)}));
-  return { gameId, source, voices, resumeOwnerEpoch, characters, estimateUsd: audioEstimateUsd(characters), retryBudgetUsd: audioEstimateUsd(characters * 3),
+  const existingBackfillId = existingRows.length === 1 && game?.status === "completed" && stored?.mode === "backfill" && stored.manifest ? stored.id : null;
+  return { gameId, source, voices, existingBackfillId, resumeOwnerEpoch, characters, estimateUsd: audioEstimateUsd(characters), retryBudgetUsd: audioEstimateUsd(characters * 3),
     previewHash: sha256StableJson({ source, voices }), existing };
 }
 
@@ -29,11 +30,13 @@ export async function queueAudioBackfill(db: DrizzleDB, gameId: string, userId: 
   const preview = await previewAudioTrack(db, gameId);
   if (preview.previewHash !== previewHash) throw new AudioTrackConflict("Source or voices changed. Review a fresh audio preview.");
   if (!preview.source.lines.length) throw new AudioTrackConflict("This source has no eligible spoken or thinking moments");
+  // A matching frozen backfill already owns the receipt, even after a lost response.
+  if (preview.existingBackfillId) return preview.existingBackfillId;
   const voices = await storeJson(preview.voices), manifest = await storeJson(preview.source);
-  const recipes = await Promise.all(preview.source.lines.map(async line => {
+  const recipes = await mapPayloadBatch(preview.source.lines, async line => {
     const recipe = audioRecipe(line, preview.voices[line.speakerId ?? "house"]!);
     return { momentId: line.momentId, sourceHash: audioSourceHash(line), recipeHash: sha256StableJson(recipe), recipe: await storeJson(recipe) };
-  }));
+  });
   return db.transaction(async tx => {
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
     if (!game || game.status !== "completed") throw new AudioTrackConflict("Historical audio requires a completed game");

@@ -846,7 +846,11 @@ const server = await listenBeforeRuntimeInitialization({
       }
 
       // Delegate everything else to Hono
-      return app.fetch(req, { clientAddress: server.requestIP(req)?.address });
+      return app.fetch(req, {
+        clientAddress: server.requestIP(req)?.address,
+        // Audio preparation sends one JSON response after it verifies the private objects.
+        allowAudioPreparation: () => server.timeout(req, 90),
+      });
     },
     websocket: {
       open(ws) {
