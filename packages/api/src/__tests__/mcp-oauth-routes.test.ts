@@ -29,7 +29,7 @@ const NON_MCP_ADDRESS = "0xnomcp000000000000000000000000000000001";
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
 const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
 const MCP_OAUTH_ALL_SCOPE = "agents:read agents:write games:read producer";
-const MCP_OAUTH_SUPPORTED_SCOPE = "agents:read agents:write games:read games:resume producer producer:edit producer:render producer:routing moderation:read moderation:write assets:manage";
+const MCP_OAUTH_SUPPORTED_SCOPE = "agents:read agents:write games:read games:resume producer producer:edit producer:render producer:routing moderation:read moderation:write assets:manage producer:media";
 const MCP_OAUTH_SCOPE = "producer";
 const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
@@ -73,7 +73,7 @@ describe("MCP OAuth routes", () => {
     expect(await jsonObject(protectedResource)).toMatchObject({
       resource: RESOURCE_URI,
       authorization_servers: ["http://127.0.0.1:3000"],
-      scopes_supported: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"],
       bearer_methods_supported: ["header"],
       resource_name: "Influence MCP",
     });
@@ -82,7 +82,7 @@ describe("MCP OAuth routes", () => {
     expect(protectedResourceForPath.status).toBe(200);
     expect(await jsonObject(protectedResourceForPath)).toMatchObject({
       resource: RESOURCE_URI,
-      scopes_supported: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"],
     });
 
     const producerProtectedResource = await app.request(
@@ -99,7 +99,7 @@ describe("MCP OAuth routes", () => {
       token_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/token",
       revocation_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/revoke",
       registration_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/register",
-      scopes_supported: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
@@ -712,6 +712,8 @@ describe("MCP OAuth routes", () => {
     });
     const dynamicClientId = String(registrationJson.client_id);
     const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
+    const mediaScope = "producer producer:media";
+    const requestedScope = `${MCP_OAUTH_ALL_SCOPE} producer:media`;
 
     const preview = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",
@@ -720,7 +722,7 @@ describe("MCP OAuth routes", () => {
         clientId: dynamicClientId,
         redirectUri: CHATGPT_REDIRECT_URIS[1],
         codeVerifier: "provider-action-scopes",
-        scope: MCP_OAUTH_ALL_SCOPE,
+        scope: requestedScope,
         decision: "inspect",
       })),
     });
@@ -733,7 +735,14 @@ describe("MCP OAuth routes", () => {
       selectedScopes: MCP_OAUTH_FULL_USER_SCOPE.split(" "),
       blockedScopes: [],
       hasProducerRole: true,
+      grantableScopes: expect.arrayContaining([expect.objectContaining({ scope: "producer:media", requiredScopes: ["producer"] })]),
     });
+    const code = await authorizeCode(sessionToken, "media-consent-verifier", "media-consent-state", {
+      clientId: dynamicClientId, redirectUri: CHATGPT_REDIRECT_URIS[1], scope: requestedScope, selectedScope: mediaScope,
+    });
+    const token = await exchangeCode(code, "media-consent-verifier", { clientId: dynamicClientId, redirectUri: CHATGPT_REDIRECT_URIS[1] });
+    expect(token.status).toBe(200);
+    expect(await jsonObject(token)).toMatchObject({ scope: mediaScope });
     expect(auditEvents).toContainEqual(expect.objectContaining({
       event: "mcp.oauth.register",
       clientId: dynamicClientId,
@@ -1524,11 +1533,12 @@ describe("MCP OAuth routes", () => {
 
   test("re-checks producer role after consent preview and before approval", async () => {
     const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
+    const scope = `${MCP_OAUTH_ALL_SCOPE} producer:media`;
     const preview = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",
       headers: jsonAuthHeaders(sessionToken),
       body: JSON.stringify(authorizeBody({
-        scope: MCP_OAUTH_ALL_SCOPE,
+        scope,
         decision: "inspect",
       })),
     });
@@ -1544,8 +1554,8 @@ describe("MCP OAuth routes", () => {
       method: "POST",
       headers: jsonAuthHeaders(sessionToken),
       body: JSON.stringify(authorizeBody({
-        scope: MCP_OAUTH_ALL_SCOPE,
-        selectedScope: MCP_OAUTH_ALL_SCOPE,
+        scope,
+        selectedScope: scope,
         decision: "approve",
       })),
     });

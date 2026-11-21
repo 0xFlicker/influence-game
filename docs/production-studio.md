@@ -35,6 +35,11 @@ OAuth consent in addition to current Producer/Sysop authority. `producer:edit`
 continues to cover tags only. No missing media is generated. See [the staging
 runbook](deployment/batch-render-staging.md) for activation, consent and CORS setup.
 
+Agent-operated audio, image and video requests start in the signed-in Studio
+browser. The same generation and publication handlers accept the opt-in
+`producer:media` grant, and the Studio selection and render order API accept
+`producer:render`. [Browser workflow and API contract](game-mcp-production-oauth.md#studio-production-for-agents)
+
 **Contributor requirement:** every presentation change must also reach Studio
 Source, Selected cut and encoded exports in the same branch. Follow the mandatory
 [presentation parity checklist](presentation-parity.md), including isolated cuts,

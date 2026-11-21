@@ -290,11 +290,11 @@ export async function getPrivyUser(privyUserId: string) {
  * Sets `c.get("user")` with the authenticated user record,
  * plus `c.get("userRoles")` and `c.get("userPermissions")` from JWT.
  */
-export function requireAuth(
+export function requireAuth<E extends AuthEnv = AuthEnv>(
   db: DrizzleDB,
   options: { allowPendingLegalAcceptance?: boolean } = {},
 ) {
-  return createMiddleware<AuthEnv>(async (c, next) => {
+  return createMiddleware<E>(async (c, next) => {
     const authHeader = c.req.header("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return c.json({ error: "Authentication required" }, 401);

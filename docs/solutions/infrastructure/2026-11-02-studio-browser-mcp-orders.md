@@ -117,3 +117,15 @@ Logs are `/tmp/global-render-monitor-*.log`; the completed provider-free rerun i
 PostgreSQL service is removed after validation; existing local services remain.
 AWS scheduling, reserved lanes, deployed OAuth/tailnet behavior and long-runtime
 acceptance remain staging work. No staging or production activation occurred.
+
+## Scoped media production
+
+Studio's media endpoints accept the exact opt-in `producer:media` grant and
+recheck the active OAuth client and current Producer role. The render order and
+selection endpoints require `producer:render`. Bind these checks to the exact
+routes. Hono mounts a subapp's wildcard middleware on the parent, so an auth
+wildcard shared by visual discovery and Studio can intercept the other
+subapp's requests. The mounted route test exercises both families and the
+general admin router together. Legacy game operators retain live recovery
+controls, and independent scene production requires current Producer or Sysop
+authority. [Operator workflow and API routes](../../game-mcp-production-oauth.md#studio-production-for-agents)

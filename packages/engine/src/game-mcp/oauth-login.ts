@@ -2,6 +2,7 @@
 import {
   MCP_OAUTH_CALLBACK_PATH,
   MCP_OAUTH_CLIENT_ID,
+  MCP_OAUTH_SCOPE,
   buildAuthorizeUrl,
   exchangeAuthorizationCode,
   generateOAuthSecret,
@@ -20,6 +21,7 @@ const DEFAULT_CALLBACK_HOST = "127.0.0.1";
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function main(): Promise<void> {
+  const scope = process.env.INFLUENCE_MCP_SCOPE?.trim() || MCP_OAUTH_SCOPE;
   const webBaseUrl = requireSafeHttpBaseUrl(
     process.env.INFLUENCE_MCP_WEB_BASE_URL ?? DEFAULT_WEB_BASE_URL,
     "INFLUENCE_MCP_WEB_BASE_URL",
@@ -83,6 +85,7 @@ async function main(): Promise<void> {
     resourceUri,
     state,
     codeChallenge,
+    scope,
   });
 
   console.log("Open this URL to authorize Game MCP access:");
@@ -109,8 +112,9 @@ async function main(): Promise<void> {
       redirectUri,
       resourceUri,
       codeVerifier,
+      scope,
     });
-    const stored = saveMcpOAuthToken(token);
+    const stored = saveMcpOAuthToken(token, getMcpTokenFilePath(), new Date(), { apiOrigin: apiBaseUrl.origin, resource: resourceUri });
 
     console.log(`OAuth token issued and saved to ${getMcpTokenFilePath()}`);
     console.log(`Token expires at ${stored.expiresAt}`);

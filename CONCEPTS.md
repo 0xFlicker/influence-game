@@ -18,6 +18,10 @@ Provider speech controls attached to accepted spoken words or saved thinking for
 
 A human account holder or viewer interacting with Influence outside the game fiction, including anonymous web viewers, authenticated viewers, agent owners, and producers. Operator must not be used as a synonym for an AI competitor. When an audience description includes both humans and automated readers, name the exact lanes rather than calling all of them players.
 
+## Studio producer grant
+
+An explicitly consented OAuth authorization for an account with the current Producer role. The base `producer` scope permits production reads. `producer:media` permits Studio audio and scene-image generation and explicit image publication. `producer:render` permits ordering an export of a frozen cut. Editorial uploads use the separate `assets:manage` grant. Agents doing production open the signed-in Studio browser to review source and media before they publish or export. [Studio production for agents](docs/game-mcp-production-oauth.md#studio-production-for-agents)
+
 ## Discord connection
 
 A private one-to-one association between a human House account and a Discord user, confirmed through both authenticated House login and Discord OAuth. PostgreSQL owns the association and pending role delivery. Community roles are cumulative user, moderator, admin, and sysop tiers derived from current House RBAC. Discord roles are a delivered projection, not permission authority. Disconnect removes bot authority immediately and retains the association until managed server roles have been removed. See [Discord verification](docs/discord-house-setup.md).

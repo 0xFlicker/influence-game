@@ -117,6 +117,9 @@ test("HTTP MCP render consent is separate from tags; orders survive exact replay
   async function rpc(bearer:string,name:string,args:unknown) {const response=await mcp.request("http://127.0.0.1:3000/mcp",{method:"POST",headers:{Authorization:`Bearer ${bearer}`,"Content-Type":"application/json",Accept:"application/json, text/event-stream"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:args}})});return {status:response.status,body:await response.json() as {error?:unknown;result?:{isError?:boolean;structuredContent?:{status:string;job:{id:string;state:string}}}}};}
   const descriptor:ProductionExportDescriptor=await frozen();
   const args={gameIdOrSlug:f.influence.id,audience:"public",thinking:true,snapshot:descriptor.sourceSnapshot,momentIds:descriptor.momentIds,settings,copy:{},requestKey:"mcp-order"};
+  const apiOrder={descriptor,requestKey:"api-order",files:[]};
+  expect((await request(`${root()}/render-orders`,apiOrder,read)).status).toBe(403);
+  expect((await request(`${root()}/render-orders`,apiOrder,render)).status).toBe(202);
   expect((await rpc(read,"order_production_render",args)).body.result?.isError).toBe(true);
   const first=await rpc(render,"order_production_render",args);expect(first.status).toBe(200);expect(first.body.result?.structuredContent?.status).toBe("ok");
   const job=first.body.result!.structuredContent!.job;expect(job.state).toBe("queued");

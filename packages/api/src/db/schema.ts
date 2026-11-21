@@ -69,7 +69,7 @@ import type {
   OwnerLearningEventKind,
   OwnerLearningEventPayloads,
 } from "../services/owner-learning-events.js";
-import { MCP_OAUTH_SCOPE_CHECK_VALUES } from "../services/mcp-scope-policy.js";
+import { canonicalMcpOAuthScopeCheck } from "../services/mcp-scope-policy.js";
 
 export type PostgameMediaType = "house_highlights_trailer";
 
@@ -211,9 +211,7 @@ export interface PostgameMediaUploadTargetMetadata {
   sha256: string;
 }
 
-const MCP_OAUTH_SCOPE_CHECK_SQL = sql.raw(
-  `(${MCP_OAUTH_SCOPE_CHECK_VALUES.map((scope) => `'${scope}'`).join(", ")})`,
-);
+const MCP_OAUTH_SCOPE_CHECK_SQL = sql.raw(canonicalMcpOAuthScopeCheck("scope"));
 
 // ---------------------------------------------------------------------------
 // Users
@@ -2930,7 +2928,7 @@ export const mcpOauthClients = pgTable("mcp_oauth_clients", {
     .default(sql`now()::text`),
 }, (table) => [
   index("mcp_oauth_clients_created_at_idx").on(table.createdAt),
-  check("mcp_oauth_clients_scope_check", sql`${table.scope} IN ${MCP_OAUTH_SCOPE_CHECK_SQL}`),
+  check("mcp_oauth_clients_scope_check", MCP_OAUTH_SCOPE_CHECK_SQL),
   check("mcp_oauth_clients_token_auth_check", sql`${table.tokenEndpointAuthMethod} = 'none'`),
 ]);
 
@@ -2961,7 +2959,7 @@ export const mcpOauthAuthorizationCodes = pgTable("mcp_oauth_authorization_codes
   index("mcp_oauth_authorization_codes_user_id_idx").on(table.userId),
   index("mcp_oauth_authorization_codes_resource_uri_idx").on(table.resourceUri),
   index("mcp_oauth_authorization_codes_expires_at_idx").on(table.expiresAt),
-  check("mcp_oauth_authorization_codes_scope_check", sql`${table.scope} IN ${MCP_OAUTH_SCOPE_CHECK_SQL}`),
+  check("mcp_oauth_authorization_codes_scope_check", MCP_OAUTH_SCOPE_CHECK_SQL),
   check("mcp_oauth_authorization_codes_pkce_method_check", sql`${table.codeChallengeMethod} = 'S256'`),
 ]);
 
@@ -2995,7 +2993,7 @@ export const mcpOauthAccessTokens = pgTable("mcp_oauth_access_tokens", {
   index("mcp_oauth_access_tokens_resource_uri_idx").on(table.resourceUri),
   index("mcp_oauth_access_tokens_refresh_token_family_id_idx").on(table.refreshTokenFamilyId),
   index("mcp_oauth_access_tokens_expires_at_idx").on(table.expiresAt),
-  check("mcp_oauth_access_tokens_scope_check", sql`${table.scope} IN ${MCP_OAUTH_SCOPE_CHECK_SQL}`),
+  check("mcp_oauth_access_tokens_scope_check", MCP_OAUTH_SCOPE_CHECK_SQL),
   check("mcp_oauth_access_tokens_audience_check", sql`${table.audience} = 'game-mcp'`),
   check("mcp_oauth_access_tokens_purpose_check", sql`${table.purpose} = 'mcp_access'`),
 ]);
@@ -3031,7 +3029,7 @@ export const mcpOauthRefreshTokens = pgTable("mcp_oauth_refresh_tokens", {
   index("mcp_oauth_refresh_tokens_user_id_idx").on(table.userId),
   index("mcp_oauth_refresh_tokens_resource_uri_idx").on(table.resourceUri),
   index("mcp_oauth_refresh_tokens_expires_at_idx").on(table.expiresAt),
-  check("mcp_oauth_refresh_tokens_scope_check", sql`${table.scope} IN ${MCP_OAUTH_SCOPE_CHECK_SQL}`),
+  check("mcp_oauth_refresh_tokens_scope_check", MCP_OAUTH_SCOPE_CHECK_SQL),
   check("mcp_oauth_refresh_tokens_audience_check", sql`${table.audience} = 'game-mcp'`),
   check("mcp_oauth_refresh_tokens_purpose_check", sql`${table.purpose} = 'mcp_access'`),
 ]);

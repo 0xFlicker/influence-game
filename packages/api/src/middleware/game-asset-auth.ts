@@ -1,13 +1,13 @@
 import { createMiddleware } from "hono/factory";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { getPermissionsForUser } from "../db/rbac.js";
 import { validateGameMcpBearerToken } from "../game-mcp/auth.js";
 import { hasCurrentLegalAcceptanceVersions, projectCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { verifySessionToken } from "./auth.js";
 import { GameAssetError } from "../services/game-asset-storage.js";
+import { hasGameAssetPermission } from "../services/mcp-oauth.js";
 
-export interface GameAssetActor { id: string; walletAddress: string | null; permissions: string[]; authority: "session" | "oauth"; scope: string }
+export interface GameAssetActor { id: string; canManageAssets: boolean; authority: "session" | "oauth"; scope: string }
 export type GameAssetEnv = { Variables: { assetActor: GameAssetActor | null } };
 
 /** Anonymous reads and app sessions are supported only in this endpoint family. */
@@ -33,15 +33,15 @@ export function gameAssetAuth(db: DrizzleDB) {
       }
       const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id));
       if (!user || user.deletedAt) throw new GameAssetError("asset_unauthorized", 401, "Account is unavailable");
-      const permissions = (await getPermissionsForUser(db, user.id)).permissions;
-      if (authority === "oauth" && !permissions.includes("manage_game_assets")) throw new GameAssetError("asset_forbidden", 403, "Game asset permission is required");
-      c.set("assetActor", { id, walletAddress: user.walletAddress, permissions, authority, scope });
+      const canManageAssets = await hasGameAssetPermission(db, user);
+      if (authority === "oauth" && !canManageAssets) throw new GameAssetError("asset_forbidden", 403, "Producer or Sysop with game asset permission required");
+      c.set("assetActor", { id, canManageAssets, authority, scope });
     }
     await next();
   });
 }
 export function requireAssetManager(actor: GameAssetActor | null): GameAssetActor {
   if (!actor) throw new GameAssetError("asset_unauthorized", 401, "Authentication required");
-  if (!actor.permissions.includes("manage_game_assets")) throw new GameAssetError("asset_forbidden", 403, "Game asset permission is required");
+  if (!actor.canManageAssets) throw new GameAssetError("asset_forbidden", 403, "Producer or Sysop with game asset permission required");
   return actor;
 }

@@ -80,8 +80,9 @@ export function VisualOperations({ gameId,hideIndependentMedia=false }: { gameId
   const [checking,setChecking]=useState(false);
   const busy=checking || operation?.phase==="submitting" || operation?.phase==="unknown";
   const [failuresOnly, setFailuresOnly] = useState(false);
-  const { hasPermission } = usePermissions();
+  const { hasPermission, roles } = usePermissions();
   const canOperate = hasPermission("start_game");
+  const canProduce = canOperate && roles.some(role => role === "producer" || role === "sysop");
   const preparedRepair = data?.scenes.some((scene) => scene.boundarySequence === data.pause?.boundarySequence && scene.status === "preparing" && scene.renderRevision > 0);
   const refresh = useCallback(async () => { await refetch(); }, [refetch]);
   const control = async (body: Record<string, unknown>, message: string) => {
@@ -154,7 +155,7 @@ export function VisualOperations({ gameId,hideIndependentMedia=false }: { gameId
         <div className="space-y-2 p-4"><p>{scene.roomId} · boundary {scene.boundarySequence} · revision {scene.renderRevision}</p><p>{scene.status === "ready" ? "Image verified" : scene.status} · {scene.anchors?.length ?? 0} verified anchors</p>{scene.failure && <p className="text-sm text-amber-200">{scene.failure}</p>}
           {scene.candidateArtifactId && (scene.status !== "ready" || scene.candidateArtifactId !== scene.imageArtifactId) && <EvidenceImage key={scene.candidateArtifactId} gameId={gameId} id={scene.candidateArtifactId} kind="artifact" onOpen={(url) => setOpenImage({ url, label: `${scene.roomId} · boundary ${scene.boundarySequence} · candidate image` })} />}
           {data.pause && canOperate && scene.status !== "preparing" && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "regenerate" }, "Game recovery prepared. Resume is still required.")}>Prepare game recovery</button>}
-          {!hideIndependentMedia && <SceneRepairPanel gameId={gameId} sceneId={scene.id} originalFailed={scene.status === "failed"} media={data.media} canOperate={canOperate} refresh={refresh} refreshError={readError} attempts={data.accounting.attempts} onOpen={(url, label) => setOpenImage({ url, label })} />}
+          {!hideIndependentMedia && <SceneRepairPanel gameId={gameId} sceneId={scene.id} originalFailed={scene.status === "failed"} media={data.media} canOperate={canProduce} refresh={refresh} refreshError={readError} attempts={data.accounting.attempts} onOpen={(url, label) => setOpenImage({ url, label })} />}
         </div>
       </article>)}</div>
       <h2 className="text-lg font-semibold">Operational timeline</h2>

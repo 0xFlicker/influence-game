@@ -141,12 +141,15 @@ export async function exchangeAuthorizationCode(
     parsed.token_type !== "Bearer" ||
     typeof parsed.expires_in !== "number" || !Number.isFinite(parsed.expires_in) || parsed.expires_in <= 0 ||
     parsed.purpose !== "mcp_access" ||
-    !parsed.scope?.split(/\s+/).includes(options.scope ?? MCP_OAUTH_SCOPE) ||
+    typeof parsed.scope !== "string" ||
     parsed.audience !== MCP_OAUTH_AUDIENCE ||
     !isSameLocalResource(parsed.resource, options.resourceUri)
   ) {
     throw new Error("Token exchange returned an invalid MCP OAuth response");
   }
+  const grantedScopes = new Set(parsed.scope.split(/\s+/));
+  const missingScopes = (options.scope ?? MCP_OAUTH_SCOPE).trim().split(/\s+/).filter(scope => !grantedScopes.has(scope));
+  if (missingScopes.length) throw new Error(`OAuth consent omitted requested scopes: ${missingScopes.join(", ")}`);
 
   return parsed as McpOAuthTokenResponse;
 }

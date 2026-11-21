@@ -10,6 +10,7 @@ export const MCP_OAUTH_SCOPE_VALUES = [
   "moderation:read",
   "moderation:write",
   "assets:manage",
+  "producer:media",
 ] as const;
 
 export type McpOAuthScope = typeof MCP_OAUTH_SCOPE_VALUES[number];
@@ -73,6 +74,11 @@ export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDef
   },
   "producer:edit": {scope:"producer:edit",label:"Edit production moment tags",description:"Save shared Studio moment tags for operator cut review. Does not render, publish or change gameplay.",group:"developer",defaultSelected:false,requiredScopes:["producer"],requiredRole:"producer"},
   "producer:render": {scope:"producer:render",label:"Order Studio renders",description:"Order private cloud video renders from reviewed Studio cuts and cancel or retry them. Rendering can incur compute costs. Does not generate speech, images or gameplay.",group:"developer",defaultSelected:false,requiredScopes:["producer"],requiredRole:"producer"},
+  "producer:media": {
+    scope: "producer:media", label: "Generate and publish Studio media",
+    description: "Generate and retry Studio recordings and scene images, review image versions, and publish scene images to the selected audience. Generation can incur provider costs.",
+    group: "developer", defaultSelected: false, requiredScopes: ["producer"], requiredRole: "producer",
+  },
   producer: {
     scope: "producer",
     label: "Developer access",
@@ -89,7 +95,14 @@ export const MCP_OAUTH_DEFAULT_SCOPES: readonly McpOAuthScope[] = [
   "games:read",
 ];
 
-export const MCP_OAUTH_SCOPE_CHECK_VALUES = validCanonicalScopeValues();
+/** Database equivalent of a nonempty, normalized scope set with its dependencies. */
+export function canonicalMcpOAuthScopeCheck(column: string): string {
+  const ordered = MCP_OAUTH_SCOPE_VALUES.map(scope => `(${scope} )?`).join("");
+  const dependencies = MCP_OAUTH_SCOPE_VALUES.flatMap(scope =>
+    MCP_OAUTH_SCOPE_DEFINITIONS[scope].requiredScopes.map(required =>
+      `(NOT ('${scope}' = ANY(string_to_array(${column}, ' '))) OR '${required}' = ANY(string_to_array(${column}, ' ')))`));
+  return [`${column} <> ''`, `(${column} || ' ') ~ '^${ordered}$'`, ...dependencies].join(" AND ");
+}
 
 export function isMcpOAuthScope(value: string): value is McpOAuthScope {
   return (MCP_OAUTH_SCOPE_VALUES as readonly string[]).includes(value);
@@ -172,20 +185,4 @@ export function mcpOAuthScopesToArray(scopes: ReadonlySet<McpOAuthScope>): McpOA
 
 export function scopeSetFromArray(scopes: readonly McpOAuthScope[]): Set<McpOAuthScope> {
   return new Set(scopes);
-}
-
-function validCanonicalScopeValues(): readonly string[] {
-  const values: string[] = [];
-  const count = MCP_OAUTH_SCOPE_VALUES.length;
-  for (let mask = 1; mask < (1 << count); mask += 1) {
-    const scopes = new Set<McpOAuthScope>();
-    for (let index = 0; index < count; index += 1) {
-      const scope = MCP_OAUTH_SCOPE_VALUES[index];
-      if (scope && mask & (1 << index)) scopes.add(scope);
-    }
-    if (!invalidMcpOAuthScopeSetReason(scopes)) {
-      values.push(normalizeMcpOAuthScopeSet(scopes));
-    }
-  }
-  return values;
 }
