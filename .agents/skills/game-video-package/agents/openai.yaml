@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game Video Package"
+  short_description: "Turn a game and thesis into YouTube and TikTok videos"
+  default_prompt: "Use $game-video-package to turn this game and thesis into a storyboard, finished YouTube and TikTok videos, thumbnail, titles, descriptions, and subtitles."
