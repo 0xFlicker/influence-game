@@ -6,7 +6,7 @@ import { featuredSeasonGame, playableSeasonGame, seasonGameLabel, type SeasonGam
 import styles from "./seasons.module.css";
 import {WerewolfWatchChoices} from "@/components/games/werewolf/werewolf-watch-choices";
 const Player=dynamic(()=>import("./season-game-player").then(module=>module.SeasonGamePlayer),{ssr:false,loading:()=> <p role="status" className={styles.playerLoading}>Opening the watch room…</p>});
-export function SeasonWatch({games,seasonName,seasonSlug,loading,error,nextDrawAt}:{games:SeasonGame[];seasonName:string;seasonSlug:string;loading:boolean;error:string|null;nextDrawAt?:string|null}) {
+export function SeasonWatch({games,seasonName,seasonSlug,loading,error}:{games:SeasonGame[];seasonName:string;seasonSlug:string;loading:boolean;error:string|null}) {
   const [chosen,setChosen]=useState<SeasonGame|null>(null);
   const [playing,setPlaying]=useState<SeasonGame|null>(null);
   const [audience,setAudience]=useState<"mystery"|"omniscient"|null>(null);
@@ -31,7 +31,6 @@ export function SeasonWatch({games,seasonName,seasonSlug,loading,error,nextDrawA
       </div>
       <aside className={styles.seasonEpisodes} aria-label="From this season"><h3>From this season</h3>
         {games.length ? <ol>{games.slice(0,5).map(item=><li key={item.id}><button aria-pressed={item.id===game?.id} className={styles.episodeChoice} onClick={()=>{setChosen(item);setPlaying(playableSeasonGame(item) && (item.gameKind !== "werewolf" || audience) ? item : null);}}><span className={styles.episodeArt} data-kind={item.gameKind} aria-hidden="true"/><span><strong>{item.slug}</strong><small>{item.gameKind === "werewolf" ? "Werewolf" : "Influence"} · {item.status === "completed" ? "Replay" : item.status === "in_progress" ? "Live" : seasonGameLabel(item)}</small></span></button></li>)}</ol> : <p>{loading ? "Loading games…" : "No games available."}</p>}
-        {nextDrawAt && <p className={styles.drawTime}>Next draw <time dateTime={nextDrawAt}>{new Date(nextDrawAt).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short",timeZone:"UTC"})} UTC</time></p>}
       </aside>
     </div>
   </section>;

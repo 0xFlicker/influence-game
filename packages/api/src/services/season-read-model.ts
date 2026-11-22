@@ -1,8 +1,12 @@
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { publicGameFilter, isViewerGame } from "./game-visibility.js";
+import { MAX_NEW_GAME_PLAYERS } from "@influence/engine";
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { getNextDailyFreeDrawAt } from "./free-game-schedule.js";
+import { dailyFreeDrawEligibility } from "./queue-enrollment.js";
+import { getActiveSeason } from "./seasons.js";
 import {
   calculateArchitectScore,
   compareAgentStandings,
@@ -98,6 +102,12 @@ interface PrivateCompetitionReceipt extends Omit<PublicCompetitionReceipt, "owne
 
 export interface OwnedCompetitionReceipt extends PrivateCompetitionReceipt {
   revisionId: string;
+}
+
+interface SeasonEnrollment {
+  agentsEntered: number;
+  seatsPerDraw: number;
+  nextDrawAt: string;
 }
 
 export interface PublicSeasonDashboard {
@@ -498,6 +508,34 @@ export async function getProducerSeasonDiagnostics(
 
 type SeasonRow = typeof schema.seasons.$inferSelect;
 type ReceiptReadRow = Awaited<ReturnType<typeof loadReceiptRows>>[number];
+
+export async function readSeasonEnrollment(
+  db: DrizzleDB,
+  season: Pick<SeasonRow, "id" | "status">,
+  includeEligibility: boolean,
+): Promise<(SeasonEnrollment & { eligibleAgents?: number }) | null> {
+  if (season.status !== "active") return null;
+  const now = new Date();
+  // Closeout clears the singleton queue. Bind the counts and accepting season
+  // to one snapshot so a concurrent close and reopen cannot mix seasons.
+  return db.transaction(async (tx) => {
+    if ((await getActiveSeason(tx, now.toISOString()))?.id !== season.id) return null;
+    const [counts] = await tx.select({
+      agentsEntered: sql<number>`count(*)::int`,
+      eligibleAgents: includeEligibility
+        ? sql<number | null>`(count(*) filter (where ${dailyFreeDrawEligibility(tx)}))::int`
+        : sql<number | null>`null`,
+    }).from(schema.freeGameQueue)
+      .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id));
+    if (!counts) throw new Error("Season enrollment counts were not returned");
+    return {
+      agentsEntered: counts.agentsEntered,
+      seatsPerDraw: MAX_NEW_GAME_PLAYERS,
+      nextDrawAt: getNextDailyFreeDrawAt(now),
+      ...(counts.eligibleAgents === null ? {} : { eligibleAgents: counts.eligibleAgents }),
+    };
+  }, { isolationLevel: "repeatable read", accessMode: "read only" });
+}
 
 async function resolveSeason(db: DrizzleDB, idOrSlug: string): Promise<SeasonRow | null> {
   return (await db.select().from(schema.seasons)

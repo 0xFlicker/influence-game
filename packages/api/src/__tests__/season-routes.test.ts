@@ -2,6 +2,7 @@ import { loadPayloads } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
@@ -99,6 +100,51 @@ describe("season routes", () => {
     expect(denied.status).toBe(403);
     expect(allowed.status).toBe(200);
     expect(JSON.stringify(await allowed.json())).toContain("sigma");
+  });
+
+  test("reports enrollment for the accepting season and reserves draw eligibility for Admin", async () => {
+    const fixture = await seedRouteFixture();
+    const { db, ownerId, otherUserId, profileId, seasonId, seasonSlug } = fixture;
+    const app = new Hono().route("/", createSeasonRoutes(db));
+    const admin = await token(db, otherUserId, ["view_admin"]);
+    async function readEnrollment(response: Response | Promise<Response>) {
+      const result = await response;
+      expect(result.status).toBe(200);
+      return (await result.json() as { enrollment: unknown }).enrollment;
+    }
+    const publicEnrollmentRead = () => readEnrollment(app.request(`/api/seasons/${seasonSlug}`));
+    const adminEnrollmentRead = () => readEnrollment(app.request(`/api/admin/seasons/${seasonSlug}/diagnostics`, {
+      headers: { Authorization: `Bearer ${admin}` },
+    }));
+
+    expect(await publicEnrollmentRead()).toMatchObject({ agentsEntered: 0, seatsPerDraw: 12 });
+    await db.insert(schema.freeGameQueue).values({ id: randomUUID(), userId: ownerId, agentProfileId: profileId });
+    const publicEnrollment = { agentsEntered: 1, seatsPerDraw: 12, nextDrawAt: expect.any(String) };
+    expect(await publicEnrollmentRead()).toEqual(publicEnrollment);
+    expect(await adminEnrollmentRead()).toEqual({ ...publicEnrollment, eligibleAgents: 1 });
+
+    const busyGameId = randomUUID();
+    await db.insert(schema.games).values({
+      id: busyGameId, slug: busyGameId, trackType: "free", status: "in_progress", config: "{}",
+    });
+    await db.insert(schema.gamePlayers).values({
+      id: randomUUID(), gameId: busyGameId, userId: ownerId, agentProfileId: profileId,
+      persona: JSON.stringify({ name: "Aster Routes" }), agentConfig: "{}",
+    });
+    expect(await publicEnrollmentRead()).toEqual(publicEnrollment);
+    expect(await adminEnrollmentRead()).toEqual({ ...publicEnrollment, eligibleAgents: 0 });
+
+    await db.update(schema.games).set({ status: "suspended" }).where(eq(schema.games.id, busyGameId));
+    expect(await adminEnrollmentRead()).toEqual({ ...publicEnrollment, eligibleAgents: 1 });
+    await db.update(schema.agentProfiles).set({ moderationRequired: true, contentRevisionId: null })
+      .where(eq(schema.agentProfiles.id, profileId));
+    expect(await adminEnrollmentRead()).toEqual({ ...publicEnrollment, eligibleAgents: 0 });
+
+    await closeSeason(db, seasonId);
+    await createSeason(db, { slug: "next-season", name: "Next Season" });
+    await db.insert(schema.freeGameQueue).values({ id: randomUUID(), userId: ownerId, agentProfileId: profileId });
+    expect(await publicEnrollmentRead()).toBeNull();
+    expect(await adminEnrollmentRead()).toBeNull();
   });
 
   test("separates season observation from lifecycle management and creates an active season", async () => {
@@ -235,7 +281,7 @@ async function seedRouteFixture() {
     gamesPlayed: 1,
     ratingPolicyVersion: "competition-rating-v1",
   });
-  return { db, ownerId, otherUserId, profileId: profile.id, seasonSlug: season.slug, gameId };
+  return { db, ownerId, otherUserId, profileId: profile.id, seasonId: season.id, seasonSlug: season.slug, gameId };
 }
 
 async function insertUser(db: DrizzleDB, label: string): Promise<string> {
