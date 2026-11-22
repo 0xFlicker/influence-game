@@ -248,6 +248,62 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("Influence operators can remove a waiting cast member", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const id = "cast-remove-fixture";
+    const player: GamePlayer = { id: "mira", name: "Mira", persona: "Social", personaKey: "social", status: "alive", shielded: false };
+    for (const width of [1440, 390]) {
+      const context = await identityContext(browser, { viewport: { width, height: 900 }, hasTouch: width === 390, isMobile: width === 390 });
+      await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
+      const page = await context.newPage();
+      let roles = ["player"];
+      let game: GameDetail = { id, slug: id, status: "waiting", playerCount: 1, players: [player], currentRound: 0, maxRounds: 10, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: "2026-09-26" };
+      let attempts = 0;
+      try {
+        await page.route("**/api/auth/me", async route => {
+          const response = await route.fetch();
+          await route.fulfill({ response, json: { ...await response.json(), roles } });
+        });
+        await page.route(`**/api/game-entries/${id}`, route => route.fulfill({ json: { id, slug: id, gameKind: "influence" } }));
+        await page.route(`**/api/games/${id}`, route => route.fulfill({ json: game }));
+        await page.route(`**/api/games/${id}/episode`, route => route.fulfill({ status: 404, json: { error: "Not ready" } }));
+        await page.route(`**/api/games/${id}/seats/${player.id}`, route => {
+          expect(route.request().method()).toBe("DELETE");
+          attempts++;
+          if (attempts === 1) return route.fulfill({ status: 409, json: { error: "Could not remove Mira. Try again." } });
+          game = { ...game, players: [] };
+          return route.fulfill({ json: { removed: true } });
+        });
+        await page.goto(`${servers.webUrl}/games/${id}`, { waitUntil: "networkidle" });
+        const remove = page.getByRole("button", { name: "Remove Mira from cast" });
+        await expect(page.getByRole("button", { name: "Meet Mira" })).toBeVisible();
+        await expect(remove).toHaveCount(0);
+
+        roles = ["admin"];
+        game = { ...game, castLocked: true };
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(remove).toHaveCount(0);
+
+        game = { ...game, castLocked: false };
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(remove).toBeVisible();
+        await page.getByRole("region", { name: "Meet the cast" }).screenshot({ path: `/tmp/influence-cast-remove-${width}.png` });
+        if (width === 390) await remove.tap();
+        else {
+          await remove.focus();
+          await remove.press("Enter");
+        }
+        await expect(page.getByRole("region", { name: "Game pre-show" }).getByRole("alert")).toContainText("Could not remove Mira. Try again.");
+        await expect(remove).toBeEnabled();
+        await remove.click();
+        await expect(page.getByRole("button", { name: "Meet Mira" })).toHaveCount(0);
+        await expect(page.getByText("1 seat open", { exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Join with an agent" })).toBeVisible();
+        expect(attempts).toBe(2);
+      } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
+    }
+  });
+
   test("agent selector supports reuse, retries, empty-agent creation and owned-seat roles", async ({ browser }) => {
     test.setTimeout(180_000);
     const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, fullBodyReferenceUrl: "https://example.com/fixture-full-body.png", backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });

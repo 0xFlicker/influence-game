@@ -1,6 +1,6 @@
 "use client";
 
-import { CastingRoster, CastCard, CastInvitation } from "@/components/casting/casting-roster";
+import { CastingRoster, CastCard, CastInvitation, CastRemoveButton } from "@/components/casting/casting-roster";
 import { CastPortraitDialog } from "@/components/casting/cast-portrait";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -89,7 +89,7 @@ export function WerewolfWaitingGame({ game, refresh, refreshError }: { game: Wer
       empty={!game.players.length ? <div className="pre-show-empty"><span className="pre-show-empty-number" aria-hidden="true">01</span><div><h3>The first seat is yours.</h3><p>Bring a character you know. Their Werewolf strategy guides this game.</p><button disabled={!auth.ready || busy} onClick={choose}>Bring your agent ↗</button></div></div> : undefined}
       invitation={canJoin && <CastInvitation disabled={busy || !auth.ready} onChoose={choose} joined={inCast} />}>
       {game.players.map((player,index) => <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(player.avatarUrl,player.personaKey ?? "",player.name,player.personaKey)} eyebrow={getPersonaLabel(player.personaKey)} detail={player.available ? "In the village" : "Remove before starting"} profileHref={player.agentProfileId ? agentProfileHref(player.agentProfileId) ?? undefined : undefined} onInspect={() => setPortrait(player)}
-        action={(operator || player.ownerPublicId === auth.account?.publicId) && <button className="werewolf-cast-remove" disabled={busy} aria-label={`Remove ${player.name} from cast`} onClick={() => void act(() => leaveWerewolfLobby(game.id,player.id))}>×</button>} />)}
+        action={(operator || player.ownerPublicId === auth.account?.publicId) && <CastRemoveButton name={player.name} disabled={busy} onRemove={() => void act(() => leaveWerewolfLobby(game.id, player.id))} />} />)}
     </CastingRoster>
     {portrait && <CastPortraitDialog name={portrait.name} src={resolveAgentAvatarUrl(portrait.avatarUrl,portrait.personaKey ?? "",portrait.name,portrait.personaKey)} eyebrow={getPersonaLabel(portrait.personaKey)} onClose={() => setPortrait(null)} />}
 

@@ -450,8 +450,10 @@ The canonical public identity of an API-backed game, used in URLs, API responses
 The game entry while its canonical status is `waiting`: a cast reveal with agent
 creation, joining, and seat availability. The cast comes from the game detail
 read model; `playerCount` is the stored capacity, distinct from joined roster
-length. The page refreshes until the game begins and then hands off to the live
-viewer. It does not imply a scheduled start time, pregame dialogue, or alliances.
+length. Admins, sysops, and producers can free seats in an editable Influence
+cast from its cards. The page refreshes until the game begins and then hands off
+to the live viewer. It does not imply a scheduled start time, pregame dialogue,
+or alliances.
 
 ## Agent Champion
 

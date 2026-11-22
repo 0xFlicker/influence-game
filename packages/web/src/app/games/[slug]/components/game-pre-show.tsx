@@ -1,5 +1,5 @@
 "use client";
-import { CastingRoster, CastCard, CastInvitation } from "@/components/casting/casting-roster";
+import { CastingRoster, CastCard, CastInvitation, CastRemoveButton } from "@/components/casting/casting-roster";
 
 import { CastPortraitDialog } from "@/components/casting/cast-portrait";
 import Link from "next/link";
@@ -10,7 +10,7 @@ import { useAgentAvatarUrl } from "@/components/agent-avatar";
 import { getGamePlayerAvatarPreviewModel } from "@/components/game-player-avatar-preview";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
-import { startGame, stopGame, hideGame } from "@/lib/api";
+import { startGame, stopGame, hideGame, removeGameSeat } from "@/lib/api";
 import { getGame, type GameDetail, type GamePlayer, type GameSummary } from "@/lib/api";
 import { gameDisplayName } from "@/lib/game-identity";
 import { playerProfileHref } from "@/lib/player-profile-links";
@@ -25,45 +25,50 @@ export function GamePreShow({ game, onGameUpdated }: {
   const resolveAgentAvatarUrl = useAgentAvatarUrl();
   const { ready, authenticated, account } = useAuth();
   const [joining, setJoining] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null);
-  const refreshRef = useRef<(() => void) | null>(null);
+  const refreshRef = useRef<((afterMutation?: boolean) => Promise<void>) | null>(null);
   const openSeats = Math.max(0, game.playerCount - game.players.length);
   const { inCast, canJoin, createHref } = gamePreShowJoinState(game, account);
+  const canRemove = authenticated && !game.castLocked && account?.roles.some(role => ["admin", "sysop", "producer"].includes(role));
 
   // Waiting games have no live observer socket. Read the canonical roster and
   // status until the game starts, then let the viewer take over.
   useEffect(() => {
     let active = true;
-    let inFlight = false;
-    const controller = new AbortController();
+    let request: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const refresh = async () => {
+    const refresh = async (afterMutation = false) => {
+      if (!active || (!afterMutation && (request || document.hidden))) return;
       clearTimeout(timer);
-      if (!active || inFlight) return;
-      if (document.hidden) return;
-      inFlight = true;
+      request?.abort();
+      const controller = new AbortController();
+      request = controller;
       try {
         const next = await getGame(game.id, AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]));
-        if (active) {
+        if (!controller.signal.aborted) {
           setRefreshError(null);
           onGameUpdated(next);
         }
       } catch (error) {
-        if (active) setRefreshError(error instanceof Error ? error.message : "Could not refresh the cast.");
+        if (!controller.signal.aborted) setRefreshError(error instanceof Error ? error.message : "Could not refresh the cast.");
       } finally {
-        inFlight = false;
-        if (active) timer = setTimeout(() => void refresh(), 5000);
+        if (!controller.signal.aborted) {
+          request = undefined;
+          timer = setTimeout(() => void refresh(), 5000);
+        }
       }
     };
     const wake = () => { if (!document.hidden) void refresh(); };
-    refreshRef.current = () => void refresh();
+    refreshRef.current = refresh;
     timer = setTimeout(() => void refresh(), 5000);
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
     return () => {
       active = false;
-      controller.abort();
+      request?.abort();
       clearTimeout(timer);
       refreshRef.current = null;
       document.removeEventListener("visibilitychange", wake);
@@ -83,6 +88,20 @@ export function GamePreShow({ game, onGameUpdated }: {
     if (!ready || !canJoin) return;
     if (!authenticated) { router.push(createHref); return; }
     setJoining(true);
+  }
+
+  async function remove(playerId: string) {
+    if (removing) return;
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      await removeGameSeat(game.id, playerId);
+      await refreshRef.current?.(true);
+    } catch (error) {
+      setRemoveError(error instanceof Error ? error.message : "Could not remove the cast member.");
+    } finally {
+      setRemoving(false);
+    }
   }
 
   return (
@@ -105,12 +124,20 @@ export function GamePreShow({ game, onGameUpdated }: {
       <CastingRoster eyebrow="The competitors" description={game.players.length ? "Select a portrait to take a closer look." : "Every rivalry starts with an introduction."}
         empty={!game.players.length ? <div className="pre-show-empty"><span className="pre-show-empty-number" aria-hidden="true">01</span><div><h3>The first seat is yours.</h3><p>No agents have entered yet. Create a character with something to prove, or bring one you already know.</p><button type="button" disabled={!ready} onClick={join}>Bring your agent ↗</button></div></div> : undefined}
         invitation={canJoin && <CastInvitation disabled={!ready} onChoose={join} joined={inCast} />}>
-        {game.players.map((player,index) => { const model=getGamePlayerAvatarPreviewModel(player); return <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(model.avatarUrl,player.persona,player.name,player.personaKey)} eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)} detail={castRecord(player)} profileHref={player.currentAgent?.profileHref} onInspect={() => setSelectedPlayer(player)} />; })}
+        {game.players.map((player, index) => {
+          const model = getGamePlayerAvatarPreviewModel(player);
+          return <CastCard key={player.id} name={player.name} index={index}
+            src={resolveAgentAvatarUrl(model.avatarUrl, player.persona, player.name, player.personaKey)}
+            eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)}
+            detail={castRecord(player)} profileHref={player.currentAgent?.profileHref} onInspect={() => setSelectedPlayer(player)}
+            action={canRemove && <CastRemoveButton name={player.name} disabled={removing} onRemove={() => void remove(player.id)} />} />;
+        })}
       </CastingRoster>
+      {removeError && <p role="alert" className="pre-show-notice">{removeError}</p>}
 
       <footer className="pre-show-footer"><p>{game.visibility === "unlisted" ? "Unlisted game" : "Public game"} <span aria-hidden="true">/</span> {game.playerCount} agents <span aria-hidden="true">/</span> {game.modelLabel}</p><p>The cast updates here. The show begins here.</p></footer>
-      {refreshError && <p role="alert" className="pre-show-notice">Cast refresh failed. {refreshError} <button type="button" onClick={() => refreshRef.current?.()}>Try again</button></p>}
-      {joining && <JoinGameModal game={summary} onClose={() => setJoining(false)} onSuccess={() => { setJoining(false); refreshRef.current?.(); }} />}
+      {refreshError && <p role="alert" className="pre-show-notice">Cast refresh failed. {refreshError} <button type="button" onClick={() => void refreshRef.current?.()}>Try again</button></p>}
+      {joining && <JoinGameModal game={summary} onClose={() => setJoining(false)} onSuccess={() => { setJoining(false); void refreshRef.current?.(true); }} />}
       {selectedPlayer && <CastPortrait player={selectedPlayer} onClose={closePortrait} />}
     </section>
   );
