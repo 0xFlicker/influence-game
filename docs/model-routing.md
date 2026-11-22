@@ -77,20 +77,21 @@ Catalog discovery reports `complete`, `partial`, or `unavailable`, plus a `provi
 
 ## Catalog and prices
 
-The normalized Katana snapshot in `packages/engine/src/katana-catalog-snapshot.json` was read from [public model metadata](https://kat.imgnai.com/v1/models/text) on October 23, 2026. It records documented inputs, strict-schema support, context/output limits, request controls, price tiers and minimum/rounding charges. These are provider claims, not gameplay test results.
+The normalized Katana snapshot in `packages/engine/src/katana-catalog-snapshot.json` uses [Katana's public model metadata](https://kat.imgnai.com/v1/models/text). The original rows retain their October 23, 2026 check date. The November 22 refresh adds individually dated facts for the probed models, including image input, structured output, context and output limits, request parameters, cached-token rates and minimum/rounding charges. These facts describe the Katana route, including for Gemini 4 Hydrogen.
 
 | Route | Input / cached input / output USD per million | Evidence |
 |---|---|---|
 | Luna Flex | 0.05 / 0.005 / 0.25 | [OpenAI model page](https://developers.openai.com/api/docs/models/gpt-6-luna), October 23; long-context/cache-write tiers retained |
 | Haiku 5.5 Standard | 0.10 / 0.01 / 0.50 | [October 25 native audit](research/2026-10-25-anthropic-native-provider/README.md); all rates increase fivefold above 100K prompt tokens |
-| GLM Flash | 0.156 / 0.0312 / 0.52 | Katana October 23 metadata |
-| DeepSeek Flash | 0.1001 / 0.02002 / 0.2002 | Katana October 23 metadata |
+| GLM 5.3 Flash (`katana:glm-5-3-flash`) | 0.041097 / 0.0309 / 0.080752 | Katana November 22 metadata |
+| GLM 5.2 (`katana:glm-5-2`) | 0.6386 / 0.1442 / 2.4926 | Katana November 22 metadata |
+| DeepSeek V4 Flash (`katana:deepseek-v4-flash`) | 0.0927 / 0.01854 / 0.1854 | Katana November 22 metadata |
 | Muse Contributor | 0.10 / 0.002 / 0.20 | Existing October 14 [Meta pricing](https://dev.meta.ai/docs/pricing-rate-limits) record; public refresh unavailable October 23 |
 | Muse Ember 1.0 | 0.10 / 0.004 / 0.50 up to 200K input tokens; 0.30 / 0.012 / 1.50 in full above 200K | [Muse Ember](https://dev.meta.ai/docs/muse-ember) and [pricing](https://dev.meta.ai/docs/pricing-rate-limits#muse-ember-pricing), checked 2026-11-09; see [Ember audit](audits/2026-11-09-meta-muse-ember.md) |
 
 Muse Ember (`meta-muse:muse-ember-1.0`) is a free evaluation candidate: documented image input, strict structured output, tools and the application's low/medium/high reasoning controls, with a 1,048,576-token context window and 524,288 max output tokens. It is Standard mode only (no Contributor variant), is available to every user as a character model preference, and is not a default or gameplay-qualified model; its live listing on 2026-11-09 proved account visibility only — no inference or paid gameplay qualification was run. Older Meta Muse facts keep their 2026-10-23 check date.
 
-Katana's 0.1-credit increment/minimum at the documented USD reference produces a $0.00052 request minimum. Small calls therefore need not cost the nominal token-rate comparison. Grok 4.6 now has a route-qualified price and a 200,000-input-token tier. GLM 5.2's current structured metadata says 0.0346115 input / 0.033495 cached / 7.105 output; this differs from older audit/prose rates. Accounting explicitly uses the dated structured metadata, not the old prose. Meta's retained date is not a claim of a fresh audit. Other legacy table entries remain estimates; review their sources before relying on a new experiment's budget.
+Katana's 0.1-credit increment and minimum at the documented USD reference produce a $0.00052 request minimum. Small calls can cost more than the nominal token-rate estimate. Grok 4.6 has a route-qualified price and a 200,000-input-token tier. Accounting uses the dated rate card for the exact route. Consult its source and date before budgeting an evaluation.
 
 Rate cards are provider-qualified and captured on attempts before dispatch. Terminal receipts retain their version/source, unsuccessful billable attempts, and separate provider-reported versus estimated costs. An unknown route retains usage with an unknown price; it never borrows Luna pricing. This last behavior fixes an existing reporting bug.
 

@@ -2,6 +2,7 @@ import { normalizeGameModelRouting, type GameModelRouting } from "./game-model-r
 import { modelRouteMetadata } from "./model-route-metadata";
 import type { OpenAIReasoningSummaryMode } from "./llm-client";
 import anthropic from "./anthropic-catalog-snapshot.json";
+import katana from "./katana-catalog-snapshot.json";
 import { XAI_MODEL_FACTS } from "./xai-model-facts";
 
 export { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "./model-defaults";
@@ -182,6 +183,19 @@ const META_MUSE_CAPABILITIES: ModelRequestCapabilities = {
 
 type ModelDefinition = Omit<ModelCatalogEntry, "capabilities" | "allowedReasoningEfforts">;
 
+const KATANA_EVALUATION_MODELS = [
+  "glm-5-3-flash",
+  "deepseek-v4-1-flash-1017",
+  "mimo-v2-6-flash",
+  "qwen3-8-flash",
+  "minimax-m3-1-flash",
+  "glm-5-3",
+  "glm-5-3-flashx",
+  "mistral-large-4-0",
+  "gemini-4-hydrogen",
+  "qwen4-max",
+] as const satisfies readonly (keyof typeof katana.models)[];
+
 const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
   ...Object.keys(XAI_MODEL_FACTS).map((modelId): ModelDefinition => ({
     id: `xai:${modelId}`, providerProfileId: "xai", modelId,
@@ -193,6 +207,15 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     displayName: facts.displayName,
     evaluationStatus: modelId === "claude-haiku-5-5" ? "game-ready" : "evaluation-candidate",
     defaultReasoningPolicy: facts.adaptive ? "low" : "action-policy",
+  })),
+  ...KATANA_EVALUATION_MODELS.map((modelId): ModelDefinition => ({
+    id: `katana:${modelId}`,
+    providerProfileId: "katana",
+    modelId,
+    displayName: `Katana ${katana.models[modelId].displayName}`,
+    evaluationStatus: "evaluation-candidate",
+    defaultReasoningPolicy: "action-policy",
+    notes: "Passed one synthetic strict JSON Schema vote. Gameplay evaluation is pending.",
   })),
   {
     "id": "katana:glm-5-3-flash-private",

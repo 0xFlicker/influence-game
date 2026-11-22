@@ -39,7 +39,8 @@ export const KATANA_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = 
     const parameters: readonly string[] = row.parameters;
     const reasoning = parameters.includes("reasoning_effort");
     return [id, {
-      source: katana.source, checkedAt: katana.checkedAt, contextTokens: row.contextTokens, outputTokens: row.outputTokens,
+      source: katana.source, checkedAt: "checkedAt" in row ? row.checkedAt : katana.checkedAt,
+      contextTokens: row.contextTokens, outputTokens: row.outputTokens,
       parameters, pricing: row.pricing, minimumUsd: row.minimumUsd, roundingUsd: row.roundingUsd,
       allowedReasoningEfforts: reasoning ? ["low", "medium", "high"] : [],
       capabilities: {

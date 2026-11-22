@@ -508,7 +508,7 @@ describe("Game REST API", () => {
           { catalogId: "xai:grok-4.5" },
         ]],
         ["incompatible reasoning", [
-          { catalogId: "katana:glm-5-2", reasoningPolicy: "high" },
+          { catalogId: "katana:mimo-v2-6-flash", reasoningPolicy: "high" },
         ]],
         ["unsafe cap", [
           { catalogId: "openai:gpt-5.6-luna" },

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import inventory from "./fixtures/model-inventory-2026-10-23.json";
-import { modelCatalogEntryById, normalizeProviderManifest } from "../model-catalog";
+import { MODEL_CATALOG, modelCatalogEntryById, normalizeProviderManifest } from "../model-catalog";
 import { providerModelFacts } from "../provider-model-facts";
 import { estimateRouteCost, modelRateCard } from "../model-route-metadata";
 import { MODEL_PRICING } from "../token-tracker";
@@ -78,6 +78,31 @@ test("Muse Ember long-context tier applies in full only above 200K input tokens"
   // One more input token bills the whole request at long-context rates.
   expect(estimateRouteCost({ ...usage, promptTokens: 200_001 }, card)).toBeCloseTo(0.0721203, 10);
   expect(providerModelFacts("meta-muse", "muse-ember-1.0-contributor")).toBeUndefined();
+});
+
+test("Katana's probed evaluation models have dated provider facts and route-specific rates", () => {
+  const id = "katana:glm-5-3-flash";
+  const entry = MODEL_CATALOG.find(model => model.id === id);
+  expect(entry).toMatchObject({
+    evaluationStatus: "evaluation-candidate",
+    capabilityEvidence: "documented",
+    capabilities: {
+      supportsImageInput: true, supportsStructuredOutput: true,
+      supportsReasoningEffort: true, usesMaxCompletionTokens: false,
+    },
+    metadata: { documented: { contextTokens: 1048576, outputTokens: 131072, checkedAt: "2026-11-22" } },
+  });
+  expect(normalizeProviderManifest([{ catalogId: id }])[0]?.catalogId).toBe(id);
+  const card = modelRateCard(id)!;
+  expect(card).toMatchObject({
+    version: "2026-11-22", minimumUsd: 0.00052, roundingUsd: 0.00052,
+    rates: { inputPer1M: 0.041097, cachedInputPer1M: 0.0309, outputPer1M: 0.080752 },
+  });
+  expect(estimateRouteCost({ promptTokens: 10, completionTokens: 10 }, card)).toBeCloseTo(0.00052, 10);
+  expect(estimateRouteCost({ promptTokens: 30_000 }, card)).toBeCloseTo(0.00156, 10);
+  expect(modelRateCard("katana:gemini-4-hydrogen")?.rates.cacheWriteInputPer1M).toBeCloseTo(0.0858333333333333, 10);
+  expect(modelRateCard("katana:glm-5-2")?.version).toBe("2026-11-22");
+  expect(modelRateCard("katana:glm-5-3-flash-private")?.version).toBe("2026-10-23");
 });
 
 test("published cached-token discounts are retained instead of charging the uncached rate", () => {
