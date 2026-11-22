@@ -217,6 +217,10 @@ Known unsuitable catalog entries:
 
 Dynamic text catalog IDs are also accepted for provider evaluation: `katana:<model-id>`, `lm-studio:<model-id>`, and `custom-openai-compatible:<model-id>`. Known catalog entries keep nicer labels and capability hints; dynamic entries let local API-backed runs try newly available Katana or LM Studio text models without waiting for a code change. Meta Muse is static-only because its model list mixes text models with image, voice, and segmentation models. Meta reasoning models can spend several hundred tokens before visible output even at low effort, and their reasoning summaries currently return empty, so transcript thinking evidence is thinner than hosted OpenAI's.
 
+On November 22, 2026, the authenticated Katana dev account passed one synthetic vote per route with a strict JSON Schema, a 768-token cap and zero retries. The catalog records ten evaluation candidates: `glm-5-3-flash`, `deepseek-v4-1-flash-1017`, `mimo-v2-6-flash`, `qwen3-8-flash`, `minimax-m3-1-flash`, `glm-5-3`, `glm-5-3-flashx`, `mistral-large-4-0`, `gemini-4-hydrogen` and `qwen4-max`. The existing `glm-5-2` and `deepseek-v4-flash` controls also passed. Gameplay, image handling and optional reasoning settings were outside this probe.
+
+The same check returned `404 model_not_found` for `glm-5-3-private` and `glm-5-3-flash-private`. `glm-5-3-prime` returned JSON with the wrong field names. `grok-4-7` passed through Katana and has dated rate metadata. New-game Grok routing remains on the native xAI path. The [routing catalog](model-routing.md#catalog-and-prices) documents the pricing source.
+
 Reasoning policy is explicit: `low`, `medium`, or `high` for fixed thinking depth, or `action-policy` (**Adaptive**) for the engine's per-action defaults. The admin UI does not offer `none`.
 
 Legacy games without a `providerManifest` project their existing `modelSelection` into a one-entry manifest during the bounded blue/green compatibility window. New public-game creation selects Luna as the primary entry. Do not use tier env overrides for new work; choose an explicit catalog/provider-manifest path instead.
