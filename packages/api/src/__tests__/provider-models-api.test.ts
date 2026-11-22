@@ -135,7 +135,7 @@ describe("provider model inventory", () => {
     expect(body.models.find((model) => model.catalogId === "xai:grok-4.5"))
       .toMatchObject({ configured: false, available: null, allowedReasoningPolicies: ["action-policy", "low", "medium", "high"] });
     expect(body.models.find((model) => model.catalogId === "katana:glm-5-2"))
-      .toMatchObject({ configured: false, allowedReasoningPolicies: ["action-policy"] });
+      .toMatchObject({ configured: false, allowedReasoningPolicies: ["action-policy", "low", "medium", "high"] });
   });
 
   test("lists configured Meta Muse text models and never non-text Meta models", async () => {
