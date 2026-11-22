@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PermissionGate } from "@/components/admin-gate";
+import { SeasonEnrollmentPanel } from "@/app/seasons/season-enrollment";
 import {
   closeAdminSeason,
   createAdminSeason,
@@ -48,12 +49,18 @@ export function SeasonAdminPanel() {
   const [error, setError] = useState<string | null>(null);
   const [newSeasonName, setNewSeasonName] = useState("Season 0");
   const loadedNameSuggestion = useRef(false);
+  const refreshRequest = useRef(0);
 
   const refresh = useCallback(async (preferredId?: string) => {
+    const request = ++refreshRequest.current;
     try {
       const next = await listSeasons();
+      if (request !== refreshRequest.current) return;
       setSeasons(next);
-      await recoverFinalizedSeasonAwards(next).catch(() => setNotice("Season badge recovery will retry when this page refreshes. Season operations remain available."));
+      await recoverFinalizedSeasonAwards(next).catch(() => {
+        if (request === refreshRequest.current) setNotice("Season badge recovery will retry when this page refreshes. Season operations remain available.");
+      });
+      if (request !== refreshRequest.current) return;
       if (!loadedNameSuggestion.current) {
         setNewSeasonName(suggestSeasonName(next));
         loadedNameSuggestion.current = true;
@@ -61,18 +68,21 @@ export function SeasonAdminPanel() {
       const selected = next.find((season) => season.id === preferredId)
         ?? next[0];
       setSelectedId(selected?.id ?? "");
-      setDiagnostics(selected ? await getProducerSeasonDiagnostics(selected.id) : null);
+      const nextDiagnostics = selected ? await getProducerSeasonDiagnostics(selected.id) : null;
+      if (request !== refreshRequest.current) return;
+      setDiagnostics(nextDiagnostics);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load seasons.");
+      if (request === refreshRequest.current) setError(err instanceof Error ? err.message : "Failed to load seasons.");
     } finally {
-      setLoading(false);
+      if (request === refreshRequest.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   const selected = seasons.find((season) => season.id === selectedId) ?? null;
+  const enrollment = diagnostics?.seasonId === selectedId ? diagnostics.enrollment : null;
 
   async function run(action: () => Promise<SeasonIdentity | void>) {
     setBusy(true);
@@ -164,6 +174,14 @@ export function SeasonAdminPanel() {
               </dl>
             )}
           </div>
+
+          {enrollment && (
+            <SeasonEnrollmentPanel
+              enrollment={enrollment}
+              eligibleAgents={enrollment.eligibleAgents}
+              className="influence-panel mt-4 rounded-xl p-5 text-text-primary"
+            />
+          )}
 
           <div className="mt-6 grid gap-4 sm:grid-cols-4">
             <EvidenceCount label="Hidden ratings" value={diagnostics?.ratings.length ?? 0} />

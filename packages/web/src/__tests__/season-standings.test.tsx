@@ -98,6 +98,7 @@ describe("season standings", () => {
 function dashboard(): SeasonDashboard {
   return {
     schemaVersion: 2,
+    enrollment: null,
     season: {
       id: "season-1",
       slug: "summer-2026",

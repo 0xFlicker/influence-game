@@ -26,6 +26,7 @@ import {
   createAnonymousPage,
   createAuthenticatedPage,
   launchBrowser,
+  rejectOptionalAnalytics,
 } from "./test-browser.js";
 import {
   createIsolatedTestDb,
@@ -255,6 +256,65 @@ describe("E2E: Dual Crown season surfaces", () => {
         "Season operations", "New season name", "Browser QA Championship", "Pregame rating snapshots",
         "Receipt reproduction", "Revision classifier evidence",
       ]);
+    }
+  }, 120_000);
+
+  test("shows current enrollment in both views and eligibility only in Admin when it differs", async () => {
+    const active = await createSeason(testDb.db, { slug: "enrollment-qa", name: "Season 1" });
+    const queuedAgentId = randomUUID();
+    await testDb.db.insert(schema.agentProfiles).values({
+      id: queuedAgentId, userId: admin.userId, name: "Enrollment QA", personality: "Patient.",
+    });
+    await testDb.db.insert(schema.freeGameQueue).values({
+      id: randomUUID(), userId: admin.userId, agentProfileId: queuedAgentId,
+    });
+
+    const webUrl = servers.webUrl!;
+    const publicPage = await createAnonymousPage(browser, webUrl);
+    const adminPage = await createAuthenticatedPage(browser, adminJwt, webUrl, { privateKey: admin.wallet.privateKey });
+    await rejectOptionalAnalytics(publicPage);
+    const enrollment = 'section[aria-label="Season enrollment"]';
+    const eligibility = '[aria-label="Draw eligibility"]';
+    const publicUrl = `${webUrl}/seasons?season=${active.slug}`;
+    const adminUrl = `${webUrl}/admin/seasons`;
+
+    try {
+      await assertRoute(adminPage, adminUrl, ["Season enrollment", "Agents entered", "Seats per draw", "Next draw"]);
+      expect(await adminPage.$(eligibility)).toBeNull();
+
+      const busyGameId = randomUUID();
+      await testDb.db.insert(schema.games).values({
+        id: busyGameId, slug: busyGameId, status: "in_progress", trackType: "free", config: "{}",
+      });
+      await testDb.db.insert(schema.gamePlayers).values({
+        id: randomUUID(), gameId: busyGameId, userId: admin.userId, agentProfileId: queuedAgentId,
+        persona: JSON.stringify({ name: "Enrollment QA" }), agentConfig: "{}",
+      });
+
+      for (const width of [1440, 390]) {
+        await publicPage.setViewport({ width, height: 900 });
+        await adminPage.setViewport({ width, height: 900 });
+        await assertRoute(publicPage, publicUrl, ["Season enrollment", "Agents entered", "Seats per draw", "Next draw"]);
+        await assertRoute(adminPage, adminUrl, ["Season enrollment", "Temporarily unavailable"]);
+        expect(await publicPage.$(eligibility)).toBeNull();
+        expect(await adminPage.$$eval(`${eligibility} dd`, values => values.map(value => value.textContent))).toEqual(["0", "1"]);
+
+        for (const page of [publicPage, adminPage]) {
+          expect(await page.$$eval(`${enrollment} dl:first-of-type dd`, values => values.slice(0, 2).map(value => value.textContent))).toEqual(["1", "12"]);
+        }
+        expect(await publicPage.$eval(`${enrollment} time`, time => time.getAttribute("datetime")))
+          .toBe(await adminPage.$eval(`${enrollment} time`, time => time.getAttribute("datetime")));
+      }
+
+      await publicPage.select('[aria-label="Choose a season"]', seasonSlug);
+      await publicPage.waitForFunction('document.querySelector("#season-title")?.textContent === "Browser QA Championship"');
+      expect(await publicPage.$(enrollment)).toBeNull();
+      await adminPage.select("select", seasonId);
+      await adminPage.waitForFunction('document.body.innerText.includes("Pregame rating snapshots")');
+      expect(await adminPage.$(enrollment)).toBeNull();
+    } finally {
+      await publicPage.close();
+      await adminPage.close();
     }
   }, 120_000);
 });

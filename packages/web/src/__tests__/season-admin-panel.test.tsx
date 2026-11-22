@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SeasonAdminPanel, SeasonEvidence, suggestSeasonName, recoverFinalizedSeasonAwards } from "../app/admin/season-admin-panel";
+import { SeasonEnrollmentPanel } from "../app/seasons/season-enrollment";
 import type { ProducerSeasonDiagnostics } from "../lib/api";
 
 describe("season admin panel", () => {
@@ -25,6 +26,7 @@ describe("season admin panel", () => {
       season: {
         status: "closing",
       },
+      enrollment: null,
       readiness: { assignedGames: 1, nonTerminalGames: 0, unsettledOwnedSeats: 0, canFinalize: true },
       ratings: [],
     ratingEvents: [{
@@ -68,6 +70,16 @@ describe("season admin panel", () => {
     expect(html).toContain("Can finalize");
     expect(html).not.toContain("Set rating");
     expect(html).not.toContain("Edit receipt");
+  });
+
+  test("shows the admin eligibility breakdown only when some entered agents are unavailable", () => {
+    const enrollment = { agentsEntered: 15, seatsPerDraw: 12, nextDrawAt: "2026-11-28T00:00:00.000Z" };
+    const allEligible = renderToStaticMarkup(<SeasonEnrollmentPanel enrollment={enrollment} eligibleAgents={15} className="" />);
+    expect(allEligible).not.toContain("Draw eligibility");
+    const someUnavailable = renderToStaticMarkup(<SeasonEnrollmentPanel enrollment={enrollment} eligibleAgents={0} className="" />);
+    expect(someUnavailable).toContain("Draw eligibility");
+    expect(someUnavailable).toContain("<dt>Eligible</dt><dd>0</dd>");
+    expect(someUnavailable).toContain("<dt>Temporarily unavailable</dt><dd>15</dd>");
   });
 });
 

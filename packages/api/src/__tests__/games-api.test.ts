@@ -2062,6 +2062,51 @@ describe("Game REST API", () => {
   });
 
   // =========================================================================
+  // DELETE /api/games/:id/seats/:playerId
+  // =========================================================================
+
+  describe("DELETE /api/games/:id/seats/:playerId", () => {
+    test("lets an admin free owned and House seats in a waiting game", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const { agentProfileId, playerId } = await joinTestPlayer(db, app, id, "Waiting Competitor", userToken);
+      const filled = await app.request(`/api/games/${id}/fill`, authPost(adminToken));
+      expect(filled.status).toBe(200);
+      const { players: housePlayers } = await filled.json() as { players: { id: string }[] };
+      const path = `/api/games/${id}/seats/${playerId}`;
+      const removeAsAdmin = { ...authPost(adminToken), method: "DELETE" };
+      const { id: otherId } = await createTestGame(app, adminToken);
+      expect((await app.request(`/api/games/${otherId}/seats/${playerId}`, removeAsAdmin)).status).toBe(404);
+      expect((await app.request(path, { method: "DELETE" })).status).toBe(401);
+      expect((await app.request(path, { ...authPost(userToken), method: "DELETE" })).status).toBe(403);
+
+      const removed = await app.request(path, removeAsAdmin);
+      expect(removed.status).toBe(200);
+      expect(await removed.json()).toEqual({ removed: true });
+      expect((await app.request(`/api/games/${id}/seats/${housePlayers[0]!.id}`, removeAsAdmin)).status).toBe(200);
+      const detail = await app.request(`/api/games/${id}`);
+      const lobby = await detail.json() as { status: string; playerCount: number; players: { id: string }[] };
+      expect(lobby).toMatchObject({ status: "waiting", playerCount: 6 });
+      expect(lobby.players.map(player => player.id).sort()).toEqual(housePlayers.slice(1).map(player => player.id).sort());
+      expect((await app.request(path, removeAsAdmin)).status).toBe(404);
+      const rejoin = await app.request(`/api/games/${id}/join`, json({ agentProfileId }, userToken));
+      expect(rejoin.status).toBe(201);
+    });
+
+    test("protects the cast once the game has started", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const { playerId } = await joinTestPlayer(db, app, id, "Frozen Competitor", userToken);
+      await db.update(schema.games).set({ status: "in_progress", startedAt: new Date().toISOString() })
+        .where(eq(schema.games.id, id));
+      const response = await app.request(`/api/games/${id}/seats/${playerId}`, {
+        ...authPost(adminToken), method: "DELETE",
+      });
+      expect(response.status).toBe(409);
+      expect(await db.select({ id: schema.gamePlayers.id }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id)))
+        .toEqual([{ id: playerId }]);
+    });
+  });
+
+  // =========================================================================
   // POST /api/games/:id/fill
   // =========================================================================
 

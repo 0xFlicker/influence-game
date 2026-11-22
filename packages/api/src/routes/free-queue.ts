@@ -23,7 +23,6 @@ import { eq, desc, and, inArray, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { eligibleAgentContent } from "../services/agent-content-eligibility.js";
 import {
   requireAuth,
   requireServiceAuth,
@@ -66,7 +65,7 @@ import {
   joinQueue,
   leaveQueue,
   QueueEnrollmentError,
-  DAILY_FREE_BUSY_GAME_STATUSES,
+  dailyFreeDrawEligibility,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
 import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
@@ -332,18 +331,9 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         return { drawn: false as const, code: "season_intake_closed",
           reason: "Daily Free intake is closed. No season is accepting entries." };
       }
-      const entries = (await tx.select({ entry: schema.freeGameQueue }).from(schema.freeGameQueue)
+      const eligibleEntries = (await tx.select({ entry: schema.freeGameQueue }).from(schema.freeGameQueue)
         .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
-        .where(eligibleAgentContent())).map(row => row.entry);
-      const busyOwners = await tx.select({ userId: schema.gamePlayers.userId })
-        .from(schema.gamePlayers)
-        .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
-        .where(and(
-          eq(schema.games.trackType, "free"),
-          inArray(schema.games.status, DAILY_FREE_BUSY_GAME_STATUSES),
-        ));
-      const busyOwnerIds = new Set(busyOwners.flatMap((row) => row.userId ? [row.userId] : []));
-      const eligibleEntries = entries.filter((entry) => !busyOwnerIds.has(entry.userId));
+        .where(dailyFreeDrawEligibility(tx))).map(row => row.entry);
       if (eligibleEntries.length < 2) {
         return {
           drawn: false as const,
@@ -351,7 +341,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         };
       }
       const shuffled = [...eligibleEntries].sort(() => Math.random() - 0.5);
-      const picked = shuffled.slice(0, Math.min(entries.length, 12));
+      const picked = shuffled.slice(0, maxPlayers);
       const pickedOwnerIds = picked.map((entry) => entry.userId);
       const suspendedGames = pickedOwnerIds.length === 0 ? [] : await tx
         .selectDistinct({ id: schema.games.id })

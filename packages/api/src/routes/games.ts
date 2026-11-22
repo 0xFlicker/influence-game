@@ -26,6 +26,7 @@ import { publicErrorInfo, readPublicInfluenceSummaries } from "../services/publi
  *   GET    /api/games           — list games (with status filter)
  *   GET    /api/games/:id       — get game details
  *   POST   /api/games/:id/join  — join a game with an owned saved agent
+ *   DELETE /api/games/:id/seats/:playerId — operator removal from a waiting cast
  *   POST   /api/games/:id/start — start a game (min players met)
  *   POST   /api/games/:id/stop  — stop / cancel a running game
  *   PATCH  /api/games/:id/hide — admin soft-delete (hide from public lists)
@@ -81,6 +82,7 @@ import {
   tryRefreshGameWatchStateSummary,
 } from "../services/game-watch-state-summary.js";
 import { broadcastRaw } from "../services/ws-manager.js";
+import { isChampionshipGame } from "../services/championship-launch.js";
 import {
   admitOwnedSeatInTransaction,
   lockWaitingGameForRosterWrite,
@@ -385,6 +387,7 @@ export function createGameRoutes(db: DrizzleDB) {
           }
         : undefined,
       rated: Boolean(game.seasonId),
+      ...(game.status === "waiting" && { castLocked: Boolean(game.startedAt) || await isChampionshipGame(db, game.id) }),
       competitionReceipts: competition?.receipts ?? [],
       winner: watchState.winner?.name,
       tokenUsage: result[0]?.tokenUsage ? JSON.parse(result[0].tokenUsage) : undefined,
@@ -498,6 +501,32 @@ export function createGameRoutes(db: DrizzleDB) {
     if (!admitted.replayed) await tryRefreshGameWatchStateSummary(db, gameId, "player_joined");
 
     return c.json({ playerId: admitted.seat.id }, admitted.replayed ? 200 : 201);
+  });
+
+  app.delete("/api/games/:id/seats/:playerId", requireAuth(db), requireRole("admin", "sysop", "producer"), async (c) => {
+    const gameId = c.req.param("id");
+    const playerId = c.req.param("playerId");
+    try {
+      const outcome = await db.transaction(async (tx) => {
+        const game = await lockWaitingGameForRosterWrite(tx, gameId);
+        if (game.gameKind !== "influence" || !isViewerGame(game)) return "game_not_found";
+        if (await isChampionshipGame(tx, game.id)) return "cast_locked";
+        const [removed] = await tx.delete(schema.gamePlayers)
+          .where(and(eq(schema.gamePlayers.gameId, game.id), eq(schema.gamePlayers.id, playerId)))
+          .returning({ id: schema.gamePlayers.id });
+        return removed ? "removed" : "seat_not_found";
+      });
+      if (outcome === "game_not_found") return c.json({ error: "Game not found" }, 404);
+      if (outcome === "seat_not_found") return c.json({ error: "Cast member not found" }, 404);
+      if (outcome === "cast_locked") return c.json({ error: "The championship cast is locked." }, 409);
+    } catch (error) {
+      if (error instanceof OwnedSeatProjectionError) {
+        return c.json({ error: error.message }, error.reason === "game_not_found" ? 404 : 409);
+      }
+      throw error;
+    }
+    await tryRefreshGameWatchStateSummary(db, gameId, "player_removed");
+    return c.json({ removed: true });
   });
 
   // -------------------------------------------------------------------------
