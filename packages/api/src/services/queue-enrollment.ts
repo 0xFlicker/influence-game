@@ -1,7 +1,7 @@
 import { recordSeasonEntry } from "./campaign-conversions.js";
 import { getNextDailyFreeDrawAt } from "./free-game-schedule.js";
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { eligibleAgentContent, hasFullBodyAgentArt } from "./agent-content-eligibility.js";
@@ -160,6 +160,18 @@ export interface OpenGamesRead {
 type GameRow = typeof schema.games.$inferSelect;
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
+
+/** Draw eligibility for an entry joined to its current agent profile. */
+export function dailyFreeDrawEligibility(db: DatabaseExecutor) {
+  const busyAssignment = db.select({ id: schema.gamePlayers.id }).from(schema.gamePlayers)
+    .innerJoin(schema.games, eq(schema.games.id, schema.gamePlayers.gameId))
+    .where(and(
+      eq(schema.gamePlayers.userId, schema.freeGameQueue.userId),
+      eq(schema.games.trackType, "free"),
+      inArray(schema.games.status, DAILY_FREE_BUSY_GAME_STATUSES),
+    ));
+  return and(eligibleAgentContent(), notExists(busyAssignment))!;
+}
 
 export async function getQueueStatus(
   db: DrizzleDB,

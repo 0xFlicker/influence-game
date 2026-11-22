@@ -3660,10 +3660,17 @@ export interface ArchitectSeasonStanding {
   }>;
 }
 
+export interface SeasonEnrollment {
+  agentsEntered: number;
+  seatsPerDraw: number;
+  nextDrawAt: string;
+}
+
 export interface SeasonDashboard {
   championships?: Array<{ slug: string; name: string; status: string }>;
   schemaVersion: 1 | 2;
   season: SeasonIdentity;
+  enrollment: SeasonEnrollment | null;
   agentStandings: AgentSeasonStanding[];
   architectStandings: ArchitectSeasonStanding[];
   honors: null | {
@@ -3738,6 +3745,7 @@ export interface ProducerSeasonDiagnostics {
   season: {
     status: SeasonIdentity["status"];
   };
+  enrollment: (SeasonEnrollment & { eligibleAgents?: number }) | null;
   readiness: {
     assignedGames: number;
     nonTerminalGames: number;

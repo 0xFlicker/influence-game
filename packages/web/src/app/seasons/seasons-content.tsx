@@ -6,6 +6,7 @@ import { SeasonWatch } from "./season-watch";
 import type { SeasonGame } from "./season-games";
 import { AgentVisualUpdateControl } from "./agent-visual-update";
 import { SeasonAgentPreview } from "./season-agent-preview";
+import { SeasonEnrollmentPanel } from "./season-enrollment";
 import { useAuth } from "@/hooks/use-auth";
 import { apiFetch, getFreeQueueStatus, getSeasonDashboard, joinFreeQueue, leaveFreeQueue, listAgents, listSeasons, type FreeQueueStatus, type SavedAgent, type SeasonDashboard, type SeasonIdentity } from "@/lib/api";
 import type { ChampionshipView } from "@/lib/championship";
@@ -133,9 +134,10 @@ export function SeasonsContent() {
             <p className={styles.entryNotice} aria-live="polite">{entry && agent?.id !== entry.agentProfileId ? `Currently entered: ${entry.agentName}` : entry && queue?.eligibility === "temporarily-ineligible" ? queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable" : ""}</p>
           </div>}
         </div>
+        {accepting && dashboard.enrollment && <SeasonEnrollmentPanel enrollment={dashboard.enrollment} className={styles.mastheadEnrollment} />}
         {accepting && <div className={styles.mastheadArt}><SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent}/></div>}
       </section>}
-      {!events.length && <SeasonWatch key={season.id} games={games} seasonName={season.name} seasonSlug={season.slug} loading={loading} error={gamesError} nextDrawAt={accepting ? queue?.nextDrawAt : null}/>}
+      {!events.length && <SeasonWatch key={season.id} games={games} seasonName={season.name} seasonSlug={season.slug} loading={loading} error={gamesError}/>}
       <section className={styles.ledger} aria-label="Season standings">
         {events.length > 0 && <div className={styles.ledgerHeading}><h2>The season that brought us here</h2><p>Season points are separate from championship results.</p></div>}
         <SeasonStandings dashboard={{...dashboard, championships: []}} loading={false} seasons={[]} onSelectSeason={selectSeason} />

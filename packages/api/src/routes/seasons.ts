@@ -12,6 +12,7 @@ import {
   getPublicSeasonDashboard,
   getPublicSeasonGames,
   listPublicSeasons,
+  readSeasonEnrollment,
 } from "../services/season-read-model.js";
 import {
   SeasonStateError,
@@ -30,7 +31,9 @@ export function createSeasonRoutes(db: DrizzleDB) {
 
   app.get("/api/seasons/:seasonIdOrSlug", async (c) => {
     const dashboard = await getPublicSeasonDashboard(db, c.req.param("seasonIdOrSlug"));
-    return dashboard ? c.json(dashboard) : c.json({ error: "Season not found" }, 404);
+    if (!dashboard) return c.json({ error: "Season not found" }, 404);
+    const enrollment = await readSeasonEnrollment(db, dashboard.season, false);
+    return c.json({ ...dashboard, enrollment });
   });
 
   app.get("/api/seasons/:seasonIdOrSlug/games/:gameIdOrSlug/receipts", async (c) => {
@@ -85,7 +88,9 @@ export function createSeasonRoutes(db: DrizzleDB) {
     requirePermission("view_admin"),
     async (c) => {
       const diagnostics = await getProducerSeasonDiagnostics(db, c.req.param("seasonIdOrSlug"));
-      return diagnostics ? c.json(diagnostics) : c.json({ error: "Season not found" }, 404);
+      if (!diagnostics) return c.json({ error: "Season not found" }, 404);
+      const enrollment = await readSeasonEnrollment(db, { id: diagnostics.seasonId, status: diagnostics.season.status }, true);
+      return c.json({ ...diagnostics, enrollment });
     },
   );
 

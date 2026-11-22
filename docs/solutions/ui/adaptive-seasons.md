@@ -65,3 +65,15 @@ agents have image URLs but those URLs return 404 after a worktree change, inspec
 the original upload directory before generating anything. For this incident,
 missing referenced files were copied byte-for-byte from the previous checkout,
 without overwriting files or changing profile/queue records.
+
+## Season enrollment
+
+The accepting season shows the current standing-entry count, seats per draw, and
+next scheduled draw in its banner. Admin → Seasons shows the same three values
+for that season and adds eligible and temporarily unavailable counts when they
+differ. The draw and admin count use the same content and active-assignment
+filters. Public responses carry aggregate enrollment and schedule only.
+
+Enrollment can exceed the seats available in a single draw. Enrollment reads
+bind the accepting season and queue counts to the same database snapshot.
+Future, closing, and finalized seasons have no live enrollment panel.
