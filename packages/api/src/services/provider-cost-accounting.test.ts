@@ -1171,9 +1171,9 @@ describe("provider cost accounting", () => {
     });
     expect(byModel.get("glm-5-2")).toMatchObject({
       costSource: "static_estimate",
-      estimatedCostMicrousd: 3_640,
+      estimatedCostMicrousd: 2_080,
       pricingSourceId: "https://kat.imgnai.com/v1/models/text",
-      rateCardVersion: "2026-10-23",
+      rateCardVersion: "2026-11-22",
     });
 
     const detail = await getGameCostDetail(db, gameId);

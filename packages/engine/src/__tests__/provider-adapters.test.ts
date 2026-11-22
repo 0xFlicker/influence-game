@@ -104,6 +104,27 @@ it("adaptive effort respects a model's frozen reasoning limits", () => {
   }
 });
 
+it.each([
+  ["katana:glm-5-2", "max_tokens", "max_completion_tokens"],
+  ["katana:deepseek-v4-flash", "max_completion_tokens", "max_tokens"],
+] as const)("compiles the verified Katana request controls for %s", (catalogId, tokenLimitField, omittedField) => {
+  const model = modelCatalogEntryById(catalogId)!;
+  const body = compileChatCompletionsRequest({ ...structuredInvocation, reasoning: { effort: "low" } }, {
+    catalogId,
+    modelId: model.modelId,
+    providerProfileId: "katana",
+    modelCapabilities: model.capabilities,
+    reasoningPolicy: "action-policy",
+    allowedReasoningEfforts: model.allowedReasoningEfforts,
+  });
+  expect(body).toMatchObject({
+    [tokenLimitField]: structuredInvocation.outputTokenLimit,
+    reasoning_effort: "low",
+    response_format: { type: "json_schema", json_schema: { strict: true } },
+  });
+  expect(body).not.toHaveProperty(omittedField);
+});
+
 function runtime(
   catalogId: "katana:claude-opus-4-7" | "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor" | "meta-muse:muse-ember-1.0",
   client: OpenAI,
@@ -592,7 +613,7 @@ describe("provider-native adapters", () => {
     expect(withFallbacks.text?.format).toMatchObject({ type: "json_schema", name: "cast_vote", strict: true });
   });
 
-  it("preserves Grok options while GLM omits only unsupported options", () => {
+  it("preserves Grok and GLM's supported native request options", () => {
     const client = {} as OpenAI;
     const grok = runtime("katana:grok-4-5", client);
     const glm = runtime("katana:glm-5-2", client);
@@ -612,8 +633,8 @@ describe("provider-native adapters", () => {
       model: "glm-5-2",
       max_tokens: 4_096,
       temperature: 0.65,
+      reasoning_effort: "medium",
     });
-    expect(glmBody).not.toHaveProperty("reasoning_effort");
     expect(glmBody).not.toHaveProperty("tools");
     expect(glmBody.response_format).toMatchObject({type: "json_schema"});
   });

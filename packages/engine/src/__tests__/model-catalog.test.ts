@@ -141,7 +141,7 @@ describe("model catalog", () => {
     expect(grok?.displayName).toBe("xAI Grok 4.5");
     expect(grok?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
     expect(glm?.displayName).toBe("Katana GLM 5.2");
-    expect(glm?.allowedReasoningEfforts).toEqual([]);
+    expect(glm?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
     expect(gameReadyIds).toContain("katana:grok-4-5");
     expect(gameReadyIds).toContain("katana:glm-5-2");
   });
@@ -303,7 +303,7 @@ describe("model catalog", () => {
     )).toThrow(`at most ${MAX_PROVIDER_MANIFEST_ENTRIES}`);
     expect(normalizeProviderManifest([{ catalogId: "katana:q-naifu-a3b" }])[0]?.catalogId).toBe("katana:q-naifu-a3b");
     expect(() => normalizeProviderManifest([
-      { catalogId: "katana:glm-5-2", reasoningPolicy: "high" },
+      { catalogId: "katana:mimo-v2-6-flash", reasoningPolicy: "high" },
     ])).toThrow("does not support high reasoning");
     expect(() => normalizeProviderManifest([
       { catalogId: "openai:gpt-5.6-luna" },

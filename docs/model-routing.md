@@ -84,14 +84,14 @@ The normalized Katana snapshot in `packages/engine/src/katana-catalog-snapshot.j
 | Luna Flex | 0.05 / 0.005 / 0.25 | [OpenAI model page](https://developers.openai.com/api/docs/models/gpt-6-luna), October 23; long-context/cache-write tiers retained |
 | Haiku 5.5 Standard | 0.10 / 0.01 / 0.50 | [October 25 native audit](research/2026-10-25-anthropic-native-provider/README.md); all rates increase fivefold above 100K prompt tokens |
 | GLM 5.3 Flash (`katana:glm-5-3-flash`) | 0.041097 / 0.0309 / 0.080752 | Katana November 22 metadata |
-| GLM 5.2 (`katana:glm-5-2`) | 0.0346115 / 0.033495 / 7.105 | Stored Katana October 23 rate card |
-| DeepSeek V4 Flash (`katana:deepseek-v4-flash`) | 0.1001 / 0.02002 / 0.2002 | Stored Katana October 23 rate card |
+| GLM 5.2 (`katana:glm-5-2`) | 0.6386 / 0.1442 / 2.4926 | Katana November 22 metadata |
+| DeepSeek V4 Flash (`katana:deepseek-v4-flash`) | 0.0927 / 0.01854 / 0.1854 | Katana November 22 metadata |
 | Muse Contributor | 0.10 / 0.002 / 0.20 | Existing October 14 [Meta pricing](https://dev.meta.ai/docs/pricing-rate-limits) record; public refresh unavailable October 23 |
 | Muse Ember 1.0 | 0.10 / 0.004 / 0.50 up to 200K input tokens; 0.30 / 0.012 / 1.50 in full above 200K | [Muse Ember](https://dev.meta.ai/docs/muse-ember) and [pricing](https://dev.meta.ai/docs/pricing-rate-limits#muse-ember-pricing), checked 2026-11-09; see [Ember audit](audits/2026-11-09-meta-muse-ember.md) |
 
 Muse Ember (`meta-muse:muse-ember-1.0`) is a free evaluation candidate: documented image input, strict structured output, tools and the application's low/medium/high reasoning controls, with a 1,048,576-token context window and 524,288 max output tokens. It is Standard mode only (no Contributor variant), is available to every user as a character model preference, and is not a default or gameplay-qualified model; its live listing on 2026-11-09 proved account visibility only — no inference or paid gameplay qualification was run. Older Meta Muse facts keep their 2026-10-23 check date.
 
-Katana's 0.1-credit increment and minimum at the documented USD reference produce a $0.00052 request minimum. Small calls can cost more than the nominal token-rate estimate. Grok 4.6 has a route-qualified price and a 200,000-input-token tier. Accounting uses the dated rate card for the exact route. The November 22 listing quoted GLM 5.2 at 0.6386 / 0.1442 / 2.4926 and DeepSeek V4 Flash at 0.0927 / 0.01854 / 0.1854 and advertised new request controls for both. Those existing gameplay routes retain their October snapshot settings. Consult the current provider listing before budgeting an evaluation.
+Katana's 0.1-credit increment and minimum at the documented USD reference produce a $0.00052 request minimum. Small calls can cost more than the nominal token-rate estimate. Grok 4.6 has a route-qualified price and a 200,000-input-token tier. Accounting uses the dated rate card for the exact route. Consult its source and date before budgeting an evaluation.
 
 Rate cards are provider-qualified and captured on attempts before dispatch. Terminal receipts retain their version/source, unsuccessful billable attempts, and separate provider-reported versus estimated costs. An unknown route retains usage with an unknown price; it never borrows Luna pricing. This last behavior fixes an existing reporting bug.
 

@@ -101,7 +101,7 @@ test("Katana's probed evaluation models have dated provider facts and route-spec
   expect(estimateRouteCost({ promptTokens: 10, completionTokens: 10 }, card)).toBeCloseTo(0.00052, 10);
   expect(estimateRouteCost({ promptTokens: 30_000 }, card)).toBeCloseTo(0.00156, 10);
   expect(modelRateCard("katana:gemini-4-hydrogen")?.rates.cacheWriteInputPer1M).toBeCloseTo(0.0858333333333333, 10);
-  expect(modelRateCard("katana:glm-5-2")?.version).toBe("2026-10-23");
+  expect(modelRateCard("katana:glm-5-2")?.version).toBe("2026-11-22");
   expect(modelRateCard("katana:glm-5-3-flash-private")?.version).toBe("2026-10-23");
 });
 
