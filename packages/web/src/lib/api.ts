@@ -898,6 +898,10 @@ export async function startGame(id: string): Promise<void> {
   await apiFetch(`/api/games/${id}/start`, { method: "POST" });
 }
 
+export async function removeGameSeat(id: string, playerId: string): Promise<void> {
+  await apiFetch(`/api/games/${encodeURIComponent(id)}/seats/${encodeURIComponent(playerId)}`, { method: "DELETE" });
+}
+
 export interface FillGameResult {
   filled: number;
   totalPlayers: number;
@@ -2882,6 +2886,8 @@ export interface GameDetail {
   seasonId?: string;
   season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
   rated?: boolean;
+  /** Whether a waiting game's cast is already locked. */
+  castLocked?: boolean;
   competitionReceipts?: GameCompetitionReceipt[];
   winner?: string;
   winnerPersona?: string;

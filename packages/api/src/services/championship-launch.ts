@@ -29,7 +29,7 @@ export async function launchChampionshipGame(db: DrizzleDB, gameId: string) {
   if (receipt.accepted !== true || receipt.gameId !== gameId) throw new ChampionshipError("Championship launcher did not acknowledge the exact game", 503);
 }
 
-export async function isChampionshipGame(db: DrizzleDB, gameId: string) {
+export async function isChampionshipGame(db: Pick<DrizzleDB, "select">, gameId: string) {
   const [current] = await db.select({ id: schema.championshipMatches.id }).from(schema.championshipMatches).where(eq(schema.championshipMatches.gameId, gameId));
   if (current) return true;
   const [historical] = await db.select({ id: schema.championshipMatchAttempts.gameId }).from(schema.championshipMatchAttempts).where(eq(schema.championshipMatchAttempts.gameId, gameId));

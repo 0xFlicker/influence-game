@@ -67,6 +67,12 @@ these permissions. Start waits for a full cast, actions lock while pending,
 failures remain visible, and Hide requires confirmation before returning to
 All games. The API remains the authority for each action.
 
+Admins, sysops, and producers can use the × button on a cast card to free an
+owned or House seat in a waiting Influence game. The pre-show refreshes the cast
+and seat count after removal. `DELETE /api/games/:id/seats/:playerId` checks
+current roles and locks the same game row as join, fill, and start. The game
+detail flags locked casts, including waiting championship fixtures.
+
 ## Shared Werewolf casting
 
 `CastingHero` in `components/casting/casting-hero.tsx` owns the shared House hero, admission strip, venue image and icon. Influence keeps its waiting-game polling and controls. Werewolf creates a durable lobby first, then reads and joins its own persisted cast. The shared CSS lives in `components/casting/casting.css`.

@@ -12,6 +12,9 @@ export function CastCard({name,src,index,eyebrow,detail,profileHref,onInspect,ac
     <span className="pre-show-cast-copy"><span>{eyebrow}</span><strong>{name}</strong><span className="pre-show-cast-record">{detail}</span></span></>;
   return <article className="pre-show-cast-card">{profileHref ? <AgentProfileLink href={profileHref} className="absolute inset-0 text-left">{content}</AgentProfileLink> : onInspect ? <button type="button" className="absolute inset-0 text-left" aria-label={`Meet ${name}`} onClick={onInspect}>{content}</button> : content}{action}</article>;
 }
+export function CastRemoveButton({ name, disabled, onRemove }: { name: string; disabled: boolean; onRemove: () => void }) {
+  return <button type="button" className="pre-show-cast-remove" disabled={disabled} aria-label={`Remove ${name} from cast`} onClick={onRemove}>×</button>;
+}
 export function CastInvitation({disabled,onChoose,joined}: {disabled:boolean;onChoose:()=>void;joined:boolean}) {
   return <button type="button" className="pre-show-invitation" disabled={disabled} onClick={onChoose}><span aria-hidden="true">＋</span><strong>Your agent,<br /><em>in the spotlight.</em></strong><span>{joined ? "Add another agent" : "Choose your agent"} ↗</span></button>;
 }
