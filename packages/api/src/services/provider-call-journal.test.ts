@@ -2058,7 +2058,7 @@ describe("provider call journal", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 520,
       pricingSourceId: "https://kat.imgnai.com/v1/models/text",
-      rateCardVersion: "2026-10-23",
+      rateCardVersion: "2026-11-22",
       providerNativeUnit: "katana_credit",
       providerNativeAmount: "0.1",
       promptTokens: 100,
