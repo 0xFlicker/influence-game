@@ -334,8 +334,8 @@ export function AgentEntryPreparation({
                     : archived ? "Agent unavailable"
                       : agent ? agent.name : "Getting your agent ready"}
         </h1>
-        {!agent && !loadError && <p role="status"><AgentOperationActivity indicator stage="entry_check" startedAt={null} /></p>}
-        {activity && <p role="status"><AgentOperationActivity indicator stage={activityStage} startedAt={activity} /></p>}
+        {!agent && !loadError && <p role="status"><AgentOperationActivity stage="entry_check" startedAt={null} /></p>}
+        {activity && <p role="status"><AgentOperationActivity stage={activityStage} startedAt={activity} /></p>}
         {loadError && <AgentIssueNotice issue={loadError} onAction={() => void load()} />}
         {entryError && !missingLobby && !lobbyUnavailable && <p role="alert">{entryError}</p>}
         {missingLobby && <>
@@ -350,7 +350,7 @@ export function AgentEntryPreparation({
         )}
         {!missingLobby && !lobbyUnavailable && reviewing && !cancelled && (
           <>
-            <p role="status"><AgentOperationActivity indicator stage="entry_review" startedAt={null} /></p>
+            <p role="status"><AgentOperationActivity stage="entry_review" startedAt={null} /></p>
             <p>{intent.flow === "update" ? "Your artwork was submitted." : gameId
               ? "After approval, this page will try to join the lobby if a seat is still available."
               : "After approval, this page will try to enter Daily Free."}</p>
