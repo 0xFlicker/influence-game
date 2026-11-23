@@ -196,16 +196,19 @@ test("entry artwork uses the focused editor and joins the original lobby after r
   try {
     const focused = '[data-entry-artwork="true"]';
     await page.waitForSelector(focused, { visible: true });
-    for (const width of [1280, 320]) {
-      await page.setViewport({ width, height: 820 });
+    for (const viewport of [{ width: 1690, height: 957 }, { width: 320, height: 820 }]) {
+      await page.setViewport(viewport);
       await page.evaluate("document.fonts.ready");
       expect(await page.$eval(focused, element => {
         const back = element.querySelector('nav button')!;
         const heading = element.querySelector('section h1')!;
+        const artwork = element.querySelector('aside')!;
         return heading.getBoundingClientRect().top > back.getBoundingClientRect().bottom + 16
+          && !artwork.checkVisibility()
+          && element.getBoundingClientRect().height < 580
           && element.ownerDocument.documentElement.scrollWidth <= element.ownerDocument.defaultView!.innerWidth;
       })).toBe(true);
-      await page.screenshot({ path: proof + `entry-artwork-${width}.png`, fullPage: true });
+      await page.screenshot({ path: proof + `entry-artwork-${viewport.width}.png`, fullPage: true });
     }
     expect(await page.$('input[type="file"]')).toBeNull();
     const queued = page.waitForResponse(response =>
@@ -214,11 +217,40 @@ test("entry artwork uses the focused editor and joins the original lobby after r
     await button(page, "Generate image");
     expect((await queued).ok()).toBe(true);
     await page.waitForSelector('[data-image-updating="true"]');
+    expect(await page.$('[data-image-updating="true"] [aria-hidden="true"]')).not.toBeNull();
     await processMockCharacterReference(database.db, await Bun.file(
       new URL("../../../web/public/avatars/personas/full-body-v1/diplomat.webp", import.meta.url),
     ).bytes());
+    await page.waitForSelector('img[alt="New artwork candidate"]', { visible: true });
+    for (const viewport of [{ width: 1295, height: 945 }, { width: 1280, height: 700 }, { width: 320, height: 820 }]) {
+      await page.setViewport(viewport);
+      await page.evaluate("window.scrollTo(0, 0)");
+      await page.screenshot({ path: proof + `entry-candidate-${viewport.width}x${viewport.height}.png`, fullPage: true });
+      expect(await page.$eval(focused, element => {
+        const image = element.querySelector('img[alt="New artwork candidate"]')!;
+        const useImage = [...element.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Use this image')!;
+        const discard = [...element.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Discard' && button.checkVisibility())!;
+        const viewport = element.ownerDocument.defaultView!;
+        const imageBottom = image.getBoundingClientRect().bottom;
+        return {
+          actionsClickable: [useImage, discard].every(button => {
+            const rect = button.getBoundingClientRect();
+            const hit = element.ownerDocument.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            return button.checkVisibility() && rect.top >= 0 && rect.bottom <= viewport.innerHeight
+              && Boolean(hit && button.contains(hit));
+          }),
+          imageContained: imageBottom <= element.getBoundingClientRect().bottom,
+          mobileImageBeforeActions: viewport.innerWidth > 700 || imageBottom < useImage.getBoundingClientRect().top,
+          fitsWidth: element.ownerDocument.documentElement.scrollWidth <= viewport.innerWidth,
+        };
+      })).toEqual({ actionsClickable: true, imageContained: true, mobileImageBeforeActions: true, fitsWidth: true });
+    }
     await button(page, "Use this image");
-    await page.waitForSelector('dialog[open]');
+    const portraitEditor = await page.waitForSelector('dialog[open]');
+    expect(await portraitEditor!.evaluate(editor => editor.textContent)).toContain("Automatic head detection couldn’t locate a head.");
+    await page.waitForSelector('[aria-label="Head box; drag to move"]', { visible: true });
+    await page.waitForSelector('[aria-label="Portrait box; drag to move"]', { visible: true });
+    await page.screenshot({ path: proof + "entry-head-and-portrait-320.png", fullPage: true });
     await button(page, "Confirm");
     await button(page, "Save image & join");
     await page.waitForFunction('document.querySelector("main h1")?.textContent === "Waiting for approval"');

@@ -2097,6 +2097,26 @@ export function AgentForm({
     </section>
   ) : null;
 
+  const candidateBriefChanged = candidateImage?.basedOn &&
+    (candidateImage.basedOn.name !== name ||
+      (candidateImage.basedOn.personaKey ?? "") !== (personaKey ?? "") ||
+      (candidateImage.basedOn.visualDesign ?? "") !== (visualDesign ?? "") ||
+      candidateImage.basedOn.performanceInstructions !== performanceInstructions);
+  const candidateActions = (
+    <div className={styles.footerActions}>
+      <button
+        type="button"
+        className={focusedEntry ? styles.primary : undefined}
+        onClick={() => void decideCandidate("selected")}
+      >
+        {focusedEntry ? "Use this image" : "Select"}
+      </button>
+      <button type="button" onClick={() => void decideCandidate("discarded")}>
+        Discard
+      </button>
+    </div>
+  );
+
   return (
     <form
       data-agent-workspace
@@ -2104,6 +2124,7 @@ export function AgentForm({
       className={styles.workspace}
       data-editing={isEditing}
       data-entry-artwork={focusedEntry || undefined}
+      data-entry-preview={focusedEntry ? Boolean(fullBodyReferenceUrl || candidateImage || referenceBusy) : undefined}
       data-mode={guided ? "guided" : "advanced"}
       data-has-art={Boolean(
         fullBodyReferenceUrl || avatarUrl || candidateImage || referenceBusy,
@@ -2176,14 +2197,18 @@ export function AgentForm({
         <div className={styles.layout}>
           {focusedEntry && entryArtwork && (
             <section className={styles.entryCopy}>
-              <p className={styles.entryTarget}>{entryArtwork.target}</p>
-              <h1>{fullBodyReferenceUrl || candidateImage ? "Review full‑body artwork" : "Add a full‑body image"}</h1>
-              <p>{fullBodyReferenceUrl || candidateImage
-                ? "Check the image and confirm the head position and portrait before saving."
-                : `${name} needs a head-to-toe image to appear in games.`}</p>
-              <div className={styles.entryAgent}>
-                {initial?.avatarUrl && <OwnedCharacterImage src={initial.avatarUrl} alt="" />}
-                <div><strong>{name}</strong><span>Agent saved</span></div>
+              <div className={styles.entryIntro}>
+                <p className={styles.entryTarget}>{entryArtwork.target}</p>
+                <h1>{candidateImage ? "Review full‑body image"
+                  : fullBodyReferenceUrl ? headConfirmationRequired ? "Confirm the portrait" : "Artwork ready to save"
+                    : "Add a full‑body image"}</h1>
+                {(candidateImage || !fullBodyReferenceUrl) && <p>{candidateImage
+                  ? "Use this image to confirm the head position and portrait."
+                  : "Generate a head-to-toe image to use this agent in games."}</p>}
+                <div className={styles.entryAgent}>
+                  {initial?.avatarUrl && <OwnedCharacterImage src={initial.avatarUrl} alt="" />}
+                  <div><strong>{name}</strong>{initial?.avatarUrl && <span>Current portrait</span>}</div>
+                </div>
               </div>
               {!candidateImage && !fullBodyReferenceUrl && (
                 <button type="button" className={styles.primary}
@@ -2193,6 +2218,20 @@ export function AgentForm({
                   {referenceBusy ? "Generating image…" : referenceRequest.current ? "Retry image" : "Generate image"}
                 </button>
               )}
+              {candidateImage && candidateBriefChanged && (
+                <p>The character brief changed during generation. Check that the image still fits before using it.</p>
+              )}
+              {candidateImage && candidateActions}
+              {fullBodyReferenceUrl && !candidateImage && (headConfirmationRequired ? (
+                <button type="button" className={styles.primary}
+                  onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>
+                  Confirm portrait
+                </button>
+              ) : (
+                <button type="submit" className={styles.primary} disabled={submitDisabled}>
+                  {entryHasOtherChanges ? "Review" : submitLabel}
+                </button>
+              ))}
               {entryArtwork.destination !== "agents" && <p className={styles.entryHint}>{entryArtwork.destination === "lobby"
                 ? "We’ll try to join this lobby after saving. The lobby can fill or start while you’re getting ready."
                 : "We’ll try to join Daily Free after saving."}</p>}
@@ -2223,10 +2262,10 @@ export function AgentForm({
                 />
               ) : referenceBusy ? (
                 <CharacterFormation name={name} />
-              ) : focusedEntry ? <span className={styles.entryPlaceholder}>Image preview</span> : null}
+              ) : null}
               {candidateImage && (
                 <div className={styles.candidateReady}>
-                  <h2>Artwork ready</h2>
+                  {!focusedEntry && <h2>Artwork ready</h2>}
                   <div
                     className={styles.artComparison}
                     data-compare={Boolean(fullBodyReferenceUrl || (avatarUrl && !focusedEntry))}
@@ -2252,37 +2291,17 @@ export function AgentForm({
                         src={candidateImage.fullBodyReferenceUrl}
                         alt="New artwork candidate"
                       />
-                      <figcaption>New</figcaption>
+                      {(!focusedEntry || fullBodyReferenceUrl) && <figcaption>New</figcaption>}
                     </figure>
                   </div>
-                  {candidateImage.basedOn &&
-                    (candidateImage.basedOn.name !== name ||
-                      (candidateImage.basedOn.personaKey ?? "") !==
-                        (personaKey ?? "") ||
-                      (candidateImage.basedOn.visualDesign ?? "") !==
-                        (visualDesign ?? "") ||
-                      candidateImage.basedOn.performanceInstructions !==
-                        performanceInstructions) && (
+                  {!focusedEntry && candidateBriefChanged && (
                       <p>
                         The character brief changed during preparation. Compare
                         this image with your current appearance before selecting
                         it.
                       </p>
                     )}
-                  <div className={styles.footerActions}>
-                    <button
-                      type="button"
-                      onClick={() => void decideCandidate("selected")}
-                    >
-                      {focusedEntry ? "Use this image" : "Select"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void decideCandidate("discarded")}
-                    >
-                      Discard
-                    </button>
-                  </div>
+                  {!focusedEntry && candidateActions}
                 </div>
               )}
               {imageUpdating && Boolean(fullBodyReferenceUrl || avatarUrl || candidateImage) && (
@@ -3099,13 +3118,13 @@ export function AgentForm({
                   ) : profileGenerating ? (
                     generatingFields.length ? "Updating draft text…" : "Thinking…"
                   ) : focusedEntry && submitting ? (
-                    <AgentOperationActivity indicator stage="save" startedAt={null} />
+                    <AgentOperationActivity stage="save" startedAt={null} />
                   ) : uploading || referenceBusy ? (
                     <AgentOperationActivity
                       stage={uploading ? "upload" : referenceStage}
                       startedAt={referenceStartedAt}
                     />
-                  ) : headConfirmationRequired ? (
+                  ) : headConfirmationRequired && !focusedEntry ? (
                     <button
                       type="button"
                       onClick={() =>
@@ -3167,12 +3186,12 @@ export function AgentForm({
             {!focusedEntry && <button type="button" onClick={requestCancel}>
               Cancel
             </button>}
-            {(!focusedEntry || Boolean(fullBodyReferenceUrl)) && <button
+            {!focusedEntry && <button
               type="submit"
               className={styles.primary}
               disabled={submitDisabled}
             >
-              {focusedEntry && !entryHasOtherChanges ? submitLabel : "Review"}
+              Review
             </button>}
           </div>
         </footer>

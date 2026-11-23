@@ -47,12 +47,15 @@ export function CharacterPortraitEditor({
     null,
   );
   const [crop, setCrop] = useState<PortraitCrop | null>(null);
+  const hasHeadPosition = initialHead?.sourceUrl === sourceUrl;
   const [head, setHead] = useState<HeadRectangle>(
-    initialHead?.sourceUrl === sourceUrl
+    hasHeadPosition
       ? initialHead.rect
       : { x: 0.35, y: 0.04, width: 0.3, height: 0.16 },
   );
-  const [activeBox, setActiveBox] = useState<"portrait" | "head">("portrait");
+  const [activeBox, setActiveBox] = useState<"portrait" | "head">(
+    confirmHead && !hasHeadPosition ? "head" : "portrait",
+  );
   const drag = useRef<{
     pointerId: number;
     x: number;
@@ -143,7 +146,11 @@ export function CharacterPortraitEditor({
             Adjust character images
           </h2>
           <p className="mt-2 text-sm text-white/55">
-            Choose a box. Drag it to move; drag its corner to resize.
+            {confirmHead
+              ? hasHeadPosition
+                ? "Check the gold head box and the violet portrait crop."
+                : "Automatic head detection couldn’t locate a head. Adjust the gold head box, then fit the violet portrait crop around it."
+              : "Drag the portrait box to move it, or drag its corner to resize."}
           </p>
         </div>
         <button
@@ -305,7 +312,7 @@ export function CharacterPortraitEditor({
                   height: `${crop.height * 100}%`,
                 }}
               >
-                <span className="pointer-events-none bg-black/80 px-1 text-xs text-violet-200">
+                <span className={`pointer-events-none bg-black/80 px-1 text-xs text-violet-200 ${confirmHead ? "absolute bottom-0 left-0" : ""}`}>
                   Portrait
                 </span>
                 {activeBox === "portrait" && (
@@ -389,7 +396,7 @@ export function CharacterPortraitEditor({
                     height: `${head.height * 100}%`,
                   }}
                 >
-                  <span className="pointer-events-none absolute -top-5 left-0 bg-black/80 px-1 text-xs text-amber-200">
+                  <span className="pointer-events-none absolute left-0 top-0 bg-black/80 px-1 text-xs text-amber-200">
                     Head
                   </span>
                   {activeBox === "head" && (
