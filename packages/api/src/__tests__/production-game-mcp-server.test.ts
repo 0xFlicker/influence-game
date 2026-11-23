@@ -93,6 +93,7 @@ function expectMatchesJsonSchema(value: unknown, schema: unknown): void {
 
 interface ListedToolDescriptor {
   name: string;
+  title: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -121,12 +122,20 @@ async function listToolDescriptors(
 }
 
 describe("ProductionGameMcpJsonRpcServer", () => {
-  test("every advertised output schema compiles with full JSON Schema validation", async () => {
+  test("every advertised tool has a readable title and any output schema compiles", async () => {
     const scopes: GameMcpAuthContext["scopes"] = ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"];
     const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
       clientScopes: scopes, hasProducerRole: true, hasModerationRole: true, hasRetrospectiveRecoveryAccess: true,
     }));
     const tools = await listToolDescriptors(server, { ...PRODUCER_AUTH, scope: scopes.join(" "), scopes });
+    for (const { title } of tools) {
+      expect(title).toMatch(/^[A-Z][^_]*$/);
+    }
+    expect(new Set(tools.map(({ title }) => title)).size).toBe(tools.length);
+    const titles = new Map(tools.map(({ name, title }) => [name, title]));
+    expect(titles.get("read_game_results")).toBe("Reveal the game outcome");
+    expect(titles.get("update_agent")).toBe("Submit edits to an existing agent profile");
+    expect(titles.get("order_production_render")).toBe("Queue a Studio cut for MP4 export");
     const validator = new Ajv({ strict: false });
     const typedTools = tools.filter(tool => tool.outputSchema);
     expect(typedTools).toHaveLength(49);

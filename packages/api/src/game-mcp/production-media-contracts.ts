@@ -88,15 +88,6 @@ export const productionMediaOutputs = {
   publish_production_image: output({ receipt }),
 };
 
-export const productionMediaDescriptions: Record<ProductionMediaToolName, string> = {
-  read_production_audio: "Preview audio generation for a completed game. Returns the frozen preview hash, estimates, and durable track states. Poll this tool after queueing.",
-  generate_production_audio: "Queue a completed game's audio from the exact preview hash, or explicitly retry a failed track by ID. Can incur provider costs. Poll read_production_audio for readiness.",
-  list_production_scenes: "List canonical image opportunities and active jobs for a completed game and presentation audience. Use the exact scene key and preview hash for a missing image.",
-  read_production_scene: "Read scene jobs and verified versions. Use the first page for current revision guards. Pass an exact versionId to receive a private image preview in MCP image content. Use zero-based groupIndex to review additional shots.",
-  generate_production_image: "Queue a missing scene from its preview hash or regenerate an existing scene at its exact job revision. Can incur provider costs. Reuse the request ID and identical arguments after an ambiguous response.",
-  publish_production_image: "Publish an inspected verified scene version to the explicit audience. Use read_production_scene for the exact version ID and revision guards. Reuse the request ID after an ambiguous response.",
-};
-
 const ajv = new Ajv({ strict: false, formats: { uuid: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i } });
 const inputs = new Map(productionMediaToolNames.map(name => [name, ajv.compile(productionMediaInputs[name])]));
 type MediaArgs = {

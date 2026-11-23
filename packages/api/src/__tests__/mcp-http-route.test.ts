@@ -625,11 +625,11 @@ describe("/mcp Streamable HTTP route", () => {
       });
       expect(response.status).toBe(200);
       const listBody = await response.json() as {
-        result?: { tools?: Array<{ name: string }> };
+        result?: { tools?: Array<{ name: string; title: string }> };
         error?: unknown;
       };
       expect(listBody.error).toBeUndefined();
-      expect(listBody.result?.tools?.length).toBeGreaterThan(0);
+      expect(listBody.result?.tools?.find(({ name }) => name === "list_games")?.title).toBe("Browse House games");
     });
   });
 
