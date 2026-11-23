@@ -558,6 +558,8 @@ bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 6
 # Strict schemas use JSON null, never the string "null"; the engine normalizes that exact string to null if returned.
 
 # Chatty mode (live colored transcript with agent thinking + native reasoningContext / labeled provider summaries on Mingle turns, alliance actions, huddle turns, votes, format picks/ballots/pointers/tiebreaks, legacy classic actions, and endgame decisions):
+# When reviewing Lobby and empower turns, check that players expect the empowered player to choose
+# alone and understand that an empower ballot carries no conditions.
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300

@@ -2218,6 +2218,7 @@ describe("InfluenceAgent structured output mode", () => {
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.map((message) => message.content).join("\n");
     expect(prompt).toContain("No format is locked yet");
+    expect(prompt).toContain("There is no group discussion or approval before you decide.");
     expect(prompt).toContain("contingent");
     expect(prompt).toContain("short_list");
     expect(prompt).toContain("safety_bounce");
@@ -2921,7 +2922,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(traces[0]!.reasoningContext).toBeUndefined();
   });
 
-  it("offers bounded public conversation without fixed last-turn pressure", async () => {
+  it("offers bounded public conversation and explains that the empowered player chooses alone", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeToolOpenAIStub(requests, "conversation_turn", {
       thinking: "Reassure Mira.", message: "Mira, I still mean what I said.", noReply: false, recipientId: "mira-id", replyToContributionId: null, strategyDelta: null,
@@ -2931,6 +2932,10 @@ describe("InfluenceAgent structured output mode", () => {
     expect(response.message).toBe("Mira, I still mean what I said.");
     const prompt = JSON.stringify(requests[0]?.messages);
     expect(prompt).toContain("Public Lobby");
+    expect(prompt).toContain("You can discuss whom to empower and why.");
+    expect(prompt).toContain("the empowered player chooses alone.");
+    expect(prompt).toContain("There is no group discussion, consultation, or approval between the vote and the choice.");
+    expect(prompt).toContain("An empower vote cannot require the chooser to consult the group, get its approval, or pick a particular format.");
     expect(prompt).toContain("1200 UTF-8 bytes");
     expect(prompt).toContain("new facts are not required");
     expect(prompt).toContain("Passing is private");
@@ -4357,6 +4362,8 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("No one has won this vote's empowerment yet");
     expect(prompt).toContain("Cast one empower vote");
     expect(prompt).toContain("who chooses the round format");
+    expect(prompt).toContain("The ballot carries no conditions.");
+    expect(prompt).toContain("the empowered player chooses alone, without any group discussion after the vote.");
     expect(prompt).toContain("format exit ties");
     expect(prompt).toContain("empowerment does not grant immunity");
     expect(prompt).toContain("Optimize for *who* should hold the chooser seat");

@@ -175,7 +175,7 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s exit format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format sends one player out. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, Restricted History, and Two Names.
+The standard-round spine in which empower selects an agent who chooses the round’s exit format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format sends one player out. The empower ballot carries no conditions. When the House offers a choice, the empowered player decides alone without group discussion or approval after the vote. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, Restricted History, and Two Names.
 
 ## Round format
 

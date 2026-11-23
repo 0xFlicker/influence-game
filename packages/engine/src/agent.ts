@@ -2452,7 +2452,8 @@ Keep it to 2-3 sentences. Be human, relatable, and memorable. You want to be som
     };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Current conversation
-${action === "lobby" ? "Public Lobby: everyone here hears your speech." : "Private conversation: only the listed participants hear you."}
+${action === "lobby" ? `Public Lobby: everyone here hears your speech.
+You can discuss whom to empower and why. Any promises about a format are informal. An empower vote cannot require the chooser to consult the group, get its approval, or pick a particular format. Support someone you trust to decide on their own.` : "Private conversation: only the listed participants hear you."}
 ${purpose}
 Participants: ${JSON.stringify(c.participants)}
 ${ctx.mingleIntent ? `Your private Mingle intent: ${JSON.stringify({seekPlayers:ctx.mingleIntent.seekPlayers, avoidPlayers:ctx.mingleIntent.avoidPlayers, preferredRoomSize:ctx.mingleIntent.preferredRoomSize,
@@ -3269,7 +3270,7 @@ Cast your empower vote for this round.
 - Optimize for *who* holds the chooser seat — not for a format manifesto.
 - Empowerment is not immunity: the Empowered contestant can still exit under the locked format.
 
-**RULE**: This is a single empower vote. No one has won empowerment yet, and no format is locked. After the tally, House offers two formats by name and the empowered player picks one.
+**RULE**: This is a single empower vote for one player. The ballot carries no conditions. No one has won empowerment yet, and no format is locked. If the House offers a choice of formats, the empowered player chooses alone, without any group discussion after the vote.
 
 **Legal empower names (exact spelling; other remaining contestants only — not you):** ${legalEmpowerNames.join(", ")}
 
@@ -3746,7 +3747,7 @@ Return the council_vote JSON response to cast your vote.`;
     }).join("\n");
     const prompt = this.buildUserPrompt(ctx) + `
 ## Pick This Round's Format
-You are empowered. Choose exactly one of the two House-offered formats below.
+You are empowered. Choose exactly one of the two House-offered formats below on your own. There is no group discussion or approval before you decide.
 In speech and thinking, use the full product names shown below. The JSON response requires the matching format id.
 
 ${offeredRules}
@@ -5242,7 +5243,7 @@ Use only this locked format for the current round. Prefer the full public name i
 - Standard Vote is one empower ballot. Empower selects the round-format chooser and format tiebreaker.
 - The round exit is resolved only by the locked format after the format pick.
 - Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.
-- After empowerment, House offers two named formats; the empowered player chooses one. Prefer full public names in speech.
+- When the House offers two named formats after the empower vote, the empowered player chooses alone. There is no group discussion, consultation, or approval between the vote and the choice. Prefer full public format names in speech.
 - Empowerment is not immunity. The Empowered contestant still participates and can exit under the locked format.
 - After the pick, Mingle rooms are private and the locked format's own rules resolve the exit.
 - Pre-pick: prioritize people (trust, threats, empower plans). Format math only after the menu or lock is real.`;
