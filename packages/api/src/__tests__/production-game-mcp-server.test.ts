@@ -93,6 +93,7 @@ function expectMatchesJsonSchema(value: unknown, schema: unknown): void {
 
 interface ListedToolDescriptor {
   name: string;
+  title: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
@@ -121,12 +122,17 @@ async function listToolDescriptors(
 }
 
 describe("ProductionGameMcpJsonRpcServer", () => {
-  test("every advertised output schema compiles with full JSON Schema validation", async () => {
+  test("every advertised tool has a readable title and any output schema compiles", async () => {
     const scopes: GameMcpAuthContext["scopes"] = ["agents:read", "agents:write", "games:read", "games:resume", "producer", "producer:edit", "producer:render", "producer:routing", "moderation:read", "moderation:write", "assets:manage", "producer:media"];
     const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
       clientScopes: scopes, hasProducerRole: true, hasModerationRole: true, hasRetrospectiveRecoveryAccess: true,
     }));
     const tools = await listToolDescriptors(server, { ...PRODUCER_AUTH, scope: scopes.join(" "), scopes });
+    for (const { title } of tools) {
+      expect(title).toMatch(/^[A-Z][^_]*$/);
+    }
+    expect(tools.find((tool) => tool.name === "list_games")?.title).toBe("List games");
+    expect(tools.find((tool) => tool.name === "update_agent")?.title).toBe("Update agent");
     const validator = new Ajv({ strict: false });
     const typedTools = tools.filter(tool => tool.outputSchema);
     expect(typedTools).toHaveLength(49);

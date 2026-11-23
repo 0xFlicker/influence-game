@@ -1658,6 +1658,7 @@ function tool(input: {
   const securityScheme = oauthSecurityScheme(input.scopes);
   return {
     name: input.name,
+    title: input.name.charAt(0).toUpperCase() + input.name.slice(1).replaceAll("_", " "),
     description: input.description,
     inputSchema: input.inputSchema ?? {
       type: "object",

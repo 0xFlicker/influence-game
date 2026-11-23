@@ -437,6 +437,8 @@ Public app submission, polished app UX, per-tool linking policy, and broad teste
 
 ## MCP App Provider Testing
 
+For Claude Connectors Directory review, `tools/list` includes a human-readable `title` for every tool alongside its behavior annotations. Test the discovered catalog and OAuth in Claude web using an ordinary player account. See the [Claude connector requirements](https://claude.com/docs/connectors/building/submission#requirements-for-every-connector).
+
 The first MCP App release is production-learning oriented. A useful v1 result is at least one production host completing discovery, OAuth, app resource fetch, iframe boot, and `list_games`. The maintainer can test ChatGPT, Claude, and Grok manually and paste notes, screenshots, host-visible errors, and server correlation IDs into the next planning or debugging pass.
 
 For manual notes, use the same plain-language checkpoints: discovery, OAuth start, callback/token exchange, token refresh when exercised, app resource fetch, iframe boot, and first `list_games` call. If a host still warns about refresh tokens, capture the exact warning text and server correlation ID so the next debugging pass can separate metadata, registration, and refresh-grant behavior.
