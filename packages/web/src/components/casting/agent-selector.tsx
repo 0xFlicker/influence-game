@@ -8,7 +8,8 @@ import { getAuthToken, listAgents, type SavedAgent } from "@/lib/api";
 import { useAgentAvatarUrl } from "@/components/agent-avatar";
 import { getPersonaLabel } from "@/lib/personas";
 import { AgentModelLabel, agentModelLabel } from "@/components/agent-model-label";
-import { agentEditForEntryHref, agentPreparationHref, hasFullBodyAgentArt, type AgentEntryIntent } from "@/lib/agent-entry";
+import { agentPreparationHref, hasFullBodyAgentArt, type AgentEntryIntent } from "@/lib/agent-entry";
+import { AgentOperationActivity } from "@/app/dashboard/agents/agent-operation-activity";
 import "./agent-selector.css";
 
 interface AgentSelectorProps {
@@ -35,6 +36,7 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
   }, [analyticsEnabled, gameKind]);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const submitPending = useRef(false);
+  const joinStartedAt = useRef<string | null>(null);
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -43,7 +45,9 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const selectedAgent = agents.find(agent => agent.id === selectedAgentId && !excludedIds.includes(agent.id));
+  const availableAgents = agents.filter(agent => !excludedIds.includes(agent.id));
+  const selectedAgent = availableAgents.find(agent => agent.id === selectedAgentId)
+    ?? (availableAgents.length === 1 ? availableAgents[0] : undefined);
   const query = search.trim().toLocaleLowerCase();
   const visibleAgents = agents.filter(agent => `${agent.name} ${getPersonaLabel(agent.personaKey)} ${agentModelLabel(agent.modelPreference) ?? ""}`.toLocaleLowerCase().includes(query));
 
@@ -94,12 +98,13 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!selectedAgent || submitPending.current) return;
+    captureProductEvent("join_agent_selected", { game_kind: gameKind });
     if (!hasFullBodyAgentArt(selectedAgent)) {
       router.push(agentPreparationHref(selectedAgent.id, intent));
       return;
     }
-    captureProductEvent("join_agent_selected", { game_kind: gameKind });
     submitPending.current = true;
+    joinStartedAt.current = new Date().toISOString();
     setSubmitting(true);
     setError(null);
     try {
@@ -138,8 +143,8 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
                   <legend className="agent-selector-count">{query ? `${visibleAgents.length} of ${agents.length}` : agents.length} {agents.length === 1 ? "saved agent" : "saved agents"} <span>Choose one for this game</span></legend>
                   {visibleAgents.length === 0 ? <div className="agent-selector-message"><p>No agents match “{search}”.</p><button type="button" onClick={() => setSearch("")}>Clear search ↗</button></div>
                     : <div className="agent-selector-grid">
-                      {visibleAgents.map(agent => <label key={agent.id} className="agent-selector-card" data-selected={selectedAgentId === agent.id}>
-                        <input type="radio" name="agent" value={agent.id} checked={selectedAgentId === agent.id} aria-label={agent.name} disabled={excludedIds.includes(agent.id)} onChange={() => { setSelectedAgentId(agent.id); setError(null); }} />
+                      {visibleAgents.map(agent => <label key={agent.id} className="agent-selector-card" data-selected={selectedAgent?.id === agent.id}>
+                        <input type="radio" name="agent" value={agent.id} checked={selectedAgent?.id === agent.id} aria-label={agent.name} disabled={excludedIds.includes(agent.id)} onChange={() => { setSelectedAgentId(agent.id); setError(null); }} />
                         <span className="agent-selector-portrait"><Image src={resolveAgentAvatarUrl(agent.avatarUrl, agent.personaKey ?? "", agent.name, agent.personaKey)} alt="" fill sizes="(max-width: 639px) 42vw, 190px" unoptimized /><span className="agent-selector-check" aria-hidden="true">{selectedAgentId === agent.id ? "✓" : "＋"}</span></span>
                         <span className="agent-selector-card-copy"><span className="agent-selector-role">{getPersonaLabel(agent.personaKey)}</span><strong>{agent.name}</strong><AgentModelLabel preference={agent.modelPreference} className="text-xs text-text-secondary break-all" /><span className="agent-selector-record">{excludedIds.includes(agent.id) ? "Already in your cast" : !hasFullBodyAgentArt(agent) ? "Full-body image needed" : gameKind === "werewolf" ? (agent.werewolfStrategyStyle?.trim() ? "Werewolf strategy ready" : "Werewolf archetype strategy") : agent.gamesPlayed ? `${agent.gamesWon} ${agent.gamesWon === 1 ? "win" : "wins"} / ${agent.gamesPlayed} ${agent.gamesPlayed === 1 ? "game" : "games"}` : "First appearance"}</span></span>
                       </label>)}
@@ -149,7 +154,19 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
 
         <footer className="agent-selector-footer">
           {error && <p role="alert" className="agent-selector-error">{error}</p>}
-          <div className="agent-selector-submit-row"><p aria-live="polite">{selectedAgent ? <><span>{hasFullBodyAgentArt(selectedAgent) ? "Taking the next seat" : "Needs a full-body image before joining"}</span><strong>{selectedAgent.name}</strong>{!hasFullBodyAgentArt(selectedAgent) && <a href={agentEditForEntryHref(selectedAgent.id, intent)} className="underline">Edit Agent</a>}</> : "Choose an agent to take the next seat."}</p><button type="submit" className="agent-selector-submit" disabled={loading || !!fetchError || submitting || !selectedAgent}>{submitting ? pendingLabel : selectedAgent && !hasFullBodyAgentArt(selectedAgent) ? "Complete & join" : submitLabel}<span aria-hidden="true">↗</span></button></div>
+          <div className="agent-selector-submit-row">
+            <p aria-live="polite">
+              {submitting ? <AgentOperationActivity indicator stage="join_game" startedAt={joinStartedAt.current} />
+                : selectedAgent && !hasFullBodyAgentArt(selectedAgent) ? "Full-body artwork is required to join."
+                  : !selectedAgent ? "Choose an agent to take the next seat." : null}
+            </p>
+            <button type="submit" className="agent-selector-submit" disabled={loading || !!fetchError || submitting || !selectedAgent}>
+              {submitting ? pendingLabel : selectedAgent
+                ? hasFullBodyAgentArt(selectedAgent) ? `Join with ${selectedAgent.name}` : `Prepare ${selectedAgent.name} & join`
+                : submitLabel}
+              <span aria-hidden="true">↗</span>
+            </button>
+          </div>
         </footer>
       </form>
     </dialog>

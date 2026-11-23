@@ -6,14 +6,11 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  clearAgentEntryIntent,
   createAgent,
   ApiError,
   getAgent,
   getAgentByCreationRequestId,
-  getGame,
   getFreeQueueStatus,
-  joinGame,
   updateAgent,
   type AgentProfileWriteParams,
   type CreateAgentParams,
@@ -23,14 +20,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { getGameEntry } from "@/lib/game-entry";
 import { gameHref } from "@/lib/game-links";
-import { agentPreparationHref, hasFullBodyAgentArt } from "@/lib/agent-entry";
-import { getWerewolfLobby, joinWerewolfLobby } from "@/lib/werewolf-api";
+import { agentPreparationHref } from "@/lib/agent-entry";
 import { AgentIssueNotice, agentIssue } from "./agent-issue";
 import { AgentForm } from "./agent-form";
-import {
-  enrollCreatedSeasonAgent,
-  pinSeasonCreationTarget,
-} from "./season-creation-target";
+import { pinSeasonCreationTarget } from "./season-creation-target";
 import {
   readEditorStorage,
   removeEditorStorage,
@@ -89,6 +82,7 @@ export function AgentCreateContent({
     params: AgentProfileWriteParams,
     { creationRequestId }: { creationRequestId: string },
   ) {
+    if (flow === "join_game" && !gameId) throw new Error("Choose the game you want to join.");
     const targetSeasonId =
       flow === "daily_free"
         ? (seasonId ?? (await getFreeQueueStatus()).acceptingSeasonId)
@@ -110,8 +104,6 @@ export function AgentCreateContent({
               ...(seasonSlug ? { season: seasonSlug } : {}),
             }
           : undefined;
-    const identity =
-      flow === "join_game" && gameId ? await getGameEntry(gameId) : null;
     const createParams: CreateAgentParams = {
       ...params,
       creationRequestId,
@@ -140,7 +132,6 @@ export function AgentCreateContent({
     }
     agent ??= await getAgentByCreationRequestId(creationRequestId);
 
-    let joinTarget: { slug: string; status: string } | null = null;
     if (agent) {
       const baseline =
         createBaseline.current ?? readCreateBaseline(baselineKey);
@@ -162,17 +153,6 @@ export function AgentCreateContent({
         });
       }
     } else {
-      if (flow === "join_game") {
-        if (!gameId)
-          throw new Error("The game to join is no longer available.");
-        joinTarget =
-          identity?.gameKind === "werewolf"
-            ? await getWerewolfLobby(gameId)
-            : await getGame(gameId);
-        if (joinTarget.status !== "waiting") {
-          throw new Error("This game is no longer accepting players.");
-        }
-      }
       createBaseline.current = params;
       if (!writeEditorStorage(baselineKey, JSON.stringify(params))) {
         throw new Error(
@@ -186,62 +166,12 @@ export function AgentCreateContent({
     createdAgentId.current = agent.id;
     writeEditorStorage(continuationKey, agent.id);
 
-    if (agent.receipt?.publication !== "published") {
-      router.replace("/dashboard/agents");
-      return agent;
-    }
-    if (!hasFullBodyAgentArt(agent) && flow === "join_game" && gameId) {
-      removeEditorStorage(continuationKey);
-      removeEditorStorage(baselineKey);
-      router.replace(
-        agentPreparationHref(agent.id, { flow: "join_game", gameId }),
-      );
-      return;
-    }
-    if (!hasFullBodyAgentArt(agent) && flow === "daily_free") {
-      removeEditorStorage(continuationKey);
-      removeEditorStorage(baselineKey);
-      router.replace(
-        agentPreparationHref(agent.id, {
-          flow: "daily_free",
-          seasonId,
-          season: seasonSlug,
-        }),
-      );
-      return;
-    }
-    if (flow === "join_game" && gameId) {
-      if (identity?.gameKind === "werewolf")
-        await joinWerewolfLobby(gameId, agent.id);
-      else await joinGame(gameId, { agentProfileId: agent.id });
-      await clearAgentEntryIntent(agent.id, entryIntent!);
-      const joinedGame =
-        joinTarget ??
-        (identity?.gameKind === "werewolf"
-          ? await getWerewolfLobby(gameId)
-          : await getGame(gameId));
-      removeEditorStorage(continuationKey);
-      removeEditorStorage(baselineKey);
-      router.replace(gameHref(joinedGame.slug));
-      return;
-    }
-    if (flow === "daily_free") {
-      // Keep both receipts on failure; retry recovers the same agent and season.
-      await enrollCreatedSeasonAgent(agent, expectedSeasonId);
-      await clearAgentEntryIntent(agent.id, entryIntent!);
-      removeEditorStorage(continuationKey);
-      removeEditorStorage(baselineKey);
-      window.dispatchEvent(new Event("free-queue:changed"));
-      router.replace(
-        seasonSlug
-          ? `/seasons?season=${encodeURIComponent(seasonSlug)}`
-          : "/seasons",
-      );
-      return;
-    }
     removeEditorStorage(continuationKey);
     removeEditorStorage(baselineKey);
-    router.replace("/dashboard/agents");
+    router.replace(entryIntent
+      ? agentPreparationHref(agent.id, entryIntent)
+      : "/dashboard/agents");
+    return agent;
   }
 
   const context =
@@ -266,7 +196,7 @@ export function AgentCreateContent({
             title: "Create Agent",
             description:
               "Build a saved competitor you can develop across games.",
-            submitLabel: "Create Agent",
+            submitLabel: "Create",
             cancelPath: "/dashboard/agents",
           };
 

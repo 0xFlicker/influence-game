@@ -8,13 +8,22 @@ const labels: Record<string, string> = {
   portrait: "Preparing portrait",
   waiting: "Queued",
   upload: "Saving portrait",
+  save: "Saving agent",
+  entry_check: "Checking entry",
+  join_game: "Joining game",
+  join_queue: "Joining Daily Free",
+  leave_queue: "Leaving Daily Free",
+  switch_agent: "Switching agents",
+  entry_review: "Profile in review",
 };
 export function AgentOperationActivity({
   stage,
   startedAt,
+  indicator = false,
 }: {
   stage: string;
   startedAt: string | null;
+  indicator?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -26,7 +35,8 @@ export function AgentOperationActivity({
     ? Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000))
     : null;
   return (
-    <span className={styles.operationSummary}>
+    <span className={styles.operationSummary} data-indicator={indicator || undefined}>
+      {indicator && <span className={styles.activityDot} aria-hidden="true" />}
       {labels[stage] ?? "Preparing image"}
       {seconds !== null && (
         <span aria-hidden="true">

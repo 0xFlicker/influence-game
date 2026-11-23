@@ -14,6 +14,7 @@ import { SeasonStandings } from "@/app/games/free/free-game-content";
 import { defaultSeason, recommendedSeasonAgent } from "./season-selection";
 import styles from "./seasons.module.css";
 import { agentPreparationHref, hasFullBodyAgentArt } from "@/lib/agent-entry";
+import { AgentOperationActivity } from "@/app/dashboard/agents/agent-operation-activity";
 
 const ChampionshipEventView = dynamic(() => import("@/app/events/championship-view").then(module => module.ChampionshipEventView));
 
@@ -29,7 +30,8 @@ export function SeasonsContent() {
   const [queue, setQueue] = useState<FreeQueueStatus | null>(null);
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [choice, setChoice] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [entryActivity, setEntryActivity] = useState<{ stage: string; startedAt: string } | null>(null);
+  const busy = Boolean(entryActivity);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
@@ -91,13 +93,14 @@ export function SeasonsContent() {
   async function enroll(leave = false) {
     if (!season || submittingEntry.current) return;
     submittingEntry.current = true;
-    setBusy(true); setError(null);
+    setEntryActivity({ stage: leave ? "leave_queue" : entry ? "switch_agent" : "join_queue", startedAt: new Date().toISOString() });
+    setError(null);
     try {
       if (leave) await leaveFreeQueue(season.id);
       else if (agent) await joinFreeQueue(agent.id, season.id);
       await refresh(season.slug);
     } catch (err) { setError(err instanceof Error ? err.message : "Entry could not be updated."); }
-    finally { submittingEntry.current = false; setBusy(false); }
+    finally { submittingEntry.current = false; setEntryActivity(null); }
   }
 
   return <div className={styles.hub}>
@@ -131,7 +134,12 @@ export function SeasonsContent() {
               {authenticated && agent && <AgentVisualUpdateControl key={agent.id} agent={agent} onComplete={() => { if (slug) void refresh(slug); }}/>}
               {entry && <button disabled={busy} onClick={() => void enroll(true)}>Leave queue</button>}
             </div>
-            <p className={styles.entryNotice} aria-live="polite">{entry && agent?.id !== entry.agentProfileId ? `Currently entered: ${entry.agentName}` : entry && queue?.eligibility === "temporarily-ineligible" ? queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable" : ""}</p>
+            <p className={styles.entryNotice} aria-live="polite">{entryActivity
+              ? <AgentOperationActivity indicator stage={entryActivity.stage} startedAt={entryActivity.startedAt} />
+              : entry && agent?.id !== entry.agentProfileId ? `Currently entered: ${entry.agentName}`
+                : entry && queue?.eligibility === "temporarily-ineligible"
+                  ? queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable"
+                  : ""}</p>
           </div>}
         </div>
         {accepting && dashboard.enrollment && <SeasonEnrollmentPanel enrollment={dashboard.enrollment} className={styles.mastheadEnrollment} />}

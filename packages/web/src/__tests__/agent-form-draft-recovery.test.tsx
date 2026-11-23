@@ -93,7 +93,6 @@ async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfil
           imageRequest={imageRequest}
           onSubmit={onSubmit}
           onCancel={() => undefined}
-          submitLabel="Save strategy update"
         />
       </InfluenceAuthContext.Provider>,
     );
