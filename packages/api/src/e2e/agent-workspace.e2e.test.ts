@@ -176,9 +176,11 @@ async function button(page: Page, label: string) {
   await page.evaluate(selector + ".click()");
 }
 
-test("entry artwork uses the focused editor and joins the original lobby after review", async () => {
+test.each(["automatic", "manual", "adjusted"] as const)("entry artwork %s portrait reaches the original lobby after review", async (mode) => {
+  const detectsHead = mode !== "manual";
+  const name = `Vera Calder ${mode}`;
   const created = await createOwnedAgentProfile(database.db, { userId: owner.userId }, {
-    name: "Vera Calder",
+    name,
     gender: "female",
     personality: "Patient and observant.",
     avatarUrl: "/avatars/personas/diplomat.png",
@@ -193,6 +195,11 @@ test("entry artwork uses the focused editor and joins the original lobby after r
   const lobby = await createWerewolfLobby(database.db, owner.userId, { preset: "two_wolves" });
   const url = servers.webUrl + `/agents/prepare?flow=join_game&gameId=${lobby.id}&agentId=${created.profile.id}`;
   const page = await createAuthenticatedPage(browser, owner.jwt, url, { privateKey: owner.wallet.privateKey });
+  let manualCrops = 0;
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/agent-profiles/portrait-crop") manualCrops++;
+  });
+  const primaryAction = detectsHead ? "Save image & join" : "Set portrait";
   try {
     const focused = '[data-entry-artwork="true"]';
     await page.waitForSelector(focused, { visible: true });
@@ -208,7 +215,7 @@ test("entry artwork uses the focused editor and joins the original lobby after r
           && element.getBoundingClientRect().height < 580
           && element.ownerDocument.documentElement.scrollWidth <= element.ownerDocument.defaultView!.innerWidth;
       })).toBe(true);
-      await page.screenshot({ path: proof + `entry-artwork-${viewport.width}.png`, fullPage: true });
+      await page.screenshot({ path: proof + `entry-artwork-${mode}-${viewport.width}.png`, fullPage: true });
     }
     expect(await page.$('input[type="file"]')).toBeNull();
     const queued = page.waitForResponse(response =>
@@ -220,20 +227,28 @@ test("entry artwork uses the focused editor and joins the original lobby after r
     expect(await page.$('[data-image-updating="true"] [aria-hidden="true"]')).not.toBeNull();
     await processMockCharacterReference(database.db, await Bun.file(
       new URL("../../../web/public/avatars/personas/full-body-v1/diplomat.webp", import.meta.url),
-    ).bytes());
+    ).bytes(), false, detectsHead);
     await page.waitForSelector('img[alt="New artwork candidate"]', { visible: true });
+    const headshot = `img[alt="${name} headshot preview"]`;
+    if (detectsHead) await page.waitForFunction(`document.querySelector(${JSON.stringify(headshot)})?.naturalWidth > 0`);
+    else expect(await page.$(headshot)).toBeNull();
+    expect(await page.$('dialog[open]')).toBeNull();
     for (const viewport of [{ width: 1295, height: 945 }, { width: 1280, height: 700 }, { width: 320, height: 820 }]) {
       await page.setViewport(viewport);
       await page.evaluate("window.scrollTo(0, 0)");
-      await page.screenshot({ path: proof + `entry-candidate-${viewport.width}x${viewport.height}.png`, fullPage: true });
-      expect(await page.$eval(focused, element => {
+      await page.screenshot({ path: proof + `entry-candidate-${mode}-${viewport.width}x${viewport.height}.png`, fullPage: true });
+      expect(await page.$eval(focused, (element, action, headshotSelector) => {
         const image = element.querySelector('img[alt="New artwork candidate"]')!;
-        const useImage = [...element.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Use this image')!;
+        const headshotPreview = element.querySelector(headshotSelector);
+        const useImage = [...element.querySelectorAll('button')].find(button => button.textContent?.trim() === action)!;
         const discard = [...element.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Discard' && button.checkVisibility())!;
+        const actions = [useImage, discard];
+        if (headshotPreview) actions.push([...element.querySelectorAll('button')]
+          .find(button => button.textContent?.trim() === 'Adjust portrait' && button.checkVisibility())!);
         const viewport = element.ownerDocument.defaultView!;
         const imageBottom = image.getBoundingClientRect().bottom;
         return {
-          actionsClickable: [useImage, discard].every(button => {
+          actionsClickable: actions.every(button => {
             const rect = button.getBoundingClientRect();
             const hit = element.ownerDocument.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
             return button.checkVisibility() && rect.top >= 0 && rect.bottom <= viewport.innerHeight
@@ -242,19 +257,33 @@ test("entry artwork uses the focused editor and joins the original lobby after r
           imageContained: imageBottom <= element.getBoundingClientRect().bottom,
           mobileImageBeforeActions: viewport.innerWidth > 700 || imageBottom < useImage.getBoundingClientRect().top,
           fitsWidth: element.ownerDocument.documentElement.scrollWidth <= viewport.innerWidth,
+          headshotBesideBody: Boolean(headshotPreview && headshotPreview.checkVisibility() &&
+            headshotPreview.getBoundingClientRect().left >= image.getBoundingClientRect().right),
         };
-      })).toEqual({ actionsClickable: true, imageContained: true, mobileImageBeforeActions: true, fitsWidth: true });
+      }, primaryAction, headshot)).toEqual({
+        actionsClickable: true, imageContained: true, mobileImageBeforeActions: true,
+        fitsWidth: true, headshotBesideBody: detectsHead,
+      });
     }
-    await button(page, "Use this image");
-    const portraitEditor = await page.waitForSelector('dialog[open]');
-    expect(await portraitEditor!.evaluate(editor => editor.textContent)).toContain("Automatic head detection couldn’t locate a head.");
-    await page.waitForSelector('[aria-label="Head box; drag to move"]', { visible: true });
-    await page.waitForSelector('[aria-label="Portrait box; drag to move"]', { visible: true });
-    await page.screenshot({ path: proof + "entry-head-and-portrait-320.png", fullPage: true });
-    await button(page, "Confirm");
+    if (mode !== "automatic") {
+      await button(page, detectsHead ? "Adjust portrait" : primaryAction);
+      const portraitEditor = await page.waitForSelector('dialog[open]');
+      const dialogText = await portraitEditor!.evaluate(editor => editor.textContent);
+      expect(dialogText).toContain(detectsHead ? "Check the gold head box" : "Automatic head detection couldn’t locate a head.");
+      await page.waitForSelector('[aria-label="Head box; drag to move"]', { visible: true });
+      await page.waitForSelector('[aria-label="Portrait box; drag to move"]', { visible: true });
+      if (detectsHead) {
+        await button(page, "Close");
+        await page.waitForSelector(headshot, { visible: true });
+        expect(await page.$eval('main button[type="submit"]:not([disabled])', button => button.textContent)).toBe("Save image & join");
+        await button(page, "Adjust portrait");
+      }
+      await button(page, "Confirm");
+      await page.waitForSelector(headshot, { visible: true });
+    }
     await button(page, "Save image & join");
     await page.waitForFunction('document.querySelector("main h1")?.textContent === "Waiting for approval"');
-    await page.screenshot({ path: proof + "entry-review.png", fullPage: true });
+    expect(manualCrops).toBe(mode === "automatic" ? 0 : 1);
     expect(await database.db.select().from(schema.werewolfLobbySeats)
       .where(eq(schema.werewolfLobbySeats.gameId, lobby.id))).toHaveLength(0);
     const [submitted] = await database.db.select().from(schema.agentProfiles)
@@ -264,6 +293,11 @@ test("entry artwork uses the focused editor and joins the original lobby after r
     const [seat] = await database.db.select().from(schema.werewolfLobbySeats)
       .where(eq(schema.werewolfLobbySeats.gameId, lobby.id));
     expect(seat?.agentProfileId).toBe(created.profile.id);
+    const [published] = await database.db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, created.profile.id));
+    expect(published?.headPosition?.confirmation?.userId).toBe(owner.userId);
+    expect(published?.fullBodyReferenceUrl).toBeTruthy();
+    expect(published?.portraitCrop?.sourceUrl).toBe(published?.fullBodyReferenceUrl ?? undefined);
   } finally {
     await page.close();
   }

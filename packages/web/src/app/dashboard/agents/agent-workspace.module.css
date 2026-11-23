@@ -2254,10 +2254,41 @@
   flex-wrap: wrap;
 }
 
-.workspace[data-entry-artwork="true"] .artStage > img,
-.workspace[data-entry-artwork="true"] .artStage .artComparison img {
+.entryArtPreview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.entryArtPreview[data-has-portrait="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, .52fr);
+}
+
+.entryArtPreview figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.workspace .entryArtPreview img {
   height: clamp(180px, 42dvh, 380px);
-  flex: none;
+  width: 100%;
+  object-fit: contain;
+  background: none;
+  border: 0;
+}
+
+.workspace .entryArtPreview figure + figure img {
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 5px;
+}
+
+.entryArtPreview figcaption {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .entryAction {
@@ -2288,8 +2319,7 @@
     grid-column: 1;
     grid-row: 2;
   }
-  .workspace[data-entry-artwork="true"] .artStage > img,
-  .workspace[data-entry-artwork="true"] .artStage .artComparison img {
+  .workspace .entryArtPreview img {
     height: clamp(150px, 27dvh, 240px);
   }
 }

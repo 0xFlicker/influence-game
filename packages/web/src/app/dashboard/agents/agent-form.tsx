@@ -27,6 +27,7 @@ import {
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
+import { portraitHeadRectangle } from "@influence/engine/character-portrait";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import {
   apiFetch,
@@ -131,6 +132,18 @@ export interface EditorSnapshot {
   personaKey: PersonaKey | null;
   gender: AgentGender | "";
   explicitAvatarUrl?: string;
+}
+
+function selectArtwork(result: CharacterImageDraft, current: EditorSnapshot, useSuggested: boolean): EditorSnapshot {
+  return {
+    ...current,
+    fullBodyReferenceUrl: result.fullBodyReferenceUrl,
+    headPosition: useSuggested ? result.headSuggestion ?? null : null,
+    headSuggestion: result.headSuggestion ?? null,
+    explicitAvatarUrl: result.avatarUrl
+      ?? (useSuggested ? result.fullBodyReferenceUrl : current.explicitAvatarUrl),
+    portraitCrop: result.portraitCrop ?? null,
+  };
 }
 
 interface StoredEditorDraft {
@@ -1402,6 +1415,11 @@ export function AgentForm({
         initialSnapshot.headPosition ||
         headSuggestion),
   );
+  const suggestedArtwork = focusedEntry && candidateImage?.avatarUrl &&
+    candidateImage.headSuggestion?.sourceUrl === candidateImage.fullBodyReferenceUrl &&
+    candidateImage.portraitCrop?.sourceUrl === candidateImage.fullBodyReferenceUrl &&
+    portraitHeadRectangle(candidateImage.headSuggestion, candidateImage.portraitCrop)
+    ? candidateImage : null;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -1409,10 +1427,24 @@ export function AgentForm({
       profileGenerating ||
       uploading ||
       submitting ||
-      headConfirmationRequired
+      (headConfirmationRequired && !suggestedArtwork)
     )
       return;
 
+    if (suggestedArtwork) {
+      if (entryCandidateSaveDisabled) return;
+      if (!entryHasOtherChanges) {
+        await submitDraft(suggestedArtwork);
+        return;
+      }
+      setSubmitting(true);
+      const selected = await decideCandidate("selected", true);
+      setSubmitting(false);
+      if (!selected) return;
+      captureProductEvent("agent_editor_review_opened", { editing: isEditing });
+      setReviewOpen(true);
+      return;
+    }
     if (submitDisabled) return;
     if (focusedEntry && fullBodyReferenceUrl && !entryHasOtherChanges) {
       await submitDraft();
@@ -1430,7 +1462,7 @@ export function AgentForm({
     setReviewOpen(true);
   }
 
-  async function submitDraft() {
+  async function submitDraft(suggested?: CharacterImageDraft) {
     if (anonymous) {
       requestAccount();
       return;
@@ -1443,7 +1475,7 @@ export function AgentForm({
       profileGenerating ||
       uploading ||
       submitting ||
-      headConfirmationRequired
+      (headConfirmationRequired && !suggested)
     )
       return;
     const errors: Record<string, string> = {};
@@ -1479,7 +1511,11 @@ export function AgentForm({
 
     setSubmitting(true);
     setSaveError(null);
+    let completed = false;
     try {
+      // The candidate decision updates React state. Save the exact selection in this request.
+      const snapshot = suggested ? selectArtwork(suggested, currentSnapshot, true) : currentSnapshot;
+      if (suggested && !(await decideCandidate("selected", true))) return;
       const params: AgentProfileWriteParams = {
         modelPreference,
         voiceId,
@@ -1489,19 +1525,19 @@ export function AgentForm({
         strategyStyle: strategyStyle.trim(),
         werewolfStrategyStyle: werewolfStrategyStyle.trim(),
         performanceInstructions: performanceInstructions.trim(),
-        fullBodyReferenceUrl,
+        fullBodyReferenceUrl: snapshot.fullBodyReferenceUrl,
         personaKey: personaKey ?? undefined,
         gender: gender as AgentGender,
-        avatarUrl: avatarUrl,
+        avatarUrl: snapshot.explicitAvatarUrl,
         visualDesign,
-        portraitCrop,
-        headPosition,
+        portraitCrop: snapshot.portraitCrop,
+        headPosition: snapshot.headPosition,
         expectedContentRevisionId: baseContentRevisionId,
       };
       const fingerprint = JSON.stringify(params);
       if (!submission.current || submission.current.fingerprint !== fingerprint)
         submission.current = { id: createRequestId(), fingerprint };
-      if (!(await saveLocalDraft()))
+      if (!(await saveLocalDraft(suggested ? snapshot : undefined)))
         throw new Error(
           "Save the recovery draft before submitting. Your changes are retained here.",
         );
@@ -1509,7 +1545,7 @@ export function AgentForm({
         { ...params, submissionId: submission.current.id },
         { creationRequestId },
       );
-      if (referenceRequest.current || candidateImage) {
+      if (referenceRequest.current || (candidateImage && !suggested)) {
         const base = { ...currentSnapshot };
         await persistRemote({
           version: DRAFT_VERSION,
@@ -1528,6 +1564,7 @@ export function AgentForm({
       if (!retireDraft()) {
         setDraftStorageError("discard_failed");
       }
+      completed = true;
     } catch (error) {
       console.warn("[agent-editor] Save failed:", error);
       if (error instanceof ApiError && error.code === "agent_name_taken") {
@@ -1538,7 +1575,8 @@ export function AgentForm({
         }));
         focusField("agent-name");
       } else setSaveError(error);
-      setSubmitting(false);
+    } finally {
+      if (!completed) setSubmitting(false);
     }
   }
 
@@ -1600,6 +1638,10 @@ export function AgentForm({
   const artworkBlocked = Boolean(
     referenceError && ["discard", "reload"].includes(referenceError.recovery),
   );
+  const entryCandidateBlocked = draftRecovering ||
+    unreadableDraft || Boolean(pendingRestore || restoreAlternatives) ||
+    draftConflicts.length > 0 || submitting || profileGenerating || referenceBusy || uploading || artworkBlocked;
+  const entryCandidateSaveDisabled = entryCandidateBlocked || missingRequired.length > 0;
   const submitDisabled =
     draftRecovering ||
     !dirty ||
@@ -1622,15 +1664,7 @@ export function AgentForm({
       if (pendingRestore || draftConflicts.length)
         throw new Error("Resolve the saved draft before selecting artwork.");
       if (decision === "selected") {
-        const current = {
-          ...currentSnapshot,
-          fullBodyReferenceUrl: result.fullBodyReferenceUrl,
-          headPosition: useSuggested ? result.headSuggestion ?? null : null,
-          headSuggestion: result.headSuggestion ?? null,
-          explicitAvatarUrl:
-            result.avatarUrl ?? (useSuggested ? result.fullBodyReferenceUrl : currentSnapshot.explicitAvatarUrl),
-          portraitCrop: result.portraitCrop ?? null,
-        };
+        const current = selectArtwork(result, currentSnapshot, useSuggested);
         await persistRemote({
           version: DRAFT_VERSION,
           savedAt: new Date().toISOString(),
@@ -1930,7 +1964,7 @@ export function AgentForm({
     }
   }
 
-  async function saveLocalDraft() {
+  async function saveLocalDraft(selectedArtwork?: EditorSnapshot) {
     if (unreadableDraft) {
       setDraftStorageError("draft_unreadable");
       return false;
@@ -1956,7 +1990,7 @@ export function AgentForm({
       version: DRAFT_VERSION,
       savedAt: new Date().toISOString(),
       base: initialSnapshot,
-      current: currentSnapshot,
+      current: selectedArtwork ?? currentSnapshot,
       creationRequestId,
       baseContentRevisionId,
       generationDeadline,
@@ -1964,7 +1998,7 @@ export function AgentForm({
       unfinishedReplacement,
       submission: submission.current,
       referenceRequest: referenceRequest.current,
-      candidateImage,
+      candidateImage: selectedArtwork ? null : candidateImage,
       guided,
       conversation,
     };
@@ -2102,14 +2136,17 @@ export function AgentForm({
       (candidateImage.basedOn.personaKey ?? "") !== (personaKey ?? "") ||
       (candidateImage.basedOn.visualDesign ?? "") !== (visualDesign ?? "") ||
       candidateImage.basedOn.performanceInstructions !== performanceInstructions);
+  const entryBody = focusedEntry ? candidateImage?.fullBodyReferenceUrl ?? fullBodyReferenceUrl : null;
+  const entryPortrait = candidateImage
+    ? suggestedArtwork?.avatarUrl
+    : headConfirmationRequired ? null : avatarUrl;
   const candidateActions = (
     <div className={styles.footerActions}>
       <button
         type="button"
-        className={focusedEntry ? styles.primary : undefined}
         onClick={() => void decideCandidate("selected")}
       >
-        {focusedEntry ? "Use this image" : "Select"}
+        Select
       </button>
       <button type="button" onClick={() => void decideCandidate("discarded")}>
         Discard
@@ -2199,11 +2236,13 @@ export function AgentForm({
             <section className={styles.entryCopy}>
               <div className={styles.entryIntro}>
                 <p className={styles.entryTarget}>{entryArtwork.target}</p>
-                <h1>{candidateImage ? "Review full‑body image"
+                <h1>{candidateImage ? suggestedArtwork ? "Review artwork" : "Set the head and portrait"
                   : fullBodyReferenceUrl ? headConfirmationRequired ? "Confirm the portrait" : "Artwork ready to save"
                     : "Add a full‑body image"}</h1>
                 {(candidateImage || !fullBodyReferenceUrl) && <p>{candidateImage
-                  ? "Use this image to confirm the head position and portrait."
+                  ? suggestedArtwork
+                    ? "Check the full-body image and headshot before saving."
+                    : "Place the head box and crop the portrait."
                   : "Generate a head-to-toe image to use this agent in games."}</p>}
                 <div className={styles.entryAgent}>
                   {initial?.avatarUrl && <OwnedCharacterImage src={initial.avatarUrl} alt="" />}
@@ -2221,16 +2260,40 @@ export function AgentForm({
               {candidateImage && candidateBriefChanged && (
                 <p>The character brief changed during generation. Check that the image still fits before using it.</p>
               )}
-              {candidateImage && candidateActions}
+              {candidateImage && <div className={styles.footerActions}>
+                {suggestedArtwork && (
+                  <button type="submit" className={styles.primary} disabled={entryCandidateSaveDisabled}>
+                    {entryHasOtherChanges ? "Review" : submitLabel}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={suggestedArtwork ? undefined : styles.primary}
+                  disabled={entryCandidateBlocked}
+                  onClick={async () => {
+                    const selected = await decideCandidate("selected", Boolean(suggestedArtwork));
+                    if (selected && suggestedArtwork)
+                      setPortraitEditorSource(suggestedArtwork.fullBodyReferenceUrl);
+                  }}
+                >
+                  {suggestedArtwork ? "Adjust portrait" : "Set portrait"}
+                </button>
+                <button type="button" onClick={() => void decideCandidate("discarded")}>Discard</button>
+              </div>}
               {fullBodyReferenceUrl && !candidateImage && (headConfirmationRequired ? (
                 <button type="button" className={styles.primary}
                   onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>
                   Confirm portrait
                 </button>
               ) : (
-                <button type="submit" className={styles.primary} disabled={submitDisabled}>
-                  {entryHasOtherChanges ? "Review" : submitLabel}
-                </button>
+                <div className={styles.footerActions}>
+                  <button type="submit" className={styles.primary} disabled={submitDisabled}>
+                    {entryHasOtherChanges ? "Review" : submitLabel}
+                  </button>
+                  <button type="button" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>
+                    Adjust portrait
+                  </button>
+                </div>
               ))}
               {entryArtwork.destination !== "agents" && <p className={styles.entryHint}>{entryArtwork.destination === "lobby"
                 ? "We’ll try to join this lobby after saving. The lobby can fill or start while you’re getting ready."
@@ -2249,7 +2312,18 @@ export function AgentForm({
               data-image-updating={imageUpdating || undefined}
               aria-busy={imageUpdating}
             >
-              {candidateImage ? null : fullBodyReferenceUrl || (avatarUrl && !focusedEntry) ? (
+              {entryBody ? (
+                <div className={styles.entryArtPreview} data-has-portrait={Boolean(entryPortrait)}>
+                  <figure>
+                    <OwnedCharacterImage src={entryBody} alt={candidateImage ? "New artwork candidate" : `${name} full-body artwork`} />
+                    <figcaption>Full-body image</figcaption>
+                  </figure>
+                  {entryPortrait && <figure>
+                    <OwnedCharacterImage src={entryPortrait} alt={`${name} headshot preview`} />
+                    <figcaption>Headshot</figcaption>
+                  </figure>}
+                </div>
+              ) : candidateImage ? null : fullBodyReferenceUrl || (avatarUrl && !focusedEntry) ? (
                 <OwnedCharacterImage
                   src={
                     fullBodyReferenceUrl
@@ -2263,14 +2337,14 @@ export function AgentForm({
               ) : referenceBusy ? (
                 <CharacterFormation name={name} />
               ) : null}
-              {candidateImage && (
+              {candidateImage && !focusedEntry && (
                 <div className={styles.candidateReady}>
-                  {!focusedEntry && <h2>Artwork ready</h2>}
+                  <h2>Artwork ready</h2>
                   <div
                     className={styles.artComparison}
-                    data-compare={Boolean(fullBodyReferenceUrl || (avatarUrl && !focusedEntry))}
+                    data-compare={Boolean(fullBodyReferenceUrl || avatarUrl)}
                   >
-                    {(fullBodyReferenceUrl || (avatarUrl && !focusedEntry)) && (
+                    {(fullBodyReferenceUrl || avatarUrl) && (
                       <figure>
                         <OwnedCharacterImage
                           src={
@@ -2291,17 +2365,17 @@ export function AgentForm({
                         src={candidateImage.fullBodyReferenceUrl}
                         alt="New artwork candidate"
                       />
-                      {(!focusedEntry || fullBodyReferenceUrl) && <figcaption>New</figcaption>}
+                      <figcaption>New</figcaption>
                     </figure>
                   </div>
-                  {!focusedEntry && candidateBriefChanged && (
+                  {candidateBriefChanged && (
                       <p>
                         The character brief changed during preparation. Compare
                         this image with your current appearance before selecting
                         it.
                       </p>
                     )}
-                  {!focusedEntry && candidateActions}
+                  {candidateActions}
                 </div>
               )}
               {imageUpdating && Boolean(fullBodyReferenceUrl || avatarUrl || candidateImage) && (
