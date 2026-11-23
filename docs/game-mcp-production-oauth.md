@@ -437,7 +437,7 @@ Public app submission, polished app UX, per-tool linking policy, and broad teste
 
 ## MCP App Provider Testing
 
-For Claude Connectors Directory review, `tools/list` includes a human-readable `title` for every tool alongside its behavior annotations. Define each title in `packages/api/src/game-mcp/tool-titles.ts` and use it to describe what the tool shows or changes. Test the discovered catalog and OAuth in Claude web using an ordinary player account. See the [Claude connector requirements](https://claude.com/docs/connectors/building/submission#requirements-for-every-connector).
+For Claude Connectors Directory review, `tools/list` includes a human-readable `title` for every tool alongside its behavior annotations. Set the title alongside the tool's name, description, and schema in its descriptor. Test the discovered catalog and OAuth in Claude web using an ordinary player account. See the [Claude connector requirements](https://claude.com/docs/connectors/building/submission#requirements-for-every-connector).
 
 The first MCP App release is production-learning oriented. A useful v1 result is at least one production host completing discovery, OAuth, app resource fetch, iframe boot, and `list_games`. The maintainer can test ChatGPT, Claude, and Grok manually and paste notes, screenshots, host-visible errors, and server correlation IDs into the next planning or debugging pass.
 
