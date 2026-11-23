@@ -66,7 +66,7 @@ export interface VisualWatchData {
   portraits: Record<string, string>;
   fullBodyHeads?: Record<string, import("@influence/engine/character-portrait").HeadRectangle>;
   fullBodies?: Record<string, string>;
-  scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number }>;
+  scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number; huddleOnly?: true }>;
 }
 
 /** Camera continuity follows adjacent canonical pictures, never navigation history. */
@@ -80,7 +80,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   const rooms: AcceptedVisualScene[] = [];
   if (message?.entrySequence !== undefined) {
     for (const scene of data.scenes) {
-      if (scene.afterDialogueSequence >= message.entrySequence) continue;
+      if (scene.huddleOnly || scene.afterDialogueSequence >= message.entrySequence) continue;
       const index = rooms.findIndex((room) => room.roomId === scene.roomId);
       const accepted = { ...scene, annotatedImageUrl: "" };
       if (index < 0) rooms.push(accepted);
@@ -219,6 +219,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   else {
     const binding = message.entrySequence !== undefined ? data.bindings?.[message.entrySequence] : undefined;
     const target = data.scenes.find(scene => scene.id === (binding ?? message.visualScene?.id)
+      && (!scene.huddleOnly || message.scope === "huddle" && binding === scene.id)
       && message.entrySequence !== undefined && scene.afterDialogueSequence < message.entrySequence);
     if (message.phase === "LOBBY" && speaker && !target) {
       const sequence = message.firstDurableEventSequence ?? cue?.canonicalSequence;
@@ -238,7 +239,8 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
         return player ? [player.id] : [];
       })]);
       const participants = players.filter(player => ids.has(player.id));
-      if (!target || participants.some(player => !data.fullBodies?.[player.id])) {
+      // A published image backfilled for this huddle already contains its whole cast.
+      if (!target || !target.huddleOnly && participants.some(player => !data.fullBodies?.[player.id])) {
         return { rooms, beat: { kind: "portrait-room", roomNumber: message.roomId ?? null, paginateLargeCast:true,
           roomLabel: message.allianceSession?.allianceName,
           participants: participants.map(roomPlayer),
@@ -251,7 +253,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       const index = rooms.findIndex(room => room.roomId === target.roomId);
       if (index >= 0) rooms[index] = { ...target, annotatedImageUrl: "" };
       else rooms.push({ ...target, annotatedImageUrl: "" });
-      beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, roomLabel: message.allianceSession?.allianceName,
+      beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, roomLabel: message.allianceSession?.allianceName ?? (target.huddleOnly ? "Alliance huddle" : undefined),
         ...(largeSocialCastCount(message) > 4 && cue ? {speechDurationMs:cue.baseDurationMs} : {}), speech: speakerId || message.anonymous ? {
         id: String(message.id), playerId: message.anonymous ? null : speakerId,
         portrait: speakerId ? { avatarUrl: data.portraits[speakerId] ?? players.find(p => p.id === speakerId)?.avatarUrl, persona: players.find(p => p.id === speakerId)?.persona ?? "", personaKey: players.find(p => p.id === speakerId)?.personaKey } : undefined,

@@ -29,6 +29,8 @@ export interface VisualSceneDirection {
 }
 export interface VisualScenePlan {
   direction?: VisualSceneDirection;
+  /** A historical scene staged for one accepted Influence huddle only. */
+  replayHuddleSessionId?: string;
   version: 1;
   roomId: VisualRoomId;
   roomVersion: number;

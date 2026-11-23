@@ -16,6 +16,7 @@ import { readVisualRenderAccounting } from "./visual-render-journal.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
 import { readInfluenceVisualPause } from "./visual-policy.js";
+import { replayHuddleForDialogue, replayHuddleSchedules } from "./replay-huddle-staging.js";
 
 export class ReplayVisualError extends Error {
   constructor(message: string, readonly code: string, readonly status: 400 | 404 | 409 = 409) { super(message); }
@@ -28,10 +29,12 @@ type Candidate = {
   participants: Array<{ id: string; name: string }>;
   roles: Record<string, VisualPlacement["role"]>; allianceGroups: readonly (readonly string[])[];
   cues: Scene["plan"]["cues"];
+  replayHuddleSessionId?: string;
 };
 const keyFor = (gameId: string, roomId: VisualRoomId, boundarySequence: number) => sha256StableJson({ gameId, roomId, boundarySequence });
 function candidate(gameId: string, data: Omit<Candidate, "key" | "previewHash" | "roomName">): Candidate {
-  return { ...data, key: keyFor(gameId, data.roomId, data.boundarySequence), roomName: VISUAL_ROOMS[data.roomId].name,
+  return { ...data, key: keyFor(gameId, data.roomId, data.boundarySequence),
+    roomName: data.replayHuddleSessionId ? `Alliance huddle · ${VISUAL_ROOMS[data.roomId].name}` : VISUAL_ROOMS[data.roomId].name,
     previewHash: sha256StableJson({ ...data, sceneId: undefined }) };
 }
 const sameCast = (ids: readonly string[], scene: { plan: { cast: readonly { id: string }[] } }) => ids.length === scene.plan.cast.length && scene.plan.cast.every(member => ids.includes(member.id));
@@ -57,7 +60,7 @@ export async function readReplayVisualSceneCatalog(db: DrizzleDB, gameId: string
 async function readInfluenceProductionSceneCatalog(db:DrizzleDB,gameId:string,slug:string) {
   const [scenes, dialogue, events] = await Promise.all([
     readVisualSceneStaging(db,gameId),
-    db.select({ sequence: schema.transcripts.entrySequence, phase: schema.transcripts.phase, scope: schema.transcripts.scope,
+    db.select({ sequence: schema.transcripts.entrySequence, round: schema.transcripts.round, kind: schema.transcripts.dialogueKind, phase: schema.transcripts.phase, scope: schema.transcripts.scope,
       speaker: schema.transcripts.speakerPlayerId, audience: schema.transcripts.audiencePlayerIds, context: schema.transcripts.safeContext,
       turn: schema.gameTurns.turnSequence, baseEvents: schema.gameTurns.baseEventSequence, baseDialogue: schema.gameTurns.baseDialogueSequence })
       .from(schema.transcripts).innerJoin(schema.gameTurns, eq(schema.transcripts.gameTurnId, schema.gameTurns.id))
@@ -66,15 +69,41 @@ async function readInfluenceProductionSceneCatalog(db:DrizzleDB,gameId:string,sl
   ]);
   const candidates = new Map<string, Candidate>();
   for (const scene of scenes) {
+    if (scene.plan.replayHuddleSessionId) continue; // Re-derive the exact historical boundary below.
     const data = candidate(gameId, { sceneId: scene.id, roomId: scene.roomId, round: null, boundarySequence: scene.boundarySequence,
       afterDialogueSequence: scene.afterDialogueSequence, participants: scene.plan.cast.map(({ id, name }) => ({ id, name })),
       roles: Object.fromEntries(scene.plan.placements.map(p => [p.playerId, p.role])), allianceGroups: scene.plan.allianceGroups, cues: scene.plan.cues });
     candidates.set(data.key, data);
   }
+  const schedules = replayHuddleSchedules(events.events.map(event => event.envelope));
+  const stagedHuddles = new Set<string>();
   const prior = new Map<VisualRoomId, string>();
   let unsupported = 0;
   for (const row of dialogue) {
     if (!row.sequence || !row.speaker || row.scope === "diary" || row.scope === "thinking" || row.context?.acceptedBallot || row.context?.decisionSpeech || row.context?.presentationPurpose === "farewell") continue;
+    if (row.scope === "huddle") {
+      if (row.context?.visualScene) continue;
+      const huddle = replayHuddleForDialogue(schedules, row);
+      if (!huddle) { unsupported++; continue; }
+      if (stagedHuddles.has(huddle.sessionId)) continue;
+      const prefix = events.events.filter(event => event.sequence <= row.baseEvents).map(event => event.envelope);
+      if (prefix.at(-1)?.sequence !== row.baseEvents) { unsupported++; continue; }
+      const state = GameState.fromCanonicalEvents(prefix);
+      const ids = [...huddle.schedule.memberIds].sort();
+      const alive = new Set(state.getAlivePlayerIds());
+      if (ids.some(id => !alive.has(id))) { unsupported++; continue; }
+      const boundarySequence = row.turn - 1;
+      const existing = scenes.find(scene => scene.plan.replayHuddleSessionId === huddle.sessionId
+        && scene.boundarySequence === boundarySequence && scene.afterDialogueSequence === row.baseDialogue && sameCast(ids, scene));
+      const roomId = existing?.roomId ?? "mingle-5";
+      const data = candidate(gameId, { sceneId: existing?.id ?? null, roomId, round: row.round, boundarySequence,
+        afterDialogueSequence: row.baseDialogue, participants: ids.map(id => ({ id, name: state.getPlayerName(id) })),
+        roles: {}, allianceGroups: [ids], cues: [], replayHuddleSessionId: huddle.sessionId });
+      const alliance = state.getAlliance(huddle.schedule.allianceId);
+      candidates.set(data.key, alliance ? { ...data, roomName: `Alliance huddle · ${alliance.name}` } : data);
+      stagedHuddles.add(huddle.sessionId);
+      continue;
+    }
     if ([Phase.MINGLE, Phase.MINGLE_I, Phase.POST_VOTE_MINGLE, Phase.FORMAT_MINGLE].includes(row.phase as Phase) && row.context?.roomId == null) { unsupported++; continue; }
     const prefix = events.events.filter(event => event.sequence <= row.baseEvents).map(event => event.envelope);
     if (!prefix.length || prefix.at(-1)!.sequence !== row.baseEvents) { unsupported++; continue; }
@@ -96,7 +125,7 @@ async function readInfluenceProductionSceneCatalog(db:DrizzleDB,gameId:string,sl
     if (prior.get(roomId) === signature) continue;
     prior.set(roomId, signature);
     const existing = row.context?.visualScene ? scenes.find(scene => scene.id === row.context!.visualScene!.id)
-      : scenes.filter(scene => scene.roomId === roomId && scene.boundarySequence < row.turn && scene.afterDialogueSequence < row.sequence! && sameCast(ids, scene)).at(-1);
+      : scenes.filter(scene => !scene.plan.replayHuddleSessionId && scene.roomId === roomId && scene.boundarySequence < row.turn && scene.afterDialogueSequence < row.sequence! && sameCast(ids, scene)).at(-1);
     if (existing && existing.boundarySequence !== row.turn - 1) continue;
     const data = candidate(gameId, { sceneId: existing?.id ?? null, roomId, round: state.round, boundarySequence: row.turn - 1, afterDialogueSequence: row.baseDialogue,
       participants: ids.map(id => ({ id, name: state.getPlayerName(id) })), roles, allianceGroups, cues: existing?.plan.cues ?? [] });
@@ -171,8 +200,11 @@ export async function renderMissingReplayScene(db: DrizzleDB, gameId: string, op
   const { cast } = await freezeReplayReferences(db, gameId, selected.participants);
   const [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
   const [gameKind] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
-  const plan = gameKind?.kind === "werewolf" ? await planWerewolfProduction(db, gameId, selected.roomId, selected.boundarySequence) : planVisualScene({ roomId: selected.roomId, backgroundArtifactId: assets?.backgrounds[selected.roomId] ?? null,
-    cast, roles: selected.roles, allianceGroups: selected.allianceGroups, cues: selected.cues });
+  const plan = gameKind?.kind === "werewolf" ? await planWerewolfProduction(db, gameId, selected.roomId, selected.boundarySequence) : {
+    ...planVisualScene({ roomId: selected.roomId, backgroundArtifactId: assets?.backgrounds[selected.roomId] ?? null,
+      cast, roles: selected.roles, allianceGroups: selected.allianceGroups, cues: selected.cues }),
+    ...("replayHuddleSessionId" in selected && selected.replayHuddleSessionId && { replayHuddleSessionId: selected.replayHuddleSessionId }),
+  };
   const scene = await db.transaction(async tx => {
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
     if (game?.status !== "completed") {

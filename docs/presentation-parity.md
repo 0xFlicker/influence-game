@@ -73,6 +73,14 @@ holds allow time for every cast page; long room names and captions use measured
 pagination, and recorded voice retains its original audio duration. Werewolf uses its own room
 presentation and is not routed through this Influence-specific treatment.
 
+An Influence huddle thought opens on the alliance room before the thought text
+or recording starts. Studio retains that entrance in thought-only cuts, even
+with the optional establishing hold trimmed to zero. When the same response's
+speech immediately follows, it resumes at the speech entrance. An authored
+alliance introduction, when included, keeps its earlier source position.
+Rebuild prepared bundles from the same selection to adopt the timing. To adopt
+a newly published huddle scene, refresh the source visuals before rebuilding.
+
 Influence winner scenes page the other finalists, jury and cast members in pairs on the
 sampled presentation clock. The winner cue reserves five seconds per page;
 the final page remains held at the end. Rebuild existing bundles from their

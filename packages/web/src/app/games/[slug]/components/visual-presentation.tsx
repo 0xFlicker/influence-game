@@ -5,7 +5,7 @@ import {RoomBackdrop} from "./stage-backdrop";
 import {HouseResultLayout} from "@/components/watch/house-result-layout";
 import {HouseMessage} from "@/components/watch/house-message";
 
-import { useMemo, useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useMemo, useCallback, useEffect, useLayoutEffect, useState, type ComponentProps } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
 import {FormatPresentation, formatPresentationOwnsBackdrop} from "./format-presentation";
 import type {FormatPresentationCue} from "./types";
@@ -111,13 +111,14 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   return <VisualPresentationFrame {...props} {...clock} onSceneReadyChange={onSceneReadyChange} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, retainedScene: sourceRetainedScene, previousSpeakerId = null, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster: sourceRoster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl }: {
+export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, retainedScene: sourceRetainedScene, previousSpeakerId = null, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster: sourceRoster = [], onSceneReadyChange, hideHouseNarration = false, naturalHouseMessages = true, houseLogoUrl, focusActor }: {
   beat: VisualPresentationBeat;
   hideHouseNarration?: boolean;
   naturalHouseMessages?: boolean;
   houseLogoUrl?: string;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
+  focusActor?: ComponentProps<typeof VisualSceneView>["focusActor"];
   retainedScene?: AcceptedVisualScene | null;
   previousSpeakerId?: string | null;
   elapsedMs: number;
@@ -186,7 +187,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
     content = naturalHouseMessages && beat.text !== null ? <div style={{paddingBottom:fullscreen ? controlsInset + 8 : 8}} className="relative isolate flex min-h-0 flex-1 flex-col justify-end overflow-hidden p-2"><RoomBackdrop source={beat.backgroundUrl ?? INFLUENCE_ROOMS.lobby} resilient /><div className="h-1/3 min-h-[90px] shrink-0"><HouseMessage text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} /></div></div> : beat.backgroundUrl ? <div className="relative isolate flex min-h-0 flex-1 flex-col overflow-hidden"><RoomBackdrop source={beat.backgroundUrl} resilient />{segment}</div> : segment;
   } else if (beat.kind === "scene") {
     const isMingle = beat.roomId.startsWith("mingle-");
-    const selectedRoom = isMingle && !fullscreen && pinnedRoom && mingleRooms.some((room) => room.roomId === pinnedRoom) ? pinnedRoom : beat.roomId;
+    const selectedRoom = isMingle && !beat.roomLabel && !fullscreen && pinnedRoom && mingleRooms.some((room) => room.roomId === pinnedRoom) ? pinnedRoom : beat.roomId;
     const selectedScene = rooms.find((room) => room.roomId === selectedRoom);
     const scene = selectedScene ?? retainedScene;
     // Never anchor new-scene dialogue to an old scene, including while a room is pinned.
@@ -198,7 +199,7 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}
       </nav>}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {scene && <VisualSceneView onReadyChange={onSceneReadyChange} controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} speechDurationMs={beat.speechDurationMs} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
+        {scene && <VisualSceneView onReadyChange={onSceneReadyChange} controlsInset={controlsInset} scene={scene} speech={speech} focusPlayerId={focusActor?.id} focusActor={focusActor} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} speechDurationMs={beat.speechDurationMs} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
       </div>
     </div>;
   } else {

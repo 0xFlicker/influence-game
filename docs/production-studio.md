@@ -118,6 +118,8 @@ The inspector pages scene inventory and exact version/evidence detail separately
 
 Game production/recovery tools preserve the game-owned Influence asset/finals repair and Werewolf scene/form pause validation. Publication and **Resume** remain separate actions. Suspended games preview a fixed accepted prefix; export requires completed history.
 
+Completed Influence games list eligible missing scenes as **Alliance huddle** entries in **Scenes**. Choose the round and alliance, select **Render missing image**, then review and publish the verified candidate. The image applies to that session's dialogue and thinking across replay, Studio and newly prepared exports. The alliance introduction plays first when selected. A thought-only cut opens on the alliance room before showing thinking, and a directly paired reply begins at its speech entrance.
+
 After publishing, choose **Refresh published visuals** to pause and pin the newly published media at the same accepted source boundary. Normal reads do not silently swap repaired imagery or advance history. Previously frozen selections and prepared bundles keep their media references. Missing pinned inputs fail clearly.
 
 Permissions remain operation-specific. New editorial source, annotations and selected-export descriptors require Producer/Sysop. Library metadata also permits the existing admin discovery grants. Influence visual operators keep their existing read and `start_game` mutation grants. Werewolf production grants do not inherit those Influence grants. Episode presentation, batch naming, trailer/poster operations and resume retain their existing permissions.

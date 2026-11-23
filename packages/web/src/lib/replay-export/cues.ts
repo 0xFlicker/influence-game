@@ -57,6 +57,7 @@ export type ExportPicture =
       actor: Extract<VisualPresentationBeat, {kind: "portrait"}>["player"];
       roleLabel?: string;
       scene: AcceptedVisualScene | null;
+      sceneRoomLabel?: string;
       sourceElapsedMs: number;
       transformation?: {durationMs: number; wolves: ReturnType<typeof werewolfTransformationCast>};
       backgroundUrl?: string;
@@ -98,6 +99,7 @@ export interface ExportCue {
         eventSequence: number | null;
         transcriptId?: number;
         transcriptSequence?: number;
+        huddleSessionId?: string;
       };
   speech: {
     messageId: string;
@@ -275,6 +277,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
         ...(message?.entrySequence !== undefined && {
           transcriptSequence: message.entrySequence,
         }),
+        ...(message?.scope === "huddle" && message.allianceSession && {huddleSessionId:message.allianceSession.sessionId}),
       },
       label: `Round ${cue.round} · ${message?.allianceIntroduction?.allianceName ?? message?.allianceSession?.allianceName ?? (cue.phase === "FORMAT_MINGLE" ? "Mingle" : cue.phase)}`,
       speech:

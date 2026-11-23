@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import sharp from "sharp";
-import { GameState, Phase, type GameTurnIntentV1 } from "@influence/engine";
+import { GameState, Phase, huddleSessionId, type GameTurnIntentV1 } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { insertOwner, insertCanonicalEventRows } from "./durable-run-test-utils.js";
@@ -16,6 +16,8 @@ import { readVisualMedia, controlVisualMedia } from "../services/visual-media-re
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
+import { readInfluenceProductionSource } from "../services/influence-production-source.js";
+import { readProductionScenes } from "../services/production-scenes.js";
 import { readVisualSceneAttempts, reserveVisualRender, visualImageJournal } from "../services/visual-render-journal.js";
 import { createVisualRoutes } from "../routes/visual.js";
 import { createProductionGameMcpServer } from "../game-mcp/server.js";
@@ -49,7 +51,8 @@ afterEach(() => {
   if (originalSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = originalSecret;
 });
 
-async function beat(phase: Phase, audience: string[] = [], roomId?: number, scope: "public" | "diary" = "public", speaker = "p0") {
+async function beat(phase: Phase, audience: string[] = [], roomId?: number, scope: "public" | "diary" | "huddle" = "public",
+  speaker = "p0", huddleContext?: { sessionId: string; allianceId: string; sessionAudiencePlayerIds: string[] }) {
   const events = state.getCanonicalEvents();
   if (events.length > savedEvents) await insertCanonicalEventRows(db, gameId, ownerEpoch, events.slice(savedEvents));
   savedEvents = events.length; turnSequence++; dialogueSequence++;
@@ -62,7 +65,9 @@ async function beat(phase: Phase, audience: string[] = [], roomId?: number, scop
     commitResult: { version: 1, gameId, turnId, turnSequence, intentHash: hash, effectHash: hash, committedAt: date, state: execution, canonicalEvents: [], dialogueSequences: [], publications: [], alreadyCommitted: false } }, {"intent":"json-gzip","commitResult":"json-gzip"}));
   await db.insert(schema.transcripts).values({ gameId, gameTurnId: turnId, gameTurnTranscriptOrdinal: 1, entrySequence: scope === "diary" ? null : dialogueSequence,
     round: state.round, phase, scope, text: "Prose falsely claims Player 5 is here and everyone moved to another room.", timestamp: 1,
-    speakerPlayerId: speaker, audiencePlayerIds: scope === "diary" ? null : audience, safeContext: scope === "diary" ? null : { version: 1, ...(roomId !== undefined && { roomId }) } });
+    speakerPlayerId: speaker, audiencePlayerIds: scope === "diary" ? null : audience,
+    ...(scope === "huddle" && { dialogueKind: "huddle_speech", firstDurableEventSequence: savedEvents }),
+    safeContext: scope === "diary" ? null : { version: 1, ...(roomId !== undefined && { roomId }), ...huddleContext } });
 }
 const render = (scene: Awaited<ReturnType<Hydrated<typeof readReplayVisualProduction>>>["scenes"][number], requestId: string = crypto.randomUUID()) =>
   renderMissingReplayScene(db, gameId, "operator", { key: scene.key, previewHash: scene.previewHash, requestId });
@@ -131,6 +136,52 @@ test("partial backfills never carry a voted-off player into a later Lobby", asyn
   await controlVisualMedia(db, gameId, "operator", { action: "publish", requestId: "publish", sceneId: job.sceneId!, expectedVersion: 1, expectedPublication: 0, versionId: job.id });
   const viewer = await readViewerMedia(db, gameId);
   expect(viewer.bindings[1]).toBe(job.sceneId!); expect(viewer.bindings[2]).toBe(job.sceneId!); expect(viewer.bindings[4]).toBeUndefined();
+});
+
+test("a historical huddle scene binds only its exact accepted session after publication", async () => {
+  const members = ["p0", "p1"];
+  const schedule = (id: string) => {
+    state.recordAllianceHuddleSchedule({ id, allianceId: "pair", window: "format", round: state.round, pass: 1,
+      decision: "scheduled", memberIds: members, rationale: "Private", createdAt: new Date().toISOString() });
+    return { sessionId: huddleSessionId(id), allianceId: "pair", sessionAudiencePlayerIds: members };
+  };
+  const first = schedule("first-pair");
+  await beat(Phase.FORMAT_MINGLE, members, undefined, "huddle", "p0", first);
+  await beat(Phase.FORMAT_MINGLE, members, undefined, "huddle", "p1", first);
+  await beat(Phase.FORMAT_MINGLE, ["p1"], 5); // Ordinary Mingle in the same room, with the same cast.
+  const second = schedule("second-pair");
+  await beat(Phase.FORMAT_MINGLE, members, undefined, "huddle", "p0", second);
+  await beat(Phase.FORMAT_MINGLE, [...members, "p2"], undefined, "huddle", "p0", first); // Inconsistent captured audience.
+  const before = await acceptedRecords();
+  const frozen = await readInfluenceProductionSource(db, gameId);
+  const inventory = await readReplayVisualProduction(db, gameId);
+  const huddles = inventory.scenes.filter(scene => scene.roomName.startsWith("Alliance huddle"));
+  expect(huddles.map(scene => [scene.afterDialogueSequence, scene.participants.map(member => member.id)])).toEqual([
+    [4, members], [7, members],
+  ]);
+  const selected = huddles[0]!;
+  expect((await readProductionScenes(db, gameId)).items.find(scene => scene.key === selected.key)).toMatchObject({
+    roomName: selected.roomName, sceneId: null, participants: selected.participants,
+  });
+  expect(await render(selected)).toMatchObject({ accepted: true });
+  const job = await complete();
+  expect((await readViewerMedia(db, gameId)).bindings[5]).toBeUndefined();
+  expect((await readReplayVisualProduction(db, gameId)).scenes.find(scene => scene.key === selected.key)).toMatchObject({
+    roomName: "Alliance huddle · Den", round: state.round, previewHash: selected.previewHash, sceneId: job.sceneId,
+  });
+  expect(await controlVisualMedia(db, gameId, "operator", { action: "publish", requestId: "publish-huddle",
+    sceneId: job.sceneId!, expectedVersion: 1, expectedPublication: 0, versionId: job.id })).toMatchObject({ accepted: true });
+  const viewer = await readViewerMedia(db, gameId);
+  expect(Object.entries(viewer.bindings).filter(([, id]) => id === job.sceneId).map(([sequence]) => sequence)).toEqual(["5", "6"]);
+  expect(viewer.scenes).toMatchObject([{ id: job.sceneId, participantIds: members, huddleOnly: true }]);
+  const pinned = await readInfluenceProductionSource(db, gameId, { snapshot: frozen.snapshot });
+  expect(pinned.snapshot).toEqual(frozen.snapshot);
+  expect(pinned.visual.bindings[5]).toBeUndefined();
+  const refreshed = await readInfluenceProductionSource(db, gameId, { snapshot: frozen.snapshot, refreshVisuals: true });
+  expect(refreshed.visual.bindings).toEqual({ 5: job.sceneId!, 6: job.sceneId! });
+  expect(refreshed.catalog.moments.map(moment => moment.id)).toEqual(frozen.catalog.moments.map(moment => moment.id));
+  expect(await acceptedRecords()).toEqual(before);
+  expect(calls).toBe(0);
 });
 
 test("stale previews reject before writing and request IDs cannot be reused for another preview", async () => {
