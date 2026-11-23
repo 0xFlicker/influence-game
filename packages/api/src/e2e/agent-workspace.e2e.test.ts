@@ -17,6 +17,7 @@ import {
   updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import { publishScreenedAgent } from "../services/agent-screening-publication.js";
+import { createWerewolfLobby } from "../services/werewolf-lobbies.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import {
   createAdminUser,
@@ -174,6 +175,67 @@ async function button(page: Page, label: string) {
   }
   await page.evaluate(selector + ".click()");
 }
+
+test("entry artwork uses the focused editor and joins the original lobby after review", async () => {
+  const created = await createOwnedAgentProfile(database.db, { userId: owner.userId }, {
+    name: "Vera Calder",
+    gender: "female",
+    personality: "Patient and observant.",
+    avatarUrl: "/avatars/personas/diplomat.png",
+  });
+  async function publish(revisionId: string) {
+    await database.db.update(schema.agentScreenings)
+      .set({ status: "completed", recommendation: "no_concern" })
+      .where(eq(schema.agentScreenings.contentRevisionId, revisionId));
+    await publishScreenedAgent(database.db, revisionId);
+  }
+  await publish(created.profile.latestContentRevisionId!);
+  const lobby = await createWerewolfLobby(database.db, owner.userId, { preset: "two_wolves" });
+  const url = servers.webUrl + `/agents/prepare?flow=join_game&gameId=${lobby.id}&agentId=${created.profile.id}`;
+  const page = await createAuthenticatedPage(browser, owner.jwt, url, { privateKey: owner.wallet.privateKey });
+  try {
+    const focused = '[data-entry-artwork="true"]';
+    await page.waitForSelector(focused, { visible: true });
+    for (const width of [1280, 320]) {
+      await page.setViewport({ width, height: 820 });
+      await page.evaluate("document.fonts.ready");
+      expect(await page.$eval(focused, element => {
+        const back = element.querySelector('nav button')!;
+        const heading = element.querySelector('section h1')!;
+        return heading.getBoundingClientRect().top > back.getBoundingClientRect().bottom + 16
+          && element.ownerDocument.documentElement.scrollWidth <= element.ownerDocument.defaultView!.innerWidth;
+      })).toBe(true);
+      await page.screenshot({ path: proof + `entry-artwork-${width}.png`, fullPage: true });
+    }
+    expect(await page.$('input[type="file"]')).toBeNull();
+    const queued = page.waitForResponse(response =>
+      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/agent-profiles/visual-reference",
+    );
+    await button(page, "Generate image");
+    expect((await queued).ok()).toBe(true);
+    await page.waitForSelector('[data-image-updating="true"]');
+    await processMockCharacterReference(database.db, await Bun.file(
+      new URL("../../../web/public/avatars/personas/full-body-v1/diplomat.webp", import.meta.url),
+    ).bytes());
+    await button(page, "Use this image");
+    await page.waitForSelector('dialog[open]');
+    await button(page, "Confirm");
+    await button(page, "Save image & join");
+    await page.waitForFunction('document.querySelector("main h1")?.textContent === "Waiting for approval"');
+    await page.screenshot({ path: proof + "entry-review.png", fullPage: true });
+    expect(await database.db.select().from(schema.werewolfLobbySeats)
+      .where(eq(schema.werewolfLobbySeats.gameId, lobby.id))).toHaveLength(0);
+    const [submitted] = await database.db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, created.profile.id));
+    await publish(submitted!.latestContentRevisionId!);
+    await page.waitForFunction(`location.pathname === ${JSON.stringify(`/games/${lobby.slug}`)}`);
+    const [seat] = await database.db.select().from(schema.werewolfLobbySeats)
+      .where(eq(schema.werewolfLobbySeats.gameId, lobby.id));
+    expect(seat?.agentProfileId).toBe(created.profile.id);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
 
 test("management image and name open the owner profile and return to its agent", async () => {
   const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/dashboard/agents", { privateKey: owner.wallet.privateKey });

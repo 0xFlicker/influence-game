@@ -32,7 +32,7 @@ Dashboard management shows full-body cards, actual activity, Needs attention and
 
 The owner profile distinguishes accepted content from a reviewing/held submission. Model and voice share one draft/review/save path. Voice auditions read versioned cached samples; playing or selecting never generates speech or saves the agent. Only one sample plays at once; selection, dismissal, mode changes and unmount stop playback.
 
-A game/season target is committed with the submission. After acceptance, Continue rechecks ordinary admission and eligibility; it does not reserve a seat or bypass a closed/full game. A lost save response cannot lose this target or create another agent.
+A game or season target is committed with the submission. The entry screen shows review progress and submits to that target when approval becomes visible. Owners can reopen the saved continuation to resume. Admission still checks the current lobby or season, profile eligibility, and seat availability. A lost save response preserves the target and the created agent.
 
 ## Errors and support
 

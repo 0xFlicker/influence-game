@@ -111,6 +111,7 @@ interface AgentFormProps {
   ideaRequest?: string;
   onCancel: () => void;
   submitLabel?: string;
+  entryArtwork?: { target: string; destination: "lobby" | "season" | "agents" };
 }
 
 export interface EditorSnapshot {
@@ -274,8 +275,12 @@ export function AgentForm({
   onCancel,
   imageRequest,
   ideaRequest,
+  submitLabel,
+  entryArtwork,
 }: AgentFormProps) {
   const [guided, setGuided] = useState(initialGuided);
+  const [editProfile, setEditProfile] = useState(false);
+  const focusedEntry = Boolean(entryArtwork && !editProfile);
   const [activityOpen, setActivityOpen] = useState(false);
   const [conversation, setConversation] = useState<CharacterConversation>();
   const [conversationKey, setConversationKey] = useState(0);
@@ -1409,6 +1414,10 @@ export function AgentForm({
       return;
 
     if (submitDisabled) return;
+    if (focusedEntry && fullBodyReferenceUrl && !entryHasOtherChanges) {
+      await submitDraft();
+      return;
+    }
     if (!isEditing && candidateImage) {
       setSubmitting(true);
       try {
@@ -1584,6 +1593,10 @@ export function AgentForm({
     !personality.trim() && "personality",
     !gender && "gender",
   ].filter((field): field is string => Boolean(field));
+  const entryHasOtherChanges = ([
+    "name", "gender", "personaKey", "personality", "backstory", "strategyStyle",
+    "werewolfStrategyStyle", "performanceInstructions", "visualDesign", "modelPreference", "voiceId",
+  ] as const).some((field) => JSON.stringify(currentSnapshot[field]) !== JSON.stringify(initialSnapshot[field]));
   const artworkBlocked = Boolean(
     referenceError && ["discard", "reload"].includes(referenceError.recovery),
   );
@@ -2090,6 +2103,7 @@ export function AgentForm({
       onSubmit={handleSubmit}
       className={styles.workspace}
       data-editing={isEditing}
+      data-entry-artwork={focusedEntry || undefined}
       data-mode={guided ? "guided" : "advanced"}
       data-has-art={Boolean(
         fullBodyReferenceUrl || avatarUrl || candidateImage || referenceBusy,
@@ -2097,7 +2111,17 @@ export function AgentForm({
     >
       <fieldset disabled={submitting || discarding} className="contents">
         <legend className="sr-only">Agent draft</legend>
-        <header className={styles.heading}>
+        {focusedEntry && entryArtwork && (
+          <nav className={styles.entryBack} aria-label="Entry navigation">
+            <button type="button" onClick={() => {
+              if (pendingRestore || restoreAlternatives || unreadableDraft) onCancel();
+              else void saveLocalDraft().then((saved) => { if (saved) onCancel(); });
+            }}>
+              ← Back to {entryArtwork.destination}
+            </button>
+          </nav>
+        )}
+        <header className={styles.heading} hidden={focusedEntry}>
           <h1>{name || (isEditing ? "Edit agent" : "Create your agent")}</h1>
           <div className={styles.headerActions}>
             <div className={styles.modes} aria-label="Editing mode">
@@ -2150,6 +2174,35 @@ export function AgentForm({
           </div>
         </header>
         <div className={styles.layout}>
+          {focusedEntry && entryArtwork && (
+            <section className={styles.entryCopy}>
+              <p className={styles.entryTarget}>{entryArtwork.target}</p>
+              <h1>{fullBodyReferenceUrl || candidateImage ? "Review full‑body artwork" : "Add a full‑body image"}</h1>
+              <p>{fullBodyReferenceUrl || candidateImage
+                ? "Check the image and confirm the head position and portrait before saving."
+                : `${name} needs a head-to-toe image to appear in games.`}</p>
+              <div className={styles.entryAgent}>
+                {initial?.avatarUrl && <OwnedCharacterImage src={initial.avatarUrl} alt="" />}
+                <div><strong>{name}</strong><span>Agent saved</span></div>
+              </div>
+              {!candidateImage && !fullBodyReferenceUrl && (
+                <button type="button" className={styles.primary}
+                  disabled={draftRecovering || imageGenerationBlocked || unreadableDraft ||
+                    Boolean(pendingRestore) || referenceBusy || artworkBlocked || submitting || !name.trim()}
+                  onClick={() => void generateReference()}>
+                  {referenceBusy ? "Generating image…" : referenceRequest.current ? "Retry image" : "Generate image"}
+                </button>
+              )}
+              {entryArtwork.destination !== "agents" && <p className={styles.entryHint}>{entryArtwork.destination === "lobby"
+                ? "We’ll try to join this lobby after saving. The lobby can fill or start while you’re getting ready."
+                : "We’ll try to join Daily Free after saving."}</p>}
+              {missingRequired.length > 0 && !draftRecovering && (
+                <button type="button" onClick={() => { setEditProfile(true); setGuided(false); }}>
+                  Complete required profile details
+                </button>
+              )}
+            </section>
+          )}
           <aside className={styles.art}>
             {" "}
             <div
@@ -2157,7 +2210,7 @@ export function AgentForm({
               data-image-updating={imageUpdating || undefined}
               aria-busy={imageUpdating}
             >
-              {candidateImage ? null : fullBodyReferenceUrl || avatarUrl ? (
+              {candidateImage ? null : fullBodyReferenceUrl || (avatarUrl && !focusedEntry) ? (
                 <OwnedCharacterImage
                   src={
                     fullBodyReferenceUrl
@@ -2170,15 +2223,15 @@ export function AgentForm({
                 />
               ) : referenceBusy ? (
                 <CharacterFormation name={name} />
-              ) : null}
+              ) : focusedEntry ? <span className={styles.entryPlaceholder}>Image preview</span> : null}
               {candidateImage && (
                 <div className={styles.candidateReady}>
                   <h2>Artwork ready</h2>
                   <div
                     className={styles.artComparison}
-                    data-compare={Boolean(fullBodyReferenceUrl || avatarUrl)}
+                    data-compare={Boolean(fullBodyReferenceUrl || (avatarUrl && !focusedEntry))}
                   >
-                    {(fullBodyReferenceUrl || avatarUrl) && (
+                    {(fullBodyReferenceUrl || (avatarUrl && !focusedEntry)) && (
                       <figure>
                         <OwnedCharacterImage
                           src={
@@ -2221,7 +2274,7 @@ export function AgentForm({
                       type="button"
                       onClick={() => void decideCandidate("selected")}
                     >
-                      Select
+                      {focusedEntry ? "Use this image" : "Select"}
                     </button>
                     <button
                       type="button"
@@ -2242,7 +2295,7 @@ export function AgentForm({
                 </span>
               )}
             </div>
-            <div className={styles.artActions}>
+            <div className={styles.artActions} hidden={focusedEntry}>
               <button
                 type="button"
                 disabled={
@@ -2285,7 +2338,7 @@ export function AgentForm({
               </button>
             </div>
           </aside>
-          <div className={styles.content}>
+          <div className={styles.content} hidden={focusedEntry}>
             <div
               hidden={!guided}
               className={guided ? styles.guidedContent : "hidden"}
@@ -2975,12 +3028,12 @@ export function AgentForm({
             </div>
           </div>
         </div>
-        {!guided && preferences}
+        {!guided && !focusedEntry && preferences}
 
         {portraitEditorSource && (
           <CharacterPortraitEditor
             key={portraitEditorSource}
-            fullScreen={guided}
+            fullScreen={guided || focusedEntry}
             sourceUrl={portraitEditorSource}
             initialCrop={portraitCrop}
             initialHead={headPosition ?? headSuggestion}
@@ -3001,7 +3054,8 @@ export function AgentForm({
             }}
           />
         )}
-        <footer className={styles.editorFooter} aria-label="Editor actions">
+        <footer className={styles.editorFooter} aria-label="Editor actions"
+          hidden={focusedEntry && !dirty && !activityCount && !activeIssue && !referenceBusy && !pendingRestore && !restoreAlternatives}>
           <div className={styles.footerStatus}>
             {activeIssue && !reviewOpen && !activityOpen ? (
               issueNotice
@@ -3044,6 +3098,8 @@ export function AgentForm({
                     </>
                   ) : profileGenerating ? (
                     generatingFields.length ? "Updating draft text…" : "Thinking…"
+                  ) : focusedEntry && submitting ? (
+                    <AgentOperationActivity indicator stage="save" startedAt={null} />
                   ) : uploading || referenceBusy ? (
                     <AgentOperationActivity
                       stage={uploading ? "upload" : referenceStage}
@@ -3081,7 +3137,7 @@ export function AgentForm({
                     ""
                   )}
                 </div>
-                <span>
+                {(!focusedEntry || dirty || draftRecovering || pendingRestore || restoreAlternatives) && <span>
                   {draftRecovering && !draftStorageError
                     ? "Loading draft…"
                     : pendingRestore || restoreAlternatives
@@ -3093,7 +3149,7 @@ export function AgentForm({
                             ? "Draft not saved"
                             : "Saving draft…"
                         : "No changes"}
-                </span>
+                </span>}
               </>
             )}
           </div>
@@ -3108,16 +3164,16 @@ export function AgentForm({
             Activity <span>{activityCount}</span>
           </button>
           <div className={styles.footerActions}>
-            <button type="button" onClick={requestCancel}>
+            {!focusedEntry && <button type="button" onClick={requestCancel}>
               Cancel
-            </button>
-            <button
+            </button>}
+            {(!focusedEntry || Boolean(fullBodyReferenceUrl)) && <button
               type="submit"
               className={styles.primary}
               disabled={submitDisabled}
             >
-              Review
-            </button>
+              {focusedEntry && !entryHasOtherChanges ? submitLabel : "Review"}
+            </button>}
           </div>
         </footer>
         <AgentWorkspacePanel
@@ -3629,7 +3685,7 @@ export function AgentForm({
                   disabled={submitDisabled}
                   onClick={() => void submitDraft()}
                 >
-                  {submitting ? "Saving…" : isEditing ? "Save" : "Create"}
+                  {submitting ? "Saving…" : submitLabel ?? (isEditing ? "Save" : "Create")}
                 </button>
               </div>
             </section>

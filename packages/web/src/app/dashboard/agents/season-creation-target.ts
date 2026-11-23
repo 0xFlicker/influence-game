@@ -1,4 +1,3 @@
-import { joinFreeQueue } from "@/lib/api";
 import { readEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
 /** Bind retries and ambiguous creation responses to the original season. This
@@ -14,13 +13,4 @@ export function pinSeasonCreationTarget(creationRequestId: string, seasonId: str
     throw new Error("Could not save the selected season. Retry before creating the agent.");
   }
   return seasonId;
-}
-
-/** Creation is already committed; keep its recovery receipt if admission fails. */
-export async function enrollCreatedSeasonAgent(agent: { id: string; name: string }, expectedSeasonId?: string): Promise<void> {
-  try {
-    await joinFreeQueue(agent.id, expectedSeasonId);
-  } catch (error) {
-    throw new Error(`${agent.name} was saved, but could not join the season. ${error instanceof Error ? error.message : "Retry entry."}`);
-  }
 }

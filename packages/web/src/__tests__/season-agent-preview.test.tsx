@@ -3,7 +3,7 @@ import React from "react";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { Window } from "happy-dom";
 import { SeasonAgentPreview } from "../app/seasons/season-agent-preview";
-import { enrollCreatedSeasonAgent, pinSeasonCreationTarget } from "../app/dashboard/agents/season-creation-target";
+import { pinSeasonCreationTarget } from "../app/dashboard/agents/season-creation-target";
 import { setApiBase, type SavedAgent } from "../lib/api";
 
 const originalFetch = globalThis.fetch;
@@ -40,27 +40,6 @@ test("season creation target survives a reload/retry and rejects a different sea
 test("unavailable continuation storage stops before agent creation",()=>{
  Object.defineProperty(dom,"sessionStorage",{configurable:true,get(){throw new Error("blocked");}});
  expect(()=>pinSeasonCreationTarget("request","s0")).toThrow("recovery is unavailable");
-});
-
-test("saved agent entry keeps its original season through response loss and a duplicate retry", async()=>{
-  setApiBase("http://localhost:3999");
-  const requests: unknown[]=[];
-  let attempt=0;
-  globalThis.fetch=(async(_input,init)=>{
-    requests.push(JSON.parse(String(init?.body)));
-    if(attempt++===0)throw new TypeError("Response lost");
-    return Response.json({});
-  }) as typeof fetch;
-  const target=pinSeasonCreationTarget("save-1","original-season");
-  await expect(enrollCreatedSeasonAgent(agent,target)).rejects.toThrow("was saved, but could not join");
-  await enrollCreatedSeasonAgent(agent,pinSeasonCreationTarget("save-1","original-season"));
-  expect(requests).toEqual([{agentProfileId:"selected",expectedSeasonId:"original-season"},{agentProfileId:"selected",expectedSeasonId:"original-season"}]);
-});
-test("closed season error keeps the saved agent and never retries a different season", async()=>{
-  setApiBase("http://localhost:3999");let calls=0;
-  globalThis.fetch=Object.assign(async()=>{calls++;return Response.json({error:"Season is no longer accepting entries",code:"season_changed"},{status:409});},{preconnect:originalFetch.preconnect});
-  await expect(enrollCreatedSeasonAgent(agent,"closed-season")).rejects.toThrow("Selected Agent was saved, but could not join the season. Season is no longer accepting entries");
-  expect(calls).toBe(1);
 });
 
 test("an original body is never substituted for missing transparent art",()=>{

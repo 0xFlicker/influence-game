@@ -4,24 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  clearAgentEntryIntent,
   getAgent,
   getAuthToken,
   getOwnerLearningReview,
   updateAgent,
-  joinGame,
-  joinFreeQueue,
   type AgentProfileWriteParams,
   type OwnerLearningReview,
   type SavedAgent,
 } from "@/lib/api";
-import { getGameEntry } from "@/lib/game-entry";
-import { gameHref } from "@/lib/game-links";
-import { joinWerewolfLobby } from "@/lib/werewolf-api";
 import {
-  agentEntryIntentKey,
   agentPreparationHref,
-  hasFullBodyAgentArt,
   type AgentEntryIntent,
 } from "@/lib/agent-entry";
 import styles from "./agent-workspace.module.css";
@@ -106,50 +98,13 @@ export function AgentEditContent({
       ...(sourceReviewId ? { sourceReviewId } : {}),
     });
 
-    if (saved.receipt?.publication !== "published") {
-      router.replace(collectionPath);
-      return saved;
-    }
-
-    if (intent) {
-      if (!hasFullBodyAgentArt(saved)) {
-        router.replace(agentPreparationHref(agentId, intent));
-        return;
-      }
-      try {
-        if (intent.flow === "join_game") {
-          const game = await getGameEntry(intent.gameId);
-          if (game.gameKind === "werewolf")
-            await joinWerewolfLobby(intent.gameId, agentId);
-          else await joinGame(intent.gameId, { agentProfileId: agentId });
-          await clearAgentEntryIntent(agentId, intent);
-          router.replace(gameHref(game.slug));
-        } else if (intent.flow === "daily_free") {
-          await joinFreeQueue(agentId, intent.seasonId);
-          await clearAgentEntryIntent(agentId, intent);
-          window.dispatchEvent(new Event("free-queue:changed"));
-          router.replace(
-            intent.season
-              ? `/seasons?season=${encodeURIComponent(intent.season)}`
-              : "/seasons",
-          );
-        } else {
-          router.replace(collectionPath);
-        }
-      } catch (cause) {
-        sessionStorage.setItem(
-          `${agentEntryIntentKey(agentId, intent)}:entry-error`,
-          cause instanceof Error
-            ? cause.message
-            : "Your Agent was saved, but entry did not succeed.",
-        );
-        router.replace(agentPreparationHref(agentId, intent));
-      }
-      return;
-    }
     router.replace(
-      sourceReviewId ? reviewPath(agentId, sourceReviewId) : collectionPath,
+      intent ? agentPreparationHref(agentId, intent)
+        : sourceReviewId && saved.receipt?.publication === "published"
+          ? reviewPath(agentId, sourceReviewId)
+          : collectionPath,
     );
+    return saved;
   }
 
   const proposal = review?.result?.proposal;
@@ -289,13 +244,8 @@ export function AgentEditContent({
             }
             onSubmit={handleUpdate}
             onCancel={() => router.replace(cancelPath)}
-            submitLabel={
-              sourceReviewId
-                ? "Save strategy update"
-                : intent
-                  ? "Save & join"
-                  : "Save changes"
-            }
+            submitLabel={intent?.flow === "join_game" ? "Save & join"
+              : intent?.flow === "daily_free" ? "Save & enter" : undefined}
           />
         </div>
       ) : (
