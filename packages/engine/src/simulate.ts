@@ -20,6 +20,8 @@ import { HOUSE_CAST } from "./house-personas";
  *
  * Format-menu House announcements receive the canonical Empowered player and offered formats;
  * inspect them alongside the retained offer, without regenerating historical speech.
+ * Lobby and empower prompt reviews should check that the ballot carries no conditions
+ * and the Empowered player chooses alone without post-vote group discussion.
  * Empower runoff has its own House announcement before revoting, separate from the final result.
  * House summaries receive frozen roster gender; inspect gendered references without inferring missing values.
  * Influence House summaries use results-mc-v1: canonical result facts plus one
