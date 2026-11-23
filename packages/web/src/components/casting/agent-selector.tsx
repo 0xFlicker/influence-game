@@ -156,7 +156,7 @@ export function AgentSelector({ description, createHref, onClose, onSelect, excl
           {error && <p role="alert" className="agent-selector-error">{error}</p>}
           <div className="agent-selector-submit-row">
             <p aria-live="polite">
-              {submitting ? <AgentOperationActivity indicator stage="join_game" startedAt={joinStartedAt.current} />
+              {submitting ? <AgentOperationActivity stage="join_game" startedAt={joinStartedAt.current} />
                 : selectedAgent && !hasFullBodyAgentArt(selectedAgent) ? "Full-body artwork is required to join."
                   : !selectedAgent ? "Choose an agent to take the next seat." : null}
             </p>

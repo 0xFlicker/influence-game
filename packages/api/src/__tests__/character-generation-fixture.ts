@@ -6,6 +6,7 @@ export async function processMockCharacterReference(
   db: DrizzleDB,
   image: Uint8Array,
   fallback = false,
+  detectHead = false,
 ) {
   const fetchBefore = globalThis.fetch;
   const keys = ["OPENAI_API_KEY", "XAI_API_KEY"] as const;
@@ -23,6 +24,21 @@ export async function processMockCharacterReference(
         return Response.json({
           data: [{ b64_json: Buffer.from(image).toString("base64") }],
           usage: { images: 1 },
+        });
+      }
+      if (url.endsWith("/responses") && detectHead) {
+        return Response.json({
+          status: "completed",
+          usage: { input_tokens: 10, output_tokens: 10 },
+          output: [{ type: "message", content: [{
+            type: "output_text",
+            text: JSON.stringify({ count: 1, anchors: [{
+              playerId: "character",
+              label: 1,
+              confidence: "clear",
+              head: { x: 0.4, y: 0.07, width: 0.2, height: 0.15 },
+            }] }),
+          }] }],
         });
       }
       // Localization fails explicitly so the user confirms the crop in the real UI.

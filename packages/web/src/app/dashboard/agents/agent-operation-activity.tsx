@@ -19,11 +19,9 @@ const labels: Record<string, string> = {
 export function AgentOperationActivity({
   stage,
   startedAt,
-  indicator = false,
 }: {
   stage: string;
   startedAt: string | null;
-  indicator?: boolean;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -35,8 +33,7 @@ export function AgentOperationActivity({
     ? Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000))
     : null;
   return (
-    <span className={styles.operationSummary} data-indicator={indicator || undefined}>
-      {indicator && <span className={styles.activityDot} aria-hidden="true" />}
+    <span className={styles.operationSummary}>
       {labels[stage] ?? "Preparing image"}
       {seconds !== null && (
         <span aria-hidden="true">

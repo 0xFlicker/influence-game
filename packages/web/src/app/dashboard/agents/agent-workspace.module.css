@@ -2120,15 +2120,10 @@
   color: #fca5a5;
 }
 
-.operationSummary[data-indicator] {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .workspace[data-entry-artwork="true"],
 .workspace.entryResult {
   width: min(100%, 1120px);
+  height: auto;
   min-height: 0;
   margin-inline: auto;
   padding: clamp(20px, 4vw, 44px);
@@ -2140,7 +2135,7 @@
 }
 
 .entryBack {
-  margin-bottom: clamp(24px, 4vw, 42px);
+  margin-bottom: 24px;
 }
 
 .entryBack a,
@@ -2158,8 +2153,10 @@
 .workspace[data-entry-artwork="true"] .layout {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   align-items: center;
-  gap: clamp(24px, 4vw, 48px);
+  flex: none;
+  gap: clamp(20px, 4vw, 48px);
   min-height: 0;
+  padding-top: 0;
 }
 
 .workspace[data-entry-artwork="true"] .editorFooter {
@@ -2179,6 +2176,11 @@
   gap: 14px;
   min-width: 0;
   max-width: 38rem;
+}
+
+.entryIntro {
+  display: grid;
+  gap: 14px;
 }
 
 .entryCopy h1 {
@@ -2235,14 +2237,58 @@
   padding: 16px;
 }
 
-.entryPlaceholder {
+/* The portrait-only state only needs the instructions and the generation action. */
+.workspace[data-entry-artwork="true"][data-entry-preview="false"] {
+  max-width: 680px;
+}
+
+.workspace[data-entry-artwork="true"][data-entry-preview="false"] .layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace[data-entry-artwork="true"][data-entry-preview="false"] .art {
+  display: none;
+}
+
+.entryCopy .footerActions {
+  flex-wrap: wrap;
+}
+
+.entryArtPreview {
   display: grid;
-  place-content: center;
-  width: min(100%, 11rem);
-  min-height: 11rem;
-  margin: auto;
-  border: 1px dashed var(--rule);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.entryArtPreview[data-has-portrait="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, .52fr);
+}
+
+.entryArtPreview figure {
+  min-width: 0;
+  margin: 0;
+}
+
+.workspace .entryArtPreview img {
+  height: clamp(180px, 42dvh, 380px);
+  width: 100%;
+  object-fit: contain;
+  background: none;
+  border: 0;
+}
+
+.workspace .entryArtPreview figure + figure img {
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 5px;
+}
+
+.entryArtPreview figcaption {
+  margin-top: 8px;
   color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .entryAction {
@@ -2257,9 +2303,23 @@
 
 @media (max-width: 700px) {
   .workspace[data-entry-artwork="true"] .layout {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
-  .workspace[data-entry-artwork="true"] .artStage:has(.entryPlaceholder) {
-    display: none;
+  .workspace[data-entry-artwork="true"] .artStage {
+    min-height: 0;
+  }
+  .workspace[data-entry-artwork="true"][data-entry-preview="true"] .layout {
+    gap: 14px;
+  }
+  .workspace[data-entry-artwork="true"][data-entry-preview="true"] .entryCopy {
+    display: contents;
+  }
+  .workspace[data-entry-artwork="true"][data-entry-preview="true"] .art {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .workspace .entryArtPreview img {
+    height: clamp(150px, 27dvh, 240px);
   }
 }

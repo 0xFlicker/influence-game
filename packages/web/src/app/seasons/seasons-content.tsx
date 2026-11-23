@@ -135,7 +135,7 @@ export function SeasonsContent() {
               {entry && <button disabled={busy} onClick={() => void enroll(true)}>Leave queue</button>}
             </div>
             <p className={styles.entryNotice} aria-live="polite">{entryActivity
-              ? <AgentOperationActivity indicator stage={entryActivity.stage} startedAt={entryActivity.startedAt} />
+              ? <AgentOperationActivity stage={entryActivity.stage} startedAt={entryActivity.startedAt} />
               : entry && agent?.id !== entry.agentProfileId ? `Currently entered: ${entry.agentName}`
                 : entry && queue?.eligibility === "temporarily-ineligible"
                   ? queue.ineligibilityReason === "active-game" ? "Playing a game" : "Temporarily unavailable"
