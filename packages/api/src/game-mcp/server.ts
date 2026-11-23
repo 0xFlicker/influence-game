@@ -106,6 +106,7 @@ import {
   type GameMcpEligibilitySnapshot,
   type GameMcpToolName,
 } from "./tool-authorization.js";
+import { gameMcpToolTitles } from "./tool-titles.js";
 import {
   APPLY_LEARNING_REVIEW_INPUT_SCHEMA,
   APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA,
@@ -1658,7 +1659,7 @@ function tool(input: {
   const securityScheme = oauthSecurityScheme(input.scopes);
   return {
     name: input.name,
-    title: input.name.charAt(0).toUpperCase() + input.name.slice(1).replaceAll("_", " "),
+    title: gameMcpToolTitles[input.name],
     description: input.description,
     inputSchema: input.inputSchema ?? {
       type: "object",

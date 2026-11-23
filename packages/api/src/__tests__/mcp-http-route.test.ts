@@ -629,7 +629,7 @@ describe("/mcp Streamable HTTP route", () => {
         error?: unknown;
       };
       expect(listBody.error).toBeUndefined();
-      expect(listBody.result?.tools?.find(({ name }) => name === "list_games")?.title).toBe("List games");
+      expect(listBody.result?.tools?.find(({ name }) => name === "list_games")?.title).toBe("Browse House games");
     });
   });
 

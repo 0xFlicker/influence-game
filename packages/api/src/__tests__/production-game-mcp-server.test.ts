@@ -131,8 +131,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     for (const { title } of tools) {
       expect(title).toMatch(/^[A-Z][^_]*$/);
     }
-    expect(tools.find((tool) => tool.name === "list_games")?.title).toBe("List games");
-    expect(tools.find((tool) => tool.name === "update_agent")?.title).toBe("Update agent");
+    expect(new Set(tools.map(({ title }) => title)).size).toBe(tools.length);
+    const titles = new Map(tools.map(({ name, title }) => [name, title]));
+    expect(titles.get("read_game_results")).toBe("Reveal the game outcome");
+    expect(titles.get("update_agent")).toBe("Submit edits to an existing agent profile");
+    expect(titles.get("order_production_render")).toBe("Queue a Studio cut for MP4 export");
     const validator = new Ajv({ strict: false });
     const typedTools = tools.filter(tool => tool.outputSchema);
     expect(typedTools).toHaveLength(49);
