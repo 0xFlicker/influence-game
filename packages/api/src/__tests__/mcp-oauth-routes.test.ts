@@ -37,6 +37,7 @@ const CLAUDE_REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
 const CHATGPT_REDIRECT_URIS = [
   "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
   "https://chatgpt.com/connector/oauth/SvtDqU1r6I17",
+  "https://chatgpt.com/connector_platform_oauth_redirect",
 ] as const;
 const GROK_REDIRECT_URI = "https://grok.com/connectors-oauth-exchange-code/";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
