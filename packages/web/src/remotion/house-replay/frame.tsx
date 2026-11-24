@@ -295,6 +295,9 @@ function ThinkingFrame({picture, elapsedMs: sourceElapsedMs, reduced}: {
     participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
     backgroundUrl={picture.room.backgroundUrl} floorPerspective={picture.room.floorPerspective}
     hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
+  if (picture.scene && picture.sceneRoomLabel) return <VisualPresentationFrame fullscreen controlsInset={0}
+    beat={{kind:"scene",sceneId:picture.scene.id,roomId:picture.scene.roomId,roomLabel:picture.sceneRoomLabel,speech:null}}
+    rooms={[picture.scene]} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} />;
   if (picture.scene) return <VisualSceneView scene={picture.scene} speech={null}
     focusPlayerId={actor.id} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} fitShortThought={Boolean(transformation)} />;
   return <div ref={soloStage} className="relative flex min-h-0 flex-1 flex-col"><SoloPresentation beat={{kind:"portrait", purpose:"Conversation", player:actor,

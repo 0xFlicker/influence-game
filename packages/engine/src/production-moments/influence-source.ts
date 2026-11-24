@@ -1,6 +1,6 @@
 import {twoNamesDecisionSpeechAction, TWO_NAMES_PUBLIC_DECISION_ACTIONS} from "../influence-decision-speech";
 import { INFLUENCE_BALLOT_ACTIONS } from "../influence-decision-speech";
-import type { ViewerDecisionEvent } from "../viewer-decision-events";
+import { formatWalkthroughPolicy, type ViewerDecisionEvent } from "../viewer-decision-events";
 import { orderAllianceIntroductions, type AllianceIntroduction } from "../alliance-introduction-presentation";
 import { assembleProductionCatalog, type InfluenceProductionPresentation, type ProductionSource } from "./index";
 
@@ -80,12 +80,15 @@ export function buildInfluenceProductionSources(input: {
   attachDecisionSpeech?: boolean;
   /** Frozen v3/v4 snapshots retain their separate Two Names speeches. */
   attachTwoNamesSpeech?: boolean;
+  /** Older frozen selections may explicitly name a walkthrough for a repeat pick. */
+  keepRepeatedWalkthroughs?: boolean;
   transcripts: readonly InfluenceProductionTranscript[];
   frames: readonly InfluenceProductionFrame[];
   thoughts?: readonly InfluenceProductionThought[];
 }): ProductionSource[] {
   if (input.gameKernel !== "classic" && input.gameKernel !== "format") throw new Error("Invalid Influence production kernel");
   const frames = [...input.frames].sort((a, b) => a.sequence - b.sequence);
+  const needsWalkthrough = formatWalkthroughPolicy(frames.flatMap(frame => frame.viewerDecisionEvent ? [frame.viewerDecisionEvent] : []));
   const frameBySequence = new Map<number, InfluenceProductionFrame>();
   for (const frame of frames) {
     if (!Number.isSafeInteger(frame.sequence) || frame.sequence < 1 || frameBySequence.has(frame.sequence)) throw new Error("Invalid or ambiguous Influence production frame");
@@ -225,7 +228,9 @@ export function buildInfluenceProductionSources(input: {
       case "format.menu_offered": format(event, { kind: "format_menu", actorId: event.payload.empoweredId }); break;
       case "format.selected":
         format(event, { kind: "format_selected", stage: "choice_legible", actorId: event.payload.empoweredId });
-        format(event, { kind: "format_selected", stage: "rules_reveal", actorId: event.payload.empoweredId }); break;
+        if (input.keepRepeatedWalkthroughs || needsWalkthrough(event))
+          format(event, { kind: "format_selected", stage: "rules_reveal", actorId: event.payload.empoweredId });
+        break;
       case "format.two_names_setup":
         format(event, { kind: "two_names_empowered_intro", actorId: event.payload.empoweredId });
         format(event, { kind: "two_names_initial_names", actorId: event.payload.empoweredId });

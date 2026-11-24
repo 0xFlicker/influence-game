@@ -4,7 +4,8 @@ import type {PresentationCue, ReplayScene} from "./types";
 export function resultReadingMs(cue: PresentationCue): number | null {
   switch (cue.kind) {
     case "format_aggregate": return 8000;
-    case "empowered_tally": case "empowered_tie": case "format_menu": case "format_selected":
+    case "format_selected": return cue.repeatPick ? 2500 : 6000;
+    case "empowered_tally": case "empowered_tie": case "format_menu":
     case "format_elimination": case "format_tiebreak": case "format_deciding_vote":
     case "endgame_elimination": case "endgame_winner": return 6000;
     case "house_bridge": return 3000;
@@ -27,13 +28,15 @@ export function withResultPresentation(cues: readonly PresentationCue[], scenes:
       && (candidate.source === "format" || candidate.source === "endgame")
       && ["empowered_tally", "empowered_tie", ...(compactEmpower ? ["format_menu"] : []), "format_selected", "format_elimination", "endgame_elimination", "endgame_winner"].includes(candidate.kind));
     // A rules-reveal stage is the final selected-format frame, not the preceding menu reveal.
-    const candidates = matches.filter(candidate => candidate.kind !== "format_selected" || candidate.stage === "rules_reveal");
+    const candidates = matches.filter(candidate => candidate.kind !== "format_selected" || candidate.stage === "rules_reveal" || candidate.repeatPick);
     if (candidates.length !== 1) continue;
     const target = candidates[0]!;
     if (target.source !== "format" && target.source !== "endgame") continue;
     result[index] = {...cue, houseResultCue: target, minimumDurationMs:resultReadingMs(target) ?? 6000, baseDurationMs: Math.max(resultReadingMs(target) ?? 6000, cue.baseDurationMs)};
     // Preserve source keys; an adjacent menu becomes the entrance to its narrated offer.
-    if ((association.authoringRevision === "results-mc-v1" || compactEmpower && target.kind === "format_menu") && result[index-1]?.key === target.key) result[index-1] = {...target, baseDurationMs:500};
+    if (!(target.kind === "format_selected" && target.stage === "rules_reveal")
+      && (association.authoringRevision === "results-mc-v1" || compactEmpower && target.kind === "format_menu")
+      && result[index-1]?.key === target.key) result[index-1] = {...target, baseDurationMs:500};
   }
   return result;
 }

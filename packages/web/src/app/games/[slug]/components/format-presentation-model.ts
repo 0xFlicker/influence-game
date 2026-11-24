@@ -6,7 +6,7 @@ import type {
   GameWatchReplayFrame,
   ViewerDecisionEvent,
 } from "@/lib/api";
-import { buildSafetyBouncePresentationCycle } from "@influence/engine/viewer-presentation";
+import { buildSafetyBouncePresentationCycle, formatWalkthroughPolicy } from "@influence/engine/viewer-presentation";
 import { formatsAvailableForSelection } from "@influence/engine/format-rules";
 import type { LaunchFormatId } from "@influence/engine/format-presentation-metadata";
 import type {
@@ -79,6 +79,7 @@ export interface CompileFormatPresentationPrefixInput {
   empowerRevoteVersion?: EmpowerRevoteVersion;
   formatManifest?: readonly LaunchFormatId[];
   eligiblePlayerIdsByRound?: ReadonlyMap<number, readonly string[]>;
+  keepRepeatedWalkthroughs?: boolean;
 }
 
 type EmpowerTallyDecision = Extract<
@@ -130,6 +131,7 @@ export function compileFormatPresentationPrefix({
   formatManifest,
   empowerRevoteVersion,
   eligiblePlayerIdsByRound,
+  keepRepeatedWalkthroughs,
 }: CompileFormatPresentationPrefixInput): FormatPresentationCompilation {
   assertViewerEventOwnership(decisions, gameSchemaVersion);
   let snapshot = emptySnapshot();
@@ -151,6 +153,7 @@ export function compileFormatPresentationPrefix({
   }
 
   const ordered = [...decisions].sort((left, right) => left.sequence - right.sequence);
+  const needsWalkthrough = formatWalkthroughPolicy(ordered);
   for (const decision of ordered) {
     const fingerprint = JSON.stringify(decision);
     const existingFingerprint = seenSequences.get(decision.sequence);
@@ -194,6 +197,7 @@ export function compileFormatPresentationPrefix({
       empower,
       snapshot,
       cues,
+      showWalkthrough: decision.type !== "format.selected" || keepRepeatedWalkthroughs === true || needsWalkthrough(decision),
     });
     if (failure) {
       if ((gameSchemaVersion ?? 1) >= 3) throw new PresentationContractError(`invalid-presentation:${failure.diagnostic?.code ?? "unknown"}`, decision.sequence);
@@ -223,6 +227,7 @@ function applyDecision(input: {
   empower: EmpowerPresentationAccumulator;
   snapshot: FormatPresentationSnapshot;
   cues: FormatPresentationCue[];
+  showWalkthrough: boolean;
 }): FormatPresentationCompilation | null {
   const {
     gameId,
@@ -570,9 +575,10 @@ function applyDecision(input: {
         ...selectedCueBase,
         key: cueKey(gameId, decision.sequence, "selected-choice"),
         stage: "choice_legible",
-        baseDurationMs: FIXED_CUE_DURATION_MS.format_selected / 2,
+        ...(!input.showWalkthrough && { repeatPick: true as const }),
+        baseDurationMs: input.showWalkthrough ? FIXED_CUE_DURATION_MS.format_selected / 2 : 2500,
       });
-      cues.push({
+      if (input.showWalkthrough) cues.push({
         ...selectedCueBase,
         key: cueKey(gameId, decision.sequence, "selected-rules"),
         stage: "rules_reveal",

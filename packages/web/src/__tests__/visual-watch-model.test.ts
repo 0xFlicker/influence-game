@@ -294,6 +294,14 @@ test("huddle speech uses only its frozen audience in portrait rooms and keeps a 
     {id: "changed", roomId: "mingle-2", version: 2, afterDialogueSequence: 3, imageUrl: "/changed.png", participantIds: ["a", "c"], anchors: []},
   ]};
   expect(visualWatchPresentation(saved, null, {...huddle, visualScene: {id: "pair", roomId: "mingle-2"}}, peers).beat).toMatchObject({kind: "scene", sceneId: "pair"});
+  const backfilled: VisualWatchData = { ...saved, fullBodies: undefined, bindings: { [huddle.entrySequence!]: "pair" },
+    scenes: saved.scenes.map(scene => scene.id === "pair" ? { ...scene, huddleOnly: true } : scene) };
+  expect(visualWatchPresentation(backfilled, null, huddle, peers).beat).toMatchObject({
+    kind: "scene", sceneId: "pair", roomLabel: "Alliance huddle",
+  });
+  const ordinary = visualWatchPresentation(backfilled, null, { ...huddle, scope: "mingle", roomId: 2 }, peers);
+  expect(ordinary.beat?.kind).toBe("portrait-room");
+  expect(ordinary.rooms.map(room => room.id)).toEqual(["changed"]);
 });
 
 

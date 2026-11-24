@@ -23,6 +23,10 @@ Producer or Sysop opens **Replay images** on the existing completed game row, th
 
 Verified candidates remain private until explicit publication. Public viewer selection exposes published images even if the game was originally nonvisual, with exact roster matching so partial backfills cannot retain someone voted off in a later scene. Existing per-beat media pinning adopts changes between speech beats.
 
+In Studio → Scenes, a saved Influence alliance huddle can be staged even if its dialogue has no Mingle room ID. The accepted schedule and committed speech identify the session, its original members, and its first spoken boundary. The backfill stages the group in the Den and labels the scene with the session-time alliance name when available. A published version applies only to that session's speech and associated thinking. An ordinary Mingle room or a later huddle with the same members keeps its own staging.
+
+After publication, select **Refresh published visuals** in Studio before preparing a cut or a new bundle. The refresh keeps the accepted source and moment IDs. Existing frozen sources retain their media selection, and existing MP4s require a fresh encode.
+
 No schema migration, gameplay rerun, new background preparation batch, or accepted-history rewrite is needed. Existing plans, artifacts, jobs, versions, publications and attempt journals hold the result. Current database Producer/Sysop assignments authorize every new Production API endpoint, including reads and private evidence. JWT role claims alone cannot retain access after revocation.
 
 ## Verification

@@ -36,19 +36,19 @@ test("account deletion preserves accepted Influence source, dialogue, and frozen
   expect(after.game).toEqual(before.game);
 });
 
-test("v8 adds alliance presentation without changing pinned v6/v7 source or selection identities", async () => {
+test("current builds retain alliance presentation and pinned v6–v8 source identities", async () => {
   const { gameId, events } = await fixture();
   await db.insert(schema.transcripts).values({ gameId, round: 1, phase: Phase.FORMAT_MINGLE, scope: "huddle", text: "Our promises still matter.",
     timestamp: Date.now(), entrySequence: 1, firstDurableEventSequence: events[5]!.sequence, speakerPlayerId: "atlas", fromPlayerId: "atlas",
     audiencePlayerIds: ["atlas", "echo"], toPlayerIds: '["echo"]', captureVersion: 1, dialogueKind: "huddle_speech",
     safeContext: { version: 1, allianceId: "ae", allianceName: "Night Shift", sessionId: "meeting-ae", sessionAudiencePlayerIds: ["atlas", "echo"] } });
   const current = await buildInfluenceProductionSourceSnapshot(db, gameId);
-  expect(current.snapshot.projectionVersion).toBe(8);
+  expect(current.snapshot.projectionVersion).toBe(9);
   expect(current.messages.find(row => row.entrySequence === 1)?.allianceSession?.allianceName).toBe("Night Shift");
   const { gameKind, audience, throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff } = current.snapshot;
-  for (const projectionVersion of [6, 7] as const) {
+  for (const projectionVersion of [6, 7, 8] as const) {
   const acceptedBoundary = { gameId, gameKind, audience, projectionVersion, throughEventSequence, throughTurnSequence, transcriptPrefix, acceptedCutoff };
-  const messages = current.messages.map(({ allianceSession: _session, allianceIntroduction: _intro, ...row }) => { void _session; void _intro; return row; });
+  const messages = projectionVersion >= 8 ? current.messages : current.messages.map(({ allianceSession: _session, allianceIntroduction: _intro, ...row }) => { void _session; void _intro; return row; });
   const acceptedSourceHash = sha256StableJson({ acceptedBoundary, game: { ...current.game, status: undefined }, messages, frames: current.frames, acceptedThoughts: current.acceptedThoughts, catalog: current.catalog });
   const { fullBodies: _bodies, fullBodyHeads: _heads, ...mediaFacts } = current.snapshot.mediaReferences;
   const { fullBodies: _images, fullBodyHeads: _imageHeads, ...visualFacts } = current.visual;
@@ -57,7 +57,7 @@ test("v8 adds alliance presentation without changing pinned v6/v7 source or sele
   const snapshot = { ...boundary, sourceHash: sha256StableJson({ boundary: { ...boundary, mediaReferences: mediaFacts }, visual: visualFacts }) };
   const frozen = await buildInfluenceProductionSourceSnapshot(db, gameId, { snapshot });
   expect(frozen.snapshot).toEqual(snapshot);
-  expect(frozen.messages.some(row => "allianceSession" in row || "allianceIntroduction" in row)).toBeFalse();
+  expect(frozen.messages.some(row => "allianceSession" in row || "allianceIntroduction" in row)).toBe(projectionVersion >= 8);
   expect(frozen.catalog.moments.map(moment => moment.id)).toEqual(current.catalog.moments.map(moment => moment.id));
   }
 });

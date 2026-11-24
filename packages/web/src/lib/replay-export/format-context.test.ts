@@ -8,6 +8,8 @@ import {bindInfluenceProductionPresentation} from "./production-presentation";
 import {compilePresentation} from "./presentation";
 import {parseTimingProfile, sampleTiming} from "./timing";
 import type {ReplaySource} from "./source";
+import {formatWalkthroughFixture} from "../../scripts/format-walkthrough-fixture";
+import {compileFormatPresentationPrefix} from "../../app/games/[slug]/components/format-presentation-model";
 
 test("social cuts retain the selected format without carrying omitted speech or future picks", async () => {
   const fixture = createFormatKernelViewerScenario("majority_elimination_clear");
@@ -39,4 +41,30 @@ test("social cuts retain the selected format without carrying omitted speech or 
   expect(cut.cues[0]?.activeFormatId).toBe("majority_elimination");
   expect(JSON.stringify(cut)).not.toContain(huddle.text);
   expect(JSON.stringify(cut)).not.toContain(speech.text);
+});
+
+test.each(["resolved","unfinished"] as const)("format teaching follows earlier resolution in viewer, Studio, and exports (%s)", async followup => {
+  const {source,selection,decisions} = formatWalkthroughFixture("even_votes_clear", followup);
+  const expected = followup === "resolved" ? [selection.round] : [selection.round, selection.round + 1];
+  const live = compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster:source.game.players,decisions});
+  expect(live.diagnostic).toBeNull();
+  const rulesRounds = (cues: typeof live.cues) => cues.flatMap(cue => cue.kind === "format_selected" && cue.stage === "rules_reveal" ? [cue.round] : []);
+  expect(rulesRounds(live.cues)).toEqual(expected);
+  const catalog = assembleProductionCatalog({gameId:"g",gameKind:"influence",audience:"public",sources:
+    buildInfluenceProductionSources({gameId:"g",gameKernel:"format",transcripts:[],frames:source.frames})});
+  const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
+  const exportCues = bound.flatMap(moment => moment.segments);
+  expect(rulesRounds(exportCues.flatMap(({picture}) => picture.kind === "influence" && picture.cue.source === "format" ? [picture.cue] : []))).toEqual(expected);
+  const repeat = bound.find(moment => moment.segments.some(({picture}) => picture.kind === "influence"
+    && picture.cue.kind === "format_selected" && picture.cue.round === selection.round + 1 && picture.cue.repeatPick));
+  if (followup === "resolved") {
+    expect(repeat).toBeDefined();
+    const cut = compilePresentation({source:bound,selectedIds:[repeat!.id],profile:parseTimingProfile({ending:{holdMs:0}}),fps:30,assets:{},music:false});
+    expect(cut.cues).toHaveLength(1);
+    expect(cut.timeline[0]!.endMs).toBe(2500);
+    const immutableCatalog = assembleProductionCatalog({gameId:"g",gameKind:"influence",audience:"public",sources:
+      buildInfluenceProductionSources({gameId:"g",gameKernel:"format",transcripts:[],frames:source.frames,keepRepeatedWalkthroughs:true})});
+    const legacy = await bindInfluenceProductionPresentation({source:{...source,projectionVersion:8},catalog:immutableCatalog,thoughts:[]});
+    expect(legacy.map(moment => moment.id)).toEqual(immutableCatalog.moments.map(moment => moment.id));
+  } else expect(repeat).toBeUndefined();
 });

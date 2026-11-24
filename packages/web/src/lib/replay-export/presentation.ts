@@ -5,6 +5,7 @@ import {compileTiming, type TimingProfile, type CompiledTiming} from "./timing";
 import {compileAudio, type AudioSchedule} from "./audio";
 import type {CachedAsset} from "./assets";
 import {SOLO_READ_START_MS} from "../../app/games/[slug]/components/solo-presentation-timing";
+import {exportContinuedActor} from "./room-continuity";
 
 export interface PresentationMoment {
   id: string;
@@ -51,6 +52,7 @@ export function thinkingPicture(cue: ExportCue, actorId = cue.speech?.speakerId)
           avatarUrl:player.avatarUrl,status:player.status,shielded:player.shielded,fullBodyReferenceUrl:player.fullBodyReferenceUrl,headRectangle:player.headRectangle}))},
     }),
     scene:beat?.kind === "scene" ? picture.rooms.find(scene => scene.id === beat.sceneId) ?? null : null,
+    ...(beat?.kind === "scene" && beat.roomLabel && {sceneRoomLabel:beat.roomLabel}),
     ...(beat?.kind === "portrait-room" && {room:{number:beat.roomNumber,label:beat.roomLabel,players:beat.participants,backgroundUrl,floorPerspective:true,paginateLargeCast:beat.paginateLargeCast}})};
 }
 
@@ -59,10 +61,13 @@ export function thinkingSegment(cue: ExportCue, id: string, text: string, actorI
   if (!text.trim()) throw new Error(`Empty thinking moment: ${id}`);
   const picture = thinkingPicture(cue, actorId);
   if (transformation) picture.transformation = transformation;
-  const establishment = transformation ? picture.sourceElapsedMs - transformation.durationMs : picture.room ? 650 : 0;
+  const huddleEntrance = cue.source.kind === "influence" && cue.source.huddleSessionId && (picture.scene || picture.room)
+    ? picture.sourceElapsedMs : 0;
+  const leadIn = transformation?.durationMs ?? huddleEntrance;
+  const establishment = transformation ? picture.sourceElapsedMs - transformation.durationMs : !huddleEntrance && picture.room ? 650 : 0;
   return {momentId:id,label:cue.label,source:cue.source,picture,speech:null,music:cue.music,activeFormatId:cue.activeFormatId,previousRoomSpeakerId:cue.previousRoomSpeakerId,
     timing:{key:id,kind:"thinking",baseDurationMs:1,speech:null,thinking:text,sourceElapsedMs:picture.sourceElapsedMs,minimumThinkingMs:cue.timing.minimumThinkingMs,
-      ...(transformation && {thinkingLeadInMs:transformation.durationMs}), ...(establishment && {thinkingEstablishMs:establishment})}};
+      ...(leadIn && {thinkingLeadInMs:leadIn}), ...(establishment && {thinkingEstablishMs:establishment})}};
 }
 
 /** The complete game-owned source is projected before this presentation-only selection. */
@@ -92,6 +97,11 @@ export function compilePresentation(input: {
   // The following response keeps its source clock and resumes at speech.
   const establishedWolfCursors = new Set<number>();
   for (const [index, cue] of cues.entries()) {
+    if (cue.source.kind === "influence" && cue.source.huddleSessionId && cue.timing.speech) {
+      const previous = cues[index - 1];
+      if (previous?.timing.thinkingLeadInMs && exportContinuedActor(cue, previous))
+        cues[index] = {...cue,timing:{...cue.timing,speechEstablished:true}};
+    }
     if (cue.source.kind !== "werewolf") continue;
     if (cue.picture.kind === "thinking" && cue.picture.transformation) establishedWolfCursors.add(cue.source.cursor);
     else if (cue.picture.kind === "werewolf" && cue.picture.cue.transformation && establishedWolfCursors.has(cue.source.cursor))
@@ -103,7 +113,8 @@ export function compilePresentation(input: {
     if (cue.picture.kind !== "influence" || !cue.picture.cue.resultsPresentation || cue.timing.baseDurationMs !== 500) continue;
     const next = cues[index+1]?.picture;
     if (next?.kind !== "influence" || next.cue.source !== "classic" || next.cue.houseResultCue?.key !== cue.picture.cue.key) {
-      cues[index] = {...cue, timing:{...cue.timing,baseDurationMs:6000},picture:{...cue.picture,cue:{...cue.picture.cue,baseDurationMs:6000}}};
+      const duration = cue.picture.cue.kind === "format_selected" && cue.picture.cue.repeatPick ? 2500 : 6000;
+      cues[index] = {...cue, timing:{...cue.timing,baseDurationMs:duration},picture:{...cue.picture,cue:{...cue.picture.cue,baseDurationMs:duration}}};
     }
   }
   const segmentKeys = new Set(cues.map(cue => cue.timing.key));

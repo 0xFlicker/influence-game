@@ -60,8 +60,11 @@ player picture. The selected format comes from the canonical presentation prefix
 at that moment, including when a Studio cut selects only a speech or a thought.
 The viewer's format button opens the same concise rules and pauses playback;
 the interactive panel is player chrome, while the persistent label and the
-longer automatic rules reveal are also rendered into fresh exports. Existing
-MP4s must be rendered again, and old export bundles must be rebuilt from the
+automatic visual walkthrough are also rendered into fresh exports. Until a
+format resolves a round, its walkthrough advances through example shots on the
+shared playback clock. Later picks for that format get an announcement. The rule
+uses the complete accepted prefix even in an isolated cut. Existing MP4s must
+be rendered again, and old export bundles must be rebuilt from the
 selection and frozen source to pick up the new framing and timing.
 In theater and fullscreen, playback controls fade after three seconds of
 inactivity even when paused. Mouse movement, a first tap or keyboard focus
@@ -72,6 +75,14 @@ other attendees appear in timed, shared-clock pages. Their speech and thinking
 holds allow time for every cast page; long room names and captions use measured
 pagination, and recorded voice retains its original audio duration. Werewolf uses its own room
 presentation and is not routed through this Influence-specific treatment.
+
+An Influence huddle thought opens on the alliance room before the thought text
+or recording starts. Studio retains that entrance in thought-only cuts, even
+with the optional establishing hold trimmed to zero. When the same response's
+speech immediately follows, it resumes at the speech entrance. An authored
+alliance introduction, when included, keeps its earlier source position.
+Rebuild prepared bundles from the same selection to adopt the timing. To adopt
+a newly published huddle scene, refresh the source visuals before rebuilding.
 
 Influence winner scenes page the other finalists, jury and cast members in pairs on the
 sampled presentation clock. The winner cue reserves five seconds per page;
@@ -171,6 +182,12 @@ selection-to-MP4 check, see `packages/api/src/e2e/studio-export-parity.ts` and i
 browser harness consumers. For reverse/random/fresh-browser verification of a
 prepared bundle, use `packages/web/src/scripts/verify-house-replay-export.ts` as
 documented in [local export](local-replay-export.md#local-verification).
+
+Run the format selection proof with `FORMAT_WALKTHROUGH_PARITY=1 FORMAT_CONTEXT_STUDIO=1`.
+It samples each shot and the isolated repeat announcement in Viewer, both Studio
+previews, and the export renderer. The 640×360 pass also compares decoded H.264
+frames for Safety Bounce, Even Votes, Two Names, and the repeat announcement.
+Use `FORMAT_CONTEXT_NARROW=1` for the 360×240 pass.
 
 Run the required repository baselines (`bun run test`, `bun run test:postgres`,
 `bun run check`) and affected browser/render checks. Report failures and proof

@@ -297,6 +297,11 @@ test("pinning changes the room but does not restart expired speech", () => {
   expect(secondRoom === firstRoom).toBe(true);
   expect(within(secondRoom).queryByText(speech.text) === null).toBe(true);
   expect(view.getByRole("img").getAttribute("src")).toBe("/scene-2.png");
+  view.rerender(<VisualPresentationFrame beat={{ ...beat, roomLabel: "Quiet Ballots" }} rooms={rooms} elapsedMs={1000} reducedMotion />);
+  loadScene(view.container);
+  expect(view.queryByRole("navigation", { name: "Mingle rooms" })).toBeNull();
+  expect(view.getByRole("img").getAttribute("src")).toBe("/scene-1.png");
+  expect(view.getByText(speech.text)).not.toBeNull();
   view.rerender(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={sceneSpeechDurationMs(speech.text)} reducedMotion />);
   fireEvent.click(view.getByRole("button", { name: "Follow speaker" }));
   loadScene(view.container);

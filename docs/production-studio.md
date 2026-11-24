@@ -118,9 +118,17 @@ The inspector pages scene inventory and exact version/evidence detail separately
 
 Game production/recovery tools preserve the game-owned Influence asset/finals repair and Werewolf scene/form pause validation. Publication and **Resume** remain separate actions. Suspended games preview a fixed accepted prefix; export requires completed history.
 
+Completed Influence games list eligible missing scenes as **Alliance huddle** entries in **Scenes**. Choose the round and alliance, select **Render missing image**, then review and publish the verified candidate. The image applies to that session's dialogue and thinking across replay, Studio and newly prepared exports. The alliance introduction plays first when selected. A thought-only cut opens on the alliance room before showing thinking, and a directly paired reply begins at its speech entrance.
+
 After publishing, choose **Refresh published visuals** to pause and pin the newly published media at the same accepted source boundary. Normal reads do not silently swap repaired imagery or advance history. Previously frozen selections and prepared bundles keep their media references. Missing pinned inputs fail clearly.
 
 Permissions remain operation-specific. New editorial source, annotations and selected-export descriptors require Producer/Sysop. Library metadata also permits the existing admin discovery grants. Influence visual operators keep their existing read and `start_game` mutation grants. Werewolf production grants do not inherit those Influence grants. Episode presentation, batch naming, trailer/poster operations and resume retain their existing permissions.
+
+## Format walkthroughs
+
+The format selection walkthrough uses labeled examples in place of the rules paragraph. A repeat pick gets a brief announcement once that format has resolved an earlier round in the game. Source, Selected cut, and new exports derive this from the complete accepted prefix before selection, so an isolated later pick keeps its announcement even when the earlier round is outside the cut.
+
+Existing frozen source snapshots and selections retain their moment IDs, including any previously selectable repeat walkthrough. Open a fresh Studio source to adopt the new repeat-pick policy, then prepare and encode a fresh export.
 
 ## Selected local export
 

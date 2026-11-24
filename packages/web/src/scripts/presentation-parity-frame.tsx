@@ -47,6 +47,25 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
       }
       const pill = document.querySelector<HTMLElement>("[data-active-format-overlay]");
       const label = document.querySelector<HTMLElement>("[data-room-context-label]");
+      const walkthrough = document.querySelector<HTMLElement>("[data-format-walkthrough]");
+      const announcement = document.querySelector<HTMLElement>("[data-format-announcement]");
+      if (walkthrough || announcement) {
+        const stage = document.querySelector<HTMLElement>("[data-influence-stage]")!.getBoundingClientRect();
+        for (const text of (walkthrough ?? announcement)!.querySelectorAll<HTMLElement>("h2, p, li, li strong, li span")) {
+          if (text.closest('[aria-hidden="true"]') || !text.getClientRects().length) continue;
+          const rect = text.getBoundingClientRect();
+          if (rect.left < stage.left-1 || rect.right > stage.right+1 || rect.top < stage.top-1 || rect.bottom > stage.bottom+1
+            || text.tagName !== "LI" && text.clientWidth > 0 && text.scrollWidth > text.clientWidth+1)
+            throw new Error(`Format text leaves the picture: ${text.textContent} ${JSON.stringify({rect,stage})}`);
+        }
+        if (walkthrough) {
+          const header = walkthrough.querySelector("header")!.getBoundingClientRect();
+          const board = walkthrough.querySelector("[data-walkthrough-picture]")!.getBoundingClientRect();
+          const note = walkthrough.querySelector("[data-walkthrough-note]")!;
+          if (board.top < header.bottom-1 || note.textContent && board.bottom > note.getBoundingClientRect().top+1)
+            throw new Error(`Walkthrough board overlaps its labels: ${note.textContent} (header bottom ${header.bottom}, board ${board.top}–${board.bottom}, note top ${note.getBoundingClientRect().top})`);
+        }
+      }
       for (const node of document.querySelectorAll<HTMLElement>("[data-influence-stage], [data-influence-stage] *, [data-werewolf-stage], [data-werewolf-stage] *")) {
         const style=getComputedStyle(node);
         if ([style.overflowX,style.overflowY].some(value=>value === "auto" || value === "scroll")) throw new Error("Scrollable player content");
@@ -181,6 +200,7 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
         }
       }
       setResult(JSON.stringify({geometry:Array.from(document.querySelectorAll<HTMLElement>("[data-solo-image], [data-solo-portrait], [data-night-hunt], [data-doctor-save]")).map(node=>({tag:node.tagName,rect:node.getBoundingClientRect().toJSON()})),frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
+        walkthrough:walkthrough ? Number(walkthrough.dataset.walkthroughShot) : undefined,announcement:announcement?.dataset.formatAnnouncement,
         itemPlayers,
         castNames:nameNodes.filter(node=>{const r=node.getBoundingClientRect();return r.left>=0 && r.top>=0 && r.right<=window.innerWidth+1 && r.bottom<=window.innerHeight+1;}).map(node=>{const copy=node.querySelector<HTMLElement>("[data-speech-page-copy]");return {id:node.dataset.roomPlayerName,page:Number(copy?.dataset.speechPage ?? 0),text:copy?.textContent ?? ""};}),
         namePage:namePage?.dataset.speechPage,speechPage:speechPage?.dataset.speechPage,

@@ -193,6 +193,10 @@ The non-empty, duplicate-free subset of registered formats frozen when a game is
 
 The two distinct legal round formats The House offers after empower resolves when at least two manifest cards are admitted for the current round. The empowered agent must pick exactly one. Menu construction filters round-ineligible cards first, then applies soft anti-repeat pressure: exclude last round’s format when at least two other cards remain, otherwise sample two from the available set. Exactly one available card skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
+## Format walkthrough
+
+A spectator presentation beat that teaches a selected round format with illustrative players and actions. The accepted game prefix determines when it appears. After the same format resolves an earlier round, later picks get an announcement. Isolated Studio cuts use that same game history.
+
 ## Format surface vocabulary
 
 Canonical format IDs remain durable engine and event authority. Provider, product, and ordinary MCP boundaries translate them to current surface IDs and names: `save_or_eliminate` → `save_or_exit` / Save-or-Exit, `vote_bomb` → `short_list` / The Short List, and `majority_elimination` → `highest_count` / Highest Count. MCP inputs accept only surface IDs, while old persisted games translate on read. Raw transcript and producer-evidence prose remains historical and is never rewritten.
@@ -916,6 +920,8 @@ A **media repair job** independently renders or verifies a frozen existing scene
 ### Replay image production
 
 Producer/Sysop tooling in Admin → Production for rendering one missing scene at a time in a completed game, including games played without Visual Mode. A missing plan uses a trusted canonical prefix at a committed dialogue turn, exact room/audience metadata, the surviving roster and active jury, and frozen game-start references. Discovery is read-only; rendering creates an independent media job and publication remains an explicit review action. Partial backfills leave unmatched beats as portraits, and never reuse an earlier public-room cast after someone is voted off. This does not change the game's visual-mode setting or accepted history and needs no new database tables.
+
+A replay image for an alliance huddle uses the cast frozen by the accepted schedule and binds only to that huddle session. The same cast can meet in an ordinary Mingle room or another huddle with a separate image.
 
 ## Editorial game asset
 
