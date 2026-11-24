@@ -606,7 +606,7 @@ test.describe("local public player identity", () => {
     }
   });
 
-  test("episode cards use desktop destinations and a fullscreen touch trailer", async ({ browser }) => {
+  test("episode cards open the game page from the body on desktop and touch", async ({ browser }) => {
     test.setTimeout(90_000);
     const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };
     const preview = { episode: game.episode, frames: [{ id: "house", kind: "house", label: "A word from the House", text: game.episode.description }], media: { schemaVersion: 1, mediaType: "house_highlights_trailer", status: "ready", renderVersion: 1, durationSeconds: 12, preview: { title: game.episode.title, description: game.episode.description }, video: { url: `${servers.webUrl}/episode-fixture.mp4`, contentType: "video/mp4", width: 1920, height: 1080 }, poster: { url: `${servers.webUrl}/house-highlights/generated/alliance-formation.jpg`, altText: "The House", contentType: "image/jpeg" }, captions: { url: `${servers.webUrl}/episode-fixture.vtt`, contentType: "text/vtt", language: "en", label: "English" }, manifest: { url: "", contentType: "application/json" } } };
@@ -631,43 +631,37 @@ test.describe("local public player identity", () => {
         await expect(card.getByRole("heading", { name: "Good Company" })).toBeVisible();
         const destination = card.getByRole("link").filter({ has: page.getByRole("heading", { name: "Good Company", exact: true }) });
         await expect(destination).toHaveAttribute("href", "/games/quiet-sage-room");
+        const details = card.getByRole("link", { name: "Details", exact: true });
+        const watch = card.getByRole("link", { name: /Watch replay/ });
+        await expect(details).toHaveAttribute("href", "/games/quiet-sage-room/results");
+        await expect(watch).toHaveAttribute("href", "/games/quiet-sage-room/replay");
+        await details.click({ trial: true });
+        await watch.click({ trial: true });
+
         if (touch) {
-          await expect(card.getByRole("link", { name: "Details", exact: true })).toBeVisible();
-          await destination.tap();
-          const modal = page.getByRole("dialog", { name: "Good Company", exact: true });
-          await expect(modal).toBeVisible();
-          await expect(modal.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
-          const video = modal.locator("video");
-          await expect(video).toHaveAttribute("data-play-called", "true");
-          await expect(modal.getByRole("button", { name: "Play trailer", exact: true })).toBeVisible();
-          await video.evaluate(v => { v.dataset.allowPlay = "true"; document.body.dataset.allowEpisodePlay = "true"; });
-          await modal.getByRole("button", { name: "Play trailer", exact: true }).click();
-          await expect(modal.getByRole("button", { name: "Play trailer", exact: true })).toHaveCount(0);
-          await modal.getByRole("button", { name: "Sound on", exact: true }).click();
-          await expect(video).toHaveJSProperty("muted", false);
-          await video.evaluate(v => v.dispatchEvent(new Event("ended")));
-          await expect(video).toHaveCount(0);
-          await expect(modal.getByRole("button", { name: "Replay trailer", exact: true })).toBeVisible();
-          await modal.getByRole("button", { name: "Replay trailer", exact: true }).click();
-          await expect(modal.getByRole("button", { name: "Sound off", exact: true })).toBeVisible();
-          await expect(modal.getByRole("link", { name: /Watch replay/ })).toBeVisible();
-          await modal.getByRole("button", { name: "Close ×" }).click();
-          await expect(modal).toHaveCount(0);
-          await expect(page).toHaveURL(`${servers.webUrl}/games`);
+          await card.getByRole("heading", { name: "Good Company", exact: true }).tap();
         } else {
-          await expect(card.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
-          await expect(card.getByRole("link", { name: /Watch replay/ })).toHaveAttribute("href", "/games/quiet-sage-room/replay");
-          await destination.click();
-          // The isolated Next dev server compiles this route on its first visit.
-          // CI can exceed the default 5s while the navigation request is pending.
-          await expect(page).toHaveURL(`${servers.webUrl}/games/quiet-sage-room`, { timeout: 30_000 });
-          await expect(page.getByRole("heading", { name: "Good Company", exact: true })).toBeVisible();
-          await expect(page.getByRole("link", { name: "See Results" })).toHaveAttribute("href", "/games/quiet-sage-room/results");
-          await expect(page.locator("video")).toHaveAttribute("data-play-called", "true");
-          await page.reload({ waitUntil: "networkidle" });
-          await expect(page.locator("video")).toBeVisible();
-          await expect(page.locator("video")).not.toHaveAttribute("data-play-called", "true");
+          // Click the footer padding beside the action buttons.
+          const footer = card.locator(".episode-card-footer");
+          await footer.scrollIntoViewIfNeeded();
+          const box = (await footer.boundingBox())!;
+          await page.mouse.click(box.x + 5, box.y + box.height / 2);
         }
+        // The isolated Next dev server compiles this route on its first visit.
+        await expect(page).toHaveURL(`${servers.webUrl}/games/quiet-sage-room`, { timeout: 30_000 });
+        await expect(page.getByRole("heading", { name: "Good Company", exact: true })).toBeVisible();
+        await expect(page.getByRole("link", { name: "See Results" })).toHaveAttribute("href", "/games/quiet-sage-room/results");
+        const video = page.locator("video");
+        await expect(video).toHaveAttribute("data-play-called", "true");
+        await expect(page.getByRole("button", { name: "Play trailer", exact: true })).toBeVisible();
+        await video.evaluate((video) => { video.dataset.allowPlay = "true"; });
+        await page.getByRole("button", { name: "Play trailer", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Play trailer", exact: true })).toHaveCount(0);
+        await page.getByRole("button", { name: "Sound on", exact: true }).click();
+        await expect(video).toHaveJSProperty("muted", false);
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(video).toBeVisible();
+        await expect(video).not.toHaveAttribute("data-play-called", "true");
       } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
     }
   });
