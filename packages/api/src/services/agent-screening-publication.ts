@@ -25,6 +25,7 @@ import {
 } from "./owned-seat-projection.js";
 import { SCREENING_POLICY_VERSION } from "./agent-screening-policy.js";
 import { normalizeModelPreference } from "@influence/engine/game-model-routing";
+import { currentPublishedModelPreference } from "./model-lifecycle-settings.js";
 
 /** A completed assessment may publish only its current untouched submission. */
 export async function publishScreenedAgent(db: DrizzleDB, revisionId: string) {
@@ -199,9 +200,8 @@ async function publishScreenedAgentOnce(db: DrizzleDB, revisionId: string) {
       .update(schema.agentProfiles)
       .set({
         ...content,
-        modelPreference: normalizeModelPreference(
-          revision.snapshot.modelPreference ?? profile.modelPreference,
-        ),
+        modelPreference: await currentPublishedModelPreference(tx, profile.modelPreference,
+          normalizeModelPreference(revision.snapshot.modelPreference ?? profile.modelPreference), revision.createdAt),
         contentRevisionId: revisionId,
         moderationVersion: profile.moderationVersion + 1,
         updatedAt: new Date().toISOString(),

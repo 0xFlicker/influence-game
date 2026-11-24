@@ -22,6 +22,8 @@ Historical running/recoverable games retain their sealed `providerManifest` thro
 
 Check provider retirement in new-selection and sealing policy. Historical normalization and runtime readers still accept the original route after the retirement date. The picker consumes the same provider facts and displays a recommendation without applying it to a saved or frozen route.
 
+Operator cutoffs and shared defaults live in the existing application settings. Approve the exact preview to replace mutable selections immediately, under the waiting game row locks used by start. A cutoff date changes admission only. It does not schedule a second account update. Exclude waiting rows that already carry sealed routes or championship roster authority.
+
 Fallback allowance belongs to the game policy and responsibility, not simply the model ID: contestants share one route allowance and the House has another. A model serving one contestant as a primary must not consume another contestant's fallback allowance. Reserve before dispatch, retain indeterminate reservations, and replay accepted results without reserving again.
 
 Episode-copy work can precede game start. Keep its existing revision/lease as authority when using the provider journal; do not manufacture a game owner epoch merely to satisfy a foreign key. Preserve game-owner constraints for actual gameplay and retain episode evidence through the same object-storage pipeline.

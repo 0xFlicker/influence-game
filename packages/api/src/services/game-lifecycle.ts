@@ -1,5 +1,7 @@
 import { notifyChampionshipGameCompletion } from "./championship-runtime.js";
 import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
+import { readModelLifecycle } from "./model-lifecycle-settings.js";
+import type { HouseModelCutoffs } from "@influence/engine/model-route-metadata";
 import { ProviderDeferredError } from "@influence/engine";
 import { deferProviderGame } from "./provider-game-retry.js";
 
@@ -589,15 +591,17 @@ export async function validateGameStartReadiness(
   }
 
   let resolvedProviderManifest;
+  let cutoffs: HouseModelCutoffs | undefined;
   try {
     resolvedProviderManifest = resolveProviderManifestFromGameConfig(gameConfig);
     if (gameConfig.modelRouting !== undefined) {
       const policy = gameModelPolicy(gameConfig);
       if (!policy.contestants) {
+        ({ cutoffs } = await readModelLifecycle(db));
         const seats = game.gameKind === "werewolf"
           ? await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, gameId))
           : await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
-        sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && gameConfig.visualMode === true);
+        sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && gameConfig.visualMode === true, cutoffs);
       }
     }
   } catch (error) {
@@ -619,7 +623,7 @@ export async function validateGameStartReadiness(
       ? await db.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, gameId))
       : await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
     const sealed = policy.contestants ? gameConfig : { modelRouting: sealGameModelRouting(policy,
-      seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && gameConfig.visualMode === true) };
+      seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && gameConfig.visualMode === true, cutoffs) };
     const actors = [{ role: "house", id: null }, ...seats.map(seat => ({ role: "player", id: seat.id }))];
     for (const actor of actors) {
       const route = actorProviderManifest(sealed, actor);

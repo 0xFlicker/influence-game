@@ -43,6 +43,17 @@ export function isModelRetired(
   return Boolean(facts?.retired || (facts?.deprecation && now.toISOString().slice(0, 10) >= facts.deprecation.retirementDate));
 }
 
+export interface HouseModelCutoff {
+  cutoffDate: string;
+  replacementCatalogId: string;
+}
+
+export type HouseModelCutoffs = Readonly<Record<string, HouseModelCutoff>>;
+
+export function isHouseModelCutoffActive(cutoff: HouseModelCutoff | undefined, now = new Date()): boolean {
+  return cutoff !== undefined && now.toISOString().slice(0, 10) >= cutoff.cutoffDate;
+}
+
 export function modelRouteMetadata(catalogId: string) {
   const [provider, model] = catalogId.split(":");
   const facts = providerModelFacts(provider!, model!);

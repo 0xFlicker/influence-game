@@ -112,6 +112,7 @@ import {
   ProviderHealthOperationError,
 } from "../services/provider-health.js";
 import { resolveDailyFreeProviderManifest } from "../services/daily-provider-manifest.js";
+import { applyModelMigration, listModelLifecycle, ModelLifecycleError, previewModelMigration } from "../services/model-lifecycle.js";
 import {
   executeProviderHealthProbe,
   type ProviderHealthProbeResult,
@@ -244,6 +245,29 @@ export function createAdminRoutes(
   // All admin routes require authentication. Permissions are applied per-route.
   app.use("/api/admin/*", requireAuth(db));
 
+  app.get("/api/admin/model-lifecycle", async c => {
+    c.header("Cache-Control", "private, no-store");
+    try { return c.json(await listModelLifecycle(db, c.get("user").id)); }
+    catch (error) {
+      if (error instanceof ModelLifecycleError) return c.json({ error: error.message }, error.status);
+      throw error;
+    }
+  });
+
+  app.post("/api/admin/model-lifecycle/:action{preview|apply}", async c => {
+    c.header("Cache-Control", "private, no-store");
+    const body = await parseJsonBody(c, "POST /api/admin/model-lifecycle");
+    try {
+      const userId = c.get("user").id;
+      return c.json(c.req.param("action") === "preview"
+        ? await previewModelMigration(db, userId, body)
+        : await applyModelMigration(db, userId, body, body?.previewId));
+    } catch (error) {
+      if (error instanceof ModelLifecycleError) return c.json({ error: error.message }, error.status);
+      throw error;
+    }
+  });
+
   app.get("/api/admin/deployment-admission", requireDeploymentAdmissionManagement, async (c) => {
     try {
       return c.json(projectAdminDeploymentAdmissionStatus(await getDeploymentAdmissionStatus(db)));
@@ -299,7 +323,7 @@ export function createAdminRoutes(
       const providers = await listProviderHealth(db);
       const dailyImpact = projectDailyProviderAdmissionImpact(
         providers,
-        resolveDailyFreeProviderManifest(),
+        await resolveDailyFreeProviderManifest(db),
       );
       return c.json({
         schemaVersion: 1 as const,
