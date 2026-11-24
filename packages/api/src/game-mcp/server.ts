@@ -869,14 +869,14 @@ function productionGameMcpTools(
     tool({
       name: "read_game_model_routing",
       title: "Inspect a game’s model routes and fallbacks",
-      description: "Read or replace contestant default, House route, fallback caps, exclusions and cast overrides. Requires admin/sysop; edits only while waiting. Read first and preserve unmodified settings.",
+      description: "Inspect a game's contestant and House routes, fallback limits, exclusions, seat overrides, and summary of provider attempts. Available for waiting and started games. Requires the producer scope and a current admin or sysop role.",
       properties: { gameIdOrSlug: { type: "string" } },
       required: ["gameIdOrSlug"], scopes: ["producer"], readOnlyHint: true,
     }),
     tool({
       name: "set_game_model_routing",
       title: "Change model routing for a waiting game",
-      description: "Read or replace contestant default, House route, fallback caps, exclusions and cast overrides. Requires admin/sysop; edits only while waiting. Read first and preserve unmodified settings.",
+      description: "Replace the model-routing policy for a waiting game, including its contestant default, House route, fallback limits, exclusions, and seat overrides. To preserve settings, include their current values in the replacement policy. Requires the producer and producer:routing scopes and a current admin or sysop role.",
       properties: { gameIdOrSlug: { type: "string" }, policy: { type: "object" } },
       required: ["gameIdOrSlug", "policy"], scopes: ["producer", "producer:routing"], readOnlyHint: false,
     }),
