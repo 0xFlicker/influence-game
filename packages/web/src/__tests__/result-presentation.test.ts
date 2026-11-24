@@ -21,6 +21,20 @@ test("historical speech retains its accepted position and full reading time",()=
   expect(cues[0]!.baseDurationMs).toBe(6000);
   expect(cues[1]).toMatchObject({houseResultCue:{key:"exit"},baseDurationMs:9000});
 });
+test("accepted format narration preserves the full walkthrough and links to later announcements", async () => {
+  const {compileFormatPresentationPrefix} = await import("../app/games/[slug]/components/format-presentation-model");
+  const {formatWalkthroughFixture} = await import("../scripts/format-walkthrough-fixture");
+  const {source, decisions} = formatWalkthroughFixture("even_votes_clear", "resolved");
+  const compiled = compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster:source.game.players,decisions});
+  const walkthrough = compiled.cues.find(cue => cue.kind === "format_selected" && cue.stage === "rules_reveal")!;
+  const announcement = compiled.cues.find(cue => cue.kind === "format_selected" && cue.repeatPick)!;
+  for (const pick of [walkthrough, announcement]) {
+    const speech = {...house,phase:pick.phase,round:pick.round};
+    const cues = withResultPresentation([pick,speech], scenes("results-mc-v1",pick.canonicalSequence));
+    expect(cues[0]!.baseDurationMs).toBe(pick === walkthrough ? walkthrough.baseDurationMs : 500);
+    expect(cues[1]).toMatchObject({houseResultCue:{key:pick.key},baseDurationMs:9000});
+  }
+});
 test("missing, future, or ambiguous associations never borrow a result",()=>{
   for(const input of [[result,house],[result,{...result,key:"duplicate"},house]]) {
     const cues=withResultPresentation(input,scenes("historical",input.length===2?20:10));

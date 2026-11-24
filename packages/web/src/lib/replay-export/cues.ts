@@ -182,6 +182,7 @@ export function buildExportCues(source: ReplaySource, options: {werewolfCatalogV
     roster,
     decisions: formatPresentationDecisionsFromFrames(frames, game.gameSchemaVersion),
     eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(frames),
+    keepRepeatedWalkthroughs: source.projectionVersion !== undefined && source.projectionVersion < 9,
   });
   if (game.gameKernel === "format" && compilation.diagnostic)
     throw new Error(

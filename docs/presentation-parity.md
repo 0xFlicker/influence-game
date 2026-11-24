@@ -60,8 +60,11 @@ player picture. The selected format comes from the canonical presentation prefix
 at that moment, including when a Studio cut selects only a speech or a thought.
 The viewer's format button opens the same concise rules and pauses playback;
 the interactive panel is player chrome, while the persistent label and the
-longer automatic rules reveal are also rendered into fresh exports. Existing
-MP4s must be rendered again, and old export bundles must be rebuilt from the
+automatic visual walkthrough are also rendered into fresh exports. Until a
+format resolves a round, its walkthrough advances through example shots on the
+shared playback clock. Later picks for that format get an announcement. The rule
+uses the complete accepted prefix even in an isolated cut. Existing MP4s must
+be rendered again, and old export bundles must be rebuilt from the
 selection and frozen source to pick up the new framing and timing.
 In theater and fullscreen, playback controls fade after three seconds of
 inactivity even when paused. Mouse movement, a first tap or keyboard focus
@@ -179,6 +182,12 @@ selection-to-MP4 check, see `packages/api/src/e2e/studio-export-parity.ts` and i
 browser harness consumers. For reverse/random/fresh-browser verification of a
 prepared bundle, use `packages/web/src/scripts/verify-house-replay-export.ts` as
 documented in [local export](local-replay-export.md#local-verification).
+
+Run the format selection proof with `FORMAT_WALKTHROUGH_PARITY=1 FORMAT_CONTEXT_STUDIO=1`.
+It samples each shot and the isolated repeat announcement in Viewer, both Studio
+previews, and the export renderer. The 640×360 pass also compares decoded H.264
+frames for Safety Bounce, Even Votes, Two Names, and the repeat announcement.
+Use `FORMAT_CONTEXT_NARROW=1` for the 360×240 pass.
 
 Run the required repository baselines (`bun run test`, `bun run test:postgres`,
 `bun run check`) and affected browser/render checks. Report failures and proof

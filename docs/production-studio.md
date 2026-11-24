@@ -124,6 +124,12 @@ After publishing, choose **Refresh published visuals** to pause and pin the newl
 
 Permissions remain operation-specific. New editorial source, annotations and selected-export descriptors require Producer/Sysop. Library metadata also permits the existing admin discovery grants. Influence visual operators keep their existing read and `start_game` mutation grants. Werewolf production grants do not inherit those Influence grants. Episode presentation, batch naming, trailer/poster operations and resume retain their existing permissions.
 
+## Format walkthroughs
+
+The format selection walkthrough uses labeled examples in place of the rules paragraph. A repeat pick gets a brief announcement once that format has resolved an earlier round in the game. Source, Selected cut, and new exports derive this from the complete accepted prefix before selection, so an isolated later pick keeps its announcement even when the earlier round is outside the cut.
+
+Existing frozen source snapshots and selections retain their moment IDs, including any previously selectable repeat walkthrough. Open a fresh Studio source to adopt the new repeat-pick policy, then prepare and encode a fresh export.
+
 ## Selected local export
 
 Choose aspect ratio, reading rates, motion and music in **Presentation**. Choose pixel size and frames per second in **Export…**; these settings update the shared preview/compiler without enlarging the monitor. Watch **Selected cut**, then choose **Download selected export** inside Export. The API resolves type/label rules in one consistent read and checks that the resolved IDs equal the cut displayed locally. If another edit changed membership, refresh saved tags and review the changed cut. The downloaded descriptor freezes exact moment IDs, selected tag values/revisions, source/media snapshot, copy, settings and imported recording evidence. Later tag edits do not invalidate its exact IDs. An interrupted response exposes **Retry exact export request**; changing the cut does not replace that retained request.

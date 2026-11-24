@@ -193,6 +193,7 @@ export type FormatPresentationCue =
   | (FormatPresentationCueBase & {
       kind: "format_selected";
       stage: "choice_legible" | "rules_reveal";
+      repeatPick?: true;
       empoweredId: string;
       formatId: LaunchFormatId;
     })

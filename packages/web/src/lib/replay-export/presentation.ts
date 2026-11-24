@@ -113,7 +113,8 @@ export function compilePresentation(input: {
     if (cue.picture.kind !== "influence" || !cue.picture.cue.resultsPresentation || cue.timing.baseDurationMs !== 500) continue;
     const next = cues[index+1]?.picture;
     if (next?.kind !== "influence" || next.cue.source !== "classic" || next.cue.houseResultCue?.key !== cue.picture.cue.key) {
-      cues[index] = {...cue, timing:{...cue.timing,baseDurationMs:6000},picture:{...cue.picture,cue:{...cue.picture.cue,baseDurationMs:6000}}};
+      const duration = cue.picture.cue.kind === "format_selected" && cue.picture.cue.repeatPick ? 2500 : 6000;
+      cues[index] = {...cue, timing:{...cue.timing,baseDurationMs:duration},picture:{...cue.picture,cue:{...cue.picture.cue,baseDurationMs:duration}}};
     }
   }
   const segmentKeys = new Set(cues.map(cue => cue.timing.key));

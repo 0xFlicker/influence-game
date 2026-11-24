@@ -62,6 +62,10 @@ frames must have average channel difference ≤1/255; H.264 frames ≤4/255.
 This is deterministic component/encoding evidence, not a production deployment
 check or a test of live provider/audio generation.
 
+## Format teaching across cuts
+
+Decide whether a format needs a walkthrough before reducing a cut to selected moments. Only a canonical resolution of the same format in an earlier round suppresses the walkthrough. The Viewer cue compiler and Studio catalog use the same policy. Each walkthrough samples the shared clock and retains enough time to play every illustrative shot. Older frozen catalog versions still bind their explicitly selected moments.
+
 ## Updating an existing export
 
 Re-run the existing selection JSON with the updated local exporter and a new

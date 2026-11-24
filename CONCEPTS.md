@@ -193,6 +193,10 @@ The non-empty, duplicate-free subset of registered formats frozen when a game is
 
 The two distinct legal round formats The House offers after empower resolves when at least two manifest cards are admitted for the current round. The empowered agent must pick exactly one. Menu construction filters round-ineligible cards first, then applies soft anti-repeat pressure: exclude last round’s format when at least two other cards remain, otherwise sample two from the available set. Exactly one available card skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
+## Format walkthrough
+
+A spectator presentation beat that teaches a selected round format with illustrative players and actions. The accepted game prefix determines when it appears. After the same format resolves an earlier round, later picks get an announcement. Isolated Studio cuts use that same game history.
+
 ## Format surface vocabulary
 
 Canonical format IDs remain durable engine and event authority. Provider, product, and ordinary MCP boundaries translate them to current surface IDs and names: `save_or_eliminate` → `save_or_exit` / Save-or-Exit, `vote_bomb` → `short_list` / The Short List, and `majority_elimination` → `highest_count` / Highest Count. MCP inputs accept only surface IDs, while old persisted games translate on read. Raw transcript and producer-evidence prose remains historical and is never rewritten.

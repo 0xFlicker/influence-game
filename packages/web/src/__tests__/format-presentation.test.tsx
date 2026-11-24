@@ -125,7 +125,7 @@ describe("FormatPresentation", () => {
     expect(formatPresentationOwnsBackdrop(empoweredCue(), false)).toBe(false);
   });
 
-  it("keeps both offered cards in canonical order and expands only the selected rules", () => {
+  it("keeps the offered cards in order and teaches only the selected format", () => {
     const menuHtml = renderToString(
       <FormatPresentation
         cue={menuCue()}
@@ -160,15 +160,10 @@ describe("FormatPresentation", () => {
     );
     expect(choiceHtml).not.toContain("opacity-35");
     expect(choiceHtml).not.toContain("Zero votes is safe");
-    expect(selectedHtml).toContain('data-format-rules="vote_bomb"');
-    expect(selectedHtml).not.toContain('data-format-rules="safety_bounce"');
-    expect(selectedHtml).toContain(
-      FORMAT_PRESENTATION_METADATA.vote_bomb.conciseRules,
-    );
-    expect(selectedHtml).not.toContain(
-      FORMAT_PRESENTATION_METADATA.safety_bounce.conciseRules,
-    );
-    expect(selectedHtml).toContain('data-speech-page-copy');
+    expect(selectedHtml).toContain('data-format-walkthrough="vote_bomb"');
+    expect(selectedHtml).not.toContain('data-format-walkthrough="safety_bounce"');
+    expect(selectedHtml).not.toContain(FORMAT_PRESENTATION_METADATA.vote_bomb.conciseRules);
+    expect(selectedHtml).toContain("One sealed vote each");
   });
 
   it("offers Highest Count with catalog copy and renders highest-total scoring only", () => {
@@ -196,9 +191,7 @@ describe("FormatPresentation", () => {
 
     expect(offer).toContain('data-format-card="majority_elimination"');
     expect(offer).toContain("Highest Count");
-    expect(selection).toContain(
-      FORMAT_PRESENTATION_METADATA.majority_elimination.conciseRules,
-    );
+    expect(selection).toContain("One sealed vote each");
     expect(resolution).toContain("Highest total · exit eligible");
     expect(resolution).toContain("Below the high vote");
     expect(resolution).toContain('data-aggregate-player="p2"');
@@ -231,6 +224,7 @@ describe("FormatPresentation", () => {
       <FormatPresentation
         cue={{
           ...cue,
+          stage:"choice_legible",
           before: snapshot({ empoweredId: "p1" }),
         }}
         roster={roster}
@@ -240,9 +234,8 @@ describe("FormatPresentation", () => {
 
     expect(html).toContain('data-format-auto-selected="majority_elimination"');
     expect(html).toContain("Highest Count");
-    expect(html).toContain(
-      FORMAT_PRESENTATION_METADATA.majority_elimination.conciseRules,
-    );
+    expect(html).toContain("Format locked");
+    expect(html).not.toContain(FORMAT_PRESENTATION_METADATA.majority_elimination.conciseRules);
     expect(html).not.toContain("offers two formats");
   });
 

@@ -1223,3 +1223,16 @@ function safetyBounceCompletion(
   }
   return finalBallotCount > 0 ? "resolved_with_final_ballot" : "resolved_without_final_ballot";
 }
+/** Only a resolution in an earlier round can teach a later format pick. */
+export function formatWalkthroughPolicy(decisions: Iterable<ViewerDecisionEvent>) {
+  const firstResolutions = new Map<LaunchFormatId, {sequence: number; round: number}>();
+  for (const event of decisions) {
+    if (event.type !== "format.resolved") continue;
+    const first = firstResolutions.get(event.payload.formatId);
+    if (!first || event.sequence < first.sequence) firstResolutions.set(event.payload.formatId, event);
+  }
+  return (selection: Extract<ViewerDecisionEvent, {type: "format.selected"}>) => {
+    const first = firstResolutions.get(selection.payload.formatId);
+    return !first || first.sequence >= selection.sequence || first.round >= selection.round;
+  };
+}

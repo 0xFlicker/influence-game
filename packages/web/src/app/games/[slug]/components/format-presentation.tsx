@@ -14,7 +14,7 @@ import { TwoNamesRoleAnchors, TwoNamesStage, TwoNamesVoteStage, TwoNamesResultSt
 import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentation-metadata";
 import {ResultStage, formatResultPlayers} from "./result-stage";
 import {resultRoom} from "./influence-rooms";
-import {TimedSpeech} from "./timed-speech";
+import {FormatWalkthrough} from "./format-walkthrough";
 
 /**
  * True when this cue paints its own full-stage room backdrop (a ResultStage
@@ -38,13 +38,8 @@ export function FormatPresentation(sourceProps: Parameters<typeof FormatPresenta
   const props = {...sourceProps, ...delivery};
   const {cue, roster} = props;
   if (cue.kind === "format_selected" && cue.stage === "rules_reveal" && !props.currentStateEntry) {
-    const metadata = FORMAT_PRESENTATION_METADATA[cue.formatId];
-    return <ResultStage packed compactCast players={formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>
-      <section data-format-cue="format_selected" data-format-rules={cue.formatId} data-format-auto-selected={!cue.before.offeredFormatIds ? cue.formatId : undefined} className="flex min-h-0 flex-1 flex-col gap-2 px-2 py-1">
-        <div className="shrink-0"><p className="text-[10px] uppercase tracking-[0.16em] text-cyan-100/60">Format selected</p>
-          <h2 className="text-xl font-semibold text-white">{metadata.displayName}</h2></div>
-        <TimedSpeech text={metadata.conciseRules} elapsedMs={props.elapsedMs ?? 0} progress={Math.min(1, (props.elapsedMs ?? 0) / cue.baseDurationMs)} className="text-sm leading-5 text-white/90" />
-      </section>
+    return <ResultStage packed background={resultRoom(cue.phase)}>
+      <FormatWalkthrough formatId={cue.formatId} elapsedMs={props.elapsedMs ?? 0} controlsInset={props.controlsInset ?? 0} />
     </ResultStage>;
   }
   if(cue.kind === "format_menu" && cue.resultsPresentation && cue.compactEmpower) {
@@ -55,8 +50,10 @@ export function FormatPresentation(sourceProps: Parameters<typeof FormatPresenta
   const specialized = cue.kind.startsWith("two_names_") || cue.kind.startsWith("safety_bounce_")
     || cue.after.activeFormatId === "two_names";
   const content = <FormatPresentationContent {...props} />;
+  const packed = Boolean(cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie")
+    || cue.kind === "format_selected" && cue.repeatPick);
   return cue.resultsPresentation && !specialized
-    ? <ResultStage compactCast={cue.compactEmpower} packed={Boolean(cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie"))} players={cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") ? [] : formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
+    ? <ResultStage compactCast={cue.compactEmpower} packed={packed} players={packed ? [] : formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
     : content;
 }
 
@@ -102,6 +99,21 @@ function FormatPresentationContent({
   }
 
   if (cue.kind === "format_selected") {
+    if (cue.stage === "choice_legible" && (cue.repeatPick || !cue.before.offeredFormatIds)) {
+      const locked = !cue.before.offeredFormatIds;
+      return (
+        <section data-format-cue="format_selected" data-format-announcement={cue.formatId}
+          data-format-auto-selected={locked ? cue.formatId : undefined}
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-3 text-center">
+          <p className="max-w-full text-base font-semibold text-amber-100 [overflow-wrap:anywhere] sm:text-xl">
+            {locked ? "Format locked" : `${playerName(cue.empoweredId, roster)} chooses`}
+          </p>
+          <h2 className="break-words text-3xl font-semibold leading-tight text-white sm:text-5xl">
+            {FORMAT_PRESENTATION_METADATA[cue.formatId].displayName}
+          </h2>
+        </section>
+      );
+    }
     if (currentStateEntry) {
       return (
         <div className="flex justify-center">
@@ -109,26 +121,7 @@ function FormatPresentationContent({
         </div>
       );
     }
-    if (!cue.before.offeredFormatIds) {
-      const metadata = FORMAT_PRESENTATION_METADATA[cue.formatId];
-      return (
-        <section
-          data-format-cue="format_selected"
-          data-format-auto-selected={cue.formatId}
-          className="mx-auto max-w-xl rounded-xl border border-cyan-200/20 bg-cyan-200/[0.04] p-6 text-center"
-        >
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/45">
-            Format locked
-          </p>
-          <h2 className="mt-2 text-xl font-semibold text-white">
-            {metadata.displayName}
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-white/65">
-            {metadata.conciseRules}
-          </p>
-        </section>
-      );
-    }
+    if (!cue.before.offeredFormatIds) return null;
     return (
       <FormatOfferStage
         offeredFormatIds={cue.before.offeredFormatIds}

@@ -1698,6 +1698,27 @@ test.describe("format-aware game viewer", () => {
     }
   });
 
+  test("format walkthrough plays once and a later pick announces the format", async ({page}) => {
+    await page.clock.install();
+    const slug = "format-walkthrough-repeat";
+    const fixture = createFormatKernelViewerScenario("even_votes_clear");
+    const menu = fixture.decisions.find(event => event.type === "format.menu_offered")!;
+    const selected = fixture.decisions.find(event => event.type === "format.selected")!;
+    const nextSequence = fixture.decisions.at(-1)!.sequence + 1;
+    const round = selected.round + 1;
+    await installDeterministicFormatGame(page, {slug,scenarioId:"even_votes_clear",status:"completed",decisions:[
+      ...fixture.decisions,{...menu,sequence:nextSequence,round},{...selected,sequence:nextSequence+1,round},
+    ]});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page,"⏸ Pause");
+    const stage = page.locator("[data-influence-stage]");
+    await advanceUntilVisible(page,stage.locator('[data-format-walkthrough="even_votes"]'),"first Even Votes walkthrough",150);
+    await expect(stage.getByText("One sealed vote each")).toBeVisible();
+    await advanceUntilVisible(page,stage.locator('[data-format-announcement="even_votes"]'),"repeat Even Votes announcement",150);
+    await expect(stage.locator("[data-format-walkthrough]")).toHaveCount(0);
+    await expect(stage.getByRole("heading",{name:"Even Votes"})).toBeVisible();
+  });
+
   test("format selection scenery fills one stage without an inset duplicate",async({page},testInfo)=>{
     await page.clock.install();
     const slug="format-selection-background";
@@ -1705,7 +1726,7 @@ test.describe("format-aware game viewer", () => {
     await page.goto(viewerUrl(`/games/${slug}/replay`));await pauseAutoplay(page,"⏸ Pause");
     await page.addStyleTag({content:"nextjs-portal {display:none}"});
     const stage=page.locator("[data-influence-stage]");
-    await advanceUntilVisible(page,stage.locator("[data-format-rules]"),"format selection rules",150);
+    await advanceUntilVisible(page,stage.locator("[data-format-walkthrough]"),"format walkthrough",150);
     for(const [width,height] of [[390,844],[1280,720],[1280,400],[1920,1080]]) {
       await page.setViewportSize({width:width!,height:height!});
       for(const mode of ["inline","theater"]) {
