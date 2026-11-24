@@ -53,6 +53,38 @@ test.describe("local public player identity", () => {
     if (harnessProcess) await stopLocalIdentityHarness(harnessProcess);
   });
 
+  test("public Games loads Privy only after the user selects it", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const context = await identityContext(browser);
+    const page = await context.newPage();
+    const release = Promise.withResolvers<void>();
+    const isPrivyRuntime = (url: URL) => url.pathname.includes("/_next/static/chunks/") && /privy-runtime.*\.js$/.test(url.pathname);
+    let privyRequests = 0;
+    try {
+      await page.route(isPrivyRuntime, async route => {
+        privyRequests++;
+        await release.promise;
+        await route.abort();
+      });
+      await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+      await expect(page.getByLabel("Search games", { exact: true })).toBeVisible();
+      expect(privyRequests).toBe(0);
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Influence authentication" });
+      await expect(dialog).toBeVisible();
+      expect(privyRequests).toBe(0);
+      await dialog.getByRole("button", { name: "Continue with Privy", exact: true }).click();
+      await expect(dialog.getByText("Opening Privy…", { exact: true })).toBeVisible();
+      await expect.poll(() => privyRequests).toBeGreaterThan(0);
+      release.resolve();
+      await expect(dialog.getByText("Could not continue with Privy. Try again.", { exact: true })).toBeVisible({ timeout: 10_000 });
+    } finally {
+      release.resolve();
+      await page.unrouteAll({ behavior: "wait" });
+      await context.close();
+    }
+  });
+
   test("signed-out game joins create a character before signup", async ({ browser }) => {
     test.setTimeout(120_000);
     for (const gameKind of ["influence", "werewolf"] as const) {
