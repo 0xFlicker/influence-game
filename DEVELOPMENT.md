@@ -193,10 +193,10 @@ bun run test:e2e:layered-auth:clerk
 
 **Important:** use the repository scripts, not raw root `bun test`. The scripts select the correct Bun config and ensure paid/external suites cannot be discovered by a required lane.
 
-The provider-free and PostgreSQL jobs in `ci.yml` put the lockfile-pinned
-Remotion `ffmpeg` and `ffprobe` binaries on `PATH` after `bun install`. This
-keeps real media checks independent of Ubuntu package mirror downloads. Local
-test runs need FFmpeg on `PATH` for the media fixtures.
+The provider-free job installs full FFmpeg from the signed Ubuntu archive so
+the replay tests can identify extensionless images. The PostgreSQL jobs use
+the lockfile-pinned Remotion `ffmpeg` and `ffprobe` binaries for their audio
+fixtures. Local test runs need full FFmpeg on `PATH` for the media fixtures.
 
 Required PostgreSQL CI uses four Bun file shards, each on an independent runner
 with its own PostgreSQL service. Each shard keeps `--max-concurrency 1` and the
