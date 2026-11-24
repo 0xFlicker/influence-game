@@ -48,6 +48,7 @@ export function AuthenticationWrapper({
   const {
     beginAuthenticationAttempt,
     cancelAuthenticationAttempt,
+    needsInvite,
     openPrivySignIn,
     resetPrivyIdentity,
   } = useAuth();
@@ -70,6 +71,7 @@ export function AuthenticationWrapper({
   const privySwitchGenerationRef = useRef(0);
   const isModalVisible = presentation === "modal"
     && open
+    && !needsInvite
     && (attempt !== null || Boolean(reversePrivyToken) || privyStarting);
 
   const restoreInvokingFocus = useCallback(() => {
@@ -307,7 +309,8 @@ export function AuthenticationWrapper({
     };
   }, [close, isModalVisible]);
 
-  if (!open || (!attempt && !reversePrivyToken && !privyStarting)) return null;
+  // The invite prompt owns the pending Privy attempt and the page's focus.
+  if (needsInvite || !open || (!attempt && !reversePrivyToken && !privyStarting)) return null;
 
   const PasswordFlow = isLayeredAuthE2EAdapterEnabled()
     ? E2ELayeredPasswordFlow

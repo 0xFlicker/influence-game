@@ -255,6 +255,48 @@ test.describe("deterministic layered authentication", () => {
     expect(creationBodies[2]?.inviteCode).toBe("VALID123");
   });
 
+  test("lets a pending Privy signup hand off to the invite prompt", async ({ page }) => {
+    await page.addInitScript((token) => {
+      window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
+    }, harness.tokens.uiNewPrivy);
+    const attempts: Array<{ intent: string; inviteCode?: string }> = [];
+    await page.route("**/api/auth/login", async (route) => {
+      const request = route.request().postDataJSON();
+      attempts.push({ intent: request.intent, inviteCode: request.inviteCode });
+      if (request.intent === "sign_in") {
+        return route.fulfill({ status: 409, json: { error: "Account creation required", code: "ACCOUNT_CREATION_REQUIRED" } });
+      }
+      if (request.inviteCode !== "VALID123") {
+        return route.fulfill({ status: 403, json: { error: "Invite code required", code: "INVITE_REQUIRED" } });
+      }
+      const token = harness.sessions.walletless;
+      const response = await fetch(`${harness.apiUrl}/api/auth/me`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      return route.fulfill({ status: response.status, json: { token, user: await response.json() } });
+    });
+
+    await page.goto(`${harness.webUrl}/get-mcp`, { waitUntil: "networkidle" });
+    await clickNavigationSignIn(page);
+    await page.getByRole("button", { name: "Continue with Privy", exact: true }).click();
+    const authentication = page.getByRole("dialog", { name: "Influence authentication" });
+    await expect(authentication.getByRole("heading", { name: "Create your account", exact: true })).toBeVisible();
+    await authentication.getByRole("checkbox").check();
+    await authentication.getByRole("button", { name: "Continue with Privy", exact: true }).click();
+
+    await expect(page.getByRole("heading", { name: "Invite Code Required", exact: true })).toBeVisible();
+    await expect(authentication).toHaveCount(0);
+    await expect(page.getByText("Opening Privy…", { exact: true })).toHaveCount(0);
+    await page.getByPlaceholder("e.g. ABC12345").fill("VALID123");
+    await page.getByRole("button", { name: "Submit", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    expect(attempts).toEqual([
+      { intent: "sign_in", inviteCode: undefined },
+      { intent: "create_account", inviteCode: undefined },
+      { intent: "create_account", inviteCode: "VALID123" },
+    ]);
+  });
+
   test("keeps Privy account creation available in managed rollout modes", async ({
     browser,
   }) => {
