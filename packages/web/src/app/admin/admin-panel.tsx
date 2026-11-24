@@ -4,7 +4,9 @@ import { RetryGameButton } from "./retry-game-button";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { createConfig, WagmiProvider } from "@privy-io/wagmi";
+import { mainnet } from "viem/chains";
+import { http, useAccount } from "wagmi";
 import { fillGame, hideGame, listAdminGames, startGame, stopGame, unhideGame, type AdminGameSummary, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
@@ -610,6 +612,15 @@ function RecentGameRow({
 // ---------------------------------------------------------------------------
 
 export function AdminPanel() {
+  return <WagmiProvider config={wagmiConfig}><AdminGamesPanel /></WagmiProvider>;
+}
+
+const wagmiConfig = createConfig({
+  chains: [mainnet],
+  transports: { [mainnet.id]: http() },
+});
+
+function AdminGamesPanel() {
   const { address } = useAccount();
   const { hasPermission, roles } = usePermissions();
 

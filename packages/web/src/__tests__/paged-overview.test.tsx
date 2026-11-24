@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { HybridGamesBrowser } from "../app/games/hybrid-games-browser";
+import { PagedGamesInitial } from "../app/games/paged-server";
 import { InfluenceAuthContext, type InfluenceAuthState } from "../hooks/use-auth";
 import type { SeasonIdentity } from "../lib/api";
 
@@ -15,6 +16,36 @@ afterEach(async () => {
 
 const wolf = (id: string, status: string) => ({ kind: "werewolf", game: { id, slug: id, gameKind: "werewolf", status, playerCount: 6, joinedPlayers: 6, modelLabel: "model", createdAt: "2026-01-01", episode: { title: id, cast: [] } } });
 const house = (id: string, status: string, seasonId?: string) => ({ kind: "influence", game: { id, slug: id, status, seasonId, playerCount: 6, alivePlayers: 1, modelLabel: "model", visibility: "public", createdAt: "2026-01-01", episode: { title: id, cast: [] } } });
+
+test("independent shelf reads start before seasons and pending pages do not block the browser shell", async () => {
+  const seasons = Promise.withResolvers<Response>();
+  const reads: Array<{ url: URL; page: ReturnType<typeof Promise.withResolvers<Response>> }> = [];
+  globalThis.fetch = Object.assign((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    expect(init?.credentials).toBe("omit");
+    if (url.pathname === "/api/seasons") return seasons.promise;
+    const page = Promise.withResolvers<Response>();
+    reads.push({ url, page });
+    return page.promise;
+  }, { preconnect: originalFetch.preconnect }) as typeof fetch;
+  const shell = PagedGamesInitial();
+  try {
+    expect(reads.map(({ url }) => [url.searchParams.get("kind"), url.searchParams.get("status")])).toEqual([
+      ["all", "waiting"],
+      ["werewolf", "nonwaiting"],
+    ]);
+    seasons.resolve(Response.json({ seasons: [{ id: "s1", slug: "season-one", name: "Season one", status: "active" }] }));
+    const element = await shell;
+    expect(reads).toHaveLength(4);
+    expect(reads[2]?.url.searchParams.get("season")).toBe("s1");
+    expect(reads[3]?.url.searchParams.get("excludeSeason")).toBe("s1");
+    expect(Object.keys(element.props.initialOverview)).toHaveLength(4);
+  } finally {
+    seasons.resolve(Response.json({ seasons: [] }));
+    await shell;
+    for (const { page } of reads) page.resolve(Response.json({ items: [], nextCursor: null }));
+  }
+});
 
 test("overview shelves page independently and do not silently skip excluded candidates", async () => {
   dom = new HappyDOMWindow({ url: "http://localhost/games" });

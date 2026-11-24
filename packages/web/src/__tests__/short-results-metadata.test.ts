@@ -9,7 +9,7 @@ test("short results share keeps a static spoiler-free card and launches the shor
   globalThis.fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => {
     const url = String(input); requests.push(url);
     if (url.endsWith("/api/share-links/7mK9pR2xQa")) return Response.json({path:"/games/village/results"});
-    if (url.endsWith("/api/game-entries/village/card")) return Response.json({id:"g",slug:"village",gameKind:"werewolf",status:"completed",visibility:"unlisted",title:"Lanterns and Lies",description:"Private role revealed",coverUrl:"/winner.png",cast:[]});
+    if (url.endsWith("/api/game-entries/village/card?view=metadata")) return Response.json({id:"g",slug:"village",gameKind:"werewolf",status:"completed",visibility:"unlisted",title:"Lanterns and Lies",description:"Private role revealed",coverUrl:"/winner.png"});
     throw new Error(`Unexpected API request: ${url}`);
   }, {preconnect: originalFetch.preconnect});
   try {
