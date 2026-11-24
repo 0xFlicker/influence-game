@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { GameEntrySkeleton } from "../game-entry-loading";
 import { OwnerLearningActivation } from "@/app/dashboard/agents/[id]/review/owner-learning-activation";
 import Image from "next/image";
 import { useState } from "react";
@@ -26,7 +27,7 @@ export function WerewolfResultsPage({slug}: {slug: string}) {
       {!incomplete && <button className="influence-button-secondary rounded-lg px-4 py-2 text-sm" onClick={() => void query.refetch()}>Try again</button>}
     </section>;
   }
-  if (!query.data) return <p role="status" className="py-12 text-white/70">Loading results…</p>;
+  if (!query.data) return <GameEntrySkeleton results />;
   if (query.data.gameKind !== "werewolf") return <p role="alert">This page could not load the correct game results.</p>;
   const {game, results, retrospective} = query.data;
   const names = new Map(results.players.map(player => [player.id, player.name]));

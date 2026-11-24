@@ -606,6 +606,77 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("Games, lobby and Details show skeletons while their data is pending", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const context = await identityContext(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    const library = Promise.withResolvers<void>();
+    const lobby = Promise.withResolvers<void>();
+    const results = Promise.withResolvers<void>();
+    const slug = "loading-lobby";
+    const resultSlug = "loading-results";
+    const base = { playerCount: 4, players: [], modelLabel: "Standard", visibility: "public", currentRound: 0, maxRounds: 10, currentPhase: "INIT", gameKernel: "classic", createdAt: "2026-11-24" };
+    const waiting = { ...base, id: slug, slug, status: "waiting", alivePlayers: 0 };
+    const completed = { ...base, id: resultSlug, slug: resultSlug, status: "completed", alivePlayers: 1 };
+    let episodeReads = 0;
+    try {
+      await page.route(url => url.pathname === "/api/public-games/page" && url.searchParams.get("kind") === "influence" && url.searchParams.get("collection") === "all" && url.searchParams.get("status") === "nonwaiting", async route => {
+        await library.promise;
+        await route.fulfill({ json: { items: [{ kind: "influence", game: completed }], nextCursor: null } });
+      });
+      await page.route("**/api/games", route => route.fulfill({ json: [waiting, completed] }));
+      await page.route("**/api/werewolf-search", route => route.fulfill({ json: [] }));
+      await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({ json: { id: slug, slug, gameKind: "influence" } }));
+      await page.route(`**/api/games/${slug}`, async route => { await lobby.promise; await route.fulfill({ json: waiting }); });
+      await page.route(`**/api/games/${slug}/episode`, route => {
+        episodeReads++;
+        return route.fulfill({ status: 404, json: { error: "No episode yet" } });
+      });
+      await page.route(`**/api/game-entries/${resultSlug}`, route => route.fulfill({ json: { id: resultSlug, slug: resultSlug, gameKind: "influence" } }));
+      await page.route(`**/api/games/${resultSlug}`, route => route.fulfill({ json: completed }));
+      await page.route(`**/api/games/${resultSlug}/alliances`, route => route.fulfill({ status: 503, json: { error: "Unavailable" } }));
+      await page.route(`**/api/games/${resultSlug}/results`, async route => {
+        await results.promise;
+        await route.fulfill({ status: 503, json: { error: "Results unavailable" } });
+      });
+
+      await page.goto(`${servers.webUrl}/games`);
+      const librarySkeleton = page.getByRole("status", { name: "Loading Influence games", exact: true });
+      await expect(librarySkeleton).toBeVisible();
+      await expect(librarySkeleton.locator(".episode-skeleton").first()).toBeVisible();
+      library.resolve();
+      await expect(page.getByRole("region", { name: "Influence shelf", exact: true }).getByRole("heading", { name: resultSlug, exact: true })).toBeVisible();
+      await expect(librarySkeleton).toHaveCount(0);
+
+      await page.getByLabel("Search games", { exact: true }).fill(" ");
+      const waitingCard = page.getByTestId("episode-card").filter({ has: page.getByRole("heading", { name: slug, exact: true }) });
+      await waitingCard.getByRole("link", { name: "Join game", exact: true }).tap();
+      const lobbySkeleton = page.getByRole("status", { name: "Loading game", exact: true });
+      await expect(lobbySkeleton).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("link", { name: "← All games" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Join with an agent" })).toHaveCount(0);
+      lobby.resolve();
+      await expect(page.getByRole("region", { name: "Game pre-show" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Join with an agent" })).toBeEnabled();
+      expect(episodeReads).toBe(0);
+
+      await page.getByRole("link", { name: "← All games" }).click();
+      await page.getByLabel("Search games", { exact: true }).fill(" ");
+      const completedCard = page.getByTestId("episode-card").filter({ has: page.getByRole("heading", { name: resultSlug, exact: true }) });
+      await completedCard.getByRole("link", { name: "Details", exact: true }).tap();
+      await expect(page.getByRole("status", { name: "Loading results", exact: true })).toBeVisible({ timeout: 20_000 });
+      results.resolve();
+      await expect(page.getByText("Results unavailable", { exact: true })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading results", exact: true })).toHaveCount(0);
+    } finally {
+      library.resolve();
+      lobby.resolve();
+      results.resolve();
+      await page.unrouteAll({ behavior: "wait" });
+      await context.close();
+    }
+  });
+
   test("episode cards open the game page from the body on desktop and touch", async ({ browser }) => {
     test.setTimeout(90_000);
     const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };

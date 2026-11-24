@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { gamePathSegment } from "./game-links";
 import { getPublicRuntimeConfig } from "./server-runtime-config";
 import type {
@@ -12,8 +13,14 @@ import type {
 } from "./api";
 
 import type { GameEntryIdentity } from "./game-entry";
-export function getServerGameEntry(key: string): Promise<GameEntryIdentity> {
-  return serverApiFetch(`/api/game-entries/${gamePathSegment(key)}`, { cache: "no-store" });
+import type { WerewolfLobbyData } from "./werewolf-api";
+
+// The layout metadata and route dispatcher share one read per render request.
+export const getServerGameEntry = cache((key: string): Promise<GameEntryIdentity> =>
+  serverApiFetch(`/api/game-entries/${gamePathSegment(key)}`, { cache: "no-store" }));
+
+export function getServerWerewolfLobby(key: string, options?: RequestInit): Promise<WerewolfLobbyData> {
+  return serverApiFetch(`/api/werewolf/${gamePathSegment(key)}/lobby`, { cache: "no-store", ...options });
 }
 
 /** Anonymous, uncached preview; the full browser remains the source for filtering. */

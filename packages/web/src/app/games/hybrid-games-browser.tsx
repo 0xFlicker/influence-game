@@ -9,6 +9,7 @@ import type { PagedGamesPage } from "@/lib/paged-games";
 import { GamesBrowser, type CategoryFilter, type FiltersState, type StatusFilter } from "./games-browser";
 import { PagedOverview } from "./paged-overview";
 import { PagedCollection } from "./paged-collection";
+import { GameLibrarySkeleton } from "./game-library-loading";
 
 type GameKind = "all" | "influence" | "werewolf";
 
@@ -39,7 +40,8 @@ export function HybridGamesBrowser({ collection, initialSeasons, initialPage }: 
     </div>
     {seasonError && <p role="alert">Could not load seasons. <button onClick={() => { setSeasonError(false); setSeasonAttempt(value => value + 1); }}>Try again</button></p>}
     {filters.search ? <GamesBrowser collection={collection} includeWerewolf={showWerewolf} externalFilters={filters} externalKind={selectedKind} hideToolbar uncappedWerewolfSearch />
-      : collection?.kind === "season" && seasons === undefined ? <p role="status">Loading season games…</p>
+      : collection?.kind === "season" && seasons === undefined && !seasonError ? <GameLibrarySkeleton grid />
+      : collection?.kind === "season" && seasons === undefined ? null
       : collection ? <PagedCollection collection={collection} seasons={seasons ?? []} status={filters.status} category={filters.category} initialPage={seed} />
       : <PagedOverview seasons={seasons ?? []} initialOpen={seed} filters={{ kind, status: filters.status, category: filters.category }} />}
   </div>;

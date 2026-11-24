@@ -12,7 +12,7 @@ import {
   setApiBase,
   type PublicPostgameMediaResponse,
 } from "../lib/api";
-import { generateMetadata } from "../app/(site)/games/[slug]/page";
+import { generateMetadata } from "../app/(site)/games/[slug]/(entry)/page";
 import { HouseGameRoute } from "../app/games/[slug]/house-route";
 import { HouseGameEntry } from "../components/games/house-game-entry";
 

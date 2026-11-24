@@ -25,6 +25,23 @@ test("Werewolf dispatch only reads safe identity and preserves replay intent", a
   expect(page.props.initialGame).toBeUndefined();
 });
 
+test("Werewolf entry seeds the public lobby before the browser loads the entry code", async () => {
+  const reads: string[] = [];
+  const identity = { id: "wolf-id", slug: "wolf-game", gameKind: "werewolf", visibility: "public" };
+  const lobby = { id: "wolf-id", slug: "wolf-game", status: "waiting", players: [] };
+  globalThis.fetch = (async input => {
+    const path = new URL(String(input)).pathname;
+    reads.push(path);
+    if (path === "/api/game-entries/wolf-id") return Response.json(identity);
+    if (path === "/api/werewolf/wolf-game/lobby") return Response.json(lobby);
+    return Response.json({ error: "Unexpected read" }, { status: 404 });
+  }) as typeof fetch;
+
+  const page = await HouseGameRoute({ slug: "wolf-id", mode: "entry" });
+  expect(reads).toEqual(["/api/game-entries/wolf-id", "/api/werewolf/wolf-game/lobby"]);
+  expect(page.props.initialWerewolfLobby).toEqual(lobby);
+});
+
 test("anonymous 404 defers to authenticated client retry; transport failures retain their status", async () => {
   for (const status of [404, 503]) {
     const reads = serveIdentity(status);

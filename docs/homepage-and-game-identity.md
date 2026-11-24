@@ -164,6 +164,15 @@ the viewport. They reserve the top for logo/status and the bottom for the frame
 caption, with a five-line excerpt limit. The game entry page shows the full
 episode copy and the trailer when one is available.
 
+The library streams its first shelf behind a card skeleton, then uses the same
+skeleton for individual shelves that load in the browser. Game entry and Details
+have route skeletons that persist while their data or code is loading. The
+waiting Influence lobby renders from the server game snapshot and polls the cast
+directly. It loads the replay viewer only if the game starts. Werewolf game entry
+starts its lobby read on the server, and Details loads the game-specific results
+screen without starting the playback viewer. The optional server snapshot gets a
+1.5-second budget, after which the browser can fetch it while showing the shell.
+
 ## Homepage on large displays
 
 The homepage composition expands to 1920px, with a larger headline above 1800px

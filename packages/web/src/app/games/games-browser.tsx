@@ -7,6 +7,7 @@ import { collectionLabel, matchesGameCollection, type GameCollection } from "@/l
 import { listWerewolfGames, listWerewolfGamesForSearch, fillWerewolfLobby, startWerewolfLobby, stopWerewolf, setWerewolfHidden, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { EpisodeCard } from "./episode-preview";
 import { InitialShelf } from "./initial-shelf";
+import { GameLibrarySkeleton } from "./game-library-loading";
 import {
   fillGame,
   hideGame,
@@ -394,7 +395,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   if (loading) {
     if (initialGames.length) return <InitialShelf games={initialGames}><p role="status" className="influence-copy-muted text-sm">Loading the full game library…</p></InitialShelf>;
     return (
-      <div className="episode-grid" role="status" aria-label="Loading games"><div className="episode-skeleton" /><div className="episode-skeleton" /><span className="sr-only">Loading games…</span></div>
+      <GameLibrarySkeleton grid />
     );
   }
 
