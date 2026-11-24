@@ -55,8 +55,9 @@ API/web/worker family, mirrors the worker to staging ECR, invokes the private
 infra workflow to provision/update and admit `HouseRenderBatch-staging`, then
 dispatches the host deployment. Failed Batch admission prevents host dispatch.
 The release logs the exact downstream run ID and retries transient GitHub
-evidence reads for that run. It dispatches Batch only once per attempt and
-requires successful verification of the exact admission receipt before host access.
+evidence reads or incomplete status responses for that run. It dispatches Batch
+only once per attempt and requires successful verification of the exact
+admission receipt before host access.
 Both Batch lanes are provisioned. The initial Studio activation selected only
 exports; this migration also selects trailers. No manual Batch workflow dispatch
 or per-image secret edit is needed.

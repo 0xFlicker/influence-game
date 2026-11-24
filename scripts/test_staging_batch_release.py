@@ -76,6 +76,45 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(requests), 4)
         self.assertEqual(waits, [5, 10, 20])
 
+    def test_incomplete_first_poll_can_recover_without_redispatch(self):
+        dispatches = []
+        reads = [b'null', b'[]', b'{"id": 56}']
+        waits = []
+
+        def dispatch(body):
+            dispatches.append(body)
+            return {'workflow_run_id': 56}
+
+        def request(endpoint):
+            if reads:
+                self.assertEqual(endpoint, f'{m.admission.REPO}/actions/runs/56/attempts/1')
+                return reads.pop(0)
+            return self.fixture.request(endpoint)
+
+        outputs, receipt = m.deploy(self.fixture.env, request, dispatch, waits.append)
+        self.assertEqual(len(dispatches), 1)
+        self.assertEqual(waits, [5, 10, 20])
+        self.assertEqual(outputs['batch_admission_run_id'], '56')
+        self.assertEqual(receipt['mirrorRunId'], 34)
+
+    def test_invalid_status_never_reaches_receipt_verification(self):
+        for payload in (b'', b'null', b'[]', b'{"id": 56, "run_attempt": 1}', b'{"status": "completed"}'):
+            with self.subTest(payload=payload), self.assertRaises(m.RunStatusNotReady):
+                waits = []
+
+                def request(endpoint):
+                    self.assertEqual(endpoint, f'{m.admission.REPO}/actions/runs/56/attempts/1')
+                    return payload
+
+                m.deploy(self.fixture.env, request, lambda _: {'workflow_run_id': 56}, waits.append)
+            self.assertEqual(waits, [5, 10, 20])
+
+    def test_wrong_poll_identity_fails_without_retry(self):
+        for bad in ({'id': 57}, {'run_attempt': 2}, {'id': 56.0}):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'wrong identity'):
+                m.deploy(self.fixture.env, lambda _: json.dumps({**self.fixture.run, **bad}).encode(),
+                         lambda _: {'workflow_run_id': 56}, lambda _: self.fail('retried wrong Batch run identity'))
+
     def test_forbidden_reads_are_not_retried(self):
         def request(_):
             raise m.admission.GitHubReadError(403)

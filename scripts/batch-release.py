@@ -6,22 +6,44 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import traceback
 
 spec = importlib.util.spec_from_file_location('admission', Path(__file__).with_name('verify-batch-admission.py'))
 admission = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(admission)
 
 
+class RunStatusNotReady(admission.AdmissionError):
+    pass
+
+
 def read_evidence(request, endpoint, run_id, sleep):
     for delay in (5, 10, 20):
         try:
             return request(endpoint)
-        except admission.GitHubReadError as error:
-            if not error.retryable:
+        except (admission.GitHubReadError, RunStatusNotReady) as error:
+            if isinstance(error, admission.GitHubReadError) and not error.retryable:
                 raise
             print(f'Batch run {run_id}: {error}; retrying in {delay}s', file=sys.stderr, flush=True)
             sleep(delay)
     return request(endpoint)
+
+
+def read_run_status(request, endpoint, run_id):
+    try:
+        run = json.loads(request(endpoint))
+    except json.JSONDecodeError:
+        raise RunStatusNotReady('GitHub did not return JSON for the Batch run status') from None
+    if not isinstance(run, dict):
+        raise RunStatusNotReady(f'GitHub returned {type(run).__name__} for the Batch run status')
+    fields = {'id': run_id, 'run_attempt': 1}
+    for key, expected in fields.items():
+        if key in run:
+            admission.require(type(run[key]) is int and run[key] == expected,
+                              f'GitHub returned the wrong identity for Batch run {run_id}, attempt 1')
+    if not fields.keys() <= run.keys() or not isinstance(run.get('status'), str) or not run['status']:
+        raise RunStatusNotReady('GitHub did not return a complete Batch run status')
+    return run
 
 
 def deploy(env, request=admission.github, dispatch=None, sleep=time.sleep):
@@ -53,8 +75,11 @@ def deploy(env, request=admission.github, dispatch=None, sleep=time.sleep):
     def read(endpoint):
         return read_evidence(request, endpoint, run_id, sleep)
 
+    def read_status(endpoint):
+        return read_run_status(request, endpoint, run_id)
+
     for _ in range(120):
-        run = json.loads(read(f'{admission.REPO}/actions/runs/{run_id}/attempts/1'))
+        run = read_evidence(read_status, f'{admission.REPO}/actions/runs/{run_id}/attempts/1', run_id, sleep)
         if run.get('status') == 'completed':
             admission.require(run.get('conclusion') == 'success', f'Batch run {run_id} completed without success')
             env = {**env, 'BATCH_ADMISSION_RUN_ID': str(run_id), 'BATCH_ADMISSION_RUN_ATTEMPT': '1'}
@@ -74,4 +99,6 @@ if __name__ == '__main__':
     except admission.AdmissionError as error:
         raise SystemExit(f'Automatic Batch admission failed: {error}. Host deployment was not dispatched.') from None
     except Exception as error:
-        raise SystemExit(f'Automatic Batch admission failed ({type(error).__name__}). Host deployment was not dispatched.') from None
+        frame = traceback.extract_tb(error.__traceback__)[-1]
+        location = f'{Path(frame.filename).name}:{frame.lineno} in {frame.name}'
+        raise SystemExit(f'Automatic Batch admission failed ({type(error).__name__} at {location}). Host deployment was not dispatched.') from None
