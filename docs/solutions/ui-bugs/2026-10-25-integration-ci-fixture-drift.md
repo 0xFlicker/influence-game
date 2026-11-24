@@ -12,11 +12,12 @@ integration branch changed the underlying contracts.
 The Studio PostgreSQL tests synthesize no paid audio, but they do probe a saved
 MP3 through the real publication path. The worker correctly retains a failed
 track when `ffprobe` is unavailable; the subsequent manifest is null. Reproducing
-the test with FFmpeg absent from `PATH` produces the same failure. Install the
-`ffmpeg` package explicitly in PostgreSQL CI jobs and API browser jobs, which also
-use it to create synthetic audio. Assert the track's ready status and include its
-saved error before checking publication, so dependency failures remain legible.
-Do not bypass probing with an invented duration in these integration tests.
+the test with FFmpeg absent from `PATH` produces the same failure. PostgreSQL CI
+uses the FFmpeg tools bundled with the pinned Remotion dependency. The API
+browser job installs the system `ffmpeg` package, which it also uses to create
+synthetic audio. Assert the track's ready status and include its saved error
+before checking publication, so dependency failures remain legible. Do not
+bypass probing with an invented duration in these integration tests.
 
 The public library fixture must mock Werewolf's current
 `PATCH /api/admin/werewolf/:id/visibility` endpoint and assert `{hidden:true}`;

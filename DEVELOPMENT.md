@@ -193,6 +193,11 @@ bun run test:e2e:layered-auth:clerk
 
 **Important:** use the repository scripts, not raw root `bun test`. The scripts select the correct Bun config and ensure paid/external suites cannot be discovered by a required lane.
 
+The provider-free and PostgreSQL jobs in `ci.yml` put the lockfile-pinned
+Remotion `ffmpeg` and `ffprobe` binaries on `PATH` after `bun install`. This
+keeps real media checks independent of Ubuntu package mirror downloads. Local
+test runs need FFmpeg on `PATH` for the media fixtures.
+
 Required PostgreSQL CI uses four Bun file shards, each on an independent runner
 with its own PostgreSQL service. Each shard keeps `--max-concurrency 1` and the
 existing `setupTestDB()` process lock; tests sharing a database must remain
@@ -234,7 +239,7 @@ API browser CI uses Bun's deterministic file sharding across three jobs, each wi
 
 ### Staging release E2E contract
 
-The `E2E Staging Tests` workflow receives the immutable deployed image tag, resolves it to the exact source commit while keeping the release-gate test code on current `main`, and requires `/api/health` to report that same full commit SHA before and after every serial smoke test. It navigates the homepage at `https://influence-staging.tail8a79ed.ts.net` with normal browser headers, keeps the title assertion, and fails closed on an identity mismatch, non-HTML response, or blank/missing title.
+The `E2E Staging Tests` workflow receives the immutable candidate identity, verifies that the deployed source commit is in the trusted `main` history, and checks out that exact commit. Its Ubuntu 24.04 runner supplies the system libraries for Playwright's lockfile-pinned Chromium headless shell. The smoke tests require `/api/health` to report the candidate commit before and after every serial test. They navigate the homepage at `https://influence-staging.tail8a79ed.ts.net` with normal browser headers, check the title, and fail closed on an identity mismatch, non-HTML response, or blank/missing title.
 
 On failure, the workflow uploads Playwright traces, screenshots, and a bounded `homepage-failure-evidence.json` file containing final URL, status, redacted response headers, title, and a SHA-256 body fingerprint. Staging traces exclude DOM snapshots and source files, and the workflow never uploads the raw page body. A passing staging deploy is not a release certificate until the deployment workflow has separately adopted the E2E result after the required stability proof.
 

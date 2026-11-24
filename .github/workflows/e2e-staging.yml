@@ -128,8 +128,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
+      # The Ubuntu runner already provides Chromium's runtime libraries.
+      - name: Install Playwright Chromium headless shell
+        run: bunx --no-install playwright install --only-shell chromium
 
       - name: Run E2E tests
         id: release-e2e
