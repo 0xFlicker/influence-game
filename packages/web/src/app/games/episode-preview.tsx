@@ -1,7 +1,6 @@
 "use client";
 
 import { GameCard } from "@/components/games/game-card";
-import { GameLogo } from "@/components/game-logo";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -118,24 +117,14 @@ export function EpisodeTrailer({ preview, autoplay, onEnded }: { preview: Episod
 }
 
 export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; management?: ReactNode; onJoin?: () => void }) {
-  const [expanded, setExpanded] = useState(false);
   const [preview, setPreview] = useState<EpisodePreview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [ended, setEnded] = useState(false);
   const request = useRef<Promise<void> | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
   const title = gameDisplayName(game);
   const load = () => {
     if (preview || request.current) return;
-    request.current = getEpisodePreview(game.id).then(p => { setPreview(p); setError(null); }).catch(() => setError("Trailer unavailable. You can still open the game.")).finally(() => { request.current = null; });
+    // Keep the card's existing artwork when the optional hover preview is unavailable.
+    request.current = getEpisodePreview(game.id).then(setPreview, () => setPreview(null)).finally(() => { request.current = null; });
   };
-  useEffect(() => {
-    if (!expanded) return;
-    const d = dialog.current!; const prior = document.activeElement as HTMLElement | null;
-    const overflow = document.body.style.overflow; document.body.style.overflow = "hidden";
-    d.showModal();
-    return () => { d.close(); document.body.style.overflow = overflow; prior?.focus(); };
-  }, [expanded]);
   const werewolf = "gameKind" in game && game.gameKind === "werewolf";
   const waiting = game.status === "waiting";
   const live = game.status === "in_progress";
@@ -150,8 +139,7 @@ export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; m
     {waiting ? onJoin ? <button type="button" className="influence-button-primary" onClick={onJoin}>Join game</button> : <Link className="influence-button-primary" href={gameHref(game.slug)}>Join game</Link>
       : live || game.status === "completed" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Open game</Link>}
   </>;
-  return <>
-    <GameCard gameKind={werewolf ? "werewolf" : "influence"} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label}
+  return <GameCard gameKind={werewolf ? "werewolf" : "influence"} data-testid="episode-card" data-game-kind={werewolf ? "werewolf" : "influence"} title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label}
       description={game.episode?.description ?? (werewolf ? "A village of agents. A pack hiding in plain sight." : "Meet the cast. Step inside the House.")}
       meta={<>{season && <span className="episode-season">{season.name}{game.episode?.episodeNumber != null ? ` · Ep ${game.episode.episodeNumber}` : ""}</span>}
         <span>{waiting ? `${Math.min(joined, game.playerCount)}/${game.playerCount} joined` : `${game.playerCount} agents`}</span></>}
@@ -159,14 +147,5 @@ export function EpisodeCard({ game, management, onJoin }: { game: LibraryGame; m
       actions={actions}
       management={management}
       onMouseEnter={() => { if (!waiting && matchMedia("(hover: hover) and (pointer: fine)").matches) load(); }}
-      onOpen={e => {if(waiting || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)return;if(matchMedia("(hover: none), (pointer: coarse)").matches){e.preventDefault();load();setEnded(false);setExpanded(true);}else if(!werewolf) requestEpisodePlayback(game.slug);}} />
-    {expanded && <dialog ref={dialog} className="episode-modal" aria-label={title} onCancel={() => setExpanded(false)} onClose={() => setExpanded(false)}>
-      <header><GameLogo game={werewolf ? "werewolf" : "influence"} className="episode-modal-logo" /><button autoFocus type="button" onClick={() => setExpanded(false)}>Close ×</button></header>
-      <div className="episode-modal-media">{preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay onEnded={() => setEnded(true)} /> : <EpisodeArtwork frames={frames} title={title} backgroundUrl={backgroundUrl} />}</div>
-      <div className="episode-copy"><h2>{title}</h2><p>{game.episode?.description}</p>{error && <p role="status">{error}</p>}
-      <div className="episode-modal-actions"><Link className="influence-button-secondary" href={gameHref(game.slug)}>Open game</Link>{actions}
-      {ended && preview?.media.status === "ready" && <button onClick={() => setEnded(false)}>Replay trailer</button>}</div>
-      {management && <div className="episode-management">{management}</div>}</div>
-    </dialog>}
-  </>;
+      onOpen={waiting || werewolf ? undefined : () => requestEpisodePlayback(game.slug)} />;
 }

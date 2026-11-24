@@ -154,13 +154,15 @@ admin workspace and form layouts are outside this discovery redesign.
 Artwork mounts only the current cast/scene frame. This avoids briefly drawing
 both groups of names together and prevents invisible cast frames from fetching
 images. The selected frame order and rotation timing are unchanged. Card links
-use their visible content as the accessible name. Shared footer labels use a
-higher-contrast neutral after the discovery-page accessibility audit.
+use their visible content as the accessible name and open the game's entry page
+from the artwork, copy or non-control footer area on desktop and touch. Watch,
+Details, Join and management controls have their own actions. Shared footer
+labels use a higher-contrast neutral after the discovery-page accessibility audit.
 
 House narration previews size text against the artwork container (`cqw`), not
 the viewport. They reserve the top for logo/status and the bottom for the frame
-caption, with a five-line excerpt limit. Full episode copy remains in the card
-preview dialog and detail page.
+caption, with a five-line excerpt limit. The game entry page shows the full
+episode copy and the trailer when one is available.
 
 ## Homepage on large displays
 

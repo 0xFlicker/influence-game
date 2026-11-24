@@ -14,12 +14,12 @@ interface GameCardProps extends Omit<ComponentProps<"article">, "title" | "child
   artwork: ReactNode;
   actions: ReactNode;
   management?: ReactNode;
-  onOpen?: ComponentProps<typeof Link>["onClick"];
+  onOpen?: ComponentProps<typeof Link>["onNavigate"];
 }
 
 export function GameCard({ title, href, status, statusLabel, gameKind, description, meta, artwork, actions, management, onOpen, ...article }: GameCardProps) {
   return <article {...article} className={`episode-card ${article.className ?? ""}`}>
-    <Link className="episode-card-link" href={href} onClick={onOpen}>
+    <Link className="episode-card-link" href={href} onNavigate={onOpen}>
       <div className="episode-card-media">
         {artwork}
         <span className={`episode-status episode-status-${status}`}>{statusLabel}</span>
