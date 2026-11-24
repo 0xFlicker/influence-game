@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import GameViewerPage from "../app/(site)/games/[slug]/page";
+import GameViewerPage from "../app/(site)/games/[slug]/(entry)/page";
 import GameReplayPage from "../app/(site)/games/[slug]/replay/page";
 
 describe("game route compatibility redirects", () => {

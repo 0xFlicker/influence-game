@@ -349,12 +349,15 @@
   padding:12px 0
 }
 .episode-skeleton {
-  aspect-ratio:1.1;
   background:#19191e;
   border:1px solid #ffffff1a;
   border-radius:10px;
-  animation:episode-pulse 2s infinite
+  overflow:hidden;
+  animation:episode-pulse 2s infinite;
 }
+.episode-skeleton-artwork { aspect-ratio:16/9; background:#24242b; }
+.episode-skeleton-bar { display:block; border-radius:6px; background:#30303a; }
+.episode-rail.episode-skeleton-rail { overflow:hidden; }
 @media(min-width:1600px) {
   .game-library-content { --episode-columns:4; }
 }

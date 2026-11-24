@@ -3,11 +3,13 @@
 import { CastingRoster, CastCard, CastInvitation, CastRemoveButton } from "@/components/casting/casting-roster";
 import { CastPortraitDialog } from "@/components/casting/cast-portrait";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import { GameSiteEntry } from "../game-site-entry";
+import { GameEntryLoading } from "../game-entry-loading";
 import { GameEpisode } from "../game-episode";
 import { PostgameTrailer } from "@/app/games/[slug]/components/postgame-trailer";
 import { WerewolfArtwork } from "./werewolf-artwork";
@@ -20,14 +22,18 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { getPersonaLabel } from "@/lib/personas";
 import { agentProfileHref } from "@/components/agent-profile-link";
 import { getWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, startWerewolfLobby, stopWerewolf, type WerewolfLobbyData } from "@/lib/werewolf-api";
-import { WerewolfViewer } from "./werewolf-viewer";
 import { WerewolfWatchChoices } from "./werewolf-watch-choices";
 
-export function WerewolfEntry({ slug, audience, replay = false, startCursor }: { slug: string; audience?: WerewolfAudience; replay?: boolean; startCursor?: number }) {
+const WerewolfViewer = dynamic(() => import("./werewolf-viewer").then(module => module.WerewolfViewer), { loading: () => <GameEntryLoading /> });
+
+export function WerewolfEntry({ slug, audience, replay = false, startCursor, initialGame }: { slug: string; audience?: WerewolfAudience; replay?: boolean; startCursor?: number; initialGame?: WerewolfLobbyData }) {
   const query = useQuery({ queryKey: ["werewolf-lobby", slug], queryFn: ({ signal }) => getWerewolfLobby(slug, signal),
+    initialData: initialGame, staleTime: initialGame ? 5_000 : 0,
     refetchInterval: state => state.state.data?.status === "waiting" ? 5_000 : false, retry: false });
   const game = query.data;
-  if (!game) return <GameSiteEntry><div className="mx-auto max-w-6xl p-8"><Link href="/games">← All games</Link>{query.error ? <p role="alert" className="mt-6">{query.error.message} <button onClick={() => void query.refetch()}>Try again</button></p> : <p role="status" className="mt-6">Opening the village…</p>}</div></GameSiteEntry>;
+  if (!game) return query.error
+    ? <GameSiteEntry><div className="mx-auto max-w-6xl p-8"><Link href="/games">← All games</Link><p role="alert" className="mt-6">{query.error.message} <button onClick={() => void query.refetch()}>Try again</button></p></div></GameSiteEntry>
+    : <GameEntryLoading />;
   if (game.status === "waiting") return <WerewolfWaitingGame game={game} refresh={async () => { const result = await query.refetch(); if (result.error) throw result.error; }} refreshError={query.error?.message} />;
   if (game.status === "cancelled" && !game.started) return <GameSiteEntry><div className="mx-auto max-w-3xl p-8"><Link href="/games">← All games</Link><h1 className="mt-8 text-3xl">This game was stopped.</h1></div></GameSiteEntry>;
   if (replay && audience) return <WerewolfViewer key={slug} slug={slug} title={game.episode?.title} audience={audience} startCursor={startCursor} />;

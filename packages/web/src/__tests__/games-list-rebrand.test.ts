@@ -7,7 +7,7 @@ const gamesBrowserSource = readFileSync(
   "utf8",
 );
 const gamesPageSource = readFileSync(
-  join(import.meta.dir, "../app/(site)/games/page.tsx"),
+  join(import.meta.dir, "../app/(site)/games/(library)/page.tsx"),
   "utf8",
 );
 const navSource = readFileSync(join(import.meta.dir, "../components/nav.tsx"), "utf8");

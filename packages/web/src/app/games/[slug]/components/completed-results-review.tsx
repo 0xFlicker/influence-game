@@ -4,6 +4,7 @@ import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
 import { OwnerLearningActivation } from "@/app/dashboard/agents/[id]/review/owner-learning-activation";
 import { ResultsHeader } from "@/components/games/results-header";
+import { GameEntrySkeleton } from "@/components/games/game-entry-loading";
 import { RetrospectiveResumeControl } from "@/components/games/retrospective-resume-control";
 import { GameBanner } from "@/components/game-banner";
 import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-links";
@@ -114,13 +115,7 @@ export function CompletedResultsReview({
     );
   }
 
-  if (currentState.status === "loading") {
-    return (
-      <div className="influence-glass rounded-panel p-8 text-sm text-white/60">
-        Loading results...
-      </div>
-    );
-  }
+  if (currentState.status === "loading") return <GameEntrySkeleton results />;
 
   const { payload } = currentState;
   const model = buildCompletedResultsReviewModel(payload.results);

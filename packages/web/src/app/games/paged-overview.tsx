@@ -7,6 +7,7 @@ import { usePagedGames } from "@/hooks/use-paged-games";
 import type { PagedGamesPage } from "@/lib/paged-games";
 import type { GameStatus, SeasonIdentity } from "@/lib/api";
 import { EpisodeShelf, GameCard } from "./games-browser";
+import { GameLibrarySkeleton } from "./game-library-loading";
 
 type Filters = { kind: "all" | "influence" | "werewolf"; status: "all" | GameStatus; category: string };
 
@@ -33,7 +34,7 @@ function OverviewShelf({ name, href, query, onRefresh, initialPage }: { name: st
   if (!library.items.length && !library.loading && !library.error && !library.nextCursor) return null;
   const refresh = async () => { onRefresh(); };
   return <section aria-label={`${name} shelf`}>
-    {library.loading && <p role="status">Loading {name} games…</p>}
+    {library.loading && !library.items.length && <GameLibrarySkeleton shelf={name} />}
     {library.error && <p role="alert">{library.error} <button onClick={() => void library.retry()}>Try again</button></p>}
     {library.items.length > 0 && <EpisodeShelf name={name} grid={false} href={href}>{library.items.map(item => <GameCard key={item.game.id} game={item.game} canFill={hasPermission("fill_game")} canStart={hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role))} canStop={hasPermission("stop_game")} canHide={hasPermission("hide_game")} onRefresh={refresh} />)}</EpisodeShelf>}
     {library.nextCursor && !library.error && <button disabled={library.loading} onClick={() => void library.loadMore()}>Load more {name} games</button>}
