@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MODEL_REASONING_POLICIES, modelCatalogEntryById } from "@influence/engine/model-catalog";
 import type { ProviderModelInventoryEntry } from "@/lib/api";
@@ -41,5 +41,26 @@ test("catalog pricing is available before discovery and unknown models stay unpr
     </InfluenceAuthContext.Provider>);
     expect(html).toContain(expected!);
     expect(html).not.toMatch(/Experimental|inferred|strict JSON/);
+  }
+});
+
+test("a saved retiring preference and the route picker show the date and provider replacement", () => {
+  const model = inventory("openai:gpt-5-nano");
+  const entries = [{ catalogId: model.catalogId, uiId: "primary", reasoningPolicy: "action-policy" as const }];
+  try {
+    setSystemTime(new Date("2026-12-10T23:59:59Z"));
+    const picker = renderToStaticMarkup(<InfluenceAuthContext.Provider value={auth}>
+      <ModelPreferencePicker value={{ catalogId: model.catalogId }} inventory={[model]} onChange={() => {}} />
+    </InfluenceAuthContext.Provider>);
+    expect(picker).toContain("Retires Dec 11, 2026 (UTC) · Provider recommends OpenAI gpt-6-luna");
+
+    setSystemTime(new Date("2026-12-11T00:00:00Z"));
+    const route = renderToStaticMarkup(<ProviderRouteEditor entries={entries} activeRoute={entries}
+      models={[model]} visualMode={false} onChange={() => {}} />);
+    expect(route).toContain("Retired Dec 11, 2026 (UTC) · Provider recommends OpenAI gpt-6-luna");
+    expect(route).toContain('<option value="openai:gpt-5-nano" disabled="" selected="">');
+    expect(route).toContain("Unavailable for new games");
+  } finally {
+    setSystemTime();
   }
 });

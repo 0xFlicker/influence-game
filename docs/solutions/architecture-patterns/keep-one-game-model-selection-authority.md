@@ -20,6 +20,8 @@ related_components: [api, database, model-catalog, documentation]
 
 Historical running/recoverable games retain their sealed `providerManifest` through the bounded restoration reader. Waiting legacy games cross to `modelRouting` at first start; new writes do not duplicate `modelSelection`, `providerManifest`, or per-seat `agentConfig.model`. Remove the reader only after environment inventory proves no recoverable game needs it. Completed evidence stays immutable. New Luna routes enforce Flex independently of any legacy service-tier setting.
 
+Check provider retirement in new-selection and sealing policy. Historical normalization and runtime readers still accept the original route after the retirement date. The picker consumes the same provider facts and displays a recommendation without applying it to a saved or frozen route.
+
 Fallback allowance belongs to the game policy and responsibility, not simply the model ID: contestants share one route allowance and the House has another. A model serving one contestant as a primary must not consume another contestant's fallback allowance. Reserve before dispatch, retain indeterminate reservations, and replay accepted results without reserving again.
 
 Episode-copy work can precede game start. Keep its existing revision/lease as authority when using the provider journal; do not manufacture a game owner epoch merely to satisfy a foreign key. Preserve game-owner constraints for actual gameplay and retain episode evidence through the same object-storage pipeline.

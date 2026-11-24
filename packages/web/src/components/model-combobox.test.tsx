@@ -87,3 +87,19 @@ test("disabled preferences cannot open", () => {
   expect((mounted.getByRole("button") as HTMLButtonElement).disabled).toBe(true);
   expect(mounted.queryByRole("listbox")).toBeNull();
 });
+
+test("a retired model shows its replacement and rejects both keyboard and pointer selection", async () => {
+  const change = mock();
+  const detail = "Retired Dec 11, 2026 (UTC) · Provider recommends OpenAI gpt-6-luna";
+  const retired = { value: "openai:gpt-5-nano", label: "OpenAI GPT-5 Nano", disabled: true, detail };
+  const mounted = render(<ModelCombobox label="Preferred model" value="default" options={[...options, retired]} onChange={change} />);
+  const input = mounted.getByRole("combobox");
+  fireEvent.focus(input);
+  fireEvent.input(input, { target: { value: "gpt 5 nano" } });
+  const option = await mounted.findByRole("option");
+  expect(option.textContent).toContain(detail);
+  expect(option.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.click(option);
+  expect(change).not.toHaveBeenCalled();
+});

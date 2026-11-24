@@ -1,8 +1,19 @@
-import { DEFAULT_MODEL_CATALOG_ID, MAX_PROVIDER_ENTRY_CALLS_PER_GAME, normalizeProviderManifest, resolveProviderManifest, resolveProviderManifestFromGameConfig, type GameModelSelection, type GameProviderManifest, type ResolvedProviderManifestEntry } from "./model-catalog";
+import { DEFAULT_MODEL_CATALOG_ID, MAX_PROVIDER_ENTRY_CALLS_PER_GAME, modelCatalogEntryById, normalizeProviderManifest, resolveProviderManifest, resolveProviderManifestFromGameConfig, type GameModelSelection, type GameProviderManifest, type ResolvedProviderManifestEntry } from "./model-catalog";
 import { assertCurrentClaudeSelection } from "./claude-routing";
 import { assertCurrentGrokSelection } from "./grok-routing";
+import { isModelRetired } from "./model-route-metadata";
 
 function assertCurrentSelection(catalogId: string): void {
+  const model = modelCatalogEntryById(catalogId);
+  const documented = model?.metadata.documented;
+  if (model && isModelRetired(documented)) {
+    const notice = documented?.deprecation;
+    const date = notice ? ` on ${notice.retirementDate}` : "";
+    const replacement = notice
+      ? ` Provider-recommended replacement is ${model.providerProfileId}:${notice.replacementModelId}${notice.replacementRequirement ? ` (${notice.replacementRequirement})` : ""}.`
+      : "";
+    throw new Error(`Model ${catalogId} retired${date} and cannot be used for a new game.${replacement}`);
+  }
   assertCurrentClaudeSelection(catalogId);
   assertCurrentGrokSelection(catalogId);
 }

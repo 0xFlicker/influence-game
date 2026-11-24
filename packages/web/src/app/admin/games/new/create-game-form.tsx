@@ -9,6 +9,8 @@ import type { WerewolfSetup } from "@influence/engine/werewolf/types";
 import { useRouter } from "next/navigation";
 import { MODEL_CATALOG, MODEL_REASONING_POLICIES, modelCatalogEntryById } from "@influence/engine/model-catalog";
 import { ModelPricing } from "@/components/model-pricing";
+import { ModelRetirement, modelRetirement } from "@/components/model-retirement";
+import { isModelRetired } from "@influence/engine/model-route-metadata";
 import { DEFAULT_GAME_FALLBACKS, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import { DEFAULT_CONTESTANT_RECOVERY_CALLS } from "@influence/engine/game-model-routing";
 import {
@@ -378,6 +380,8 @@ function routeEntryError(
   model?: GameModelOption,
 ): string | null {
   if (!entry.catalogId) return "Select a model.";
+  const retirement = modelRetirement(entry.catalogId, model?.metadata);
+  if (retirement?.retired) return `${retirement.text}. Choose another model.`;
   if (model?.configured === false) return "This provider is not configured.";
   if (
     index > 0
@@ -462,22 +466,21 @@ export function ProviderRouteEditor({
     onChange(nextEntries);
   }
 
+  const nextFallback = models.find(model => !isModelRetired(model.metadata?.documented)
+    && !entries.some(entry => entry.catalogId === model.catalogId));
+
   function addFallback() {
-    const used = new Set(entries.map((entry) => entry.catalogId));
-    const available = models.find((model) => !used.has(model.catalogId));
-    if (!available) return;
+    if (!nextFallback) return;
     const next = providerRouteEntry({
-      catalogId: available.catalogId,
-      reasoningPolicy: available.defaultReasoningPolicy,
+      catalogId: nextFallback.catalogId,
+      reasoningPolicy: nextFallback.defaultReasoningPolicy,
       maxCallsPerGame: 12,
     });
     pendingFocusId.current = next.uiId;
     onChange([...entries, next]);
   }
 
-  const canAdd = models.some(
-    (model) => !entries.some((entry) => entry.catalogId === model.catalogId),
-  );
+  const canAdd = Boolean(nextFallback);
 
   return (
     <div className="space-y-3">
@@ -576,11 +579,12 @@ export function ProviderRouteEditor({
                         (other, otherIndex) => otherIndex !== index && other.catalogId === model.catalogId,
                       );
                       const unavailable = !model.configured;
+                      const retirement = modelRetirement(model.catalogId, model.metadata);
                       return (
                         <option
                           key={model.catalogId}
                           value={model.catalogId}
-                          disabled={selectedElsewhere || unavailable}
+                          disabled={selectedElsewhere || unavailable || retirement?.retired}
                         >
                           {model.displayName}
                           {selectedElsewhere
@@ -588,11 +592,13 @@ export function ProviderRouteEditor({
                             : unavailable
                               ? " (unavailable)"
                               : ""}
+                          {retirement ? ` · ${retirement.text}` : ""}
                         </option>
                       );
                     })}
                   </select>
                   <input aria-label={`${labelPrefix}${index === 0 ? "Primary" : `Fallback ${index}`} exact model ID`} value={entry.catalogId} onInput={event => selectModel(index, event.currentTarget.value)} className="mt-2 w-full rounded border border-white/10 bg-[#09090c] px-3 py-2 text-xs" />
+                  <ModelRetirement catalogId={entry.catalogId} metadata={selectedModel?.metadata} />
                   <ModelPricing rateCard={(selectedModel?.metadata ?? modelCatalogEntryById(entry.catalogId)?.metadata)?.rateCard} />
                 </label>
 
@@ -703,7 +709,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       })));
       const configuredModelIds = new Set(
         inventory.models
-          .filter((model) => model.configured && model.available === true)
+          .filter((model) => model.configured && model.available === true && !isModelRetired(model.metadata?.documented))
           .map((model) => model.catalogId),
       );
       const recommendedRoute = [

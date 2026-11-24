@@ -1,4 +1,4 @@
-import { providerModelFacts } from "./provider-model-facts";
+import { providerModelFacts, type ProviderModelFacts } from "./provider-model-facts";
 import { estimateCost, type ModelPricing, type TokenUsage } from "./token-tracker";
 
 export interface ModelRateCard {
@@ -33,6 +33,14 @@ export function modelRateCard(catalogId: string, serviceTier = "default"): Model
 export function estimateRouteCost(usage: Partial<TokenUsage>, card: ModelRateCard): number {
   const total = estimateCost({ promptTokens: 0, cachedTokens: 0, completionTokens: 0, reasoningTokens: 0, totalTokens: 0, callCount: 1, emptyResponses: 0, ...usage }, card.rates).totalCost;
   return Math.max(card.minimumUsd ?? 0, card.roundingUsd ? Math.ceil((total - Number.EPSILON) / card.roundingUsd) * card.roundingUsd : total);
+}
+
+/** Provider date-only notices take effect at the start of the stated UTC day. */
+export function isModelRetired(
+  facts: Pick<ProviderModelFacts, "retired" | "deprecation"> | null | undefined,
+  now = new Date(),
+): boolean {
+  return Boolean(facts?.retired || (facts?.deprecation && now.toISOString().slice(0, 10) >= facts.deprecation.retirementDate));
 }
 
 export function modelRouteMetadata(catalogId: string) {

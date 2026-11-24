@@ -10,6 +10,7 @@ import { getProviderModels, type ProviderModelInventoryEntry } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { ModelCombobox } from "./model-combobox";
 import { ModelPricing } from "./model-pricing";
+import { ModelRetirement, modelRetirement } from "./model-retirement";
 import styles from "./model-preference-picker.module.css";
 
 export function ModelPreferencePicker({
@@ -52,19 +53,18 @@ export function ModelPreferencePicker({
     };
   }, [privileged, inventory]);
   const selected = value === "default" ? "default" : value.catalogId;
+  const discovered = new Map((inventory ?? models).map(model => [model.catalogId, model]));
   const choices = new Map(
     FREE_MODEL_CATALOG_IDS.map((id) => [
       id as string,
       modelCatalogEntryById(id)!.displayName,
     ]),
   );
-  for (const model of inventory ?? models)
+  for (const model of discovered.values())
     choices.set(model.catalogId, model.displayName);
   if (selected !== "default" && !choices.has(selected))
-    choices.set(selected, selected);
-  const details = (inventory ?? models).find(
-    (model) => model.catalogId === selected,
-  );
+    choices.set(selected, modelCatalogEntryById(selected)?.displayName ?? selected);
+  const details = discovered.get(selected);
   const metadata =
     details?.metadata ?? modelCatalogEntryById(selected)?.metadata;
   const options = [
@@ -76,7 +76,10 @@ export function ModelPreferencePicker({
           },
         ]
       : []),
-    ...[...choices].map(([key, label]) => ({ value: key, label })),
+    ...[...choices].map(([key, label]) => {
+      const retirement = modelRetirement(key, discovered.get(key)?.metadata);
+      return { value: key, label, detail: retirement?.text, disabled: retirement?.retired };
+    }),
   ];
   return (
     <div className="space-y-2">
@@ -91,6 +94,7 @@ export function ModelPreferencePicker({
           }
         />
       </div>
+      <ModelRetirement catalogId={selected} metadata={metadata} />
       {privileged && selected !== "default" && (
         <ModelPricing rateCard={metadata?.rateCard} />
       )}

@@ -1,5 +1,5 @@
 import { DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
-import { beforeEach, expect, test } from "bun:test";
+import { beforeEach, expect, setSystemTime, test } from "bun:test";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { FREE_MODEL_CATALOG_IDS, actorProviderManifest, gameModelPolicy } from "@influence/engine";
@@ -37,6 +37,27 @@ test("new Claude settings cannot bypass native-family policy through legacy mani
   }
   await expect(saveModelPreference(db, "owner", "character", { catalogId: "katana:claude-haiku-4-5" })).rejects.toThrow("anthropic:claude-haiku-5-5");
   expect((await creationModelRouting(db, "admin", { providerManifest: [{ catalogId: "anthropic:claude-sonnet-5-5" }] })).defaultManifest[0]!.catalogId).toBe("anthropic:claude-sonnet-5-5");
+});
+
+test("a retired alias blocks new games and waiting lobbies while frozen assignments remain readable", async () => {
+  const retired = { catalogId: "openai:gpt-5-nano-2025-08-07" };
+  const error = /retired on 2026-12-11.*openai:gpt-6-luna/;
+  const seat = { id: "seat", modelPreference: retired };
+  try {
+    setSystemTime(new Date("2026-12-10T23:59:59Z"));
+    const policy = await creationModelRouting(db, "admin", { providerManifest: [retired] });
+    const frozen = await db.transaction(tx => sealRosterModelRouting(tx, { modelRouting: policy }, [seat]));
+    setSystemTime(new Date("2026-12-11T00:00:00Z"));
+    for (const input of [{ providerManifest: [retired] }, { modelSelection: retired }, { modelRouting: policy }]) {
+      await expect(creationModelRouting(db, "admin", input)).rejects.toThrow(error);
+    }
+    await expect(createWerewolfGame(db, "admin", { preset: "one_wolf", agentProfileIds: [], providerManifest: [retired] })).rejects.toThrow(error);
+    await expect(db.transaction(tx => sealRosterModelRouting(tx, { modelRouting: policy }, [seat]))).rejects.toThrow(error);
+    expect(actorProviderManifest(frozen, { id: seat.id, role: "player" })[0]?.catalogId).toBe(retired.catalogId);
+    expect(actorProviderManifest(frozen, { role: "house" })[0]?.catalogId).toBe(retired.catalogId);
+  } finally {
+    setSystemTime();
+  }
 });
 
 test("enrollment preference stays fixed after edits and an explicit admin Default override wins", async () => {
