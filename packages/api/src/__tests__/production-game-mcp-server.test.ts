@@ -144,6 +144,28 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }
   });
 
+  test("routing discovery distinguishes inspection from policy replacement", async () => {
+    const scopes: GameMcpAuthContext["scopes"] = ["producer", "producer:routing"];
+    const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
+      clientScopes: scopes,
+      hasProducerRole: true,
+    }));
+    const tools = await listToolDescriptors(server, { ...PRODUCER_AUTH, scope: scopes.join(" "), scopes });
+    const read = tools.find(({ name }) => name === "read_game_model_routing");
+    expect(read?.description).toContain("summary of provider attempts");
+    expect(read?.description).not.toMatch(/\breplace\b/);
+    expect(read).toMatchObject({
+      inputSchema: { required: ["gameIdOrSlug"] },
+      annotations: { readOnlyHint: true },
+    });
+    expect(read?.inputSchema?.properties).toEqual({ gameIdOrSlug: { type: "string" } });
+    expect(tools.find(({ name }) => name === "set_game_model_routing")).toMatchObject({
+      description: expect.stringContaining("Replace the model-routing policy for a waiting game"),
+      inputSchema: { required: ["gameIdOrSlug", "policy"] },
+      annotations: { readOnlyHint: false },
+    });
+  });
+
   test("unadvertised capability families return empty lists, not errors", async () => {
     const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({
       clientScopes: GAMES_AUTH.scopes, hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,

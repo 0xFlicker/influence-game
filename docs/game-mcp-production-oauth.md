@@ -420,7 +420,7 @@ Use the client's MCP authentication flow when it reports OAuth is needed. Client
 
 ### Producer Setup
 
-Producer setup uses the same `/mcp` URL. Request scope `producer` only when the logged-in user has the `producer` role and needs developer/global inspection or private trace tools. Producer-bearing access tokens remain short-lived at one hour, but eligible clients receive rotating refresh tokens so the host can renew them without hourly user interaction. Every refresh and every producer-token validation re-checks the current DB role.
+Producer setup uses the same `/mcp` URL. Request scope `producer` only when the logged-in user has the `producer` role and needs developer/global inspection or private trace tools. For admins and sysops, `read_game_model_routing` inspects routing policy and provider-attempt summaries. `set_game_model_routing` replaces the policy for a waiting game and also requires `producer:routing`. Producer-bearing access tokens remain short-lived at one hour, but eligible clients receive rotating refresh tokens so the host can renew them without hourly user interaction. Every refresh and every producer-token validation re-checks the current DB role.
 
 ## ChatGPT Developer Mode / Apps SDK
 
