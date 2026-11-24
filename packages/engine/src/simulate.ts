@@ -37,14 +37,14 @@ import { HOUSE_CAST } from "./house-personas";
  * and pre-v12 planned observation hashes retain their original serialized shape.
  * Keep direct House calls and typed evidence; no `as any` shortcuts.
 
- * Native xAI selects xai:grok-4.3/4.5/4.6 or xai:grok-4.20-multi-agent-0309
+ * Native xAI selects xai:grok-4.3/4.5/4.6/4.7 or xai:grok-4.20-multi-agent-0309
  * with XAI_API_KEY. Mutable Katana Grok selections migrate at the same generation;
  * frozen historical games retain Katana. Use the localhost API for paid evaluation.
  * Preserve native encrypted reasoning and exact billing ticks in private evidence.
  * xAI max_output_tokens bounds visible output, not reasoning; current local budget
  * guards reject this provider pending a verified total spending bound.
  * Native Anthropic uses anthropic:claude-haiku-5-5 and ANTHROPIC_API_KEY. Paid
- * New game selections use native Haiku/Sonnet/Opus 5.5 or Fable 5.1; frozen
+ * New game selections use native Haiku/Sonnet/Opus 5.5, Fable 5.1 or Fable 5.2; frozen
  * historical games keep their original provider routes and evidence.
  * evaluation stays on the localhost API, with contestant and House manifests
  * explicit and a shared anthropicUsd local-task allowance. Preserve all original

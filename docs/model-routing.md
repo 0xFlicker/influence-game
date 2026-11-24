@@ -97,7 +97,7 @@ Rate cards are provider-qualified and captured on attempts before dispatch. Term
 
 See [cutover](deployment/game-model-routing-cutover.md), [simulation usage](local-model-evaluation.md), and the [House character proposal](plans/house-character-model-assignments.md).
 
-Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Claude selections for new games use native Haiku, Sonnet or Opus 5.5, Fable 5.1 or Fable 5.2.
 Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
 games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](native-anthropic.md) for cutover details.

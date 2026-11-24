@@ -17,18 +17,22 @@ beforeAll(() => {
 describe("provider model inventory", () => {
   test("xAI discovery exposes audited native equivalents and never revives Katana Grok", async () => {
     const inventory = await providerModelInventory({ XAI_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture" }, true,
-      async provider => provider === "xai" ? ["grok-4.3", "grok-4.6", "grok-imagine-image", "grok-future"] : ["grok-4-3", "grok-future"]);
+      async provider => provider === "xai" ? ["grok-4.3", "grok-4.6", "grok-4.7", "grok-imagine-image", "grok-future"] : ["grok-4-3", "grok-future"]);
     expect(inventory.models.find(model => model.catalogId === "xai:grok-4.3")).toMatchObject({ configured: true, available: true });
+    expect(inventory.models.find(model => model.catalogId === "xai:grok-4.7")).toMatchObject({
+      available: true, experimental: true, capabilityEvidence: "documented",
+    });
     expect(inventory.models.find(model => model.catalogId === "xai:grok-4.5")).toMatchObject({ configured: true, available: false });
     expect(inventory.models.some(model => model.catalogId.startsWith("katana:grok-"))).toBe(false);
     expect(inventory.models.some(model => model.catalogId.includes("grok-future") || model.catalogId.includes("grok-imagine"))).toBe(false);
   });
   test("even operator discovery offers only the current native Claude families", async () => {
     const inventory = await providerModelInventory({ ANTHROPIC_API_KEY: "fixture", API_KAT_IMGNAI_KEY: "fixture", API_KAT_IMGNAI_SECRET: "fixture" }, true,
-      async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"]
+      async provider => provider === "anthropic" ? ["claude-haiku-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1", "claude-fable-5-2", "claude-sonnet-4-5-20250929"]
         : ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8", "claude-fable-5-1", "deepseek-v4-flash"]);
     expect(inventory.models.filter(model => model.modelId.startsWith("claude-")).map(model => model.catalogId).sort()).toEqual([
-      "anthropic:claude-fable-5-1", "anthropic:claude-haiku-5-5", "anthropic:claude-opus-5-5", "anthropic:claude-sonnet-5-5",
+      "anthropic:claude-fable-5-1", "anthropic:claude-fable-5-2", "anthropic:claude-haiku-5-5",
+      "anthropic:claude-opus-5-5", "anthropic:claude-sonnet-5-5",
     ]);
     expect(inventory.models.some(model => model.catalogId === "katana:deepseek-v4-flash")).toBe(true);
   });
@@ -46,12 +50,19 @@ describe("provider model inventory", () => {
     const excluded = ["gpt-image-2", "gpt-image-1-mini", "gpt-image-1.5", "chatgpt-image-latest", "gpt-image-1",
       "gpt-image-2-2026-04-21", "sora-2", "gpt-4o-transcribe", "omni-moderation-latest"];
     const inventory = await providerModelInventory({ OPENAI_API_KEY: "fixture" }, true,
-      async () => ["gpt-6.1-sol", "gpt-6-luna", ...excluded]);
+      async () => ["gpt-6.1-sol", "gpt-6.2-sol", "gpt-6-luna", "gpt-5-nano-2025-08-07", ...excluded]);
     expect(inventory.models.find(model => model.catalogId === "openai:gpt-6.1-sol")).toMatchObject({
       available: true, capabilityEvidence: "documented", capabilities: { supportsImageInput: true, supportsOpenAIResponses: true },
       metadata: { rateCard: { rates: { inputPer1M: 2, outputPer1M: 10 } } },
     });
     expect(inventory.models.find(model => model.catalogId === "openai:gpt-6-luna")?.available).toBe(true);
+    expect(inventory.models.find(model => model.catalogId === "openai:gpt-6.2-sol")).toMatchObject({
+      available: true, capabilityEvidence: "documented", capabilities: { supportsFlexProcessing: false },
+    });
+    expect(inventory.models.find(model => model.catalogId === "openai:gpt-5-nano-2025-08-07")).toMatchObject({
+      available: true,
+      metadata: { documented: { retired: false, deprecation: { retirementDate: "2026-12-11", replacementModelId: "gpt-6-luna" } } },
+    });
     for (const id of excluded) expect(inventory.models.some(model => model.catalogId === `openai:${id}`)).toBe(false);
   });
 

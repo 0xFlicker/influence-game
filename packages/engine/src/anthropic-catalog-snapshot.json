@@ -154,6 +154,10 @@
         "outputPer1M": 25,
         "cachedInputPer1M": 0.5,
         "cacheWriteInputPer1M": 6.25
+      },
+      "deprecation": {
+        "retirementDate": "2027-01-22",
+        "replacementModelId": "claude-opus-5-5"
       }
     },
     "claude-haiku-4-5-20251001": {
@@ -166,6 +170,36 @@
         "outputPer1M": 5,
         "cachedInputPer1M": 0.1,
         "cacheWriteInputPer1M": 1.25
+      }
+    },
+    "claude-fable-5-2": {
+      "displayName": "Claude Fable 5.2",
+      "checkedAt": "2026-11-24",
+      "contextTokens": 1000000,
+      "outputTokens": 128000,
+      "adaptive": true,
+      "pricing": {
+        "inputPer1M": 8,
+        "outputPer1M": 40,
+        "cachedInputPer1M": 0.2,
+        "cacheWriteInputPer1M": 10
+      }
+    },
+    "claude-sonnet-4-5-20250929": {
+      "displayName": "Claude Sonnet 4.5",
+      "checkedAt": "2026-11-24",
+      "contextTokens": 200000,
+      "outputTokens": 64000,
+      "adaptive": false,
+      "pricing": {
+        "inputPer1M": 3,
+        "outputPer1M": 15,
+        "cachedInputPer1M": 0.3,
+        "cacheWriteInputPer1M": 3.75
+      },
+      "deprecation": {
+        "retirementDate": "2026-11-30",
+        "replacementModelId": "claude-sonnet-5-5"
       }
     }
   }

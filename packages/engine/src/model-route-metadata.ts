@@ -42,7 +42,9 @@ export function modelRouteMetadata(catalogId: string) {
     documented: facts ? { source: facts.source, checkedAt: facts.checkedAt, inputImages: facts.capabilities.supportsImageInput,
       strictSchema: facts.capabilities.supportsStructuredOutput, contextTokens: facts.contextTokens, outputTokens: facts.outputTokens,
       parameters: facts.parameters, capabilities: facts.capabilities, allowedReasoningEfforts: facts.allowedReasoningEfforts,
-      retired: facts.retired ?? false } : null,
+      retired: facts.retired ?? false,
+      ...(facts.deprecation && { deprecation: facts.deprecation }),
+    } : null,
     adapterContract: "provider-native strict JSON schema; exact schema and semantic validation required",
     unknownSchemaSubset: true };
 }

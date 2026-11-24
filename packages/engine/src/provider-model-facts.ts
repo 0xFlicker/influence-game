@@ -17,6 +17,11 @@ export interface ProviderModelFacts {
   pricing: ModelPricing | null;
   flexPricing?: ModelPricing;
   retired?: boolean;
+  deprecation?: {
+    retirementDate: string;
+    replacementModelId: string;
+    replacementRequirement?: string;
+  };
   minimumUsd?: number;
   roundingUsd?: number;
 }
@@ -57,7 +62,8 @@ export const KATANA_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = 
 
 export const ANTHROPIC_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>> = Object.fromEntries(
   Object.entries(anthropic.models).map(([id, row]) => [id, {
-    source: anthropic.source, checkedAt: anthropic.checkedAt,
+    source: anthropic.source, checkedAt: "checkedAt" in row ? row.checkedAt : anthropic.checkedAt,
+    ...("deprecation" in row && { deprecation: row.deprecation }),
     contextTokens: row.contextTokens, outputTokens: row.outputTokens,
     pricing: row.pricing, allowedReasoningEfforts: row.adaptive ? ["low", "medium", "high"] : [],
     parameters: ["max_tokens", "output_config", "thinking", "cache_control"],
@@ -69,14 +75,14 @@ export const ANTHROPIC_MODEL_FACTS: Readonly<Record<string, ProviderModelFacts>>
   }]),
 );
 
-// https://dev.meta.ai/docs/models and /docs/protocols/responses, checked 2026-10-23.
 const museCapabilities: ModelRequestCapabilities = {
   supportsImageInput: true, supportsReasoningEffort: true, supportsToolReasoningEffort: true,
   usesMaxCompletionTokens: true, supportsTemperature: true, supportsOpenAIResponses: false,
   supportsPromptCacheRetention: false, supportsStructuredOutput: true, supportsTools: true,
 };
 const museFacts = (id: string): ProviderModelFacts => ({
-  source: "https://dev.meta.ai/docs/models", checkedAt: "2026-10-23", capabilities: museCapabilities,
+  source: id === "muse-wonder-1.0" ? "https://dev.meta.ai/docs/muse-wonder" : "https://dev.meta.ai/docs/muse-spark",
+  checkedAt: "2026-11-24", capabilities: museCapabilities,
   allowedReasoningEfforts: ["low", "medium", "high"], contextTokens: 1_048_576, outputTokens: null,
   parameters: ["reasoning_effort", "temperature", "tools", "response_format"],
   pricing: id.includes("contributor") ? { inputPer1M: 0.10, cachedInputPer1M: 0.002, outputPer1M: 0.20 }

@@ -5,6 +5,48 @@ import { providerModelFacts } from "../provider-model-facts";
 import { estimateRouteCost, modelRateCard } from "../model-route-metadata";
 import { MODEL_PRICING } from "../token-tracker";
 
+test("new native models have documented schema capabilities and provider-specific Standard rates", () => {
+  for (const [id, input, cached, output] of [
+    ["openai:gpt-6.2-sol", 2, 0.1, 10],
+    ["openai:gpt-6.2-astra", 8, 0.4, 40],
+    ["xai:grok-4.7", 2, 0.5, 6],
+    ["anthropic:claude-fable-5-2", 8, 0.2, 40],
+  ] as const) {
+    const entry = MODEL_CATALOG.find(model => model.id === id);
+    expect(entry).toMatchObject({
+      evaluationStatus: "evaluation-candidate",
+      capabilityEvidence: "documented",
+      capabilities: { supportsImageInput: true, supportsStructuredOutput: true },
+      metadata: { documented: { checkedAt: "2026-11-24" } },
+    });
+    expect(modelRateCard(id)?.rates).toMatchObject({ inputPer1M: input, cachedInputPer1M: cached, outputPer1M: output });
+    expect(modelRateCard(id, "flex")).toBeNull();
+    expect(normalizeProviderManifest([{ catalogId: id }])[0]?.catalogId).toBe(id);
+  }
+  expect(modelRateCard("openai:gpt-6.2-sol")?.rates.tiers?.[0]).toMatchObject({
+    minPromptTokens: 272_001, inputPer1M: 4, outputPer1M: 15, cachedInputPer1M: 0.2, cacheWriteInputPer1M: 5,
+  });
+  expect(modelRateCard("xai:grok-4.7")?.rates.tiers?.[0]).toMatchObject({
+    minPromptTokens: 200_001, inputPer1M: 4, outputPer1M: 12, cachedInputPer1M: 1,
+  });
+});
+
+test("scheduled retirement is catalog metadata and preserves the exact priced model", () => {
+  for (const [id, date, replacementModelId] of [
+    ["openai:gpt-5-nano-2025-08-07", "2026-12-11", "gpt-6-luna"],
+    ["openai:gpt-5.4-nano", "2027-04-01", "gpt-6-luna"],
+    ["anthropic:claude-sonnet-4-5-20250929", "2026-11-30", "claude-sonnet-5-5"],
+    ["anthropic:claude-opus-4-5-20251101", "2027-01-22", "claude-opus-5-5"],
+  ] as const) {
+    expect(modelCatalogEntryById(id)?.metadata).toMatchObject({
+      documented: { retired: false, deprecation: { retirementDate: date, replacementModelId } },
+      rateCard: { catalogId: id },
+    });
+  }
+  expect(providerModelFacts("openai", "gpt-5.6-sol")?.deprecation).toBeUndefined();
+  expect(providerModelFacts("anthropic", "claude-haiku-4-5-20251001")?.deprecation).toBeUndefined();
+});
+
 test("Terra uses documented Responses capabilities and its own Standard and Flex rates", () => {
   const model = modelCatalogEntryById("openai:gpt-6.1-terra");
   expect(model?.capabilityEvidence).toBe("documented");
