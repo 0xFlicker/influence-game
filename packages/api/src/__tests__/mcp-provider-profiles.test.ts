@@ -33,9 +33,11 @@ describe("MCP App provider audit hints", () => {
     for (const uri of [metaCallback + "/", metaCallback + "?extra=1", metaCallback.replace("https:", "http:"), metaCallback.replace("agent.meta.ai", "agent.meta.ai.evil.example")]) {
       expect(providerRedirectRuleForUri(uri)).toBeUndefined();
     }
+    const stableChatGptCallback = "https://chatgpt.com/connector_platform_oauth_redirect";
     const chatGptCallbacks = [
       "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
       "https://chatgpt.com/connector/oauth/SvtDqU1r6I17",
+      stableChatGptCallback,
     ];
     const claudeCallback = "https://claude.ai/api/mcp/auth_callback";
     const grokCallback = "https://grok.com/connectors-oauth-exchange-code/";
@@ -53,6 +55,14 @@ describe("MCP App provider audit hints", () => {
           providerId: "chatgpt",
           matchSource: "provider_config",
         });
+    }
+    for (const variant of [
+      stableChatGptCallback + "/",
+      stableChatGptCallback + "?extra=1",
+      stableChatGptCallback.replace("https:", "http:"),
+      stableChatGptCallback.replace("chatgpt.com", "chatgpt.com.evil.example"),
+    ]) {
+      expect(providerRedirectRuleForUri(variant)).toBeUndefined();
     }
     expect(providerRedirectRuleForUri(claudeCallback)).toEqual({
       providerId: "claude",

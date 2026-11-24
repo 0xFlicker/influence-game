@@ -86,7 +86,7 @@ MCP_OAUTH_ALLOW_DYNAMIC_HTTPS_REDIRECTS=false
 
 Provider-owned hosted callbacks for ChatGPT, Claude, Grok, and similar MCP App hosts are deployment-invariant and should live in code, not per-environment env vars. Add exact supported callbacks to the provider compatibility config and use dynamic-client-registration audit diagnostics to capture unknown provider callbacks safely. Domain or connector migrations can produce a new provider-hosted callback slug; add the exact observed URI from the DCR audit rather than broadening trust to the provider host. The legacy `MCP_OAUTH_ALLOWED_REDIRECT_URIS` exact allowlist remains supported only as an escape hatch for non-provider callbacks.
 
-Current code-owned provider callbacks include ChatGPT's observed hosted connector callbacks at `https://chatgpt.com/connector/oauth/_syG1DzKsjXV` and `https://chatgpt.com/connector/oauth/SvtDqU1r6I17`, Claude's hosted connector callback at `https://claude.ai/api/mcp/auth_callback`, and Grok's hosted connector callback at `https://grok.com/connectors-oauth-exchange-code/`.
+Current code-owned provider callbacks include ChatGPT's [stable issuer-bound callback](https://developers.openai.com/plugins/build/auth) at `https://chatgpt.com/connector_platform_oauth_redirect` and its observed callback-ID-specific URLs `https://chatgpt.com/connector/oauth/_syG1DzKsjXV` and `https://chatgpt.com/connector/oauth/SvtDqU1r6I17`. Claude's hosted callback is `https://claude.ai/api/mcp/auth_callback` and Grok's is `https://grok.com/connectors-oauth-exchange-code/`.
 
 Private trace tools require the same private content storage env used by API durable runs:
 
