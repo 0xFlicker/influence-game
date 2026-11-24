@@ -17,15 +17,31 @@ REPO = 'repos/falsefloor/infra'
 ECR = '978355607658.dkr.ecr.us-west-1.amazonaws.com/house-render-staging-worker@'
 
 
+class AdmissionError(ValueError):
+    """A diagnostic safe to report in the release log."""
+
+
+class GitHubReadError(AdmissionError):
+    def __init__(self, status=None, timed_out=False):
+        self.retryable = timed_out or status in (404, 429) or (status is not None and 500 <= status <= 599)
+        detail = 'timed out' if timed_out else f'HTTP {status}' if status else 'no HTTP status'
+        super().__init__(f'GitHub evidence read failed ({detail})')
+
+
 def require(value, message):
     if not value:
-        raise ValueError(message)
+        raise AdmissionError(message)
 
 
 def github(endpoint):
-    result = subprocess.run(['gh', 'api', '-H', 'X-GitHub-Api-Version: 2026-03-10', endpoint],
-                            capture_output=True, timeout=60)
-    require(result.returncode == 0, 'Batch evidence read failed; diagnostics withheld')
+    try:
+        result = subprocess.run(['gh', 'api', '-H', 'X-GitHub-Api-Version: 2026-03-10', endpoint],
+                                capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise GitHubReadError(timed_out=True) from None
+    if result.returncode:
+        status = re.search(rb'\(HTTP ([1-5][0-9]{2})\)', result.stderr)
+        raise GitHubReadError(int(status[1]) if status else None)
     return result.stdout
 
 
