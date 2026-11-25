@@ -9,9 +9,12 @@ product_contract_source: ce-brainstorm
 execution: code
 branch: codex/owner-learning-loop
 deepened: 2026-08-03
+status: implemented
 ---
 
 # Owner Learning Loop - Implementation Plan
+
+**November 25 audit.** The Influence owner review loop shipped in [PR #83](https://github.com/0xFlicker/influence-game/pull/83). The original acceptance matrix below records the design. Later cross-game calibration is tracked in [current to-dos](../../TODO.md#verify-or-finish-rollout).
 
 ## Goal Capsule
 

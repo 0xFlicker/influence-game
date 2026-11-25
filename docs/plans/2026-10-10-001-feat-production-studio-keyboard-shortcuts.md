@@ -1,7 +1,7 @@
 ---
 title: Production Studio keyboard shortcuts and help
 type: feat
-status: in_progress
+status: implemented-operator-accepted
 date: 2026-10-10
 pillar: A2
 slices: [A2.1, A2.2]
@@ -9,7 +9,7 @@ slices: [A2.1, A2.2]
 
 # Production Studio keyboard shortcuts and help
 
-Current delivery: the remaining scoped bindings are implemented in the existing Studio and Help dialog. All required local checks, real keyboard/interface proof and encoded parity passed. Native macOS fullscreen and operator acceptance are recorded separately below.
+Current delivery: the remaining scoped bindings are implemented in the existing Studio and Help dialog. All required local checks, real keyboard/interface proof and encoded parity passed. The operator confirmed Studio acceptance on November 25. The October validation record below describes the coverage of the original tests.
 
 Historical refinement checkpoint, before the remaining-shortcuts implementation: native timeline arrows/Home/End, separator arrows and inspector-only Cmd/Ctrl+Enter saving are implemented, with a compact Keyboard hints dialog. The broader workspace character dispatcher below remains a proposal. Inspector following is now **Follow current moment**; **Auto-scroll timeline** owns only viewport paging, and **Recenter** does not enable it. Following operator testing, label checkboxes save immediately through the existing annotation/CAS owner; the save chord applies remaining metadata drafts through that same owner. Do not advertise unimplemented Space/M/F/etc. global bindings in delivered help.
 
@@ -99,7 +99,7 @@ Suggested work sequence, after the operator's current testing session:
 - [x] Add shared help/hints, preference and responsive/fullscreen behavior.
 - [x] Run focused deterministic and real-browser keyboard regressions; update implemented documentation.
 - [x] Complete the required integrated checks and record final proof.
-- [ ] Operator tries the delivered keys, including native macOS fullscreen. Automated proof does not establish this acceptance.
+- [x] The operator confirmed Studio acceptance on November 25. That review did not specify the device or fullscreen mode used.
 
 ## Validation checklist
 

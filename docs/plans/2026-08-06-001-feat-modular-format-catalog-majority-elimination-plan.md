@@ -1,12 +1,14 @@
 ---
 title: "feat: Modular format catalog + Majority Elimination"
 type: feat
-status: active
+status: implemented
 date: 2026-08-06
 origin: docs/brainstorms/2026-08-06-modular-format-catalog-majority-elimination-requirements.md
 ---
 
 # feat: Modular format catalog + Majority Elimination
+
+**November 25 audit.** Majority Elimination joined the default catalog. See the [release record](../../packages/web/content/updates/2026-08-07-majority-elimination.md) and [format implementation](../../packages/engine/src/formats/majority-elimination.ts).
 
 ## Summary
 

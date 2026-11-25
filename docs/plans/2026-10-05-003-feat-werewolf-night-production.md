@@ -1,7 +1,7 @@
 ---
 title: "W6 — Werewolf night production and playback"
 date: 2026-10-05
-status: in_progress
+status: playback-accepted
 type: feat
 ---
 
@@ -43,7 +43,7 @@ Published wolf references are audience/cursor/cutoff guarded and reused in origi
 
 **Operator acceptance (2026-10-05):** the corrected nightly/solo transformation and navigation were accepted after confirming the Hazy hunt at beat 93.
 
-**Still open:** night/dawn sound direction and physical-device checks. This is not W6 completion.
+**Playback acceptance (2026-11-25).** The operator confirmed Werewolf night playback looks good and closed the verification item. The October handoff had listed night/dawn sound and physical-device checks. The dated records above describe the checks performed at that time.
 
 ## Current implementation, verified 2026-10-05
 

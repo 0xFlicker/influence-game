@@ -7,10 +7,12 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: session
 execution: code
-status: active
+status: implemented
 ---
 
 # Match Narrative (Owner + Producer) - Plan
+
+**November 25 audit.** The owner and producer match narrative shipped in [PR #62](https://github.com/0xFlicker/influence-game/pull/62). Its later producer response-schema repair is closed under [R31](../refactor-queue.md#r31-make-producer-match-narrative-satisfy-its-declared-response-schema).
 
 ## Summary
 

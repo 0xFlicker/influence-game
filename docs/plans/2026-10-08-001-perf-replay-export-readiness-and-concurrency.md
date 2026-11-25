@@ -1,11 +1,13 @@
 ---
 title: Faster replay export through readiness and render concurrency
 type: perf
-status: planned
+status: superseded-by-render-performance-qualification
 date: 2026-10-08
 ---
 
 # Faster replay export through readiness and render concurrency
+
+**November 25 audit.** The operator marked current render performance verified. The [November benchmark](2026-11-02-render-speed-100x.md#follow-up-work-beyond-this-implementation) records the conditions for future tuning. [PR #284](https://github.com/0xFlicker/influence-game/pull/284) delivered the preparation changes.
 
 Reduce local `bun run replay:export` wall time by removing repeated frame-settling work and allowing bounded parallel frame rendering. Preserve the current picture, typography, timing, audio, arbitrary-frame behavior, and failure guarantees. Implement readiness first at concurrency 1, then measure concurrency independently.
 

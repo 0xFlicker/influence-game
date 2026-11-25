@@ -1,11 +1,13 @@
 ---
 title: The House Discord identity, verification, and first runtime
 type: feat
-status: in-progress
+status: deployed-with-member-acceptance-pending
 date: 2026-10-25
 ---
 
 # The House Discord verification v0
+
+**November 25 audit.** The [production rollout](../discord-house-setup.md#release-evidence) is complete. The operator reported zero joins. The first member who completes screening and account linking can confirm automatic House User role delivery.
 
 ## Outcome
 

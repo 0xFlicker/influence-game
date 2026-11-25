@@ -1,13 +1,15 @@
 ---
 title: Production Studio A2.1/A2.2 — moment editor, architecture and implementation tasks
 type: feat
-status: draft
+status: implemented-operator-accepted
 date: 2026-10-09
 pillar: A2
 slices: [A2.1, A2.2]
 ---
 
 # Production Studio A2.1/A2.2 — moment editor
+
+**November 25 audit.** The [delivered editor inventory](2026-10-09-production-studio-contract-inventory.md) and [Studio guide](../production-studio.md) describe the implementation. The operator confirmed Studio and admin acceptance in the [November 25 review](../../TODO.md#checked-off-during-the-audit).
 
 Build a working video-production workspace for Influence and Werewolf: timeline, playhead, playable preview, scene repair, independent moment tags and a selected local video export. The producer decides which moments tell the story by watching the edit. Narrative continuity analysis, automatic context insertion and mandatory retention of game outcomes are outside this work.
 

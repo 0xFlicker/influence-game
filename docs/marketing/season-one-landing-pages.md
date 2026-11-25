@@ -1,14 +1,18 @@
 # Season 1 paid landing pages
 
-The three campaigns share House artwork and a small marketing shell, with separate copy and interactions:
+The three landing pages share House artwork and a small marketing shell. Each serves a different audience.
 
 | Route | Audience | Primary action |
 | --- | --- | --- |
 | `/season-1` | Reality-show and social-strategy viewers | Open the season-scoped creator |
 | `/season-1/create` | Character creators | Carry a character idea into the creator |
-| `/season-1/ai` | People building with their own AI | Open the selected existing MCP setup guide |
+| `/season-1/ai` | People building with their own AI | Choose a client and follow its setup steps on the page |
 
 The drama page explains Influence's alliances, round-specific votes, elimination fallout and two-player jury finale. The AI page provides character-workshop, strategy-sparring and season-preparation prompts. It distinguishes the connected assistant from the contestant's in-game model.
+
+## Funnel status
+
+On November 25, 2026 the operator confirmed that a campaign was running and recalled **Create a contestant** as its entry point. The exact ad destination was unverified. **Connect your AI** gained client-specific setup on the landing page. The operator believed **Watch a great exchange** was still in its first iteration. The product backlog separately tracks opening an existing shared highlight at the quoted exchange. [AI setup change](https://github.com/0xFlicker/influence-game/pull/331) · [Highlight replay task](../refactor-queue.md#r36-open-a-shared-influence-house-cut-at-the-quoted-exchange)
 
 ## Entry and signup
 
@@ -18,7 +22,7 @@ The existing creator still owns the first anonymous message, signup prompt, draf
 
 Character text travels through same-tab session storage under an opaque random request ID. The URL contains no character text. After normal editor draft recovery, an empty composer receives the idea; an existing conversation offers an explicit action to use it. The temporary copy is removed after handoff, and the normal editor owns subsequent persistence. Storage failures are visible. Opening a copied handoff URL in another browser does not transfer the idea.
 
-MCP client names and IDs come from the existing setup catalogue. Links open the corresponding `/get-mcp#setup-…` disclosure. Prompts can be copied, with selectable text when clipboard permission is unavailable. Connecting an account and enrolling through MCP remain explicit user actions in the existing flow.
+MCP client names, IDs and setup steps come from the existing setup catalogue. Visitors can follow the selected client's instructions on the landing page. Prompts can be copied, with selectable text when clipboard permission is unavailable. Connecting an account and enrolling through MCP remain explicit user actions in the existing flow.
 
 ## Scope
 

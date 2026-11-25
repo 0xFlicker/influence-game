@@ -1,5 +1,7 @@
 # Game assets operator review
 
+**November 25 update.** The operator confirmed repeated successful banner uploads and display on game results, closing the banner acceptance item. The local results below come from the September review. The staging procedure is available for future changes to OAuth, ingress or storage.
+
 The implementation adds producer/sysop image CRUD through scoped OAuth, private S3 storage, a Bun CLI and skill, and results-only banners. The work started from fetched `origin/main` (`a80dc90a`) in `codex/game-assets` and is integrated into PR #153 (`codex/completed-replay-image-backfill`) with completed replay image production. Migration `0100_game_assets` adds asset/operation tables and expands OAuth scope constraints. Startup RBAC seeding grants `manage_game_assets` to existing producer/sysop roles without assigning new real accounts.
 
 ## Local validation at review
@@ -22,13 +24,9 @@ The final local checks cover `public`/`spoiler` presentation metadata and manage
 
 The MinIO CLI upload defaults to `spoiler`, and anonymous API reads return its exact normalized bytes while direct bucket access stays restricted. Browser evidence covers late anonymous discovery, public results after sign-out, existing private-game access, and no banner requests on landing/replay/highlights/library. API tests prove changing presentation classification preserves reads, role removal blocks edits only, revisions fence concurrent writers, and cleanup cannot publish or lose a late candidate. The combined browser lane also covers Producer/Sysop replay production, lost-request recovery, and publication. Its temporary output paths are portable, and standing-agent teardown has an explicit bound long enough for the server cleanup contract.
 
-Temporary task-owned API/web/browser/callback processes are stopped; existing Docker Postgres/MinIO and unrelated work are preserved. Harness-generated web configuration changes were removed. This is local evidence: deployed OAuth, Linode, and ingress remain T9.
-
-Read-only Grok attempts on the earlier scoped implementation returned no finding report. Independent review remains pending; no clean external review is claimed. Committing and updating PR #153 are user-authorized. No deployment or real account assignment has occurred.
-
 ## Review before deployment
 
-Review the scoped branch diff and local validation report in the task document. Verify the target's private-content endpoint, bucket, and scoped key; use the existing MinIO settings locally and Linode on deployed servers. Existing private traces share this service using a separate prefix. Confirm the release includes API and web changes together and that its ingress supports the 12 MiB upload contract.
+For a change to deployed asset handling, verify the target environment's configured private-content endpoint, bucket, and scoped key. Existing private traces share this service under a separate prefix. Confirm the release includes the matching API and web changes and that ingress supports the 12 MiB upload contract.
 
 Asset `visibility` is a `public` or `spoiler` presentation label, with no asset privacy filter. Public-game assets are readable anonymously; roles govern uploads and modifications. Existing private/hidden game access still applies. The single banner appears only on `/games/[slug]/results` and may reveal winners or other results. The bucket stays restricted to protect shared trace objects; that infrastructure choice is separate from image read access.
 
@@ -45,7 +43,3 @@ Use a runnable ephemeral deployment or staging, exact API/web origins, a dedicat
 7. Check one request at the documented file/body bound through deployed ingress. Record environment/release, operation IDs, browser evidence, and cleanup outcomes without tokens or secrets.
 
 Stop all temporary API/web/browser/callback processes after verification. Preserve the existing Docker Postgres and MinIO services and shared private-content objects. Production deployment and production testing are outside this acceptance target.
-
-## Approval boundary
-
-Local implementation and validation are prepared for operator review. An ephemeral/staging run requires a runnable release of this branch and the selected target/test identity. Record its result as deployed proof only after that run succeeds; local MinIO and deterministic browser results are separate evidence.
