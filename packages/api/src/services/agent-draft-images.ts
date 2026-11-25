@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { storeBinary, readPayload } from "./payload-storage.js";
+import { storeImage, readPayload } from "./payload-storage.js";
 export class AgentDraftImageUnavailable extends Error {}
 type Reader = Pick<DrizzleDB, "select">;
 export const draftImageHash = (url: string | null) =>
@@ -12,7 +12,7 @@ export async function storeAgentDraftImage(
   bytes: Uint8Array,
 ) {
   const hash = createHash("sha256").update(bytes).digest("hex"),
-    reference = await storeBinary(bytes);
+    reference = await storeImage(bytes);
   await readPayload(reference);
   await db.transaction(async (tx) => {
     await tx

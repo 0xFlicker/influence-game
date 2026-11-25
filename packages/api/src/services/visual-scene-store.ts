@@ -19,7 +19,7 @@ export async function storeVisualArtifact(db: DrizzleDB | VisualTransaction, gam
   const normalized = await sharp(image, { limitInputPixels: 4096 * 4096 }).rotate().png().toBuffer({ resolveWithObject: true });
   const contentHash = createHash("sha256").update(normalized.data).digest("hex");
   const id = randomUUID();
-  await db.insert(artifacts).values(await storeFields({ id, gameId, contentHash, image: normalized.data, width: normalized.info.width, height: normalized.info.height }, {"image":"binary"})).onConflictDoNothing();
+  await db.insert(artifacts).values(await storeFields({ id, gameId, contentHash, image: normalized.data, width: normalized.info.width, height: normalized.info.height }, {"image":"image"})).onConflictDoNothing();
   const [stored] = await db.select({ id: artifacts.id }).from(artifacts).where(and(eq(artifacts.gameId, gameId), eq(artifacts.contentHash, contentHash)));
   if (!stored) throw new Error("Visual artifact was not stored");
   return stored.id;

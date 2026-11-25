@@ -2,7 +2,7 @@ import { setPayloadObjectStoreForTests, type PayloadObjectStore } from "../servi
 
 export class MemoryPayloadStore implements PayloadObjectStore {
   readonly objects = new Map<string, Uint8Array>();
-  async putIfAbsent(key: string, bytes: Uint8Array) {
+  async putIfAbsent(key: string, bytes: Uint8Array, _contentType: string = "application/octet-stream") {
     if (this.objects.has(key)) return false;
     this.objects.set(key, Uint8Array.from(bytes));
     return true;

@@ -3,7 +3,7 @@ import { asc, eq, gt } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { contentSnapshot, prepareContentAssets } from "./agent-content-submissions.js";
 import { enqueueAgentScreening } from "./agent-screening-queue.js";
-import { storeBinary, storeJson } from "./payload-storage.js";
+import { storeImage, storeJson } from "./payload-storage.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { sanitizeOwnerLearningFailureMessage } from "./owner-learning-failure-evidence.js";
 
@@ -26,7 +26,7 @@ export async function backfillAgentScreenings(db: DrizzleDB, options: { apply: b
       const snapshot = contentSnapshot(profile);
       const evidence = await prepareContentAssets(profile);
       const assets = Object.fromEntries(Object.entries(evidence).map(([url, value]) => [url, value.hash]));
-      const storedAssets = await Promise.all(Object.values(evidence).map(async value => ({ hash: value.hash, bytes: await storeBinary(value.bytes) })));
+      const storedAssets = await Promise.all(Object.values(evidence).map(async value => ({ hash: value.hash, bytes: await storeImage(value.bytes) })));
       const storedSnapshot = await storeJson({ ...snapshot, assets });
       const captured = await db.transaction(async tx => {
         const [current] = await tx.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, profile.id)).for("update");
