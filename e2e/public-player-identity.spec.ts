@@ -1325,6 +1325,72 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("shares published agents from the dashboard and opens the link signed out", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const owner = await authenticatedContext(browser, fixture.completeJwt);
+    const visitor = await identityContext(browser);
+    try {
+      const page = await owner.newPage();
+      await page.goto(`${servers.webUrl}/dashboard/agents`);
+      const profile = page.getByRole("link", { name: "View Vesper E2E public profile" });
+      await expect(profile).toHaveAttribute("href", /^\/agents\/[^/]+$/);
+      const target = (await profile.getAttribute("href"))!;
+      await page.getByRole("button", { name: "Share Vesper E2E profile" }).click();
+      const link = page.getByRole("textbox", { name: "House share link" });
+      await expect(link).toHaveValue(/\/s\/[A-Za-z0-9]{10}$/);
+      const sharedUrl = await link.inputValue();
+
+      const signedOut = await visitor.newPage();
+      const preview = await signedOut.request.get(sharedUrl);
+      expect(preview.status()).toBe(200);
+      const html = await preview.text();
+      expect(html).toContain("Vesper E2E — The House");
+      expect(html).toContain(`${target}/card-image`);
+      await signedOut.goto(sharedUrl);
+      await expect(signedOut).toHaveURL(`${servers.webUrl}${target}`);
+      await expect(signedOut.getByRole("heading", { name: "Vesper E2E", level: 1 })).toBeVisible();
+      await expect(signedOut.getByRole("textbox", { name: "Describe an update to Vesper E2E" })).toHaveCount(0);
+      await signedOut.getByRole("button", { name: "Share Vesper E2E profile" }).click();
+      const publicShare = signedOut.getByRole("dialog", { name: "Share Vesper E2E profile" });
+      await expect(publicShare.getByRole("textbox", { name: "House share link" })).toHaveValue(sharedUrl);
+      await visitor.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await publicShare.getByRole("button", { name: "Copy link" }).click();
+      await expect(publicShare.getByText("Link copied.")).toBeVisible();
+      expect(await signedOut.evaluate(() => navigator.clipboard.readText())).toBe(sharedUrl);
+
+      await page.getByRole("button", { name: "Close share" }).click();
+      await profile.click();
+      await expect(page.getByRole("textbox", { name: "Describe an update to Vesper E2E" })).toBeVisible();
+    } finally {
+      await visitor.close();
+      await owner.close();
+    }
+  });
+
+  test("architect carousel advances, supports manual navigation, and respects reduced motion", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.goto(`${servers.webUrl}/profile/${fixture.handle}`);
+    const carousel = page.getByRole("region", { name: "Agents in the spotlight" });
+    await expect(carousel.getByRole("heading", { name: "Vesper E2E" })).toBeVisible();
+    await expect(carousel.getByRole("heading", { name: "Quartz E2E" })).toBeVisible({ timeout: 12000 });
+    await carousel.getByRole("button", { name: "Pause carousel" }).click();
+    await carousel.getByRole("button", { name: "Previous agent" }).click();
+    await expect(carousel.getByRole("heading", { name: "Vesper E2E" })).toBeVisible();
+    await expect(carousel.getByRole("button", { name: "Play carousel" })).toBeVisible();
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(carousel.getByRole("button", { name: "Play carousel" })).toBeVisible();
+    const record = page.getByRole("heading", { name: "Influence competitive record" });
+    const recordTop = () => record.evaluate(element => element.getBoundingClientRect().top + window.scrollY);
+    const before = await recordTop();
+    await carousel.getByRole("button", { name: "Next agent" }).click();
+    await expect(carousel.getByRole("heading", { name: "Quartz E2E" })).toBeVisible();
+    expect(await recordTop()).toBeCloseTo(before);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  });
+
   test("dashboard and owned agent profile lead to one assistant request", async ({ browser }) => {
     test.setTimeout(120_000);
     const context = await authenticatedContext(browser, fixture.completeJwt);

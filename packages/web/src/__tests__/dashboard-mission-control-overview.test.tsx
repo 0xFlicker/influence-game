@@ -5,7 +5,7 @@ import { DashboardAgentBench } from "../app/dashboard/dashboard-agent-bench";
 import { DashboardHistory } from "../app/dashboard/dashboard-history";
 import { McpSetupCard } from "../app/dashboard/dashboard-content";
 
-const agent: SavedAgent = { id: "agent-1", name: "Atlas", backstory: "Careful", personality: "Patient", strategyStyle: null, personaKey: "strategic", avatarUrl: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
+const agent: SavedAgent = { id: "agent-1", profileHref: "/agents/agent-1", name: "Atlas", backstory: "Careful", personality: "Patient", strategyStyle: null, personaKey: "strategic", avatarUrl: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
 
 test("the agent bench offers profile, edit, management and creation destinations", () => {
   const html = renderToString(<DashboardAgentBench agents={[agent]} loading={false} error={null} />);

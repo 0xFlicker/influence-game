@@ -606,6 +606,20 @@ describe("Agent Profile API", () => {
       expect(await order()).toEqual(["stable-b","stable-c","stable-a"]);
     });
 
+    test("provides a public profile destination only for eligible agents", async () => {
+      await db.insert(schema.agentProfiles).values([
+        { id: "public-agent", userId: USER_A_ID, name: "Public", personality: "Patient" },
+        { id: "unpublished-agent", userId: USER_A_ID, name: "Draft", personality: "Patient", moderationRequired: true },
+      ]);
+      const res = await app.request("/api/agent-profiles", authGet(tokenA));
+      expect(res.status).toBe(200);
+      const agents = await res.json() as Array<{ id: string; profileHref: string | null }>;
+      expect(Object.fromEntries(agents.map(agent => [agent.id, agent.profileHref]))).toEqual({
+        "public-agent": "/agents/public-agent",
+        "unpublished-agent": null,
+      });
+    });
+
     test("returns empty array for user with no profiles", async () => {
       const res = await app.request("/api/agent-profiles", authGet(tokenA));
       expect(res.status).toBe(200);

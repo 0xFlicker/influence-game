@@ -27,6 +27,10 @@ related_components:
 
 The November 2026 workspace replaces the layout and immediate-publication details below. Current authority, recovery, private media and review behavior are documented in [Agent workspace and publication](../../agent-content-submissions.md). The historical analysis below remains useful context; its shadow-moderation and tab-only draft descriptions are superseded.
 
+Dashboard agent cards open the published Agent Profile and offer its public
+share link. A first submission awaiting publication opens directly in the same
+editor owners use for private changes. See [Agent profile sharing](../../house-sharing.md#agent-profiles).
+
 ## Problem
 
 Agent creation had accumulated several embedded and full-page variants. The shared form was visually optimized for a compact modal, which made the longest and most consequential field, Strategy, the smallest editing surface. A review-linked edit also reopened the saved Strategy instead of the proposed update, separating the player from the before/after context they needed. Draft portrait generation and saved-profile completion previously had separate lifecycles, allowing later images to mutate an already submitted character.

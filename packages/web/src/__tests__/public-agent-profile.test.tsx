@@ -24,7 +24,8 @@ test("public agent view presents honors, correctly scoped stats and accessible h
   expect(html).toContain("Recent Werewolf record");
   expect(html).toContain("No public Werewolf results yet.");
   expect(html).toContain('src="/avatars/personas/strategic.png"');
-  expect(html).toContain('aria-label="View Public Agent portrait and stats"');
+  expect(html).toContain('alt="Portrait of Public Agent"');
+  expect(html).toContain('aria-label="Share Public Agent profile"');
   expect(html).toContain('href="/agents/agent-1?game=werewolf"');
   expect(html).toContain('aria-current="page"');
   expect(html).toContain("No completed games in this history yet.");

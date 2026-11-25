@@ -40,6 +40,24 @@ test("unknown, hidden, incomplete and mismatched targets cannot become share lin
   expect((await app.request("/api/share-links/123456789A")).status).toBe(404);
 });
 
+test("agent shares resolve anonymously and follow current publication eligibility", async () => {
+  await db.insert(schema.users).values({ id: "share-architect", displayName: "Architect" });
+  await db.insert(schema.agentProfiles).values([
+    { id: "published-agent", userId: "share-architect", name: "Published", personality: "Patient" },
+    { id: "unpublished-agent", userId: "share-architect", name: "Draft", personality: "Patient", moderationRequired: true },
+  ]);
+  const app = createHouseShareRoutes(db);
+  expect((await post(app, "/agents/unpublished-agent")).status).toBe(404);
+  expect((await post(app, "/dashboard/agents/published-agent/profile")).status).toBe(400);
+  const created = await post(app, "/agents/published-agent");
+  expect(created.status).toBe(200);
+  const { code } = await created.json() as { code: string };
+  const resolve = () => app.request(`/api/share-links/${code}`);
+  expect(await (await resolve()).json()).toEqual({ code, path: "/agents/published-agent" });
+  await db.update(schema.agentProfiles).set({ archivedAt: new Date().toISOString() }).where(eq(schema.agentProfiles.id, "published-agent"));
+  expect((await resolve()).status).toBe(404);
+});
+
 test("creation rejects unexpected fields and oversized or malformed bodies", async () => {
   const app=createHouseShareRoutes(db);
   for(const body of ['{"path":"/rules","redirect":"https://evil.test"}',"null","[]","invalid"]){

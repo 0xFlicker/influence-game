@@ -4,7 +4,7 @@ import { parseReplayShare, REPLAY_SHARE_KEYS } from "./replay-share-state";
 export const SHARE_CODE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{10}$/;
 export interface HouseShareTarget {
   path: string;
-  kind: "game" | "profile" | "page";
+  kind: "game" | "profile" | "agent" | "page";
   identifier?: string;
   mode?: "replay" | "results" | "highlights";
   sequence?: string;
@@ -29,6 +29,8 @@ export function parseHouseShareTarget(input: unknown): HouseShareTarget {
     target = { kind: "game", identifier: id, mode: mode as HouseShareTarget["mode"], sequence };
     if (mode === "replay") for (const key of [...REPLAY_SHARE_KEYS, "audience", "cursor"]) allowed.add(key);
     if (mode === "highlights") for (const key of ["scene", "audience"]) allowed.add(key);
+  } else if (root === "agents" && id && id.length <= 128 && !["create", "prepare"].includes(id) && parts.length === 2) {
+    target = { kind: "agent", identifier: id };
   } else if (root === "profile" && id && parts.length === 2) {
     target = { kind: "profile", identifier: id }; allowed.add("game");
   } else if (["/", "/games", "/games/free", "/games/public", "/rules", "/about", "/updates", "/privacy", "/terms", "/get-mcp"].includes(url.pathname)

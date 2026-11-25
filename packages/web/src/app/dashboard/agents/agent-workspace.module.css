@@ -472,9 +472,18 @@
   display: flex;
   margin-top: 9px;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
-.cardActions button:first-child {
+.cardShare {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cardShare svg {
+  width: 16px;
+  height: 16px;
+}
+.cardActions > button:first-child {
   flex: 1;
 }
 .confirmationActions {
@@ -483,7 +492,7 @@
   gap: 12px;
   margin-top: 20px;
 }
-.cardActions button:last-child {
+.cardActions > button:last-child {
   color: var(--muted);
 }
 .guidedField {
@@ -712,17 +721,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-.profileNavigation {
-  max-width: 1600px;
-  margin: 0 auto 16px;
-  padding-inline: clamp(20px, 3.5vw, 56px);
-  color: #f3e9d9;
-}
-.profileNavigation a:focus-visible {
-  outline: 2px solid #e0c193;
-  outline-offset: 3px;
 }
 
 /* The creator is one stage in both modes. The hall and selected character stay
@@ -1088,9 +1086,6 @@
   }
 }
 @media (max-width: 640px) {
-  .profileNavigation {
-    padding-inline: 16px;
-  }
   .workspace {
     padding: 0 16px;
     background-position: 45% top;

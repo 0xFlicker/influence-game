@@ -142,11 +142,11 @@ export function AgentsContent() {
               <Link
                 className="action"
                 href={withManagementReturn(
-                  "/dashboard/agents/" + agent.id + "/profile",
+                  "/dashboard/agents/" + agent.id + "/edit",
                   returnPath(agent.id),
                 )}
               >
-                View
+                View submission
               </Link>
             </div>
           ))}

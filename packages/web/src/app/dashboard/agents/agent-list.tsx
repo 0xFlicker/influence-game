@@ -5,6 +5,7 @@ import Image from "next/image";
 import { PLAYER_VOICES } from "@influence/engine/voice-catalog";
 import type { SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
+import { HouseShareButton } from "@/components/house-share-button";
 import { AgentModelLabel } from "@/components/agent-model-label";
 import { withManagementReturn } from "./agent-management-navigation";
 import styles from "./agent-workspace.module.css";
@@ -76,11 +77,11 @@ export function AgentList({
             <Link
               className={styles.cardProfile}
               data-image-updating={imageWorking || undefined}
-              href={withManagementReturn(
-                "/dashboard/agents/" + agent.id + "/profile",
+              href={agent.profileHref ?? withManagementReturn(
+                "/dashboard/agents/" + agent.id + "/edit",
                 returnPath?.(agent.id) ?? "/dashboard/agents",
               )}
-              aria-label={"View " + agent.name}
+              aria-label={agent.profileHref ? `View ${agent.name} public profile` : `Open ${agent.name} editor`}
             >
               <h3 className={styles.cardName}>{agent.name}</h3>
               <div className={styles.cardArtwork}>
@@ -155,6 +156,13 @@ export function AgentList({
               >
                 Analyze
               </Link>
+              {agent.profileHref && <HouseShareButton
+                href={agent.profileHref}
+                label={`Share ${agent.name} profile`}
+                title={`${agent.name} — The House`}
+                buttonText="Share"
+                className={styles.cardShare}
+              />}
               <button
                 type="button"
                 onClick={() => onDelete(agent)}
