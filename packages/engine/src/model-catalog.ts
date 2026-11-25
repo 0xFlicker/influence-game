@@ -207,6 +207,12 @@ const MODEL_DEFINITIONS: readonly ModelDefinition[] = [
     displayName: facts.displayName,
     evaluationStatus: modelId === "claude-haiku-5-5" ? "game-ready" : "evaluation-candidate",
     defaultReasoningPolicy: facts.adaptive ? "low" : "action-policy",
+    ...(modelId === "claude-fable-5-2" && { notes: "Anthropic requires 30-day data retention for this model." }),
+  })),
+  ...(["gpt-6.2-sol", "gpt-6.2-astra"] as const).map((modelId): ModelDefinition => ({
+    id: `openai:${modelId}`, providerProfileId: "openai", modelId,
+    displayName: `OpenAI ${modelId}`, evaluationStatus: "evaluation-candidate",
+    defaultReasoningPolicy: "action-policy",
   })),
   ...KATANA_EVALUATION_MODELS.map((modelId): ModelDefinition => ({
     id: `katana:${modelId}`,

@@ -34,6 +34,18 @@ Game creation and model settings use a collapsed “Allowed models” checklist.
 
 Enrollment snapshots the requested preference. Start rechecks current owner entitlement, unless an admin supplied a cast override, and freezes `config.modelRouting` in the same transaction as roster/start authority. Order is cast override → enrollment preference → game default. A later profile edit affects future enrollments only. Model metadata is frozen with the routes so discovery/catalog updates cannot rewrite an active run. New seats no longer carry a competing `agentConfig.model`.
 
+Documented retirement dates and provider-recommended replacements appear in the character preference picker and admin route editor. Date-only notices become effective at midnight UTC on the stated date. At that boundary, new preferences, game routes and unsealed starts reject a retired model, including when it is listed by the provider or appears as a fallback. A waiting lobby with a retired enrollment can use a valid cast override. Saved preferences change through ordinary edits, and frozen routes keep their original model IDs, fallback order and rate cards. See the [catalog audit](audits/2026-11-24-model-catalog.md) for provider notices.
+
+### Model lifecycle
+
+In **Admin → Providers → Model lifecycle**, choose the exact provider-qualified model ID, its replacement, and The House cutoff date. Set the cutoff ahead of the provider retirement to leave time for the transition. Provider and House dates appear separately in the pickers. A provider cutoff still applies when no House rule exists.
+
+Select **Preview changes** to see the affected saved agent preferences, Influence and Werewolf waiting lobbies, and shared defaults for new games and Daily Free. The preview shows the ordered routes, call caps, reasoning settings, available rate cards and any account-entitlement or route conflicts. **Approve and apply** makes the previewed changes immediately in a single transaction. If the affected records or policy changed, refresh the preview. The selected date controls when the old ID becomes unavailable for future selection. It does not queue another migration.
+
+The migration preserves each supported reasoning setting. When the replacement lacks that setting, the preview shows its default. If a route already contains the replacement, the first occurrence keeps its position and call allowance. The approval is bound to the exact preview, and retrying an already successful approval returns the same receipt. The House settings store the operator and approval timestamp. A separate model ID or dated snapshot can have its own rule. Sealed routes and championship assignments use their own frozen authority.
+
+The operation covers published agent preferences and unsealed waiting seats and policies. Immutable character submissions retain their original snapshot. Publishing a pre-migration submission cannot restore the source model over a preference reached through successive approved migrations. A model may still be selected before a future House cutoff. Preview again to migrate any choices made in that interval.
+
 Every contestant uses its own frozen route, including retrospective speech and context adaptation. An explicit preference runs first, followed by the entire `defaultManifest`, skipping duplicates: for example, Kimi → Luna → Grok. Default starts at the first entry of `defaultManifest`. `defaultModelMaxFallbackCalls` sets the shared contestant allowance for that first entry when it serves as a fallback (default 24, editable before start); primary calls do not consume it. Other fallback entries retain their own caps. `houseManifest` contains the independent House primary and fallbacks. Visual Mode preserves text-only primaries and fallbacks. Each provider attempt sends optional scene images only to image-capable models; text-only models receive canonical room participants, observable cues, and performance instructions. Werewolf scene rendering does not give contestant text calls image inputs.
 
 Existing coordinator behavior handles refusal, bounded retries, provider health, strict-schema failures, and context adaptation. No permissive JSON repair is introduced. A coordinated Luna request prefers Flex, including fallback use, with explicit standard-tier failover owned by the shared coordinator. Empty fallback chains are allowed. Only output-specific exhaustion retains the owning phase's legal absence/error behavior; availability exhaustion defers the turn.
@@ -97,7 +109,7 @@ Rate cards are provider-qualified and captured on attempts before dispatch. Term
 
 See [cutover](deployment/game-model-routing-cutover.md), [simulation usage](local-model-evaluation.md), and the [House character proposal](plans/house-character-model-assignments.md).
 
-Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Claude selections for new games use native Haiku, Sonnet or Opus 5.5, Fable 5.1 or Fable 5.2.
 Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
 games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](native-anthropic.md) for cutover details.

@@ -9,6 +9,8 @@ import type { WerewolfSetup } from "@influence/engine/werewolf/types";
 import { useRouter } from "next/navigation";
 import { MODEL_CATALOG, MODEL_REASONING_POLICIES, modelCatalogEntryById } from "@influence/engine/model-catalog";
 import { ModelPricing } from "@/components/model-pricing";
+import { ModelRetirement, modelRetirement } from "@/components/model-retirement";
+import { isHouseModelCutoffActive, isModelRetired, type HouseModelCutoff, type HouseModelCutoffs } from "@influence/engine/model-route-metadata";
 import { DEFAULT_GAME_FALLBACKS, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import { DEFAULT_CONTESTANT_RECOVERY_CALLS } from "@influence/engine/game-model-routing";
 import {
@@ -376,8 +378,11 @@ function routeEntryError(
   entry: GameProviderManifestEntry,
   index: number,
   model?: GameModelOption,
+  cutoff?: HouseModelCutoff,
 ): string | null {
   if (!entry.catalogId) return "Select a model.";
+  const retirement = modelRetirement(entry.catalogId, model?.metadata, cutoff);
+  if (retirement?.retired) return `${retirement.text}. Choose another model.`;
   if (model?.configured === false) return "This provider is not configured.";
   if (
     index > 0
@@ -410,6 +415,7 @@ export function ProviderRouteEditor({
   models,
   visualMode,
   activeRoute,
+  cutoffs = {},
   onChange,
 }: {
   labelPrefix?: string;
@@ -417,6 +423,7 @@ export function ProviderRouteEditor({
   models: GameModelOption[];
   visualMode: boolean;
   activeRoute: GameProviderManifestEntry[];
+  cutoffs?: HouseModelCutoffs;
   onChange: (entries: ProviderRouteEntry[]) => void;
 }) {
   const modelSelectRefs = useRef<Record<string, HTMLSelectElement | null>>({});
@@ -462,22 +469,21 @@ export function ProviderRouteEditor({
     onChange(nextEntries);
   }
 
+  const nextFallback = models.find(model => !isModelRetired(model.metadata?.documented) && !isHouseModelCutoffActive(cutoffs[model.catalogId])
+    && !entries.some(entry => entry.catalogId === model.catalogId));
+
   function addFallback() {
-    const used = new Set(entries.map((entry) => entry.catalogId));
-    const available = models.find((model) => !used.has(model.catalogId));
-    if (!available) return;
+    if (!nextFallback) return;
     const next = providerRouteEntry({
-      catalogId: available.catalogId,
-      reasoningPolicy: available.defaultReasoningPolicy,
+      catalogId: nextFallback.catalogId,
+      reasoningPolicy: nextFallback.defaultReasoningPolicy,
       maxCallsPerGame: 12,
     });
     pendingFocusId.current = next.uiId;
     onChange([...entries, next]);
   }
 
-  const canAdd = models.some(
-    (model) => !entries.some((entry) => entry.catalogId === model.catalogId),
-  );
+  const canAdd = Boolean(nextFallback);
 
   return (
     <div className="space-y-3">
@@ -500,7 +506,7 @@ export function ProviderRouteEditor({
           const allowedPolicies = selectedModel?.allowedReasoningPolicies ?? ["action-policy"];
           const textOnly = visualMode && !supportsVisualMode(entry.catalogId, models);
           const activeIndex = activeRoute.findIndex(active => active.catalogId === entry.catalogId);
-          const error = routeEntryError(entry, activeIndex, selectedModel);
+          const error = routeEntryError(entry, activeIndex, selectedModel, cutoffs[entry.catalogId]);
           return (
             <fieldset
               key={entry.uiId}
@@ -576,11 +582,12 @@ export function ProviderRouteEditor({
                         (other, otherIndex) => otherIndex !== index && other.catalogId === model.catalogId,
                       );
                       const unavailable = !model.configured;
+                      const retirement = modelRetirement(model.catalogId, model.metadata, cutoffs[model.catalogId]);
                       return (
                         <option
                           key={model.catalogId}
                           value={model.catalogId}
-                          disabled={selectedElsewhere || unavailable}
+                          disabled={selectedElsewhere || unavailable || retirement?.retired}
                         >
                           {model.displayName}
                           {selectedElsewhere
@@ -588,11 +595,13 @@ export function ProviderRouteEditor({
                             : unavailable
                               ? " (unavailable)"
                               : ""}
+                          {retirement ? ` · ${retirement.text}` : ""}
                         </option>
                       );
                     })}
                   </select>
                   <input aria-label={`${labelPrefix}${index === 0 ? "Primary" : `Fallback ${index}`} exact model ID`} value={entry.catalogId} onInput={event => selectModel(index, event.currentTarget.value)} className="mt-2 w-full rounded border border-white/10 bg-[#09090c] px-3 py-2 text-xs" />
+                  <ModelRetirement catalogId={entry.catalogId} metadata={selectedModel?.metadata} cutoff={cutoffs[entry.catalogId]} />
                   <ModelPricing rateCard={(selectedModel?.metadata ?? modelCatalogEntryById(entry.catalogId)?.metadata)?.rateCard} />
                 </label>
 
@@ -683,6 +692,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
   const [exclusions, setExclusions] = useState<string[]>([]);
   const [defaultModelMaxFallbackCalls, setDefaultModelMaxFallbackCalls] = useState(DEFAULT_CONTESTANT_RECOVERY_CALLS);
   const [models, setModels] = useState<GameModelOption[]>(GAME_MODELS);
+  const [cutoffs, setCutoffs] = useState<HouseModelCutoffs>({});
   const providerRouteEdited = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -691,6 +701,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
     let active = true;
     void getProviderModels().then((inventory) => {
       if (!active) return;
+      setCutoffs(inventory.cutoffs ?? {});
       setModels(inventory.models.map((model) => ({
         catalogId: model.catalogId,
         supportsImageInput: model.capabilities.supportsImageInput,
@@ -703,10 +714,11 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       })));
       const configuredModelIds = new Set(
         inventory.models
-          .filter((model) => model.configured && model.available === true)
+          .filter((model) => model.configured && model.available === true && !isModelRetired(model.metadata?.documented)
+            && !isHouseModelCutoffActive(inventory.cutoffs?.[model.catalogId]))
           .map((model) => model.catalogId),
       );
-      const recommendedRoute = [
+      const recommendedRoute = inventory.defaultManifest?.map(entry => ({ ...entry, reasoningPolicy: entry.reasoningPolicy ?? "action-policy" })) ?? [
         ...DEFAULT_PROVIDER_MANIFEST,
         ...RECOMMENDED_PROVIDER_FALLBACKS.filter(entry => configuredModelIds.has(entry.catalogId)),
       ];
@@ -754,6 +766,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         entry,
         index < providerRoute.length ? index : index - providerRoute.length,
         models.find((model) => model.catalogId === entry.catalogId),
+        cutoffs[entry.catalogId],
       ))
       .find((message): message is string => Boolean(message));
     if (routeError) {
@@ -837,6 +850,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
           models={models}
           visualMode={hasContestantVisuals}
           activeRoute={providerRoute}
+          cutoffs={cutoffs}
           onChange={(providerRoute) => {
             providerRouteEdited.current = true;
             set("providerRoute", providerRoute);
@@ -847,7 +861,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
 
       <SectionCard title="House model and fallbacks">
         <p className="mb-3 text-sm text-white/60">Summaries, production decisions, and episode titles use this route. House fallback allowances are separate from contestants.</p>
-        <ProviderRouteEditor labelPrefix="House " entries={houseRoute} models={models} visualMode={false} activeRoute={houseRoute} onChange={route => { houseRouteEdited.current = true; setHouseRoute(route); }} />
+        <ProviderRouteEditor labelPrefix="House " entries={houseRoute} models={models} visualMode={false} activeRoute={houseRoute} cutoffs={cutoffs} onChange={route => { houseRouteEdited.current = true; setHouseRoute(route); }} />
       </SectionCard>
       <AllowedModelsPicker models={models} excludedIds={exclusions} onChange={setExclusions}
         inUseIds={[...form.providerRoute, ...houseRoute].map(entry => entry.catalogId)} />

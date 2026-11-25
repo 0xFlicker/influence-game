@@ -10,7 +10,9 @@
 .option { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px; border: 1px solid transparent; border-radius: 4px; color: rgb(var(--text-secondary)); font-size: 13px; line-height: 1.4; cursor: pointer; }
 .option[aria-selected="true"] { color: rgb(var(--text-primary)); }
 .option[data-active="true"], .option:hover { border-color: rgb(var(--accent-rgb) / .65); background: rgb(var(--accent-rgb) / .13); color: rgb(var(--text-primary)); }
+.option[aria-disabled="true"] { cursor: not-allowed; border-color: transparent; background: transparent; color: rgb(var(--text-secondary)); }
 .check { flex: 0 0 14px; color: rgb(var(--accent-rgb)); }
 .name { min-width: 0; overflow-wrap: anywhere; }
 .identifier { display: block; margin-top: 2px; color: rgb(var(--text-secondary)); font-size: 11px; }
+.detail { display: block; margin-top: 2px; color: #fde68a; font-size: 11px; }
 .empty { padding: 16px 12px; color: rgb(var(--text-secondary)); font-size: 13px; }

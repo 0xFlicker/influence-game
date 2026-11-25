@@ -9,7 +9,7 @@ Federation is deferred for both Anthropic and OpenAI.
 Select `anthropic:claude-haiku-5-5` for a character, cast override, contestant
 manifest, or House manifest. Haiku 5.5 joins the existing free-account choices.
 The global default remains unchanged. Current Claude selections use native
-Haiku 5.5, Sonnet 5.5, Opus 5.5, or Fable 5.1; older native and Katana Claude
+Haiku 5.5, Sonnet 5.5, Opus 5.5, Fable 5.1 or Fable 5.2. Older native and Katana Claude
 routes are unavailable for new selections. Historical catalog entries remain
 readable for frozen games and accounting. Newly discovered IDs require an
 audited facts entry before native routing. Discovery paginates but makes no

@@ -1,4 +1,4 @@
-import { providerModelFacts } from "./provider-model-facts";
+import { providerModelFacts, type ProviderModelFacts } from "./provider-model-facts";
 import { estimateCost, type ModelPricing, type TokenUsage } from "./token-tracker";
 
 export interface ModelRateCard {
@@ -35,6 +35,25 @@ export function estimateRouteCost(usage: Partial<TokenUsage>, card: ModelRateCar
   return Math.max(card.minimumUsd ?? 0, card.roundingUsd ? Math.ceil((total - Number.EPSILON) / card.roundingUsd) * card.roundingUsd : total);
 }
 
+/** Provider date-only notices take effect at the start of the stated UTC day. */
+export function isModelRetired(
+  facts: Pick<ProviderModelFacts, "retired" | "deprecation"> | null | undefined,
+  now = new Date(),
+): boolean {
+  return Boolean(facts?.retired || (facts?.deprecation && now.toISOString().slice(0, 10) >= facts.deprecation.retirementDate));
+}
+
+export interface HouseModelCutoff {
+  cutoffDate: string;
+  replacementCatalogId: string;
+}
+
+export type HouseModelCutoffs = Readonly<Record<string, HouseModelCutoff>>;
+
+export function isHouseModelCutoffActive(cutoff: HouseModelCutoff | undefined, now = new Date()): boolean {
+  return cutoff !== undefined && now.toISOString().slice(0, 10) >= cutoff.cutoffDate;
+}
+
 export function modelRouteMetadata(catalogId: string) {
   const [provider, model] = catalogId.split(":");
   const facts = providerModelFacts(provider!, model!);
@@ -42,7 +61,9 @@ export function modelRouteMetadata(catalogId: string) {
     documented: facts ? { source: facts.source, checkedAt: facts.checkedAt, inputImages: facts.capabilities.supportsImageInput,
       strictSchema: facts.capabilities.supportsStructuredOutput, contextTokens: facts.contextTokens, outputTokens: facts.outputTokens,
       parameters: facts.parameters, capabilities: facts.capabilities, allowedReasoningEfforts: facts.allowedReasoningEfforts,
-      retired: facts.retired ?? false } : null,
+      retired: facts.retired ?? false,
+      ...(facts.deprecation && { deprecation: facts.deprecation }),
+    } : null,
     adapterContract: "provider-native strict JSON schema; exact schema and semantic validation required",
     unknownSchemaSubset: true };
 }

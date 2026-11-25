@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { actorProviderManifest, assertModelEntitlement, contestantManifest, FREE_MODEL_CATALOG_IDS, gameModelPolicy, normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting } from "../game-model-routing";
+import { describe, expect, setSystemTime, test } from "bun:test";
+import { actorProviderManifest, assertCurrentGameModelRouting, assertModelEntitlement, contestantManifest, FREE_MODEL_CATALOG_IDS, gameModelPolicy, normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting } from "../game-model-routing";
 import { estimateCost } from "../token-tracker";
 import { estimateRouteCost, modelRateCard } from "../model-route-metadata";
 import { previewModelRoster } from "../mixed-model-simulate";
@@ -11,6 +11,37 @@ const policy = () => normalizeGameModelRouting({ version: 1, defaultManifest: [{
   houseManifest: [{ catalogId: "meta-muse:muse-spark-1.3-contributor" }, { catalogId: "katana:deepseek-v4-flash", maxCallsPerGame: 2 }], overrides: {}, excludedCatalogIds: [] });
 
 describe("frozen game model routing", () => {
+  test("retirement blocks new selections and sealing on the UTC cutoff while existing routes remain authoritative", () => {
+    const id = "openai:gpt-5-mini-2025-08-07";
+    const selection = { catalogId: id };
+    const routing = normalizeGameModelRouting({
+      ...policy(),
+      defaultManifest: [{ catalogId: "openai:gpt-6-luna" }, { ...selection, maxCallsPerGame: 5 }],
+      houseManifest: [selection],
+      overrides: { seat: selection },
+    });
+    const error = /retired on 2026-12-11.*openai:gpt-6.1-terra/;
+    try {
+      setSystemTime(new Date("2026-12-10T23:59:59.999Z"));
+      assertModelEntitlement(selection, true);
+      const sealed = sealGameModelRouting(routing, [{ id: "seat" }]);
+      const config = JSON.parse(JSON.stringify({ modelRouting: sealed }));
+      setSystemTime(new Date("2026-12-11T00:00:00.000Z"));
+      expect(() => assertModelEntitlement(selection, true)).toThrow(error);
+      expect(() => assertCurrentGameModelRouting(routing)).toThrow(error);
+      expect(() => sealGameModelRouting(policy(), [{ id: "seat", preference: selection }])).toThrow(error);
+      for (const field of ["defaultManifest", "houseManifest", "overrides"] as const) {
+        expect(() => sealGameModelRouting({ ...policy(), [field]: routing[field] }, [{ id: "seat" }])).toThrow(error);
+      }
+      expect(actorProviderManifest(config, { id: "seat", role: "player" })).toEqual(config.modelRouting.frozenRoutes.contestants.seat);
+      expect(actorProviderManifest(config, { role: "house" })).toEqual(config.modelRouting.frozenRoutes.house);
+      expect(gameModelPolicy(config)).toBe(config.modelRouting);
+      expect(gameModelPolicy({ providerManifest: [selection] }).houseManifest[0]?.catalogId).toBe(id);
+    } finally {
+      setSystemTime();
+    }
+  });
+
   test("new Claude choices require the latest native family while historical routes remain readable", () => {
     for (const [old, current] of [["katana:claude-haiku-4-5", "anthropic:claude-haiku-5-5"], ["anthropic:claude-sonnet-4-6", "anthropic:claude-sonnet-5-5"],
       ["katana:claude-opus-4-8", "anthropic:claude-opus-5-5"], ["katana:claude-fable-5", "anthropic:claude-fable-5-1"]] as const) {
@@ -69,7 +100,7 @@ describe("frozen game model routing", () => {
     expect(() => sealGameModelRouting(sealed, [])).toThrow("already sealed");
   });
   test("eight provider-qualified models remain distinct through serialization and resume", () => {
-    const ids = ["openai:gpt-6-luna", "katana:glm-5-3-flash-private", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-5-mini", "xai:grok-4.6", "katana:q-naifu-a3b", "custom-openai-compatible:experimental"];
+    const ids = ["openai:gpt-6-luna", "katana:glm-5-3-flash-private", "katana:deepseek-v4-flash", "meta-muse:muse-spark-1.3-contributor", "openai:gpt-6.1-terra", "xai:grok-4.6", "katana:q-naifu-a3b", "custom-openai-compatible:experimental"];
     const sealed = sealGameModelRouting(policy(), ids.map((catalogId, i) => ({ id: `seat-${i}`, preference: { catalogId } })));
     const config = JSON.parse(JSON.stringify({ modelRouting: sealed }));
     ids.forEach((catalogId, i) => expect(actorProviderManifest(config, { id: `seat-${i}`, role: "player" })[0]!.catalogId).toBe(catalogId));

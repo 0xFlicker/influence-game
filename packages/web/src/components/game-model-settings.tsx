@@ -7,6 +7,7 @@ import { DefaultModelFallbackLimit, ProviderRouteEditor, type ProviderRouteEntry
 import { DEFAULT_CONTESTANT_RECOVERY_CALLS } from "@influence/engine/game-model-routing";
 import { ModelPreferencePicker } from "./model-preference-picker";
 import { AllowedModelsPicker } from "./allowed-models-picker";
+import type { HouseModelCutoffs } from "@influence/engine/model-route-metadata";
 
 interface RoutingRead {
   policy: GameModelRouting; frozen: boolean;
@@ -18,13 +19,14 @@ const clean = (route: ProviderRouteEntry[]) => route.map(({ catalogId, reasoning
 export function GameModelSettings({ gameId }: { gameId: string }) {
   const [data, setData] = useState<RoutingRead>();
   const [models, setModels] = useState<ProviderModelInventoryEntry[]>([]);
+  const [cutoffs, setCutoffs] = useState<HouseModelCutoffs>({});
   const [policy, setPolicy] = useState<GameModelRouting>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const url = `/api/model-routing/games/${encodeURIComponent(gameId)}`;
   useEffect(() => { let active = true;
     void Promise.all([apiFetch<RoutingRead>(url), getProviderModels()]).then(([routing, inventory]) => {
-      if (active) { setData(routing); setPolicy(routing.policy); setModels(inventory.models); }
+      if (active) { setData(routing); setPolicy(routing.policy); setModels(inventory.models); setCutoffs(inventory.cutoffs ?? {}); }
     }).catch(error => { if (active) setError(error instanceof Error ? error.message : "Could not load model settings"); });
     return () => { active = false; };
   }, [url]);
@@ -43,7 +45,7 @@ export function GameModelSettings({ gameId }: { gameId: string }) {
       <fieldset disabled={data.frozen || busy} className="space-y-6">
         {(["defaultManifest", "houseManifest"] as const).map(key => <section key={key} className="rounded-xl border border-white/15 p-4">
           <h2 className="mb-3 font-semibold">{key === "defaultManifest" ? "Default contestants and shared fallbacks" : "House and House fallbacks"}</h2>
-          <ProviderRouteEditor labelPrefix={key === "houseManifest" ? "House " : ""} entries={entries(policy[key])} models={options} visualMode={false} activeRoute={entries(policy[key])} onChange={route => setPolicy({ ...policy, [key]: clean(route) })} />
+          <ProviderRouteEditor labelPrefix={key === "houseManifest" ? "House " : ""} entries={entries(policy[key])} models={options} visualMode={false} activeRoute={entries(policy[key])} cutoffs={cutoffs} onChange={route => setPolicy({ ...policy, [key]: clean(route) })} />
           {key === "defaultManifest" && <DefaultModelFallbackLimit value={policy.defaultModelMaxFallbackCalls ?? DEFAULT_CONTESTANT_RECOVERY_CALLS}
             onChange={defaultModelMaxFallbackCalls => setPolicy({ ...policy, defaultModelMaxFallbackCalls })} />}
         </section>)}
@@ -53,7 +55,7 @@ export function GameModelSettings({ gameId }: { gameId: string }) {
         <h2 className="font-semibold">Cast preferences</h2>
         {data.seats.map(seat => <section key={seat.id} className="rounded-xl border border-white/15 p-4">
           <h3 className="mb-2 font-medium">{seat.name ?? seat.id}</h3>
-          <ModelPreferencePicker inventory={models} value={policy.overrides[seat.id] ?? seat.preference} onChange={preference => setPolicy({ ...policy, overrides: { ...policy.overrides, [seat.id]: preference } })} />
+          <ModelPreferencePicker inventory={models} cutoffs={cutoffs} value={policy.overrides[seat.id] ?? seat.preference} onChange={preference => setPolicy({ ...policy, overrides: { ...policy.overrides, [seat.id]: preference } })} />
           <button className="mt-2 text-sm underline" type="button" onClick={() => { const overrides = { ...policy.overrides }; delete overrides[seat.id]; setPolicy({ ...policy, overrides }); }}>Use enrolled preference</button>
           <p className="mt-2 text-xs text-text-muted">Saved route: {seat.manifest.map(entry => entry.catalogId).join(" → ")}{seat.manifest.length === 1 ? " · No alternate route" : ""}</p>
         </section>)}

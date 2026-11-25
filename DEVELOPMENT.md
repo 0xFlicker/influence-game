@@ -928,7 +928,7 @@ Explicit preferences precede the entire contestant route, including the default 
 
 Use `bun run simulate:models ... --preview` for an offline assignment check and `--report <game-id>` to save the admin routing report from the localhost API. Actual simulation dispatch remains opt-in and paid. See [model routing](docs/model-routing.md), [evaluation examples](docs/local-model-evaluation.md), and the [cutover mapping](docs/deployment/game-model-routing-cutover.md). Required checks remain `bun run test`, `bun run test:postgres`, and `bun run check`.
 
-Claude selections for new games use native Haiku/Sonnet/Opus 5.5 or Fable 5.1.
+Claude selections for new games use native Haiku, Sonnet or Opus 5.5, Fable 5.1 or Fable 5.2.
 Migration `0140_native_claude_selections` upgrades mutable preferences and waiting
 games; frozen games and private provider evidence retain their original routes.
 See [native Anthropic](docs/native-anthropic.md) for cutover details.

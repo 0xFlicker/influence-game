@@ -10,6 +10,7 @@ import { SeasonAdminPanel } from "./season-admin-panel";
 import { FreeQueuePanel } from "./free-queue-panel";
 import { AdminOwnerLearningReviews } from "./admin-owner-learning-reviews";
 import { AdminProviderHealth } from "./admin-provider-health-view";
+import { AdminModelLifecycle } from "./admin-model-lifecycle";
 import { type AdminTab } from "./admin-sections";
 
 export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
@@ -18,7 +19,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
       {/* Tab content */}
       {activeTab === "inference" && <AccountInferencePanel />}
       {activeTab === "games" && <AdminPanel />}
-      {activeTab === "providers" && <AdminProviderHealth />}
+      {activeTab === "providers" && <><AdminModelLifecycle /><AdminProviderHealth /></>}
       {activeTab === "reviews" && <AdminOwnerLearningReviews />}
       {activeTab === "seasons" && <SeasonAdminPanel />}
       {activeTab === "championships" && <ChampionshipAdminPanel />}

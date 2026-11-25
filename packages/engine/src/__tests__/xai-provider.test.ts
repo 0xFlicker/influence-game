@@ -117,6 +117,6 @@ describe("native xAI", () => {
     expect(estimateRouteCost({ promptTokens: 199999, completionTokens: 1 }, card)).toBeCloseTo(0.400004, 8);
     expect(estimateRouteCost({ promptTokens: 200000, completionTokens: 1 }, card)).toBeCloseTo(0.800012, 8);
     expect(modelRateCard("xai:grok-4.6", "priority")).toBeNull();
-    expect(modelRateCard("xai:grok-4.7")).toBeNull();
+    expect(modelRateCard("xai:grok-4.3-unknown-snapshot")).toBeNull();
   });
 });

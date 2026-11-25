@@ -2,7 +2,6 @@ import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
 import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { CURRENT_EMPOWER_REVOTE_VERSION } from "@influence/engine/empower-revote-rules";
-import { gameModelPolicy } from "@influence/engine";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 /**
  * Free Game Queue API routes.
@@ -71,7 +70,7 @@ import { AgentProfileManagementError } from "../services/agent-profile-managemen
 import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import {
-  DAILY_FREE_PROVIDER_MANIFEST,
+  dailyFreeModelRouting,
 } from "../services/daily-provider-manifest.js";
 
 // ---------------------------------------------------------------------------
@@ -273,7 +272,6 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
-      modelRouting: gameModelPolicy({ providerManifest: DAILY_FREE_PROVIDER_MANIFEST }),
       serviceTier: "flex",
       visualMode: false,
       personaPool: [],
@@ -385,7 +383,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       await tx.insert(schema.games).values({
           id: gameId,
           slug,
-          config: JSON.stringify(config),
+          config: JSON.stringify({ ...config, modelRouting: await dailyFreeModelRouting(tx) }),
           status: "waiting",
           trackType: "free",
           freeDrawRequestKey: idempotencyKey,

@@ -1,22 +1,18 @@
 import {
-  DEFAULT_MODEL_ID,
   resolveProviderManifest,
   type ResolvedProviderManifestEntry,
 } from "@influence/engine";
-import { DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
+import { assertCurrentGameModelRouting, gameModelPolicy } from "@influence/engine/game-model-routing";
+import type { DrizzleDB } from "../db/index.js";
+import { lifecycleDefaultManifest, readModelLifecycle } from "./model-lifecycle-settings.js";
 
-export const DAILY_FREE_MODEL = DEFAULT_MODEL_ID;
+export async function dailyFreeModelRouting(db: Pick<DrizzleDB, "select">) {
+  const settings = await readModelLifecycle(db);
+  const policy = gameModelPolicy({ providerManifest: lifecycleDefaultManifest(settings) });
+  assertCurrentGameModelRouting(policy, settings.cutoffs);
+  return policy;
+}
 
-export const DAILY_FREE_MODEL_SELECTION = {
-  catalogId: `openai:${DAILY_FREE_MODEL}`,
-  reasoningPolicy: "action-policy",
-} as const;
-
-export const DAILY_FREE_PROVIDER_MANIFEST = [
-  DAILY_FREE_MODEL_SELECTION,
-  ...DEFAULT_GAME_FALLBACKS,
-] as const;
-
-export function resolveDailyFreeProviderManifest(): ResolvedProviderManifestEntry[] {
-  return resolveProviderManifest(DAILY_FREE_PROVIDER_MANIFEST);
+export async function resolveDailyFreeProviderManifest(db: Pick<DrizzleDB, "select">): Promise<ResolvedProviderManifestEntry[]> {
+  return resolveProviderManifest((await dailyFreeModelRouting(db)).defaultManifest);
 }

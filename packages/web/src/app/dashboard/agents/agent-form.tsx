@@ -1517,7 +1517,9 @@ export function AgentForm({
       const snapshot = suggested ? selectArtwork(suggested, currentSnapshot, true) : currentSnapshot;
       if (suggested && !(await decideCandidate("selected", true))) return;
       const params: AgentProfileWriteParams = {
-        modelPreference,
+        ...(!isEditing || JSON.stringify(modelPreference) !== JSON.stringify(initialSnapshot.modelPreference)
+          ? { modelPreference }
+          : {}),
         voiceId,
         name: name.trim(),
         personality: personality.trim(),
