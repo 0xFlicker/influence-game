@@ -1,13 +1,15 @@
 ---
 title: House postgame review and Werewolf owner learning
 type: feat
-status: implementing
+status: implemented-with-calibration-pending
 date: 2026-10-03
 roadmap_slice: W3
 source_commit: a1a3eda0
 ---
 
 # W3 — review Werewolf play through The House
+
+**November 25 audit.** WR-01 through WR-03 are implemented. WR-04 and deployed owner-flow verification remain in the [acceptance record](../reviews/2026-10-03-w3-owner-learning-implementation.md).
 
 ## Outcome and boundary
 

@@ -1,12 +1,14 @@
 ---
 title: "feat: Sequester format kernel"
 type: feat
-status: active
+status: implemented
 date: 2026-07-23
 origin: docs/brainstorms/2026-07-23-sequester-format-kernel-requirements.md
 ---
 
 # feat: Sequester format kernel
+
+**November 25 audit.** The format kernel shipped. See the [release record](../../packages/web/content/updates/2026-07-25-sequester-format-kernel.md) and [integration tests](../../packages/engine/src/__tests__/format-kernel-integration.test.ts).
 
 ## Summary
 

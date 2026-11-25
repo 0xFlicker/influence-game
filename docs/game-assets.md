@@ -85,4 +85,4 @@ GAME_ASSETS_MINIO_SMOKE=1 bun test --config=bunfig.manual.toml packages/api/src/
 bun test --config=bunfig.browser.toml packages/api/src/e2e/game-assets.e2e.test.ts
 ```
 
-The MinIO smoke restricts its endpoint to loopback and cleans only disposable test objects. A local smoke does not establish deployed OAuth, ingress limits, or Linode permissions. Complete those on an ephemeral deployment or staging using the [operator review](deployment/game-assets-operator-review.md).
+The MinIO smoke restricts its endpoint to loopback and cleans only disposable test objects. A local smoke does not establish deployed OAuth, ingress limits, or Linode permissions. The operator confirmed repeated deployed banner uploads and display on November 25. The [operator review](deployment/game-assets-operator-review.md) gives a disposable staging procedure for testing changes to OAuth, ingress and storage.

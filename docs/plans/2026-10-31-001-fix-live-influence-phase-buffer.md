@@ -2,10 +2,12 @@
 title: Buffer complete Influence phases before live playback
 type: fix
 date: 2026-10-31
-status: implementation
+status: implemented
 ---
 
 # Complete phases for live Influence playback
+
+**November 25 audit.** The live publication change merged in [PR #259](https://github.com/0xFlicker/influence-game/pull/259).
 
 The live and replay format viewer now use the same server projection. Holding
 unfinished phases is intentional: showing every accepted ballot, speech, result,

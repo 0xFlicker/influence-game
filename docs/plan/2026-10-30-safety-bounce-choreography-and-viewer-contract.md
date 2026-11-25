@@ -181,7 +181,7 @@ Implemented on `codex/safety-bounce-choreography`, following plan commit `9f00ca
 
 ## Follow-up TODO: speech ownership across every format and phase
 
-- [ ] Extend the same semantic coverage beyond Safety Bounce and Two Names to every game format, phase, decision action, and speech-bearing event. Inventory ownership; verify thinking → speech → canonical reveal, exactly-once consumption, correct actor/slot, live buffering, replay, audio, Studio/export, and no delayed speech tail. Add negative tests that prove missing integrations fail rather than accepting a generic viewer.
+- [x] The operator closed the format replay speech follow-up on November 25. The original review covered speaker identity, speech timing before the result, and duplicate or missing lines across playback surfaces. The dated entries below record the implementation and test coverage.
 - **THOU SHALT NOT BREAK AN OLD GAME.** Preserve viewability and frozen execution/source contracts for all supported historical games. Test old versions, absent speech/thinking, existing recorded speeches, and pinned production snapshots. New strict requirements must never retroactively invalidate old recordings. Historical regression tests are release blockers.
 
 ### Two Names follow-through
