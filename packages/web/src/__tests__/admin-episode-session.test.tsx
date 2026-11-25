@@ -75,7 +75,7 @@ test("an unknown PATCH survives close, blocks retry after failed GET and reconci
   view.rerender(<p>Closed dialog</p>); view.rerender(editor);
   expect((view.getByText("Save presentation") as HTMLButtonElement).disabled).toBe(true);
   failRead = true; fireEvent.click(view.getByText("Check saved presentation"));
-  await waitFor(() => expect(view.getByText("Read unavailable")).not.toBeNull());
+  await waitFor(() => expect(view.getByText("Request failed (HTTP 503).")).not.toBeNull());
   expect(session.get<Operation>(`operation:${resource}:save`)?.phase).toBe("unknown"); expect(writes).toBe(1);
   failRead = false; fireEvent.click(view.getByText("Check saved presentation"));
   await waitFor(() => expect(view.getByText(/The saved presentation matches this edit/)).not.toBeNull());

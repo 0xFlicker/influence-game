@@ -69,7 +69,7 @@ test("shared library naming preserves drafts, queues exact reviewed IDs and reco
   expect((view.getByRole("checkbox", { name: "Select wolf-slug" }) as HTMLInputElement).checked).toBe(true);
   expect((view.getByRole("button", { name: "Queue 1 naming requests" }) as HTMLButtonElement).disabled).toBe(true);
   failEpisodeRead = true; fireEvent.click(view.getByText("Check saved naming batch"));
-  await waitFor(() => expect(view.getByText("Episode read unavailable")).toBeTruthy());
+  await waitFor(() => expect(view.getByText("Request failed (HTTP 503).")).toBeTruthy());
   expect(view.getByText("Check saved naming batch")).toBeTruthy(); expect(writes).toHaveLength(4);
   failEpisodeRead = false; fireEvent.click(view.getByText("Check saved naming batch"));
   await waitFor(() => expect(view.getByText(/No naming state change is visible/)).toBeTruthy());

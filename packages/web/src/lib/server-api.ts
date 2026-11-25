@@ -13,11 +13,21 @@ import type {
 } from "./api";
 
 import type { GameEntryIdentity } from "./game-entry";
+import type { PlayerCardMetadataGame } from "./player-card";
 import type { WerewolfLobbyData } from "./werewolf-api";
+import { apiErrorMessage, readApiErrorBody } from "./api-error-message";
 
-// The layout metadata and route dispatcher share one read per render request.
-export const getServerGameEntry = cache((key: string): Promise<GameEntryIdentity> =>
-  serverApiFetch(`/api/game-entries/${gamePathSegment(key)}`, { cache: "no-store" }));
+// Social metadata and route dispatch share this public read within a render.
+export const getServerGameMetadata = cache((key: string) =>
+  serverApiFetch<PlayerCardMetadataGame>(`/api/game-entries/${gamePathSegment(key)}/card?view=metadata`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(1500),
+  }));
+
+export async function getServerGameEntry(key: string): Promise<GameEntryIdentity> {
+  const { id, slug, gameKind, visibility } = await getServerGameMetadata(key);
+  return { id, slug, gameKind, visibility };
+}
 
 export function getServerWerewolfLobby(key: string, options?: RequestInit): Promise<WerewolfLobbyData> {
   return serverApiFetch(`/api/werewolf/${gamePathSegment(key)}/lobby`, { cache: "no-store", ...options });
@@ -74,8 +84,8 @@ export async function serverApiFetch<T>(
       signal: timeout.signal,
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      throw new ServerApiError(res.status, text);
+      const text = await readApiErrorBody(res);
+      throw new ServerApiError(res.status, apiErrorMessage(res.status, text, res.headers.get("content-type")));
     }
     return await res.json() as T;
   } finally {

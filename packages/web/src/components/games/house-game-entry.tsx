@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { GameSiteEntry } from "./game-site-entry";
-import { GameEntryLoading, GameEntrySkeleton } from "./game-entry-loading";
+import { GameEntryError, GameEntryLoading, GameEntrySkeleton } from "./game-entry-loading";
 import { ApiError, type GameDetail, type GameWatchReplayFrame, type TranscriptEntry } from "@/lib/api";
 import { getGameEntry, type GameEntryIdentity } from "@/lib/game-entry";
 import { parseReplayAudience, parseReplayCursor } from "@/lib/game-links";
@@ -34,7 +34,7 @@ export interface HouseGameEntryProps {
 export function HouseGameEntry(props: HouseGameEntryProps) {
   const query = useQuery({
     queryKey: ["house-entry", props.slug],
-    queryFn: ({ signal }) => getGameEntry(props.slug, signal),
+    queryFn: ({ signal }) => getGameEntry(props.slug, AbortSignal.any([signal, AbortSignal.timeout(6000)])),
     initialData: props.identity,
     enabled: !props.identity,
     retry: false,
@@ -43,14 +43,8 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
   });
   const identity = query.data;
   if (!identity) {
-    if (!query.error) return <GameEntryLoading results={props.mode === "results"} />;
-    return <GameSiteEntry>
-      <div role="alert">
-        <h1>{query.error instanceof ApiError && query.error.status === 404
-          ? "Game not found" : "Could not open this game"}</h1>
-        <button onClick={() => void query.refetch()}>Try again</button>
-      </div>
-    </GameSiteEntry>;
+    if (query.isFetching || !query.error) return <GameEntryLoading results={props.mode === "results"} />;
+    return <GameEntryError missing={query.error instanceof ApiError && query.error.status === 404} onRetry={() => void query.refetch()} />;
   }
 
   if (props.mode === "highlights") return <GameSiteEntry><Highlights slug={identity.slug} selectedId={props.scene} audience={Array.isArray(props.audience) ? props.audience[0] : props.audience} /></GameSiteEntry>;

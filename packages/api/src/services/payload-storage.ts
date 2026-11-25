@@ -22,7 +22,10 @@ export interface PayloadObjectStore {
   get(key: string): Promise<Uint8Array>;
 }
 
-class S3PayloadObjectStore implements PayloadObjectStore {
+type PayloadStreamReader = (key: string, signal?: AbortSignal) => Promise<ReadableStream<Uint8Array>>;
+type StreamingPayloadStore = PayloadObjectStore & { stream: PayloadStreamReader };
+
+class S3PayloadObjectStore implements StreamingPayloadStore {
   private connection() {
     const bucket = objectStorageBucket("data");
     if (bucket === process.env.LINODE_OBJ_BUCKET || bucket === process.env.HOUSE_PUBLIC_BUCKET) throw new Error("Payload storage requires a separate private bucket");
@@ -44,17 +47,27 @@ class S3PayloadObjectStore implements PayloadObjectStore {
     }
   }
   async get(key: string): Promise<Uint8Array> {
-    const { bucket, client } = this.connection();
     try {
-      const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }),
-        { abortSignal: AbortSignal.timeout(60_000) });
-      if (!result.Body) throw new Error("Private payload object has no body");
-      return await result.Body.transformToByteArray();
+      return await (await this.open(key)).transformToByteArray();
     } catch (error) { throw new Error("Private payload read failed", { cause: error }); }
+  }
+
+  async stream(key: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+    return (await this.open(key, signal)).transformToWebStream();
+  }
+
+  private async open(key: string, signal?: AbortSignal) {
+    const { bucket, client } = this.connection();
+    const deadline = AbortSignal.timeout(60_000);
+    const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
+      abortSignal: signal ? AbortSignal.any([signal, deadline]) : deadline,
+    });
+    if (!result.Body) throw new Error("Private payload object has no body");
+    return result.Body;
   }
 }
 
-let store: PayloadObjectStore = new S3PayloadObjectStore();
+let store: StreamingPayloadStore = new S3PayloadObjectStore();
 const decodedReferences = new WeakSet<object>();
 /** Called only by the reference-column decoder, never on arbitrary document contents. */
 export function decodePayloadReference(value: unknown): StoredPayload {
@@ -63,7 +76,16 @@ export function decodePayloadReference(value: unknown): StoredPayload {
   return value;
 }
 /** Explicit injection for deterministic tests; never an environment fallback. */
-export function setPayloadObjectStoreForTests(replacement: PayloadObjectStore): void { store = replacement; }
+export function setPayloadObjectStoreForTests(replacement: PayloadObjectStore & { stream?: PayloadStreamReader }): void {
+  store = {
+    putIfAbsent: (key, bytes) => replacement.putIfAbsent(key, bytes),
+    get: key => replacement.get(key),
+    stream: replacement.stream?.bind(replacement) ?? (async key => {
+      const bytes = await replacement.get(key);
+      return new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } });
+    }),
+  };
+}
 export function payloadHash(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }
 
 export function assertStoredPayload(value: unknown): asserts value is StoredPayload {
@@ -105,6 +127,13 @@ export async function readPayload(ref: StoredPayload): Promise<Buffer> {
   const bytes = ref.codec === "binary" ? Buffer.from(stored) : gunzipSync(stored);
   if (bytes.byteLength !== ref.byteLength || payloadHash(bytes) !== ref.sha256) throw new Error("Decoded payload integrity mismatch");
   return bytes;
+}
+
+/** Serve an already-authorized immutable binary without re-reading its digest. */
+export function streamBinaryPayload(ref: StoredPayload, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+  assertStoredPayload(ref);
+  if (ref.codec !== "binary") throw new Error("Expected binary payload");
+  return store.stream(ref.key, signal);
 }
 /** Bound independent bucket operations while retaining source order and stopping new batches on failure. */
 export async function mapPayloadBatch<T, R>(items: readonly T[], operation: (item: T) => Promise<R>): Promise<R[]> {

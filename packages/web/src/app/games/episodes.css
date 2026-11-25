@@ -48,6 +48,17 @@
   outline:2px solid #ddbf87;
   outline-offset:-4px
 }
+.episode-card-pending {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 3;
+  background: rgb(16 17 20 / 80%);
+  color: #fff;
+  font-weight: 600;
+  pointer-events: none;
+}
 .episode-artwork {
   position:relative;
   container-type:inline-size;

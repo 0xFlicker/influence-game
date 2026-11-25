@@ -25,3 +25,15 @@ export function GameEntryLoading({ results = false }: { results?: boolean }) {
     <GameEntrySkeleton results={results} />
   </GameSiteEntry>;
 }
+
+export function GameEntryError({ onRetry, missing = false }: { onRetry: () => void; missing?: boolean }) {
+  return <GameSiteEntry>
+    <Link href="/games" className="mb-5 inline-block text-sm text-white/70">← All games</Link>
+    <section className="influence-panel rounded-xl p-6 sm:p-8">
+      <div role="alert">
+        <h1 className="mb-4 text-xl font-semibold">{missing ? "Game not found" : "Could not open this game"}</h1>
+      </div>
+      <button type="button" className="influence-button-secondary" onClick={onRetry}>Try again</button>
+    </section>
+  </GameSiteEntry>;
+}

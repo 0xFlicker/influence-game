@@ -176,7 +176,7 @@ describe("server-api", () => {
     await expect(serverApiFetch("/api/games/demo/postgame/highlights"))
       .rejects.toMatchObject({
         status: 503,
-        message: "Highlights unavailable",
+        message: "Request failed (HTTP 503).",
       });
   });
 });

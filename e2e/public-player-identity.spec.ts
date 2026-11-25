@@ -525,12 +525,12 @@ test.describe("local public player identity", () => {
           });
         }
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
-        await page.getByRole("button", { name: "Refresh games", exact: true }).click();
+        await page.getByLabel("Game category", { exact: true }).selectOption("custom");
         await expect(page.locator(".episode-card")).toHaveCount(2);
         await expect(page.locator(".episode-management")).toHaveCount(0);
         permissions = ["start_game", "fill_game", "stop_game", "hide_game"];
         await page.reload({ waitUntil: "networkidle" });
-        await page.getByRole("button", { name: "Refresh games", exact: true }).click();
+        await page.getByLabel("Game category", { exact: true }).selectOption("custom");
         for (const kind of ["werewolf", "influence"]) {
           const card = page.locator(`.episode-card[data-game-kind="${kind}"]`);
           await expect(card.locator(".episode-management button")).toHaveText(["Start", "Fill AI", "Stop", "Hide"]);
@@ -638,12 +638,57 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("Games links to the Open collection, which pages only near the end", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const context = await identityContext(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    const cursors: string[] = [];
+    const entry = (index: number) => ({
+      kind: "influence",
+      game: { id: `scroll-game-${index}`, slug: `scroll-game-${index}`, status: "waiting", playerCount: 4,
+        alivePlayers: 1, modelLabel: "Standard", visibility: "public", createdAt: "2026-11-24" },
+    });
+    try {
+      await page.route(url => url.pathname === "/api/public-games/page", route => {
+        const params = new URL(route.request().url()).searchParams;
+        if (params.get("status") !== "waiting") return route.fulfill({ json: { items: [], nextCursor: null } });
+        const cursor = params.get("cursor");
+        if (cursor) cursors.push(cursor);
+        const count = params.has("limit") ? 8 : 10;
+        return route.fulfill({ json: cursor
+          ? { items: [entry(11)], nextCursor: null }
+          : { items: Array.from({ length: count }, (_, index) => entry(index + 1)), nextCursor: "next-open" } });
+      });
+      await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+      const gameType = page.getByRole("main").getByRole("combobox", { name: "Game type", exact: true });
+      await gameType.selectOption("influence");
+      const shelf = page.getByRole("region", { name: "Open", exact: true });
+      await expect(shelf.getByRole("heading", { name: "scroll-game-1", exact: true })).toBeVisible();
+      await expect(page.getByText(/games can change|refresh games|load more/i)).toHaveCount(0);
+      await expect(shelf.getByTestId("episode-card")).toHaveCount(8);
+      expect(cursors).toEqual([]);
+      await shelf.getByRole("link", { name: "View all", exact: true }).click();
+      await expect(page).toHaveURL(/\/games\/status\/open$/);
+      await gameType.selectOption("influence");
+      await expect(page.getByTestId("episode-card")).toHaveCount(10);
+      expect(cursors).toEqual([]);
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await expect(page.getByRole("heading", { name: "scroll-game-11", exact: true })).toBeVisible();
+      await expect(page.getByTestId("episode-card")).toHaveCount(11);
+      expect(cursors).toEqual(["next-open"]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("Games, lobby and Details show skeletons while their data is pending", async ({ browser }) => {
     test.setTimeout(90_000);
     const context = await identityContext(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const page = await context.newPage();
     const library = Promise.withResolvers<void>();
+    const navigation = Promise.withResolvers<void>();
     const lobby = Promise.withResolvers<void>();
+    const retry = Promise.withResolvers<void>();
     const results = Promise.withResolvers<void>();
     const slug = "loading-lobby";
     const resultSlug = "loading-results";
@@ -651,15 +696,25 @@ test.describe("local public player identity", () => {
     const waiting = { ...base, id: slug, slug, status: "waiting", alivePlayers: 0 };
     const completed = { ...base, id: resultSlug, slug: resultSlug, status: "completed", alivePlayers: 1 };
     let episodeReads = 0;
+    let holdLibrary = false;
+    let retryingLobby = false;
     try {
       await page.route(url => url.pathname === "/api/public-games/page" && url.searchParams.get("kind") === "influence" && url.searchParams.get("collection") === "all" && url.searchParams.get("status") === "nonwaiting", async route => {
-        await library.promise;
+        if (holdLibrary) await library.promise;
         await route.fulfill({ json: { items: [{ kind: "influence", game: completed }], nextCursor: null } });
       });
       await page.route("**/api/games", route => route.fulfill({ json: [waiting, completed] }));
       await page.route("**/api/werewolf-search", route => route.fulfill({ json: [] }));
       await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({ json: { id: slug, slug, gameKind: "influence" } }));
-      await page.route(`**/api/games/${slug}`, async route => { await lobby.promise; await route.fulfill({ json: waiting }); });
+      await page.route(`**/api/games/${slug}`, async route => {
+        if (!retryingLobby) {
+          await lobby.promise;
+          await route.fulfill({ status: 503, contentType: "text/html", body: "<html><body>Upstream unavailable</body></html>" });
+        } else {
+          await retry.promise;
+          await route.fulfill({ json: waiting });
+        }
+      });
       await page.route(`**/api/games/${slug}/episode`, route => {
         episodeReads++;
         return route.fulfill({ status: 404, json: { error: "No episode yet" } });
@@ -672,8 +727,11 @@ test.describe("local public player identity", () => {
         await route.fulfill({ status: 503, json: { error: "Results unavailable" } });
       });
 
-      await page.goto(`${servers.webUrl}/games`);
-      await page.getByRole("button", { name: "Refresh games", exact: true }).click();
+      await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+      const category = page.getByRole("main").getByRole("combobox", { name: "Game category", exact: true });
+      await category.selectOption("custom");
+      holdLibrary = true;
+      await category.selectOption("all");
       const librarySkeleton = page.getByRole("status", { name: "Loading Influence games", exact: true });
       await expect(librarySkeleton).toBeVisible();
       await expect(librarySkeleton.locator(".episode-skeleton").first()).toBeVisible();
@@ -683,12 +741,24 @@ test.describe("local public player identity", () => {
 
       await page.getByLabel("Search games", { exact: true }).fill(" ");
       const waitingCard = page.getByTestId("episode-card").filter({ has: page.getByRole("heading", { name: slug, exact: true }) });
-      await waitingCard.getByRole("link", { name: "Join game", exact: true }).tap();
+      await page.route(url => url.pathname === `/games/${slug}`, async route => {
+        await navigation.promise;
+        await route.continue();
+      });
+      await waitingCard.getByRole("heading", { name: slug, exact: true }).tap();
+      await expect(waitingCard.getByRole("status").filter({ hasText: "Opening game…" })).toBeVisible({ timeout: 1000 });
+      navigation.resolve();
       const lobbySkeleton = page.getByRole("status", { name: "Loading game", exact: true });
       await expect(lobbySkeleton).toBeVisible({ timeout: 20_000 });
       await expect(page.getByRole("link", { name: "← All games" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Join with an agent" })).toHaveCount(0);
       lobby.resolve();
+      await expect(page.getByRole("main").getByRole("alert")).toHaveText("Could not open this game");
+      await expect(page.getByText("Upstream unavailable", { exact: false })).toHaveCount(0);
+      retryingLobby = true;
+      await page.getByRole("button", { name: "Try again", exact: true }).tap();
+      await expect(lobbySkeleton).toBeVisible();
+      retry.resolve();
       await expect(page.getByRole("region", { name: "Game pre-show" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Join with an agent" })).toBeEnabled();
       expect(episodeReads).toBe(0);
@@ -699,11 +769,14 @@ test.describe("local public player identity", () => {
       await completedCard.getByRole("link", { name: "Details", exact: true }).tap();
       await expect(page.getByRole("status", { name: "Loading results", exact: true })).toBeVisible({ timeout: 20_000 });
       results.resolve();
-      await expect(page.getByText("Results unavailable", { exact: true })).toBeVisible();
+      await expect(page.getByText("Request failed (HTTP 503).", { exact: true })).toBeVisible();
+      await expect(page.getByText("Results unavailable", { exact: true })).toHaveCount(0);
       await expect(page.getByRole("status", { name: "Loading results", exact: true })).toHaveCount(0);
     } finally {
       library.resolve();
+      navigation.resolve();
       lobby.resolve();
+      retry.resolve();
       results.resolve();
       await page.unrouteAll({ behavior: "wait" });
       await context.close();

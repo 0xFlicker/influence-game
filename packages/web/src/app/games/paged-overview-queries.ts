@@ -16,7 +16,7 @@ export function overviewShelves(seasons: SeasonIdentity[], filters: OverviewFilt
   const add = (name: string, filters: Record<string, string>, href?: string) => {
     shelves.push({ name, query: new URLSearchParams({ ...common, ...filters }).toString(), href });
   };
-  if (filters.status === "all" || filters.status === "waiting") add("Open", { kind: filters.kind, status: "waiting", collection: "all" });
+  if (filters.status === "all" || filters.status === "waiting") add("Open", { kind: filters.kind, status: "waiting", collection: "all" }, "/games/status/open");
   if (filters.status !== "waiting") {
     if (influence && active) add("Active season", { kind: "influence", collection: "season", season: active.id }, `/games/season/${encodeURIComponent(active.slug)}`);
     if (werewolf) add("Werewolf", { kind: "werewolf", collection: "all" }, "/games/type/werewolf");

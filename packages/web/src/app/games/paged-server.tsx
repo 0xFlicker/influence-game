@@ -1,6 +1,6 @@
 import { serverApiFetch } from "@/lib/server-api";
 import type { SeasonIdentity } from "@/lib/api";
-import type { GameCollection } from "@/lib/game-collections";
+import { gameCollectionQuery, type GameCollection } from "@/lib/game-collections";
 import { decodePagedGamesPage, type PagedGamesPage } from "@/lib/paged-games";
 import { HybridGamesBrowser } from "./hybrid-games-browser";
 import { initialOverviewFilters, overviewShelves, type OverviewPages } from "./paged-overview-queries";
@@ -27,9 +27,7 @@ export async function PagedCollectionInitial({ collection }: { collection: GameC
   const seasonsPromise = getSeasons();
   const pageFor = (season?: SeasonIdentity): Promise<PagedGamesPage | undefined> => {
     if (collection.kind === "season" && !season) return Promise.resolve(undefined);
-    const query = new URLSearchParams({ kind: collection.kind === "game" ? collection.game : "influence", collection: collection.kind === "season" ? "season" : collection.kind === "public" ? "public" : "all", status: "all", category: "all" });
-    if (season) query.set("season", season.id);
-    return getPage(query);
+    return getPage(gameCollectionQuery(collection, season));
   };
   const initialPagePromise = collection.kind === "season" ? seasonsPromise.then(seasons => pageFor(seasons?.find(item => item.slug === collection.slug))) : pageFor();
   const [initialPage, seasons] = await Promise.all([initialPagePromise, seasonsPromise]);
