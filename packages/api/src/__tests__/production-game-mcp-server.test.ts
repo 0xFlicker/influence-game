@@ -31,6 +31,7 @@ import {
 } from "../game-mcp/tool-authorization.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { MCP_OAUTH_CLIENT_ID } from "../services/mcp-oauth.js";
+import type { PublicPlayerProfileEnvelope } from "../services/public-player-profile.js";
 import { createSeason } from "../services/seasons.js";
 import { acceptTestAgent, setupTestDB } from "./test-utils.js";
 
@@ -3682,16 +3683,19 @@ function publicPlayerFoundFixture() {
       },
       recentResults: [],
       awards: [],
+      werewolfRecord: { wins: 1, losses: 0, draws: 0 },
       agents: [{
         name: "Atlas Prime",
         avatarUrl: null,
+        fullBodyImageUrl: "/api/public/agents/atlas-prime/art?kind=full-body",
         profileHref: "/agents/atlas-prime",
         awards: [],
         role: { key: "strategic" as const, label: "Strategic" },
         competition: { gamesPlayed: 2, wins: 1, winRate: 0.5 },
+        werewolfRecord: { wins: 1, losses: 0, draws: 0 },
       }],
     },
-  };
+  } satisfies PublicPlayerProfileEnvelope;
 }
 
 function assertEveryObjectSchemaIsClosed(value: unknown, path = "$"): void {
