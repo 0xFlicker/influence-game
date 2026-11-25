@@ -121,7 +121,8 @@ test("profile artwork serves the approved full body before a derivative exists a
   expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(1000);
   expect((await app.request(`${profileUrl}/art?kind=body`)).status).toBe(404);
 
-  const draft = await storeAgentDraftImage(db, owner, new Uint8Array([1, 2, 3]));
+  const draftBytes = await sharp({ create: { width: 1, height: 1, channels: 3, background: "#335577" } }).png().toBuffer();
+  const draft = await storeAgentDraftImage(db, owner, draftBytes);
   await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: draft }).where(eq(schema.agentProfiles.id, agent));
   expect((await app.request(artUrl)).status).toBe(404);
 
