@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Fragment,
   createElement,
   useCallback,
   useContext,
@@ -9,7 +10,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { useLogin, usePrivy } from "@privy-io/react-auth";
+import { usePathname } from "next/navigation";
+import { AdminWalletAddressContext, usePrivyRuntime } from "./use-privy-runtime";
 import {
   ApiError,
   clearAuthToken,
@@ -82,6 +84,7 @@ export interface InfluenceAuthState {
   openPrivySignIn: (
     onSettled?: (outcome: PrivyAuthenticationOutcome) => void,
     request?: PrivyAuthenticationRequest,
+    onOpen?: () => void,
   ) => void;
   resetPrivyIdentity: () => Promise<void>;
   requestPrivyProof: () => Promise<string | null>;
@@ -218,16 +221,29 @@ export function InfluenceAuthProvider({
   children,
   clerkLogout,
   managedAuthEnabled = false,
+  privyAppId,
 }: {
   children: React.ReactNode;
   clerkLogout?: () => Promise<unknown>;
   managedAuthEnabled?: boolean;
+  privyAppId: string;
 }) {
-  const { getAccessToken, logout: privyLogout } = usePrivy();
+  const pathname = usePathname();
+  const admin = pathname === "/admin" || pathname.startsWith("/admin/");
+  const { Runtime, load, onReady } = usePrivyRuntime(privyAppId);
+  const [walletAddress, setWalletAddress] = useState<string>();
+  const getAccessToken = useCallback(async () => (await load()).getAccessToken(), [load]);
+  const privyLogout = useCallback(async () => (await load()).logout(), [load]);
   const privyLogoutRef = useRef(privyLogout);
   const clerkLogoutRef = useRef(clerkLogout);
   privyLogoutRef.current = privyLogout;
   clerkLogoutRef.current = clerkLogout;
+
+  useEffect(() => {
+    if (admin && !isLayeredAuthE2EAdapterEnabled()) {
+      void load().catch(() => console.warn("[InfluenceAuth] Admin wallet unavailable"));
+    }
+  }, [admin, load]);
 
   const [coordinator] = useState(() =>
     new InfluenceSessionCoordinator<AuthMe>({
@@ -280,24 +296,21 @@ export function InfluenceAuthProvider({
   }), [coordinator]);
 
   const completePrivyLoginRef = useRef<() => Promise<void>>(async () => {});
-  const { login: openPrivyLogin } = useLogin({
-    onComplete: () => {
-      void completePrivyLoginRef.current();
-    },
-    onError: (error) => {
-      const wasProofRequest = pendingPrivyPurpose.current === "proof";
-      pendingPrivyProofResolution.current?.(null);
-      pendingPrivyProofResolution.current = null;
-      pendingPrivyPurpose.current = null;
-      pendingPrivyAttempt.current = null;
-      pendingPrivyToken.current = null;
-      pendingPrivyRequest.current = null;
-      if (!wasProofRequest) {
-        coordinator.cancelProviderAttempt();
-        privyAuthenticationSettlement.settle(classifyPrivyLoginError(error));
-      }
-    },
-  });
+  const onPrivyComplete = useCallback(() => { void completePrivyLoginRef.current(); }, []);
+  const onPrivyError = useCallback((error: string) => {
+    const purpose = pendingPrivyPurpose.current;
+    if (!purpose) return;
+    pendingPrivyProofResolution.current?.(null);
+    pendingPrivyProofResolution.current = null;
+    pendingPrivyPurpose.current = null;
+    pendingPrivyAttempt.current = null;
+    pendingPrivyToken.current = null;
+    pendingPrivyRequest.current = null;
+    if (purpose === "authentication") {
+      coordinator.cancelProviderAttempt();
+      privyAuthenticationSettlement.settle(classifyPrivyLoginError(error));
+    }
+  }, [coordinator, privyAuthenticationSettlement]);
 
   const completePrivyAttempt = useCallback(async (
     existingProviderToken?: string | null,
@@ -534,6 +547,7 @@ export function InfluenceAuthProvider({
   const openPrivySignIn = useCallback((
     onSettled?: (outcome: PrivyAuthenticationOutcome) => void,
     request: PrivyAuthenticationRequest = { intent: "sign_in" },
+    onOpen?: () => void,
   ) => {
     privyAuthenticationSettlement.begin(onSettled);
     if (privyResetPromise.current) {
@@ -579,24 +593,25 @@ export function InfluenceAuthProvider({
       });
       return;
     }
-    void currentPrivyProof(getAccessToken).then((providerToken) => {
-      if (
-        pendingPrivyAttempt.current !== attempt
-        || pendingPrivyPurpose.current !== "authentication"
-      ) {
-        return;
+    const isCurrent = () => pendingPrivyAttempt.current === attempt
+      && pendingPrivyPurpose.current === "authentication";
+    void load().then(async (runtime) => {
+      if (!isCurrent()) return;
+      const providerToken = await currentPrivyProof(runtime.getAccessToken);
+      if (!isCurrent()) return;
+      if (providerToken) await completePrivyAttempt(providerToken);
+      else {
+        onOpen?.();
+        runtime.login();
       }
-      if (providerToken) {
-        void completePrivyAttempt(providerToken);
-        return;
-      }
-      openPrivyLogin();
+    }).catch(() => {
+      if (isCurrent()) onPrivyError("privy_unavailable");
     });
   }, [
     completePrivyAttempt,
     coordinator,
-    getAccessToken,
-    openPrivyLogin,
+    load,
+    onPrivyError,
     privyAuthenticationSettlement,
   ]);
 
@@ -656,29 +671,24 @@ export function InfluenceAuthProvider({
     pendingPrivyRequest.current = null;
     return new Promise<string | null>((resolve) => {
       pendingPrivyProofResolution.current = resolve;
-      void currentPrivyProof(getAccessToken).then((providerToken) => {
-        if (
-          pendingPrivyProofResolution.current !== resolve
-          || pendingPrivyPurpose.current !== "proof"
-        ) {
-          return;
-        }
+      const isCurrent = () => pendingPrivyProofResolution.current === resolve
+        && pendingPrivyPurpose.current === "proof";
+      void load().then(async (runtime) => {
+        if (!isCurrent()) return;
+        const providerToken = await currentPrivyProof(runtime.getAccessToken);
+        if (!isCurrent()) return;
         if (providerToken) {
           pendingPrivyProofResolution.current = null;
           pendingPrivyPurpose.current = null;
           resolve(providerToken);
-          return;
+        } else {
+          runtime.login();
         }
-        try {
-          openPrivyLogin();
-        } catch {
-          pendingPrivyProofResolution.current = null;
-          pendingPrivyPurpose.current = null;
-          resolve(null);
-        }
+      }).catch(() => {
+        if (isCurrent()) onPrivyError("privy_unavailable");
       });
     });
-  }, [getAccessToken, openPrivyLogin]);
+  }, [load, onPrivyError]);
 
   const openSignIn = useCallback(() => {
     if (!managedAuthEnabled) {
@@ -841,7 +851,17 @@ export function InfluenceAuthProvider({
         submittingInvite,
       },
     },
-    children,
+    createElement(Fragment, null,
+      createElement(AdminWalletAddressContext.Provider, { value: walletAddress }, children),
+      Runtime && createElement(Runtime, {
+        appId: privyAppId,
+        admin,
+        onReady,
+        onComplete: onPrivyComplete,
+        onError: onPrivyError,
+        onAddress: setWalletAddress,
+      }),
+    ),
   );
 }
 

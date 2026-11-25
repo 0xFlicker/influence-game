@@ -48,6 +48,7 @@ export function AuthenticationWrapper({
   const {
     beginAuthenticationAttempt,
     cancelAuthenticationAttempt,
+    needsInvite,
     openPrivySignIn,
     resetPrivyIdentity,
   } = useAuth();
@@ -64,12 +65,14 @@ export function AuthenticationWrapper({
   const [switchingPrivyAccount, setSwitchingPrivyAccount] = useState(false);
   const [privySwitchError, setPrivySwitchError] = useState<string | null>(null);
   const [privyAttemptError, setPrivyAttemptError] = useState<string | null>(null);
+  const [privyStarting, setPrivyStarting] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const invokingControlRef = useRef<HTMLElement | null>(null);
   const privySwitchGenerationRef = useRef(0);
   const isModalVisible = presentation === "modal"
     && open
-    && (attempt !== null || Boolean(reversePrivyToken));
+    && !needsInvite
+    && (attempt !== null || Boolean(reversePrivyToken) || privyStarting);
 
   const restoreInvokingFocus = useCallback(() => {
     const control = invokingControlRef.current;
@@ -86,6 +89,7 @@ export function AuthenticationWrapper({
     setSwitchingPrivyAccount(false);
     setPrivySwitchError(null);
     setPrivyAttemptError(null);
+    setPrivyStarting(false);
     setAttempt(null);
     if (presentation === "inline") {
       setIntent("sign_in");
@@ -119,6 +123,7 @@ export function AuthenticationWrapper({
     setSwitchingPrivyAccount(false);
     setPrivySwitchError(null);
     setPrivyAttemptError(null);
+    setPrivyStarting(false);
     setAttempt(beginAuthenticationAttempt());
     setOpen(true);
   }, [
@@ -151,13 +156,16 @@ export function AuthenticationWrapper({
   const beginPrivyAuthentication = useCallback((
     request: PrivyAuthenticationRequest,
   ) => {
-    privySwitchGenerationRef.current += 1;
+    const generation = ++privySwitchGenerationRef.current;
     setSwitchingPrivyAccount(false);
     setPrivySwitchError(null);
     setPrivyAttemptError(null);
     setAttempt(null);
     setPrivyAccountHandoff(null);
+    setPrivyStarting(true);
     openPrivySignIn((outcome) => {
+      if (privySwitchGenerationRef.current !== generation) return;
+      setPrivyStarting(false);
       if (outcome.kind === "link_required") {
         setReversePrivyToken(outcome.token);
         return;
@@ -182,7 +190,9 @@ export function AuthenticationWrapper({
         setPrivyAttemptError(outcome.message);
         setAttempt(beginAuthenticationAttempt());
       }
-    }, request);
+    }, request, () => {
+      if (privySwitchGenerationRef.current === generation) setPrivyStarting(false);
+    });
   }, [beginAuthenticationAttempt, openPrivySignIn]);
 
   const useDifferentPrivyAccount = useCallback(() => {
@@ -299,7 +309,8 @@ export function AuthenticationWrapper({
     };
   }, [close, isModalVisible]);
 
-  if (!open || (!attempt && !reversePrivyToken)) return null;
+  // The invite prompt owns the pending Privy attempt and the page's focus.
+  if (needsInvite || !open || (!attempt && !reversePrivyToken && !privyStarting)) return null;
 
   const PasswordFlow = isLayeredAuthE2EAdapterEnabled()
     ? E2ELayeredPasswordFlow
@@ -307,7 +318,9 @@ export function AuthenticationWrapper({
   const passwordMode: ManagedAuthMode = managedAuthMode === "disabled"
     ? "existing-only"
     : managedAuthMode;
-  const flow = privyAccountHandoff && attempt ? (
+  const flow = privyStarting ? (
+    <p role="status" className="influence-copy text-sm">Opening Privy…</p>
+  ) : privyAccountHandoff && attempt ? (
     <PrivyAccountHandoff
       state={privyAccountHandoff}
       acceptedLegalTerms={acceptedPrivyLegalTerms}
@@ -374,6 +387,7 @@ export function AuthenticationWrapper({
     />
   ) : null;
   const primaryTabs = managedAuthMode === "full"
+    && !privyStarting
     && !privyAccountHandoff
     && (intent === "sign_in" || intent === "create_account")
     ? (
