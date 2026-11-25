@@ -221,7 +221,7 @@ describe("CompletedGameEntry", () => {
       const viewer = findElementByType(page, HouseGameEntry);
 
       expect(requestedUrls).toEqual([
-        `http://api:3001/api/game-entries/${gameId}`,
+        `http://api:3001/api/game-entries/${gameId}/card?view=metadata`,
         `http://api:3001/api/games/${gameId}`,
       ]);
       expect(viewer?.props.initialGame?.slug).toBe(gameId);
@@ -262,7 +262,7 @@ describe("CompletedGameEntry", () => {
 
     try {
       await HouseGameRoute({ slug: gameId, mode:"entry" });
-      expect(requestedUrls).toEqual([`http://api:3001/api/game-entries/${gameId}`, `http://api:3001/api/games/${gameId}`]);
+      expect(requestedUrls).toEqual([`http://api:3001/api/game-entries/${gameId}/card?view=metadata`, `http://api:3001/api/games/${gameId}`]);
     } finally {
       if (originalApiBackendUrl === undefined) {
         delete process.env.API_BACKEND_URL;

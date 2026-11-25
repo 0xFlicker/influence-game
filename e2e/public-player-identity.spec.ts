@@ -643,7 +643,9 @@ test.describe("local public player identity", () => {
     const context = await identityContext(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const page = await context.newPage();
     const library = Promise.withResolvers<void>();
+    const navigation = Promise.withResolvers<void>();
     const lobby = Promise.withResolvers<void>();
+    const retry = Promise.withResolvers<void>();
     const results = Promise.withResolvers<void>();
     const slug = "loading-lobby";
     const resultSlug = "loading-results";
@@ -651,6 +653,7 @@ test.describe("local public player identity", () => {
     const waiting = { ...base, id: slug, slug, status: "waiting", alivePlayers: 0 };
     const completed = { ...base, id: resultSlug, slug: resultSlug, status: "completed", alivePlayers: 1 };
     let episodeReads = 0;
+    let retryingLobby = false;
     try {
       await page.route(url => url.pathname === "/api/public-games/page" && url.searchParams.get("kind") === "influence" && url.searchParams.get("collection") === "all" && url.searchParams.get("status") === "nonwaiting", async route => {
         await library.promise;
@@ -659,7 +662,15 @@ test.describe("local public player identity", () => {
       await page.route("**/api/games", route => route.fulfill({ json: [waiting, completed] }));
       await page.route("**/api/werewolf-search", route => route.fulfill({ json: [] }));
       await page.route(`**/api/game-entries/${slug}`, route => route.fulfill({ json: { id: slug, slug, gameKind: "influence" } }));
-      await page.route(`**/api/games/${slug}`, async route => { await lobby.promise; await route.fulfill({ json: waiting }); });
+      await page.route(`**/api/games/${slug}`, async route => {
+        if (!retryingLobby) {
+          await lobby.promise;
+          await route.fulfill({ status: 503, contentType: "text/html", body: "<html><body>Upstream unavailable</body></html>" });
+        } else {
+          await retry.promise;
+          await route.fulfill({ json: waiting });
+        }
+      });
       await page.route(`**/api/games/${slug}/episode`, route => {
         episodeReads++;
         return route.fulfill({ status: 404, json: { error: "No episode yet" } });
@@ -683,12 +694,24 @@ test.describe("local public player identity", () => {
 
       await page.getByLabel("Search games", { exact: true }).fill(" ");
       const waitingCard = page.getByTestId("episode-card").filter({ has: page.getByRole("heading", { name: slug, exact: true }) });
-      await waitingCard.getByRole("link", { name: "Join game", exact: true }).tap();
+      await page.route(url => url.pathname === `/games/${slug}`, async route => {
+        await navigation.promise;
+        await route.continue();
+      });
+      await waitingCard.getByRole("heading", { name: slug, exact: true }).tap();
+      await expect(waitingCard.getByRole("status").filter({ hasText: "Opening game…" })).toBeVisible({ timeout: 1000 });
+      navigation.resolve();
       const lobbySkeleton = page.getByRole("status", { name: "Loading game", exact: true });
       await expect(lobbySkeleton).toBeVisible({ timeout: 20_000 });
       await expect(page.getByRole("link", { name: "← All games" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Join with an agent" })).toHaveCount(0);
       lobby.resolve();
+      await expect(page.getByRole("main").getByRole("alert")).toHaveText("Could not open this game");
+      await expect(page.getByText("Upstream unavailable", { exact: false })).toHaveCount(0);
+      retryingLobby = true;
+      await page.getByRole("button", { name: "Try again", exact: true }).tap();
+      await expect(lobbySkeleton).toBeVisible();
+      retry.resolve();
       await expect(page.getByRole("region", { name: "Game pre-show" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Join with an agent" })).toBeEnabled();
       expect(episodeReads).toBe(0);
@@ -703,7 +726,9 @@ test.describe("local public player identity", () => {
       await expect(page.getByRole("status", { name: "Loading results", exact: true })).toHaveCount(0);
     } finally {
       library.resolve();
+      navigation.resolve();
       lobby.resolve();
+      retry.resolve();
       results.resolve();
       await page.unrouteAll({ behavior: "wait" });
       await context.close();

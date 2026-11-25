@@ -11,6 +11,7 @@ import type { AgentCreationTraitId } from "@influence/engine/agent-creation-trai
  */
 
 import { gamePathSegment } from "./game-links";
+import { apiErrorMessage } from "./api-error-message";
 import type { CreateGamePlayerCount } from "./game-creation";
 import type {
   CompletedGameResultsAvailabilityStatus as EngineCompletedGameResultsAvailabilityStatus,
@@ -109,7 +110,7 @@ export class ApiError extends Error {
 /** Public iframe reads never access device credentials, storage, or analytics. */
 export async function anonymousApiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(resolveApiUrl(path), {...options, credentials: "omit", headers: {Accept:"application/json"}});
-  if (!response.ok) throw apiErrorFromResponse(response.status, await response.text());
+  if (!response.ok) throw apiErrorFromResponse(response, await response.text());
   return response.json() as Promise<T>;
 }
 
@@ -164,7 +165,7 @@ async function unmeasuredApiFetch<T>(
       if(requestIdentity && ['generation_exhausted','generation_paused','generation_throttled','generation_busy','generation_failed','invalid_request_id','generation_unavailable','anonymous_pool_busy'].includes(String(code))) window.sessionStorage.removeItem(requestIdentity);
       if(code==='generation_exhausted'||code==='generation_paused') window.dispatchEvent(new CustomEvent('generation:contact',{detail:code}));
     }
-    throw apiErrorFromResponse(res.status, text);
+    throw apiErrorFromResponse(res, text);
   }
   const result = decode ? await decode(res) : await res.json() as T;
   if(requestIdentity) window.sessionStorage.removeItem(requestIdentity);
@@ -195,12 +196,13 @@ export async function providerAuthFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw apiErrorFromResponse(res.status, text);
+    throw apiErrorFromResponse(res, text);
   }
   return res.json() as Promise<T>;
 }
 
-function apiErrorFromResponse(status: number, body: string): ApiError {
+function apiErrorFromResponse(response: Response, body: string): ApiError {
+  const { status } = response;
   try {
     const parsed = JSON.parse(body) as unknown;
     if (parsed && typeof parsed === "object") {
@@ -208,7 +210,7 @@ function apiErrorFromResponse(status: number, body: string): ApiError {
       if (typeof error.error === "string") {
         return new ApiError(
           status,
-          error.error,
+          apiErrorMessage(status, error.error, response.headers.get("content-type")),
           typeof error.code === "string"
             ? error.code
             : typeof error.status === "string"
@@ -220,9 +222,9 @@ function apiErrorFromResponse(status: number, body: string): ApiError {
       }
     }
   } catch {
-    // Preserve non-JSON error bodies verbatim.
+    // The proxy can return an HTML page instead of an API error.
   }
-  return new ApiError(status, body);
+  return new ApiError(status, apiErrorMessage(status, body, response.headers.get("content-type")));
 }
 
 // ---------------------------------------------------------------------------

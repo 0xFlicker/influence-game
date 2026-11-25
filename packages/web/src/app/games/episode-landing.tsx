@@ -1,7 +1,7 @@
 "use client";
 import { GameEpisode } from "@/components/games/game-episode";
 import { GameSiteEntry } from "@/components/games/game-site-entry";
-import { GameEntryLoading } from "@/components/games/game-entry-loading";
+import { GameEntryError, GameEntryLoading } from "@/components/games/game-entry-loading";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
@@ -27,7 +27,8 @@ function InfluenceLobby({ initialGame }: { initialGame: GameDetail }) {
 export function EpisodeLanding({ slug, initialGame }: { slug: string; initialGame?: GameDetail }) {
   const [game, setGame] = useState(initialGame);
   const [preview, setPreview] = useState<EpisodePreview | null>(null);
-  const [gameError, setGameError] = useState<string | null>(null);
+  const [gameError, setGameError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [previewError, setPreviewError] = useState(false);
   const [ended, setEnded] = useState(false);
   const intent = useRef<boolean | null>(null);
@@ -40,13 +41,14 @@ export function EpisodeLanding({ slug, initialGame }: { slug: string; initialGam
       return;
     }
     const controller = new AbortController();
-    void getGame(slug, controller.signal).then(value => {
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(6000)]);
+    void getGame(slug, signal).then(value => {
       if (!controller.signal.aborted) setGame(value);
-    }, error => {
-      if (!controller.signal.aborted) setGameError(error instanceof Error ? error.message : "Game unavailable");
+    }, () => {
+      if (!controller.signal.aborted) setGameError(true);
     });
     return () => controller.abort();
-  }, [slug, initialGame]);
+  }, [slug, initialGame, attempt]);
   const showEpisode = !!game && game.status !== "waiting";
   useEffect(() => {
     if (!showEpisode) return;
@@ -54,7 +56,10 @@ export function EpisodeLanding({ slug, initialGame }: { slug: string; initialGam
     void getEpisodePreview(slug).then(value => { if (active) setPreview(value); }, () => { if (active) setPreviewError(true); });
     return () => { active = false; };
   }, [slug, showEpisode]);
-  if (!game) return gameError ? <GameSiteEntry><p role="alert">{gameError}</p></GameSiteEntry> : <GameEntryLoading />;
+  if (!game) return gameError ? <GameEntryError onRetry={() => {
+    setGameError(false);
+    setAttempt(value => value + 1);
+  }} /> : <GameEntryLoading />;
   if (game.status === "waiting") return <InfluenceLobby initialGame={game} />;
   const summary = { ...game, playerCount: game.players.length, episode: preview?.episode ?? game.episode };
   const title = gameDisplayName(summary);

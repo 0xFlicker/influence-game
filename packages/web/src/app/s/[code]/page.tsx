@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { parseHouseShareTarget, SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
 import { serverApiFetch, ServerApiError } from "@/lib/server-api";
-import { getPlayerCardMetadataGame } from "@/lib/server-player-card";
+import { getServerGameMetadata } from "@/lib/server-api";
 import { playerCardMetadata, resultsCardMetadata } from "@/lib/player-card";
 import { serializeMiniAppEmbedMeta } from "@/lib/farcaster-miniapp";
 import { getHighlightsShareMetadata, getProfileShareMetadata } from "@/lib/server-share-metadata";
@@ -34,7 +34,7 @@ export async function generateMetadata({params}: Props): Promise<Metadata> {
     if (target.mode === "highlights") {
       metadata = await getHighlightsShareMetadata(target.identifier!, url.searchParams.get("scene") ?? undefined, url.searchParams.get("audience") ?? undefined);
     } else {
-      const game = await getPlayerCardMetadataGame(target.identifier!);
+      const game = await getServerGameMetadata(target.identifier!);
       metadata = target.mode === "results"
         ? resultsCardMetadata(game, origin)
         : playerCardMetadata(game, origin, Object.fromEntries(url.searchParams), target.sequence);
