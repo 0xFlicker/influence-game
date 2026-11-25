@@ -47,7 +47,7 @@ test("independent shelf reads start before seasons and pending pages do not bloc
   }
 });
 
-test("overview shelves page independently and do not silently skip excluded candidates", async () => {
+test("overview shelves stay bounded and link to complete collections", async () => {
   dom = new HappyDOMWindow({ url: "http://localhost/games" });
   for (const key of ["window", "document", "navigator", "localStorage"] as const) Object.defineProperty(globalThis, key, { configurable: true, value: dom[key] });
   class Observer { observe() {} disconnect() {} unobserve() {} }
@@ -62,7 +62,6 @@ test("overview shelves page independently and do not silently skip excluded cand
     expect(status).toBe("nonwaiting");
     if (collection === "season") return Promise.resolve(Response.json({ items: [house("Season finished", "completed", "s1")], nextCursor: null }));
     if (kind === "werewolf") return Promise.resolve(Response.json({ items: [wolf("Wolf finished", "completed")], nextCursor: null }));
-    if (url.searchParams.has("cursor")) return Promise.resolve(Response.json({ items: [house("Other finished", "completed")], nextCursor: null }));
     expect(url.searchParams.get("excludeSeason")).toBe("s1"); return Promise.resolve(Response.json({ items: [], nextCursor: "next" }));
   }, { preconnect: originalFetch.preconnect }) as typeof fetch;
   const auth = { ready: true, authenticated: false, account: null, hydrationError: false } as InfluenceAuthState;
@@ -70,11 +69,15 @@ test("overview shelves page independently and do not silently skip excluded cand
   const view = render(<InfluenceAuthContext.Provider value={auth}><HybridGamesBrowser initialSeasons={seasons} /></InfluenceAuthContext.Provider>);
   await view.findByText("Season finished"); await view.findByText("Wolf finished");
   expect(view.getAllByText("Open wolf")).toHaveLength(1); expect(view.getAllByText("Open house")).toHaveLength(1);
-  expect(view.queryByText("Season open")).toBeNull(); expect(view.queryByText("Other finished")).toBeNull();
+  expect(view.queryByText("Season open")).toBeNull();
   expect(calls).toHaveLength(4);
-  fireEvent.click(view.getByRole("button", { name: "Load more Influence games" }));
-  await view.findByText("Other finished"); expect(calls).toHaveLength(5); expect(calls.at(-1)?.searchParams.get("cursor")).toBe("next");
+  const hrefs = view.getAllByRole("link", { name: "View all" }).map(link => link.getAttribute("href"));
+  expect(hrefs).toContain("/games/status/open");
+  expect(hrefs).toContain("/games/type/influence");
+  expect(view.queryByRole("button", { name: /load more|refresh games/i })).toBeNull();
+  expect(view.queryByText(/games can change/i)).toBeNull();
+  expect(calls.some(url => url.searchParams.has("cursor"))).toBe(false);
   fireEvent.change(view.getByLabelText("Game status"), { target: { value: "waiting" } });
-  expect(calls).toHaveLength(5);
-  expect(view.queryByText("Other finished")).toBeNull(); expect(view.queryByText("Wolf finished")).toBeNull();
+  expect(calls).toHaveLength(4);
+  expect(view.queryByText("Wolf finished")).toBeNull();
 });

@@ -14,4 +14,6 @@ For public character images stored as immutable payloads, stream the original ob
 
 Next.js shares one bounded server read for public game identity and social metadata. The card acknowledges navigation while the route response is pending. The game shell shows a skeleton during data loading and offers a retry when the lobby request fails. API clients display only the HTTP status for 5xx errors, while structured retry codes remain available to browser callers.
 
+The Games overview shows only the first page of each shelf. View all opens the dedicated collection, including Open games across both game types. Collections request the next page when the bottom comes into view and offer a retry if a page fails. The browser reload refreshes the listing.
+
 For a recurrence, compare Caddy timestamps and durations for the document, game API and character URLs with API and web container logs. Run the browser test with a held route response and a simulated HTML 503 to verify the loading and retry states independently of production latency.

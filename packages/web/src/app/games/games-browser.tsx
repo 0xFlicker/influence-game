@@ -330,6 +330,9 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   };
 
   const searchQuery = filters.search.toLowerCase();
+  const collectionName = collection
+    ? collectionLabel(collection, collection.kind === "season" ? games.find(game => game.season?.slug === collection.slug)?.season?.name : undefined)
+    : "Games";
   const scopedGames = games.filter(game => game.visibility === "public" && kind !== "werewolf" && (!collection || matchesGameCollection(game, collection)));
   const filtered = scopedGames
     .filter((g) => {
@@ -350,7 +353,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   const filteredWerewolf = werewolfGames.filter(game => kind !== "influence"
     && (filters.status === "all" || game.status === filters.status)
     && (filters.category === "all" || filters.category === "custom")
-    && (!collection || collection.kind === "public" || (collection.kind === "game" && collection.game === "werewolf"))
+    && (!collection || collection.kind === "public" || collection.kind === "open" || (collection.kind === "game" && collection.game === "werewolf"))
     && `werewolf ${game.slug} ${game.modelLabel} ${game.episode?.title ?? ""} ${game.episode?.description ?? ""} ${(game.episode?.cast ?? []).map(player => player.name).join(" ")}`.toLowerCase().includes(searchQuery))
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
@@ -434,7 +437,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
           {libraryWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games/type/werewolf">
             {overviewShelf(libraryWerewolf, limitOverview).map(game => <GameCard key={game.id} game={game} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
-          {libraryGames.length > 0 && <EpisodeShelf name={showShelves ? "Influence" : collection ? collectionLabel(collection, games) : "Games"} grid={!showShelves} href={showShelves ? "/games/type/influence" : undefined}>
+          {libraryGames.length > 0 && <EpisodeShelf name={showShelves ? "Influence" : collectionName} grid={!showShelves} href={showShelves ? "/games/type/influence" : undefined}>
             {overviewShelf(libraryGames, limitOverview).map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
           </EpisodeShelf>}
         </div>
