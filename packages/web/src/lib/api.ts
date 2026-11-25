@@ -527,6 +527,8 @@ export interface ProviderModelInventoryEntry extends Pick<
 
 export interface ProviderModelInventory {
   status: "complete" | "partial" | "unavailable";
+  cutoffs?: import("@influence/engine/model-route-metadata").HouseModelCutoffs;
+  defaultManifest?: import("@influence/engine/model-catalog").GameProviderManifest;
   providers: Array<{
     providerProfileId: ProviderModelInventoryEntry["providerProfileId"];
     displayName: string;

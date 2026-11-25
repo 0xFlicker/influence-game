@@ -22,7 +22,7 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   const db = await setupTestDB();
   await db.insert(schema.users).values({ id: "rt05-owner" });
   await grantTestAuthority(db, "rt05-owner", [], "admin");
-  const game = await createWerewolfGame(db, "rt05-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1, providerManifest: [{ catalogId: "openai:gpt-5-nano" }] });
+  const game = await createWerewolfGame(db, "rt05-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1, providerManifest: [{ catalogId: "openai:gpt-5.6-luna" }] });
   await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw new Error(claim.error);
@@ -54,7 +54,7 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
       output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({ speech: "  I now understand the whole game. 😀\n " }) }] }],
       usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 } });
   } });
-  const entry = modelCatalogEntryById("openai:gpt-5-nano")!;
+  const entry = modelCatalogEntryById("openai:gpt-5.6-luna")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(entry.providerProfileId, client), catalogId: entry.id,
     providerProfileId: entry.providerProfileId, modelId: entry.modelId, modelCapabilities: entry.capabilities,
     reasoningPolicy: "high",  position: 0, role: "primary" };
@@ -128,7 +128,7 @@ test("a crash after exhausted native retries cannot spend again before explicit 
   await db.insert(schema.users).values({ id: "rt08-journal-owner" });
   await grantTestAuthority(db, "rt08-journal-owner", ["resume_game_retrospective"], "admin");
   const game = await createWerewolfGame(db, "rt08-journal-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1,
-    providerManifest: [{ catalogId: "openai:gpt-5-nano" }] });
+    providerManifest: [{ catalogId: "openai:gpt-5.6-luna" }] });
   await pinWerewolfRulesVersion(db, game.id, 8);
   const first = await claimWerewolfGame(db, game.id);
   if (!first.ok) throw Error(first.error);
@@ -143,7 +143,7 @@ test("a crash after exhausted native retries cannot spend again before explicit 
       output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(valid ? { speech: "I finally see what changed the outcome." } : {}) }] }],
       usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 } });
   } });
-  const entry = modelCatalogEntryById("openai:gpt-5-nano")!;
+  const entry = modelCatalogEntryById("openai:gpt-5.6-luna")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(entry.providerProfileId, client), catalogId: entry.id,
     providerProfileId: entry.providerProfileId, modelId: entry.modelId, modelCapabilities: entry.capabilities,
     reasoningPolicy: "high",  position: 0, role: "primary" };

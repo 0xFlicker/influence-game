@@ -7,11 +7,12 @@ import {
 } from "@floating-ui/react";
 import styles from "./model-combobox.module.css";
 
-export function ModelCombobox({ label, value, options, onChange, disabled = false }: {
+export function ModelCombobox({ label, value, options, onChange, onOpen, disabled = false }: {
   label: string;
   value: string;
-  options: readonly { value: string; label: string }[];
+  options: readonly { value: string; label: string; detail?: string; disabled?: boolean }[];
   onChange: (value: string) => void;
+  onOpen?: () => void;
   disabled?: boolean;
 }) {
   const id = useId();
@@ -29,13 +30,14 @@ export function ModelCombobox({ label, value, options, onChange, disabled = fals
   const changeOpen = useCallback((next: boolean) => {
     if (next && disabled) return;
     if (next) {
+      onOpen?.();
       setPortalRoot(input.current?.closest<HTMLElement>("dialog")
         ?? (document.fullscreenElement instanceof HTMLElement ? document.fullscreenElement : undefined));
     }
     setOpen(next);
     setQuery("");
     setActiveIndex(null);
-  }, [disabled]);
+  }, [disabled, onOpen]);
   const { refs: { setReference, setPositionReference, setFloating }, floatingStyles, context } = useFloating({
     open: menuOpen, onOpenChange: changeOpen, placement: "bottom-start", strategy: "fixed", whileElementsMounted: autoUpdate,
     middleware: [offset(6), flip({ padding: 12 }), shift({ padding: 12 }), size({ padding: 12, apply({ rects, availableHeight, availableWidth, elements }) {
@@ -51,6 +53,7 @@ export function ModelCombobox({ label, value, options, onChange, disabled = fals
   const navigation = useListNavigation(context, {
     listRef: list, activeIndex, onNavigate: setActiveIndex,
     virtual: true, loop: false, enabled: !disabled,
+    disabledIndices: matches.flatMap((option, index) => option.disabled ? [index] : []),
   });
   const { getReferenceProps, getFloatingProps, getItemProps } = useInteractions([dismiss, role, navigation]);
 
@@ -76,7 +79,10 @@ export function ModelCombobox({ label, value, options, onChange, disabled = fals
           if (event.key === "Enter") {
             event.preventDefault();
             if (!menuOpen) changeOpen(true);
-            else if (activeIndex !== null && matches[activeIndex]) select(matches[activeIndex].value);
+            else if (activeIndex !== null) {
+              const option = matches[activeIndex];
+              if (option && !option.disabled) select(option.value);
+            }
           }
           if (event.key === "Tab") changeOpen(false);
         },
@@ -93,11 +99,12 @@ export function ModelCombobox({ label, value, options, onChange, disabled = fals
         {/* eslint-disable-next-line react-hooks/refs -- Callback refs populate Floating UI's navigation list after commit. */}
         {matches.map((option, index) => <div key={option.value} {...getItemProps({
           onMouseDown: event => event.preventDefault(),
-          onClick: () => select(option.value),
-        })} ref={element => { list.current[index] = element; }} role="option" aria-selected={option.value === value}
+          onClick: () => { if (!option.disabled) select(option.value); },
+        })} ref={element => { list.current[index] = element; }} role="option" aria-selected={option.value === value} aria-disabled={option.disabled || undefined}
           id={`${id}-option-${index}`} data-active={activeIndex === index || undefined} className={styles.option}>
           <span className={styles.check} aria-hidden="true">{option.value === value ? "✓" : ""}</span>
-          <span className={styles.name}>{option.label}{option.value !== "default" && <span className={styles.identifier}>{option.value}</span>}</span>
+          <span className={styles.name}>{option.label}{option.value !== "default" && <span className={styles.identifier}>{option.value}</span>}
+            {option.detail && <span className={styles.detail}>{option.detail}</span>}</span>
         </div>)}
         {matches.length === 0 && <div className={styles.empty} role="status">No matching models.</div>}
       </div>

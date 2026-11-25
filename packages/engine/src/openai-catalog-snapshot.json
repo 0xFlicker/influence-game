@@ -206,6 +206,10 @@
         "inputPer1M": 0.4,
         "outputPer1M": 1.6,
         "cachedInputPer1M": 0.1
+      },
+      "deprecation": {
+        "retirementDate": "2027-01-14",
+        "replacementModelId": "gpt-6-luna"
       }
     },
     "gpt-4.1-nano": {
@@ -257,6 +261,10 @@
         "inputPer1M": 2.0,
         "outputPer1M": 8.0,
         "cachedInputPer1M": 0.5
+      },
+      "deprecation": {
+        "retirementDate": "2027-01-14",
+        "replacementModelId": "gpt-6-luna"
       }
     },
     "gpt-4": {
@@ -335,6 +343,10 @@
         "inputPer1M": 0.15,
         "outputPer1M": 0.6,
         "cachedInputPer1M": 0.075
+      },
+      "deprecation": {
+        "retirementDate": "2027-01-14",
+        "replacementModelId": "gpt-6-luna"
       }
     },
     "gpt-4o-search-preview": {
@@ -387,6 +399,10 @@
         "inputPer1M": 2.5,
         "outputPer1M": 10.0,
         "cachedInputPer1M": 1.25
+      },
+      "deprecation": {
+        "retirementDate": "2027-01-14",
+        "replacementModelId": "gpt-6-luna"
       }
     },
     "gpt-5-chat-latest": {
@@ -473,6 +489,10 @@
         "inputPer1M": 0.125,
         "outputPer1M": 1.0,
         "cachedInputPer1M": 0.0125
+      },
+      "deprecation": {
+        "retirementDate": "2026-12-11",
+        "replacementModelId": "gpt-6.1-terra"
       }
     },
     "gpt-5-nano": {
@@ -507,6 +527,10 @@
         "inputPer1M": 0.025,
         "outputPer1M": 0.2,
         "cachedInputPer1M": 0.0025
+      },
+      "deprecation": {
+        "retirementDate": "2026-12-11",
+        "replacementModelId": "gpt-6-luna"
       }
     },
     "gpt-5-pro": {
@@ -534,6 +558,11 @@
         "inputPer1M": 15.0,
         "outputPer1M": 120.0,
         "cachedInputPer1M": 15.0
+      },
+      "deprecation": {
+        "retirementDate": "2026-12-11",
+        "replacementModelId": "gpt-6.1-sol",
+        "replacementRequirement": "Responses API with reasoning.mode: pro"
       }
     },
     "gpt-5.1-chat-latest": {
@@ -676,6 +705,10 @@
         "inputPer1M": 0.625,
         "outputPer1M": 5.0,
         "cachedInputPer1M": 0.0625
+      },
+      "deprecation": {
+        "retirementDate": "2027-04-01",
+        "replacementModelId": "gpt-6-sol"
       }
     },
     "gpt-5.2-chat-latest": {
@@ -841,6 +874,10 @@
         "inputPer1M": 1.75,
         "cachedInputPer1M": 0.175,
         "outputPer1M": 14.0
+      },
+      "deprecation": {
+        "retirementDate": "2027-04-01",
+        "replacementModelId": "gpt-6-sol"
       }
     },
     "gpt-5.4-mini": {
@@ -909,6 +946,10 @@
         "inputPer1M": 0.1,
         "outputPer1M": 0.625,
         "cachedInputPer1M": 0.01
+      },
+      "deprecation": {
+        "retirementDate": "2027-04-01",
+        "replacementModelId": "gpt-6-luna"
       }
     },
     "gpt-5.4-pro": {
@@ -1284,6 +1325,10 @@
         "inputPer1M": 0.625,
         "outputPer1M": 5.0,
         "cachedInputPer1M": 0.0625
+      },
+      "deprecation": {
+        "retirementDate": "2026-12-11",
+        "replacementModelId": "gpt-6.1-sol"
       }
     },
     "gpt-6-astra": {
@@ -1694,6 +1739,11 @@
         "inputPer1M": 20.0,
         "outputPer1M": 80.0,
         "cachedInputPer1M": 20.0
+      },
+      "deprecation": {
+        "retirementDate": "2026-12-11",
+        "replacementModelId": "gpt-6.1-sol",
+        "replacementRequirement": "Responses API with reasoning.mode: pro"
       }
     },
     "o3": {
@@ -1728,6 +1778,10 @@
         "inputPer1M": 1.0,
         "outputPer1M": 4.0,
         "cachedInputPer1M": 0.25
+      },
+      "deprecation": {
+        "retirementDate": "2026-12-11",
+        "replacementModelId": "gpt-6.1-sol"
       }
     },
     "o4-mini-deep-research": {
@@ -1816,6 +1870,82 @@
         "inputPer1M": 5.0,
         "outputPer1M": 15.0,
         "cachedInputPer1M": 5.0
+      }
+    },
+    "gpt-6.2-sol": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.2-sol",
+      "checkedAt": "2026-11-24",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 2,
+        "outputPer1M": 10,
+        "cachedInputPer1M": 0.1,
+        "cacheWriteInputPer1M": 2.5,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 4,
+            "outputPer1M": 15.0,
+            "cachedInputPer1M": 0.2,
+            "cacheWriteInputPer1M": 5.0
+          }
+        ]
+      }
+    },
+    "gpt-6.2-astra": {
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.2-astra",
+      "checkedAt": "2026-11-24",
+      "aliases": [],
+      "capabilities": {
+        "supportsImageInput": true,
+        "supportsReasoningEffort": true,
+        "supportsToolReasoningEffort": false,
+        "usesMaxCompletionTokens": true,
+        "supportsTemperature": false,
+        "supportsOpenAIResponses": true,
+        "supportsPromptCacheRetention": true,
+        "supportsStructuredOutput": true,
+        "supportsTools": true
+      },
+      "allowedReasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "contextTokens": 1050000,
+      "outputTokens": 128000,
+      "pricing": {
+        "inputPer1M": 8,
+        "outputPer1M": 40,
+        "cachedInputPer1M": 0.4,
+        "cacheWriteInputPer1M": 10,
+        "tiers": [
+          {
+            "minPromptTokens": 272001,
+            "inputPer1M": 16,
+            "outputPer1M": 60.0,
+            "cachedInputPer1M": 0.8,
+            "cacheWriteInputPer1M": 20
+          }
+        ]
       }
     }
   }

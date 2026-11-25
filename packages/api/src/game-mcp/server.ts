@@ -672,7 +672,7 @@ export class ProductionGameMcpJsonRpcServer {
       }
       if (name === "read_model_catalog") {
         requireScopes(auth, ["agents:read"]);
-        return content(await providerModelInventory(process.env, await userHasAnyRole(this.requireManagementDb(), auth.userId, ["admin", "sysop"])));
+        return content(await providerModelInventory(process.env, await userHasAnyRole(this.requireManagementDb(), auth.userId, ["admin", "sysop"]), undefined, this.requireManagementDb()));
       }
       if (name === "set_agent_model") {
         requireScopes(auth, ["agents:read", "agents:write"]);

@@ -949,7 +949,7 @@ export class ProductionGameMcpReadModel {
       schemaVersion: 1,
       ...projectDailyProviderAdmissionImpact(
         providerHealth,
-        resolveDailyFreeProviderManifest(),
+        await resolveDailyFreeProviderManifest(this.db),
       ),
       providerHealth,
       evidenceAccess: {

@@ -13,6 +13,7 @@ import { schema } from "../db/index.js";
 import type { AgentProfileMutationRead } from "./agent-profile-management.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
+import { currentPublishedModelPreference } from "./model-lifecycle-settings.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type Profile = typeof schema.agentProfiles.$inferSelect;
@@ -210,7 +211,9 @@ export async function readOwnerContent(db: Pick<DrizzleDB, "select">, profile: P
     entryIntent:entry?.intent??null,
     voiceId: latest?.id === profile.contentRevisionId ? voice?.assignment.origin === "selected" ? voice.assignment.voiceId : null : latest?.snapshot.voiceAssignment && typeof latest.snapshot.voiceAssignment === "object" ? (latest.snapshot.voiceAssignment as { voiceId?: string; origin?: string }).origin === "selected" ? (latest.snapshot.voiceAssignment as { voiceId?: string }).voiceId : null : null,
     published: profile.contentRevisionId ? contentSnapshot(profile) : null,
-    submitted: latest ? { revisionId: latest.id, content: { ...decodeContentSnapshot(latest.snapshot, profile), modelPreference: normalizeModelPreference(latest.id === profile.contentRevisionId ? profile.modelPreference : latest.snapshot.modelPreference ?? profile.modelPreference) },
+    submitted: latest ? { revisionId: latest.id, content: { ...decodeContentSnapshot(latest.snapshot, profile),
+      modelPreference: latest.id === profile.contentRevisionId ? profile.modelPreference : await currentPublishedModelPreference(db, profile.modelPreference,
+        normalizeModelPreference(latest.snapshot.modelPreference ?? profile.modelPreference), latest.createdAt) },
       disposition: review?.disposition ?? null, held: review?.held ?? false, status: review?.status ?? null } : null,
     availability: profile.archivedAt ? "archived" as const : !profile.contentRevisionId && (profile.moderationRequired || profile.latestContentRevisionId) ? "withheld" as const : "available" as const,
     moderationVersion: profile.moderationVersion,

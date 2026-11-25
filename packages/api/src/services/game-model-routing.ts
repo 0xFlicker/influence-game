@@ -1,8 +1,8 @@
-import { DEFAULT_MODEL_CATALOG_ID, DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
 import { and, eq, or, inArray, sql } from "drizzle-orm";
 import { summarizeModelRouting, actorProviderManifest, assertCurrentGameModelRouting, assertModelEntitlement, contestantManifest, gameModelPolicy, normalizeGameModelRouting, normalizeModelPreference, sealGameModelRouting, type ModelPreference } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { userHasAnyRole } from "../db/rbac.js";
+import { lifecycleDefaultManifest, readModelLifecycle } from "./model-lifecycle-settings.js";
 
 export class GameModelRoutingError extends Error {
   constructor(message: string, public readonly status: 400 | 403 | 404 | 409 = 400) { super(message); }
@@ -15,8 +15,10 @@ type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
 export async function authorizedModelPreference(db: Pick<DrizzleDB, "select">, userId: string, value: unknown): Promise<ModelPreference> {
   const preference = modelInput(() => normalizeModelPreference(value));
+  if (preference === "default") return preference;
   const privileged = await userHasAnyRole(db, userId, ["admin", "sysop"]);
-  try { assertModelEntitlement(preference, privileged); } catch (error) { throw new GameModelRoutingError(error instanceof Error ? error.message : "Model access denied", 403); }
+  const { cutoffs } = await readModelLifecycle(db);
+  try { assertModelEntitlement(preference, privileged, cutoffs); } catch (error) { throw new GameModelRoutingError(error instanceof Error ? error.message : "Model access denied", 403); }
   return preference;
 }
 
@@ -26,10 +28,11 @@ export async function creationModelRouting(db: Pick<DrizzleDB, "select">, userId
   if (config.serviceTier !== undefined && config.serviceTier !== "flex" && config.serviceTier !== "auto") throw new GameModelRoutingError("Invalid service tier");
   if (config.modelRouting && typeof config.modelRouting === "object" && ("contestants" in config.modelRouting || "frozenRoutes" in config.modelRouting)) throw new GameModelRoutingError("Clients cannot supply sealed model assignments");
   const useDefaults = config.modelRouting === undefined && config.providerManifest === undefined && config.modelSelection === undefined;
+  const settings = await readModelLifecycle(db);
   const policy = modelInput(() => gameModelPolicy(useDefaults
-    ? { ...config, providerManifest: [{ catalogId: DEFAULT_MODEL_CATALOG_ID }, ...DEFAULT_GAME_FALLBACKS] }
+    ? { ...config, providerManifest: lifecycleDefaultManifest(settings) }
     : config));
-  modelInput(() => assertCurrentGameModelRouting(policy));
+  modelInput(() => assertCurrentGameModelRouting(policy, settings.cutoffs));
   return policy;
 }
 
@@ -52,7 +55,8 @@ export async function sealRosterModelRouting(tx: Tx, config: Record<string, unkn
     if (!profile) throw new GameModelRoutingError("A contestant profile is no longer available");
     await authorizedModelPreference(tx, profile.userId, seat.modelPreference);
   }
-  const modelRouting = modelInput(() => sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), needsImages));
+  const { cutoffs } = await readModelLifecycle(tx);
+  const modelRouting = modelInput(() => sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), needsImages, cutoffs));
   // The new routing document is the sole execution authority. Old running games
   // retain their existing manifest; only a waiting game crosses this boundary.
   const { providerManifest: _manifest, modelSelection: _selection, ...rest } = config;
@@ -75,7 +79,8 @@ export async function readGameModelRouting(db: DrizzleDB, userId: string, gameId
       if (game.status !== "waiting") throw new GameModelRoutingError("Model settings are frozen once the game starts");
       if (policy.contestants || (update && typeof update === "object" && "frozenRoutes" in update)) throw new GameModelRoutingError("Clients cannot supply sealed model assignments");
       // Validate all occupied seats before saving; empty rosters remain editable.
-      modelInput(() => sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && config.visualMode === true));
+      const { cutoffs } = await readModelLifecycle(tx);
+      modelInput(() => sealGameModelRouting(policy, seats.map(seat => ({ id: seat.id, preference: seat.modelPreference })), game.gameKind !== "werewolf" && config.visualMode === true, cutoffs));
       const { providerManifest: _manifest, modelSelection: _selection, ...rest } = config;
       await tx.update(schema.games).set({ config: JSON.stringify({ ...rest, serviceTier: "flex", modelRouting: policy }) }).where(eq(schema.games.id, game.id));
     }

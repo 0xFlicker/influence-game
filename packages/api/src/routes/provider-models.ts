@@ -11,6 +11,7 @@ import {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
+import { readModelLifecycle } from "../services/model-lifecycle-settings.js";
 
 function providerConfigured(
   providerProfileId: string,
@@ -47,7 +48,7 @@ export function createProviderModelRoutes(
 
   app.get("/api/provider-models", requireAuth(db), async (c) => {
     const privileged = c.get("userRoles").some(role => role === "admin" || role === "sysop");
-    const inventory = await providerModelInventory(env, privileged, listModelIds);
+    const inventory = await providerModelInventory(env, privileged, listModelIds, db);
     c.header("Cache-Control", "no-store");
     return c.json(inventory);
   });
@@ -85,7 +86,7 @@ async function listConfiguredProviderModelIds(
   return ids;
 }
 
-export async function providerModelInventory(env: NodeJS.ProcessEnv, privileged: boolean, listModelIds = listConfiguredProviderModelIds) {
+export async function providerModelInventory(env: NodeJS.ProcessEnv, privileged: boolean, listModelIds = listConfiguredProviderModelIds, db?: Pick<DrizzleDB, "select">) {
     const staticCatalog = MODEL_CATALOG;
     const configuredProviderIds = Object.values(PROVIDER_PROFILES).map(profile => profile.id).filter(id => providerConfigured(id, env));
     const listings = await Promise.all(configuredProviderIds.map(async (providerProfileId) => {
@@ -154,5 +155,7 @@ export async function providerModelInventory(env: NodeJS.ProcessEnv, privileged:
       metadata: entry.metadata,
     };
     });
-  return { status, providers, models };
+  const settings = db ? await readModelLifecycle(db) : { cutoffs: {}, defaultManifest: undefined };
+  const cutoffs = Object.fromEntries(Object.entries(settings.cutoffs).map(([id, { cutoffDate, replacementCatalogId }]) => [id, { cutoffDate, replacementCatalogId }]));
+  return { status, providers, models, cutoffs, defaultManifest: settings.defaultManifest };
 }

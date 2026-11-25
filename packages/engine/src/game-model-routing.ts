@@ -1,8 +1,23 @@
-import { DEFAULT_MODEL_CATALOG_ID, MAX_PROVIDER_ENTRY_CALLS_PER_GAME, normalizeProviderManifest, resolveProviderManifest, resolveProviderManifestFromGameConfig, type GameModelSelection, type GameProviderManifest, type ResolvedProviderManifestEntry } from "./model-catalog";
+import { DEFAULT_MODEL_CATALOG_ID, MAX_PROVIDER_ENTRY_CALLS_PER_GAME, modelCatalogEntryById, normalizeProviderManifest, resolveProviderManifest, resolveProviderManifestFromGameConfig, type GameModelSelection, type GameProviderManifest, type ResolvedProviderManifestEntry } from "./model-catalog";
 import { assertCurrentClaudeSelection } from "./claude-routing";
 import { assertCurrentGrokSelection } from "./grok-routing";
+import { isHouseModelCutoffActive, isModelRetired, type HouseModelCutoffs } from "./model-route-metadata";
 
-function assertCurrentSelection(catalogId: string): void {
+function assertCurrentSelection(catalogId: string, cutoffs: HouseModelCutoffs = {}): void {
+  const cutoff = cutoffs[catalogId];
+  if (cutoff && isHouseModelCutoffActive(cutoff)) {
+    throw new Error(`The House stopped accepting ${catalogId} for new games on ${cutoff.cutoffDate} (UTC). Choose ${cutoff.replacementCatalogId} or another eligible model.`);
+  }
+  const model = modelCatalogEntryById(catalogId);
+  const documented = model?.metadata.documented;
+  if (model && isModelRetired(documented)) {
+    const notice = documented?.deprecation;
+    const date = notice ? ` on ${notice.retirementDate}` : "";
+    const replacement = notice
+      ? ` Provider-recommended replacement is ${model.providerProfileId}:${notice.replacementModelId}${notice.replacementRequirement ? ` (${notice.replacementRequirement})` : ""}.`
+      : "";
+    throw new Error(`Model ${catalogId} retired${date} and cannot be used for a new game.${replacement}`);
+  }
   assertCurrentClaudeSelection(catalogId);
   assertCurrentGrokSelection(catalogId);
 }
@@ -32,8 +47,8 @@ export function normalizeModelPreference(value: unknown): ModelPreference {
   return normalizeProviderManifest([value])[0]!;
 }
 
-export function assertModelEntitlement(preference: ModelPreference, privileged: boolean): void {
-  if (preference !== "default") assertCurrentSelection(preference.catalogId);
+export function assertModelEntitlement(preference: ModelPreference, privileged: boolean, cutoffs?: HouseModelCutoffs): void {
+  if (preference !== "default") assertCurrentSelection(preference.catalogId, cutoffs);
   if (!privileged && preference !== "default" && !FREE_MODEL_CATALOG_IDS.some(id => id === preference.catalogId)) {
     throw new Error("This model is available to admins and sysops only");
   }
@@ -82,12 +97,12 @@ export function contestantManifest(policy: GameModelRouting, preference: ModelPr
   return route;
 }
 
-export function sealGameModelRouting(policy: GameModelRouting, seats: Array<{ id: string; preference?: ModelPreference }>, visualMode = false): GameModelRouting {
+export function sealGameModelRouting(policy: GameModelRouting, seats: Array<{ id: string; preference?: ModelPreference }>, visualMode = false, cutoffs?: HouseModelCutoffs): GameModelRouting {
   if (policy.contestants) throw new Error("Game model assignments are already sealed");
-  assertCurrentGameModelRouting(policy);
+  assertCurrentGameModelRouting(policy, cutoffs);
   for (const seat of seats) {
     const preference = policy.overrides[seat.id] ?? seat.preference;
-    if (preference && preference !== "default") assertCurrentSelection(preference.catalogId);
+    if (preference && preference !== "default") assertCurrentSelection(preference.catalogId, cutoffs);
   }
   if (new Set(seats.map(seat => seat.id)).size !== seats.length) throw new Error("Duplicate contestant ID");
   if (Object.keys(policy.overrides).some(id => !seats.some(seat => seat.id === id))) throw new Error("A model override references a missing cast member");
@@ -98,9 +113,9 @@ export function sealGameModelRouting(policy: GameModelRouting, seats: Array<{ id
 }
 
 /** Validate new settings without rewriting frozen runtimes or historical manifests. */
-export function assertCurrentGameModelRouting(policy: GameModelRouting): void {
+export function assertCurrentGameModelRouting(policy: GameModelRouting, cutoffs?: HouseModelCutoffs): void {
   for (const entry of [...policy.defaultManifest, ...policy.houseManifest, ...Object.values(policy.overrides)]) {
-    if (entry !== "default") assertCurrentSelection(entry.catalogId);
+    if (entry !== "default") assertCurrentSelection(entry.catalogId, cutoffs);
   }
   for (const id of policy.excludedCatalogIds) assertCurrentGrokSelection(id);
 }

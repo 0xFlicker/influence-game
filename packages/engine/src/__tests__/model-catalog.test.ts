@@ -183,8 +183,9 @@ describe("model catalog", () => {
     expect(FREE_MODEL_CATALOG_IDS).toContain("meta-muse:muse-ember-1.0");
     expect(() => assertModelEntitlement(normalizeModelPreference({ catalogId: "meta-muse:muse-ember-1.0" }), false)).not.toThrow();
     expect(() => normalizeProviderManifest([{ catalogId: "meta-muse:muse-ember-1.0", reasoningPolicy: "high" }])).not.toThrow();
-    // Older Muse facts keep their original audit date, not Ember's.
-    expect(modelCatalogEntryById("meta-muse:muse-spark-1.3")?.metadata.documented?.checkedAt).toBe("2026-10-23");
+    expect(modelCatalogEntryById("meta-muse:muse-spark-1.3")?.metadata.documented).toMatchObject({
+      checkedAt: "2026-11-24", source: "https://dev.meta.ai/docs/muse-spark",
+    });
     // Non-text Meta models never become game LLMs through dynamic inference.
     expect(modelCatalogEntryById("meta-muse:muse-image-1.0")).toBeUndefined();
     expect(modelCatalogEntryById("meta-muse:sam-3.1")).toBeUndefined();
