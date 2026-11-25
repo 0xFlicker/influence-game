@@ -31,6 +31,13 @@ export async function readAgentDraftImage(
   hash: string,
   userId?: string,
 ) {
+  return readPayload(await readAgentDraftImageReference(db, hash, userId));
+}
+export async function readAgentDraftImageReference(
+  db: Reader,
+  hash: string,
+  userId?: string,
+) {
   const [asset] = await db
     .select()
     .from(schema.agentContentAssets)
@@ -51,7 +58,7 @@ export async function readAgentDraftImage(
     if (!owner)
       throw new AgentDraftImageUnavailable("Character image is private");
   }
-  return readPayload(asset.bytes);
+  return asset.bytes;
 }
 export async function publishContentImages(
   db: Pick<DrizzleDB, "update">,

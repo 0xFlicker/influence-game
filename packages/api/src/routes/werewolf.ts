@@ -1,5 +1,6 @@
+import { isImageContentType } from "../lib/image-content-type.js";
 import { GameModelRoutingError } from "../services/game-model-routing.js";
-import { loadPayloads, streamBinaryPayload } from "../services/payload-storage.js";
+import { loadPayloads, readImageDelivery } from "../services/payload-storage.js";
 import { readPublicWerewolfSummaries } from "../services/public-library-summaries.js";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -99,14 +100,19 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       if (player) {
         const image = await resolvePublicWerewolfCharacter(db, c.req.param("id")!, player, c.req.query("image") === "body" ? "body" : "portrait");
         if (!image) return c.json({ error: "Frozen character reference unavailable" }, 404);
-        if (Buffer.isBuffer(image)) {
-          c.header("Content-Type", characterContentType(image));
-          return c.body(new Uint8Array(image));
+        if ("body" in image) {
+          if (!isImageContentType(image.contentType)) throw new Error("Frozen image metadata is missing or invalid");
+          c.header("Content-Type", image.contentType);
+          return c.body(new Uint8Array(image.body));
         }
-        const { body, contentType } = await openCharacterImage(await streamBinaryPayload(image, c.req.raw.signal));
+        const { contentType, url } = await readImageDelivery(image, c.req.raw.method !== "HEAD", c.req.raw.signal);
+        if (url) {
+          c.header("Referrer-Policy", "no-referrer");
+          return c.redirect(url, 302);
+        }
         c.header("Content-Type", contentType);
         c.header("Content-Length", String(image.byteLength));
-        return c.body(body);
+        return c.body(null);
       }
       const { presentation, permitted } = await readWerewolfPresentation(db, c.req.param("id")!, audience, cursor, publishedBefore);
       const asset = c.req.param("asset");
@@ -176,45 +182,4 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     return c.json({ stopped: true, status: stopped });
   });
   return app;
-}
-
-function characterContentType(bytes: Uint8Array): string {
-  if (bytes[0] === 0xff) return "image/jpeg";
-  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return "image/webp";
-  return "image/png";
-}
-
-/** Read only the format signature and pass through the original storage chunks. */
-async function openCharacterImage(stream: ReadableStream<Uint8Array>) {
-  const reader = stream.getReader();
-  const signature = new Uint8Array(4);
-  const initial: Uint8Array[] = [];
-  let offset = 0;
-  while (offset < signature.length) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (value.length === 0) continue;
-    initial.push(value);
-    const prefix = value.subarray(0, signature.length - offset);
-    signature.set(prefix, offset);
-    offset += prefix.length;
-  }
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const prefix = initial.shift();
-      if (prefix) {
-        controller.enqueue(prefix);
-        return;
-      }
-      const { value, done } = await reader.read();
-      if (done) {
-        reader.releaseLock();
-        controller.close();
-      } else {
-        controller.enqueue(value);
-      }
-    },
-    cancel: reason => reader.cancel(reason),
-  });
-  return { body, contentType: characterContentType(signature) };
 }
