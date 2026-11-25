@@ -491,8 +491,8 @@ test("management badges fit the artwork in every activity state without moving a
       else expect(await status!.evaluate(element => element.textContent)).toContain(variants[index]!.expectedStatus!);
     }
     expect(await page.$eval(`#agent-${fixtures[0]!.id} [aria-label="Agent details"]`, element => element.textContent)).toContain("CarinaF");
-    expect(await page.$eval(`#agent-${fixtures[2]!.id} [role="status"]`, element => element.textContent)).toContain("Still usable");
-    expect(await page.$eval(`#agent-${fixtures[8]!.id} [role="status"]`, element => element.textContent)).not.toContain("Still usable");
+    expect(await page.$eval(`#agent-${fixtures[2]!.id} > a [role="status"]`, element => element.textContent)).toContain("Still usable");
+    expect(await page.$eval(`#agent-${fixtures[8]!.id} > a [role="status"]`, element => element.textContent)).not.toContain("Still usable");
     expect(await page.$(`#agent-${fixtures[2]!.id} [data-image-updating="true"]`)).toBeNull();
     const active = `#agent-${fixtures[1]!.id} [data-image-updating="true"]`;
     expect(await page.$(active)).not.toBeNull();
@@ -2074,8 +2074,8 @@ test("review acceptance keeps gallery order and card positions unchanged", async
     expect(await page.$eval('dialog[open] [aria-label="Reviewing agents"]', element => element.textContent)).toContain(target.name);
     await button(page, "Close");
     const before = await positions();
-    expect(await page.$eval(`#agent-${target.id} [role="status"]`, element => element.textContent)).toContain("Reviewing");
-    expect(await page.$eval(`#agent-${target.id} [role="status"]`, element => element.textContent)).toContain("Still usable");
+    expect(await page.$eval(`#agent-${target.id} > a [role="status"]`, element => element.textContent)).toContain("Reviewing");
+    expect(await page.$eval(`#agent-${target.id} > a [role="status"]`, element => element.textContent)).toContain("Still usable");
     await database.db
       .update(schema.agentScreenings)
       .set({ status: "completed", recommendation: "no_concern" })
@@ -2099,7 +2099,7 @@ test("review acceptance keeps gallery order and card positions unchanged", async
     const after = await positions();
     const remainingActivity = await page.$('main header button[aria-label="Activity"]');
     expect(remainingActivity ? Number(await remainingActivity.evaluate(element => element.getAttribute("data-activity-count"))) : 0).toBe(activityBefore - 1);
-    expect(await page.$(`#agent-${target.id} [role="status"]`)).toBeNull();
+    expect(await page.$(`#agent-${target.id} > a [role="status"]`)).toBeNull();
     expect(after.map((row) => row.id)).toEqual(before.map((row) => row.id));
     before.forEach((row, index) => {
       expect(Math.abs(row.top - after[index]!.top)).toBeLessThanOrEqual(1);
