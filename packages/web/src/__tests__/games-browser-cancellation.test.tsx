@@ -57,11 +57,11 @@ test("a fast sibling failure aborts the hanging request and keeps poll ownership
   await act(async () => { tick!(); await Promise.resolve(); });
   expect(gamesRequests).toBe(1);
   await act(async () => { releaseAbort!(); });
-  await view.findByText("Season service unavailable");
+  await view.findByText("Request failed (HTTP 503).");
   expect(view.queryByText("Loading games took too long.")).toBeNull();
   await act(async () => { tick!(); });
   await waitFor(() => expect(gamesRequests).toBe(2));
-  await waitFor(() => expect(view.queryByText("Season service unavailable")).toBeNull());
+  await waitFor(() => expect(view.queryByText("Request failed (HTTP 503).")).toBeNull());
 });
 
 test("unmount aborts both active sibling requests", async () => {
@@ -113,7 +113,7 @@ test("a failed sibling cancels the uncapped Werewolf search request", async () =
   }) as typeof fetch;
   const auth = { ready: true, authenticated: false, account: null, hydrationError: false } as InfluenceAuthState;
   const view = render(<InfluenceAuthContext.Provider value={auth}><GamesBrowser includeWerewolf uncappedWerewolfSearch hideToolbar externalFilters={{status:"all",category:"all",search:"moon"}} /></InfluenceAuthContext.Provider>);
-  await view.findByText("Search unavailable");
+  await view.findByText("Request failed (HTTP 503).");
   expect(aborted).toBe(1);
   expect(paths.some(path=>path.endsWith("/api/werewolf-search"))).toBe(true);
   expect(paths.some(path=>path.endsWith("/api/werewolf"))).toBe(false);

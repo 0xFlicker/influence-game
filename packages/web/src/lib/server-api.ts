@@ -15,7 +15,7 @@ import type {
 import type { GameEntryIdentity } from "./game-entry";
 import type { PlayerCardMetadataGame } from "./player-card";
 import type { WerewolfLobbyData } from "./werewolf-api";
-import { apiErrorMessage } from "./api-error-message";
+import { apiErrorMessage, readApiErrorBody } from "./api-error-message";
 
 // Social metadata and route dispatch share this public read within a render.
 export const getServerGameMetadata = cache((key: string) =>
@@ -84,7 +84,7 @@ export async function serverApiFetch<T>(
       signal: timeout.signal,
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
+      const text = await readApiErrorBody(res);
       throw new ServerApiError(res.status, apiErrorMessage(res.status, text, res.headers.get("content-type")));
     }
     return await res.json() as T;

@@ -40,5 +40,5 @@ test("start failures stay visible after status recovery",async()=>{
  globalThis.fetch=Object.assign(async(_input:unknown,init?:RequestInit)=>init?.method==="POST"?Response.json({error:"Generation unavailable"},{status:503}):Response.json(state),{preconnect:originalFetch.preconnect});
  const view=render(<AgentVisualUpdateControl agent={agent} onComplete={()=>{}}/>);
  await waitFor(()=>expect(view.getByRole("button").hasAttribute("disabled")).toBe(false));fireEvent.click(view.getByRole("button"));
- await waitFor(()=>expect(view.getByRole("alert").textContent).toBe("Generation unavailable"));
+ await waitFor(()=>expect(view.getByRole("alert").textContent).toBe("Request failed (HTTP 503)."));
 });

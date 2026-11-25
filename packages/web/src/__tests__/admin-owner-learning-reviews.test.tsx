@@ -453,7 +453,7 @@ describe("admin owner learning reviews", () => {
         .toEqual({
           schemaVersion: 1,
           state,
-          error: `${state} sentinel`,
+          error: "Request failed (HTTP 503).",
           retryable: state === "storage_error",
         });
     }

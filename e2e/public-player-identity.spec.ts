@@ -722,7 +722,8 @@ test.describe("local public player identity", () => {
       await completedCard.getByRole("link", { name: "Details", exact: true }).tap();
       await expect(page.getByRole("status", { name: "Loading results", exact: true })).toBeVisible({ timeout: 20_000 });
       results.resolve();
-      await expect(page.getByText("Results unavailable", { exact: true })).toBeVisible();
+      await expect(page.getByText("Request failed (HTTP 503).", { exact: true })).toBeVisible();
+      await expect(page.getByText("Results unavailable", { exact: true })).toHaveCount(0);
       await expect(page.getByRole("status", { name: "Loading results", exact: true })).toHaveCount(0);
     } finally {
       library.resolve();

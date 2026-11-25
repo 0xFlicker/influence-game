@@ -11,7 +11,7 @@ import type { AgentCreationTraitId } from "@influence/engine/agent-creation-trai
  */
 
 import { gamePathSegment } from "./game-links";
-import { apiErrorMessage } from "./api-error-message";
+import { apiErrorMessage, readApiErrorBody } from "./api-error-message";
 import type { CreateGamePlayerCount } from "./game-creation";
 import type {
   CompletedGameResultsAvailabilityStatus as EngineCompletedGameResultsAvailabilityStatus,
@@ -110,7 +110,7 @@ export class ApiError extends Error {
 /** Public iframe reads never access device credentials, storage, or analytics. */
 export async function anonymousApiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(resolveApiUrl(path), {...options, credentials: "omit", headers: {Accept:"application/json"}});
-  if (!response.ok) throw apiErrorFromResponse(response, await response.text());
+  if (!response.ok) throw apiErrorFromResponse(response, await readApiErrorBody(response, true));
   return response.json() as Promise<T>;
 }
 
@@ -155,7 +155,7 @@ async function unmeasuredApiFetch<T>(
     headers,
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
+    const text = await readApiErrorBody(res, true);
     if (res.status === 401 && typeof window !== "undefined" && token && token === getAuthToken() && requestGeneration === window.localStorage.getItem("influence_auth_generation")) {
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
@@ -195,7 +195,7 @@ export async function providerAuthFetch<T>(
     headers,
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
+    const text = await readApiErrorBody(res, true);
     throw apiErrorFromResponse(res, text);
   }
   return res.json() as Promise<T>;
@@ -208,16 +208,17 @@ function apiErrorFromResponse(response: Response, body: string): ApiError {
     if (parsed && typeof parsed === "object") {
       const error = parsed as Record<string, unknown>;
       if (typeof error.error === "string") {
+        const message = apiErrorMessage(status, error.error, response.headers.get("content-type"));
         return new ApiError(
           status,
-          apiErrorMessage(status, error.error, response.headers.get("content-type")),
+          message,
           typeof error.code === "string"
             ? error.code
             : typeof error.status === "string"
               ? error.status
               : undefined,
           typeof error.retryable === "boolean" ? error.retryable : undefined,
-          error,
+          status >= 500 ? { ...error, error: message } : error,
         );
       }
     }

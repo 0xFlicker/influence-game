@@ -76,9 +76,13 @@ test("an unresponsive game lookup releases the route to the client entry", async
   expect(page.props.identity).toBeUndefined();
 }, 3000);
 
-test("API reads expose a safe message for an upstream HTML 503", async () => {
+test("API reads report the HTTP status without waiting for an HTML 503 body", async () => {
+  let cancelled = 0;
   globalThis.fetch = Object.assign(
-    async () => new Response("<html><body>Upstream details</body></html>", {
+    async () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("<html>Upstream details")); },
+      cancel() { cancelled++; },
+    }), {
       status: 503,
       headers: { "content-type": "text/html" },
     }),
@@ -87,7 +91,21 @@ test("API reads expose a safe message for an upstream HTML 503", async () => {
   for (const request of [anonymousApiFetch, serverApiFetch]) {
     await expect(request("/api/games/game")).rejects.toMatchObject({
       status: 503,
-      message: "The service is temporarily unavailable.",
+      message: "Request failed (HTTP 503).",
     });
   }
+  expect(cancelled).toBe(2);
+});
+
+test("browser API errors keep structured retry codes while hiding 5xx details", async () => {
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ error: "Internal storage details", code: "generation_busy", retryable: true }, { status: 500 }),
+    { preconnect: originalFetch.preconnect },
+  );
+  const failure = { status: 500, message: "Request failed (HTTP 500)." };
+  await expect(anonymousApiFetch("/api/games/game")).rejects.toMatchObject({
+    ...failure, code: "generation_busy", retryable: true,
+    payload: { error: failure.message },
+  });
+  await expect(serverApiFetch("/api/games/game")).rejects.toMatchObject(failure);
 });
