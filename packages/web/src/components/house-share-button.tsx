@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { createHouseShareLink } from "@/lib/house-share-link";
 import { shareHouseLink } from "@/lib/share-link";
 
@@ -14,10 +14,9 @@ export function ShareIcon() {
   </svg>;
 }
 
-export function HouseShareButton({ href, getHref, label = "Share", title = "The House", text, description }: {
-  href?: string; getHref?: () => string; label?: string; title?: string; text?: string; description?: string;
+export function HouseShareButton({ href, getHref, label = "Share", title = "The House", text, description, buttonText, className }: {
+  href?: string; getHref?: () => string; label?: string; title?: string; text?: string; description?: string; buttonText?: string; className?: string;
 }) {
-  const titleId = useId();
   // Server-rendered cards arrive before their share dialog can handle clicks.
   const ready = useSyncExternalStore(subscribe, clientReady, serverReady);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -54,9 +53,9 @@ export function HouseShareButton({ href, getHref, label = "Share", title = "The 
     setFeedback(result.message);
   }
   return <>
-    <button type="button" aria-label={label} title={label} disabled={!ready} onClick={open} className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-white/80 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-50"><ShareIcon /></button>
-    <dialog ref={dialog} aria-labelledby={titleId} onCancel={() => { request.current++; }} className="m-auto w-[min(24rem,90vw)] rounded-xl border border-white/25 bg-zinc-950 p-5 text-white shadow-2xl backdrop:bg-black/60" onClick={event => event.stopPropagation()}>
-      <div className="mb-3 flex items-center justify-between gap-4"><h2 id={titleId} className="font-semibold">{label}</h2><button type="button" aria-label="Close share" onClick={close}>✕</button></div>
+    <button type="button" aria-label={label} aria-haspopup="dialog" title={label} disabled={!ready} onClick={open} className={className ?? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-white/80 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-50"}><ShareIcon />{buttonText}</button>
+    <dialog ref={dialog} aria-label={label} onCancel={() => { request.current++; }} className="m-auto w-[min(24rem,90vw)] rounded-xl border border-white/25 bg-zinc-950 p-5 text-white shadow-2xl backdrop:bg-black/60" onClick={event => event.stopPropagation()}>
+      <div className="mb-3 flex items-center justify-between gap-4"><h2 className="font-semibold">{label}</h2><button type="button" aria-label="Close share" onClick={close}>✕</button></div>
       {description && <p className="mb-3 text-sm text-white/60">{description}</p>}
       {busy && <p role="status">Preparing link…</p>}
       {url && <>

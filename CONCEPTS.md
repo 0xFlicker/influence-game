@@ -48,6 +48,11 @@ Default House players use fixed name, archetype, gender and portrait identities 
 
 The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation and updates offer Guided and Advanced modes within one editor, backed by the same draft, artwork and save contract; game join and Daily Free acquisition select an existing profile or route through the same creation choice instead of maintaining inline copies of the form. An Agent missing full-body artwork during entry opens the artwork controls in that same editor, with the original game or season kept through save and review. The creation assistant designs a competitor; it is not an in-game Agent or a general chatbot. See [guided creation](docs/agent-creation-assistant.md).
 
+The public Agent Profile at `/agents/:id` presents the published identity,
+artwork and public record. Dashboard links and shares use that address for
+published agents. Owners manage submissions and private instructions in the
+editor. See [House sharing](docs/house-sharing.md#agent-profiles).
+
 ### Anonymous creation pool
 
 The public `/agents/create` preview gives an anonymous browser one successful House text message before account creation is required for further generation or saving. Signed-out game join actions enter this preview directly with the game target preserved; signup happens within creation. A signed browser cookie identifies the visitor; it is not a verified account or person. PostgreSQL limits the shared pool to one provider dispatch per rolling minute and journals request identity, outcomes, tokens, and estimated cost separately from account and game spending. The first message can answer a game question or create a character draft. Images always require an account.

@@ -303,12 +303,14 @@ test.each(["automatic", "manual", "adjusted"] as const)("entry artwork %s portra
   }
 }, 60_000);
 
-test("management image and name open the owner profile and return to its agent", async () => {
+test("management image and name open the public profile and editing returns to its agent", async () => {
   const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/dashboard/agents", { privateKey: owner.wallet.privateKey });
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(String(error)));
   try {
-    const selector = `a[href^="/dashboard/agents/${agentId}/profile"]`;
+    const agentPath = `/agents/${agentId}`;
+    const collectionPath = `/dashboard/agents?at=${agentId}`;
+    const selector = `#agent-${agentId} a[href="${agentPath}"]`;
     await page.goto(servers.webUrl + `/dashboard/agents?attention=1&q=Mira&at=${agentId}`);
     await page.waitForFunction('!new URL(location.href).searchParams.has("attention")');
     expect(new URL(page.url()).searchParams.get("q")).toBe("Mira");
@@ -330,6 +332,7 @@ test("management image and name open the owner profile and return to its agent",
         expect(await page.$$(selector)).toHaveLength(1);
         expect(await page.$$eval(`#agent-${agentId} a, #agent-${agentId} button`, elements => elements.some(element => element.textContent?.trim() === "View"))).toBe(false);
         expect(await page.$(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`)).not.toBeNull();
+        expect(await page.$(`#agent-${agentId} button[aria-label="Share Mira Voss profile"]`)).not.toBeNull();
         expect(await page.$eval(`#agent-${agentId}`, element => {
           const heading = element.querySelector("h3")!.getBoundingClientRect();
           const picture = element.querySelector("a")!.getBoundingClientRect();
@@ -339,18 +342,25 @@ test("management image and name open the owner profile and return to its agent",
         })).toBe(true);
         expect(await page.$(`#agent-${agentId} details`)).toBeNull();
         expect(await page.$eval(`#agent-${agentId} a[aria-label="Analyze Mira Voss"]`, element => element.getAttribute("href"))).toBe(`/dashboard/agents/${agentId}`);
-        expect(await page.evaluate(`(()=>{const card=document.getElementById("agent-${agentId}");const buttons=["Edit Mira Voss","Analyze Mira Voss","Archive Mira Voss"].map(label=>card.querySelector('[aria-label="'+label+'"]').getBoundingClientRect());return buttons.every(rect=>Math.abs(rect.top-buttons[0].top)<1);})()`)).toBe(true);
         await page.click(`${selector} ${target}`);
         await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
-        expect(await page.$eval("main", element => element.textContent)).toContain("Patient, observant, and quietly theatrical.");
-        expect(await page.$eval('main a', element => element.getAttribute("href"))).toBe(`/dashboard/agents?at=${agentId}`);
-        expect(await page.evaluate('(()=>{const back=document.querySelector("main nav a").getBoundingClientRect();const heading=document.querySelector("main h1");const card=heading.closest("section").getBoundingClientRect();return back.bottom+16<=card.top && Math.abs(back.left-heading.getBoundingClientRect().left)<1;})()')).toBe(true);
-        if (target === "img") await page.screenshot({ path: proof + `owner-profile-${viewport.width}.png`, fullPage: true });
-        await page.click('main a');
-        await page.waitForSelector(`#agent-${agentId}`);
+        expect(new URL(page.url()).pathname).toBe(agentPath);
+        expect(await page.$eval("main", element => element.textContent)).not.toContain("Patient, observant, and quietly theatrical.");
+        await page.waitForSelector('main button[aria-label="Share Mira Voss profile"]:enabled', { visible: true });
+        await page.waitForSelector('#profile-agent-request', { visible: true });
+        if (target === "img") await page.screenshot({ path: proof + `public-profile-${viewport.width}.png`, fullPage: true });
+        await page.goBack({ waitUntil: "domcontentloaded" });
+        await page.waitForSelector(selector);
       }
       await page.screenshot({ path: proof + `management-profile-link-${viewport.width}.png`, fullPage: true });
     }
+    await page.click(`#agent-${agentId} button[aria-label="Edit Mira Voss"]`);
+    await page.waitForSelector('[data-agent-workspace]', { visible: true });
+    const editorUrl = new URL(page.url());
+    expect(editorUrl.pathname).toBe(`/dashboard/agents/${agentId}/edit`);
+    expect(editorUrl.searchParams.get("returnTo")).toBe(collectionPath);
+    await page.click(`nav[aria-label="Breadcrumb"] a[href="${collectionPath}"]`);
+    await page.waitForSelector(selector);
     const beforeArchive = await page.$eval(`#agent-${agentId}`, element => ({ top: element.getBoundingClientRect().top, height: element.getBoundingClientRect().height }));
     await page.click(`#agent-${agentId} button[aria-label="Archive Mira Voss"]`);
     await page.waitForSelector('dialog[open][aria-label="Archive Mira Voss?"]');
@@ -390,6 +400,7 @@ test("management image and name open the owner profile and return to its agent",
     expect(await page.$eval(selector, element => element === element.ownerDocument.activeElement)).toBe(true);
     await page.keyboard.press("Enter");
     await page.waitForFunction('document.querySelector("h1")?.textContent === "Mira Voss"');
+    expect(new URL(page.url()).pathname).toBe(agentPath);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -414,10 +425,13 @@ test("management badges fit the artwork in every activity state without moving a
     { name: "Reviewing new agent", reviewState: "reviewing", contentRevisionId: null, expectedStatus: "Reviewing" },
     { name: "Image conflict", visualActivity: { status: "conflict", stage: "ready" }, expectedStatus: "Artwork needs review" },
   ];
-  const fixtures = variants.map(({ expectedStatus: _expectedStatus, ...variant }) => ({
-    ...baseline, reviewState: "accepted" as const, visualActivity: null,
-    id: crypto.randomUUID(), ...variant,
-  }));
+  const fixtures = variants.map(({ expectedStatus: _expectedStatus, ...variant }) => {
+    const id = crypto.randomUUID();
+    return {
+      ...baseline, reviewState: "accepted" as const, visualActivity: null, ...variant,
+      id, profileHref: variant.contentRevisionId === null ? null : `/agents/${id}`,
+    };
+  });
   const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/dashboard/agents", { privateKey: owner.wallet.privateKey });
   try {
     await page.setRequestInterception(true);
@@ -443,7 +457,7 @@ test("management badges fit the artwork in every activity state without moving a
         const heading = element.querySelector("h3")!.getBoundingClientRect();
         const image = element.querySelector("img")!.getBoundingClientRect();
         const badges = Array.from(element.querySelector('[aria-label="Agent details"]')!.children as ArrayLike<typeof element>).map(badge => badge.getBoundingClientRect());
-        const actions = Array.from(element.querySelectorAll("button, a.action") as ArrayLike<typeof element>).map(action => action.getBoundingClientRect());
+        const actions = Array.from(element.querySelectorAll(":scope > div > button, :scope > div > a.action") as ArrayLike<typeof element>).map(action => action.getBoundingClientRect());
         const inside = (rect: { left: number; right: number; top: number; bottom: number }) => rect.left >= picture.left && rect.right <= picture.right && rect.top >= picture.top && rect.bottom <= picture.bottom;
         return {
           height: element.getBoundingClientRect().height, pictureHeight: picture.height,
@@ -468,13 +482,17 @@ test("management badges fit the artwork in every activity state without moving a
       await page.screenshot({ path: proof + `management-badges-${viewport.width}.png`, fullPage: true });
     }
     for (const [index, fixture] of fixtures.entries()) {
-      const status = await page.$(`#agent-${fixture.id} [role="status"]`);
+      const card = `#agent-${fixture.id}`;
+      const href = await page.$eval(`${card} > a`, element => element.getAttribute("href")!);
+      expect(new URL(href, page.url()).pathname).toBe(fixture.profileHref ?? `/dashboard/agents/${fixture.id}/edit`);
+      expect(await page.$(`${card} button[aria-haspopup="dialog"]`) !== null).toBe(Boolean(fixture.profileHref));
+      const status = await page.$(`${card} > a [role="status"]`);
       if (variants[index]!.expectedStatus === null) expect(status).toBeNull();
       else expect(await status!.evaluate(element => element.textContent)).toContain(variants[index]!.expectedStatus!);
     }
     expect(await page.$eval(`#agent-${fixtures[0]!.id} [aria-label="Agent details"]`, element => element.textContent)).toContain("CarinaF");
-    expect(await page.$eval(`#agent-${fixtures[2]!.id} [role="status"]`, element => element.textContent)).toContain("Still usable");
-    expect(await page.$eval(`#agent-${fixtures[8]!.id} [role="status"]`, element => element.textContent)).not.toContain("Still usable");
+    expect(await page.$eval(`#agent-${fixtures[2]!.id} > a [role="status"]`, element => element.textContent)).toContain("Still usable");
+    expect(await page.$eval(`#agent-${fixtures[8]!.id} > a [role="status"]`, element => element.textContent)).not.toContain("Still usable");
     expect(await page.$(`#agent-${fixtures[2]!.id} [data-image-updating="true"]`)).toBeNull();
     const active = `#agent-${fixtures[1]!.id} [data-image-updating="true"]`;
     expect(await page.$(active)).not.toBeNull();
@@ -2056,8 +2074,8 @@ test("review acceptance keeps gallery order and card positions unchanged", async
     expect(await page.$eval('dialog[open] [aria-label="Reviewing agents"]', element => element.textContent)).toContain(target.name);
     await button(page, "Close");
     const before = await positions();
-    expect(await page.$eval(`#agent-${target.id} [role="status"]`, element => element.textContent)).toContain("Reviewing");
-    expect(await page.$eval(`#agent-${target.id} [role="status"]`, element => element.textContent)).toContain("Still usable");
+    expect(await page.$eval(`#agent-${target.id} > a [role="status"]`, element => element.textContent)).toContain("Reviewing");
+    expect(await page.$eval(`#agent-${target.id} > a [role="status"]`, element => element.textContent)).toContain("Still usable");
     await database.db
       .update(schema.agentScreenings)
       .set({ status: "completed", recommendation: "no_concern" })
@@ -2081,7 +2099,7 @@ test("review acceptance keeps gallery order and card positions unchanged", async
     const after = await positions();
     const remainingActivity = await page.$('main header button[aria-label="Activity"]');
     expect(remainingActivity ? Number(await remainingActivity.evaluate(element => element.getAttribute("data-activity-count"))) : 0).toBe(activityBefore - 1);
-    expect(await page.$(`#agent-${target.id} [role="status"]`)).toBeNull();
+    expect(await page.$(`#agent-${target.id} > a [role="status"]`)).toBeNull();
     expect(after.map((row) => row.id)).toEqual(before.map((row) => row.id));
     before.forEach((row, index) => {
       expect(Math.abs(row.top - after[index]!.top)).toBeLessThanOrEqual(1);

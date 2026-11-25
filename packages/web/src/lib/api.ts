@@ -2146,6 +2146,7 @@ export async function getPlayerGamesPage(cursor?: string, limit = 20, game: "all
 export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition" | "modelPreference">;
 
 export interface SavedAgent {
+  profileHref?: string | null;
   transparentBodyUrl?: string | null;
   reviewState?: "accepted" | "reviewing" | "held";
   voiceId?: string | null;

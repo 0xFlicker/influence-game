@@ -69,7 +69,7 @@ export default async function PublicPlayerProfilePage({ params }: Props) {
   return (
     <div className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden">
       <Nav />
-      <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
+      <main className="min-w-0 flex-1">
         <PublicPlayerProfileView profile={profile} />
       </main>
     </div>

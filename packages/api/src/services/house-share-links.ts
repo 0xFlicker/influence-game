@@ -3,6 +3,7 @@ import { eq, or, sql } from "drizzle-orm";
 import { parseHouseShareTarget, type HouseShareTarget } from "@influence/engine/house-share-target";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { isViewerGame } from "./game-visibility.js";
+import { readPublicAgentIdentity } from "./public-agent-profile.js";
 import { resolvePublicPlayer } from "./public-player-identity.js";
 
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -24,9 +25,10 @@ export async function admitShareCreation(db: DrizzleDB, visitor: string, source:
   });
 }
 
-/** Recheck availability at resolution: a saved link cannot unhide a game. */
+/** Recheck visibility at resolution for games and profiles. */
 export async function validateShareTarget(db: DrizzleDB, target: HouseShareTarget): Promise<boolean> {
   if (target.kind === "profile") return !!await resolvePublicPlayer(db, target.identifier!);
+  if (target.kind === "agent") return !!await readPublicAgentIdentity(db, target.identifier!);
   if (target.kind !== "game") return true;
   const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, target.identifier!), eq(schema.games.slug, target.identifier!)));
   if (!game || !isViewerGame(game)) return false;

@@ -159,7 +159,9 @@ describe("public player profile", () => {
     expect(seasonIndex).toBeGreaterThan(careerIndex);
     expect(rosterIndex).toBeGreaterThan(seasonIndex);
     expect(html).toContain('href="/profile/flick/history"');
-    expect(html).toContain('alt="Full-body portrait of Atlas"');
+    expect(html).toContain('src="/api/public/agents/atlas/art?kind=full-body"');
+    expect(html).toContain('aria-roledescription="carousel"');
+    expect(html).toContain('data-position="next"');
     expect(html).toContain('aria-label="Next agent"');
     expect(html).toContain("Recent Werewolf record");
     expect(html).not.toContain("edge-smoke-dusk");

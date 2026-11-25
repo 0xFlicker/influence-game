@@ -1,82 +1,157 @@
-.hero {
-  display: grid;
-  overflow: hidden;
-  border: 1px solid rgb(var(--border-strong) / .55);
-  background: linear-gradient(125deg, rgb(var(--surface-raised)), rgb(var(--surface)));
-}
-
-.feature {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  border-top: 1px solid rgb(var(--border-strong) / .45);
-  background: rgb(var(--surface));
-}
-
-.featureArt {
-  --profile-stage-height: 16rem;
+.carousel {
+  position: relative;
   min-width: 0;
+  padding-bottom: 1.15rem;
 }
 
-.featureArt > div {
+.stage {
+  margin-inline: -1rem;
+}
+
+.slide {
+  position: absolute;
+  inset: 0 12%;
+  transform-origin: center 68%;
+  pointer-events: none;
+}
+
+.slide[data-position="current"] {
+  z-index: 2;
+}
+
+.slide[data-position="previous"],
+.slide[data-position="next"] {
+  z-index: 1;
+  opacity: .48;
+  filter: saturate(.45) brightness(.72);
+}
+
+.slide[data-position="previous"] {
+  transform: translateX(-37%) scale(.74);
+}
+
+.slide[data-position="next"] {
+  transform: translateX(37%) scale(.74);
+}
+
+.slide[data-position="offstage"] {
+  visibility: hidden;
+  opacity: 0;
+  transform: scale(.55);
+}
+
+.caption {
+  position: relative;
+  z-index: 3;
   display: grid;
-  justify-items: center;
-  align-content: center;
-  min-height: var(--profile-stage-height);
-  padding: 0;
-  border: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: .35rem 1rem;
+  padding-top: .55rem;
+  border-top: 1px solid rgb(var(--profile-gold) / .24);
 }
 
-.featureArt img[data-nimg="fill"] {
-  padding: .75rem;
+.caption:has(.controls) {
+  min-block-size: 7rem;
 }
 
-.carouselButton {
-  display: inline-grid;
+.agentName {
+  color: #f8f0e7;
+  font-size: clamp(1.45rem, 3vw, 2.2rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -.05em;
+  overflow-wrap: anywhere;
+}
+
+.controls {
+  display: flex;
+  align-self: end;
+  align-items: center;
+  color: #f8f0e7;
+}
+
+.controls button {
+  display: grid;
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
-  border: 1px solid rgb(var(--border-strong) / .8);
-  border-radius: .5rem;
-  color: rgb(var(--text-primary));
+  font-size: 1.2rem;
+}
+
+.controls button:hover {
+  color: rgb(var(--profile-gold));
+}
+
+.count {
+  padding-inline: .55rem .1rem;
+  color: rgb(var(--text-secondary));
+  font-variant-numeric: tabular-nums;
+  font-size: .75rem;
+}
+
+.roster {
+  display: grid;
+  gap: 0 clamp(1.75rem, 5vw, 5rem);
+}
+
+.rosterEntry {
+  min-width: 0;
+  padding-block: 1.15rem;
+  border-top: 1px solid rgb(var(--profile-gold) / .16);
+}
+
+.rosterRecords {
+  display: grid;
+  gap: .85rem;
+  margin: .75rem 0 0;
+  padding-left: 4rem;
+}
+
+.rosterRecords dl {
+  margin-top: .4rem;
+}
+
+.rosterRecords dd {
   font-size: 1.125rem;
 }
 
-.carouselButton:hover {
-  background: rgb(var(--accent-rgb) / .14);
-}
-
-.carouselButton:focus-visible {
-  outline: 2px solid rgb(var(--accent-rgb));
-  outline-offset: 2px;
-}
-
-.profile :global(.influence-copy-muted) {
-  color: rgb(var(--text-secondary));
-}
-
-@media (min-width: 900px) {
-  .hero:has(.feature) {
-    grid-template-columns: minmax(0, .94fr) minmax(0, 1.06fr);
+@media (max-width: 540px) {
+  .caption {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .feature {
-    border-top: 0;
-    border-left: 1px solid rgb(var(--border-strong) / .45);
+  .caption:has(.controls) {
+    min-block-size: 8.75rem;
+  }
+}
+
+@media (min-width: 800px) {
+  .carousel {
+    padding-block: 1.5rem;
   }
 
-  .featureArt {
-    --profile-stage-height: 22rem;
+  .stage {
+    height: clamp(22rem, 48svh, 37rem);
+    margin-inline: -8%;
+  }
+
+  .roster {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .featureArt {
-    animation: reveal 180ms ease-out both;
+  .carousel {
+    animation: cast-enter 830ms 90ms cubic-bezier(.22, .8, .28, 1) both;
   }
 
-  @keyframes reveal {
-    from { opacity: .55; }
-    to { opacity: 1; }
+  .slide {
+    transition: opacity 580ms ease, transform 760ms cubic-bezier(.22, .8, .28, 1), filter 580ms ease, visibility 580ms;
+  }
+
+  @keyframes cast-enter {
+    from { opacity: 0; transform: translateY(1rem); }
+    to { opacity: 1; transform: translateY(0); }
   }
 }

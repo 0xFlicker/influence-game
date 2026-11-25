@@ -4,10 +4,10 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { parseHouseShareTarget, SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
 import { serverApiFetch, ServerApiError } from "@/lib/server-api";
-import { getServerGameMetadata } from "@/lib/server-api";
+import { getServerGameMetadata, getServerPublicAgentCard } from "@/lib/server-api";
 import { playerCardMetadata, resultsCardMetadata } from "@/lib/player-card";
 import { serializeMiniAppEmbedMeta } from "@/lib/farcaster-miniapp";
-import { getHighlightsShareMetadata, getProfileShareMetadata } from "@/lib/server-share-metadata";
+import { agentShareMetadata, getHighlightsShareMetadata, getProfileShareMetadata } from "@/lib/server-share-metadata";
 import { ShareDestination } from "./share-destination";
 
 const resolve = cache(async (code: string) => {
@@ -41,16 +41,24 @@ export async function generateMetadata({params}: Props): Promise<Metadata> {
     }
   } else if (target.kind === "profile") {
     metadata = await getProfileShareMetadata(target.identifier!, url.searchParams.get("game") ?? undefined);
+  } else if (target.kind === "agent") {
+    try {
+      const agent = await getServerPublicAgentCard(target.identifier!);
+      metadata = agentShareMetadata(agent.profile);
+    } catch (error) {
+      if (error instanceof ServerApiError && error.status === 404) notFound();
+      throw error;
+    }
   }
-  const imagePath = target.kind === "profile"
-    ? `/profile/${encodeURIComponent(target.identifier!)}/card-image?format=farcaster`
+  const imagePath = target.kind === "profile" || target.kind === "agent"
+    ? `${url.pathname}/card-image?format=farcaster`
     : target.kind === "game" && target.mode !== "highlights"
       ? `/games/${encodeURIComponent(target.identifier!)}/card-image?format=farcaster`
       : undefined;
   return { ...metadata, metadataBase: new URL(origin), alternates: {canonical: target.path}, robots: {index: false, follow: false},
     // Farcaster merges the cast URL's query onto its action URL. Resolve through
     // our short route so extra cast parameters cannot change the frozen settings.
-    other: {"fc:miniapp": serializeMiniAppEmbedMeta(origin, {path: `/s/${code}`, imagePath, buttonTitle: target.mode === "results" ? "View results" : metadata.twitter && "card" in metadata.twitter && metadata.twitter.card === "player" ? "Watch replay" : "Open in the House"})} };
+    other: {"fc:miniapp": serializeMiniAppEmbedMeta(origin, {path: `/s/${code}`, imagePath, buttonTitle: target.kind === "agent" ? "View agent" : target.mode === "results" ? "View results" : metadata.twitter && "card" in metadata.twitter && metadata.twitter.card === "player" ? "Watch replay" : "Open in the House"})} };
 }
 
 export default async function ShortSharePage({params, searchParams}: Props) {

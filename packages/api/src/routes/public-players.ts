@@ -1,4 +1,4 @@
-import { getPublicAgentProfile } from "../services/public-agent-profile.js";
+import { getPublicAgentProfile, readPublicAgentIdentity } from "../services/public-agent-profile.js";
 import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
 import { getPublicPlayerProfile } from "../services/public-player-profile.js";
@@ -57,10 +57,8 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
   app.get("/api/public/agents/:identifier/card", async c => {
     c.header("Cache-Control", "no-store");
     const id = c.req.param("identifier");
-    const [row] = await db.select({ name: schema.agentProfiles.name, avatarUrl: schema.agentProfiles.avatarUrl, wallet: schema.users.walletAddress })
-      .from(schema.agentProfiles).innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-      .where(and(eq(schema.agentProfiles.id, id), publiclyVisibleAgentContent()));
-    if (!row || isImportedSyntheticPlayer(row.wallet)) return c.notFound();
+    const row = await readPublicAgentIdentity(db, id);
+    if (!row) return c.notFound();
     return c.json({ schemaVersion: 1, status: "found", profile: {
       name: row.name, avatarUrl: row.avatarUrl, profileHref: `/agents/${encodeURIComponent(id)}`, awards: await publicAgentAwards(db, id),
     } });

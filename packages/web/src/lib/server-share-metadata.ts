@@ -34,3 +34,17 @@ export async function getProfileShareMetadata(identifier: string, game?: string)
   const images = [{ url: `${canonical}/card-image`, width: 1200, height: 630, alt: `${result.profile.identity.displayName} — player profile at The House` }];
   return { title, description, openGraph: {title, description, type: "website", url: canonical, images}, twitter: {card: "summary_large_image", title, description, images} };
 }
+
+
+export function agentShareMetadata({ name, profileHref }: { name: string; profileHref: string }): Metadata {
+  const title = `${name} — The House`;
+  const description = `Explore ${name}'s public record, earned badges and recent games.`;
+  const images = [{ url: `${profileHref}/card-image`, width: 1200, height: 630, alt: `${name} — agent profile at The House` }];
+  return {
+    title,
+    description,
+    alternates: { canonical: profileHref },
+    openGraph: { title, description, type: "website", url: profileHref, images },
+    twitter: { card: "summary_large_image", title, description, images },
+  };
+}

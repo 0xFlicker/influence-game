@@ -2,40 +2,43 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
+import { useAgentAvatarUrl } from "@/components/agent-avatar";
 import type { PublicAgentProfile } from "@/lib/api";
-import styles from "./public-agent-profile.module.css";
+import styles from "@/components/public-profile.module.css";
 
-type Artwork = Pick<PublicAgentProfile, "name" | "avatarUrl" | "fullBodyImageUrl" | "role" | "competition">;
+type Artwork = Pick<PublicAgentProfile, "name" | "avatarUrl" | "fullBodyImageUrl" | "role">;
 
-export function ProfileArtwork({ name, avatarUrl, fullBodyImageUrl, role, competition }: Artwork) {
-  const [failedImage, setFailedImage] = useState<string | null>(null);
-  if (fullBodyImageUrl && failedImage !== fullBodyImageUrl) {
-    return (
-      <div className={styles.stage}>
+export function ProfileArtwork({ name, avatarUrl, fullBodyImageUrl, role, decorative = false }: Artwork & { decorative?: boolean }) {
+  const [failedBody, setFailedBody] = useState<string | null>(null);
+  const [failedPortrait, setFailedPortrait] = useState<string | null>(null);
+  const avatar = useAgentAvatarUrl();
+  const portrait = avatar(avatarUrl, "", name, role?.key);
+  return (
+    <div className={styles.artwork}>
+      {fullBodyImageUrl && fullBodyImageUrl !== failedBody ? (
         <Image
           src={fullBodyImageUrl}
-          alt={`Full-body portrait of ${name}`}
+          alt={decorative ? "" : `Full-body portrait of ${name}`}
           fill
           unoptimized
           loading="eager"
-          fetchPriority="high"
+          fetchPriority={decorative ? "auto" : "high"}
           className={styles.bodyImage}
-          onError={() => setFailedImage(fullBodyImageUrl)}
+          onError={() => setFailedBody(fullBodyImageUrl)}
         />
-      </div>
-    );
-  }
-  return (
-    <div className={fullBodyImageUrl ? `${styles.stage} ${styles.portrait} ${styles.stagePortrait}` : styles.portrait}>
-      <AgentAvatarPreview
-        name={name}
-        avatarUrl={avatarUrl}
-        personaKey={role?.key}
-        size="32"
-        gamesPlayed={competition.gamesPlayed}
-        gamesWon={competition.wins}
-      />
+      ) : (
+        <Image
+          src={failedPortrait === portrait ? avatar(null, "", name, role?.key) : portrait}
+          alt={decorative ? "" : `Portrait of ${name}`}
+          width={512}
+          height={512}
+          unoptimized
+          loading="eager"
+          fetchPriority={decorative ? "auto" : "high"}
+          className={styles.portraitImage}
+          onError={() => setFailedPortrait(portrait)}
+        />
+      )}
     </div>
   );
 }

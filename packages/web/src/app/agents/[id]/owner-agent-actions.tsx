@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getAuthToken, listAgents, type SavedAgent } from "@/lib/api";
+import { getAuthToken, listAgents } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { agentEditRequestKey, findAgentDrafts, writeEditorStorage } from "@/app/dashboard/agents/agent-editor-storage";
 
-type OwnerState = { kind: "loading" | "visitor" } | { kind: "error"; ownerId: string; knownOwner: boolean } | { kind: "owner"; ownerId: string; agent: SavedAgent; scopes: string[] };
+import styles from "@/components/public-profile.module.css";
+
+type OwnerState = { kind: "loading" | "visitor" } | { kind: "error"; ownerId: string; knownOwner: boolean } | { kind: "owner"; ownerId: string; scopes: string[] };
 
 function draftHref(agentId: string, scope: string): string {
   const base = `/dashboard/agents/${encodeURIComponent(agentId)}/edit`;
@@ -37,7 +39,7 @@ export function OwnerAgentActions({ agentId, agentName }: { agentId: string; age
       if (!agent) { setState({ kind: "visitor" }); return; }
       const drafts = findAgentDrafts(accountId, agentId);
       if (!drafts.ok) { setState({ kind: "error", ownerId: accountId, knownOwner: true }); return; }
-      setState({ kind: "owner", ownerId: accountId, agent, scopes: drafts.scopes });
+      setState({ kind: "owner", ownerId: accountId, scopes: drafts.scopes });
     }).catch(() => { if (active && epoch === generation.current) setState({ kind: "error", ownerId: accountId, knownOwner: false }); });
     return () => { active = false; };
   }, [accountId, agentId, authenticated, ready]);
@@ -63,21 +65,20 @@ export function OwnerAgentActions({ agentId, agentName }: { agentId: string; age
     router.push(`${draftHref(agentId, `edit:${agentId}`)}?profileRequest=1`);
   }
   if (!authenticated || !accountId || state.kind === "visitor" || state.kind === "loading") return null;
-  if (state.kind === "error") return state.ownerId === accountId ? <section className="influence-panel rounded-xl p-5" role="status"><p>We couldn’t check your editing state in this tab.</p>{state.knownOwner && <Link className="influence-link mt-2 inline-block" href={`/dashboard/agents/${encodeURIComponent(agentId)}/edit`}>Edit</Link>}<button type="button" onClick={() => load()} className="influence-link ml-4">Retry</button></section> : null;
+  if (state.kind === "error") return state.ownerId === accountId ? <section className={styles.rules} role="status"><p>We couldn’t check your editing state in this tab.</p>{state.knownOwner && <Link className="influence-link mt-2 inline-block" href={`/dashboard/agents/${encodeURIComponent(agentId)}/edit`}>Edit</Link>}<button type="button" onClick={() => load()} className="influence-link ml-4">Retry</button></section> : null;
   if (state.kind !== "owner") return null;
   if (state.ownerId !== accountId) return null;
-  if (state.scopes.length) return <section className="influence-panel rounded-xl p-5">
+  if (state.scopes.length) return <section className={styles.rules}>
     <h2 className="text-lg font-semibold">Finish your draft</h2>
     <p className="influence-copy mt-1 text-sm">Continue the saved draft before starting another edit.</p>
     <div className="mt-3 space-y-3">{state.scopes.map(scope => <div key={scope} className="flex flex-wrap items-center gap-4">
       <Link className="influence-link" href={draftHref(agentId, scope)}>Continue</Link>
-
     </div>)}</div>
     {message && <p role="alert" className="mt-2 text-sm text-red-300">{message}</p>}
   </section>;
-  return <section className="influence-panel rounded-xl p-5">
+  return <section className={styles.rules}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-lg font-semibold">✦ What would you like to change?</h2><p className="influence-copy mt-1 text-sm">Describe an update to {agentName}.</p></div>
+      <div><h2 className="text-lg font-semibold">Update your agent</h2><p className="influence-copy mt-1 text-sm">Describe an update to {agentName}.</p></div>
       <Link className="influence-link text-sm" href={draftHref(agentId, `edit:${agentId}`)}>Edit</Link>
     </div>
     <form onSubmit={start} className="mt-4 flex flex-col gap-3 sm:flex-row">

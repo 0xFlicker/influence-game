@@ -8,6 +8,8 @@ import {readAgentVoice} from "../services/audio-voices.js";
 import { readAgentDraft, saveAgentDraft, deleteAgentDraft, AgentDraftConflict } from "../services/agent-editor-drafts.js";
 import { voiceSampleId } from "../services/voice-samples.js";
 import { readPayload } from "../services/payload-storage.js";
+import { hasEligibleAgentContent } from "../services/agent-content-eligibility.js";
+import { isImportedSyntheticPlayer } from "../services/public-player-identity.js";
 import { agentCollectionActivity } from "../services/agent-collection-activity.js";
 import {isPlayerVoiceId,PLAYER_VOICES,VOICE_AUDITION_VERSION} from "@influence/engine/voice-catalog";
 import { generationContacts } from "../services/generation-admission-error.js";
@@ -621,6 +623,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       transparentBodyUrl: transparentBodies.get(profile.id) ?? null,
       ...playerSafeAgentProfile(profile),
       ...activity.get(profile.id),
+      profileHref: ownedAgentPublicHref(profile, user.walletAddress),
       avatarCompletion: completions.get(profile.id),
     })));
   });
@@ -670,6 +673,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     return c.json({
       ...playerSafeAgentProfile(profile),
       transparentBodyUrl: (await readAgentTransparentBodies(db, [profile])).get(profile.id) ?? null,
+      profileHref: ownedAgentPublicHref(profile, user.walletAddress),
       ownerContent: await readOwnerContent(db, profile),
       ...(avatarCompletion && { avatarCompletion }),
     });
@@ -777,6 +781,13 @@ export function resolveGeneratedAgentGender(generated: {
   if (isAgentGender(generated.gender)) return generated.gender;
 
   throw new Error("Structured gender is required");
+}
+
+// The authenticated user has already passed the owner deletion check.
+function ownedAgentPublicHref(profile: typeof schema.agentProfiles.$inferSelect, walletAddress: string | null) {
+  return !isImportedSyntheticPlayer(walletAddress) && hasEligibleAgentContent(profile)
+    ? `/agents/${encodeURIComponent(profile.id)}`
+    : null;
 }
 
 function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {

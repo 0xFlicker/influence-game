@@ -11,7 +11,8 @@ import type {
   PublicPlayerProfile,
 } from "@/lib/api";
 import { PublicProfileShareButton } from "./public-profile-share-button";
-import { FeaturedAgents } from "./featured-agents";
+import { AgentCarousel } from "./agent-carousel";
+import profileStyles from "@/components/public-profile.module.css";
 import styles from "./public-player-profile.module.css";
 
 export function PublicPlayerProfileView({ profile }: { profile: PublicPlayerProfile }) {
@@ -29,32 +30,36 @@ export function PublicPlayerProfileView({ profile }: { profile: PublicPlayerProf
   ).slice(0, 4);
 
   return (
-    <div className={`${styles.profile} min-w-0 space-y-9 sm:space-y-12`}>
-      <header className={`${styles.hero} rounded-xl`}>
-        <div className="min-w-0 self-center px-6 py-7 sm:p-10">
-          <p className="text-sm font-medium text-text-secondary">Architect</p>
-          <h1 className="mt-2 break-words text-[clamp(2.45rem,5vw,4.5rem)] font-bold leading-[1.04] tracking-[-0.055em] text-text-primary">{identity.displayName}</h1>
-          {identity.handle && <p className="mt-3 break-all text-sm text-text-secondary">@{identity.handle}</p>}
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Link className="influence-button-secondary inline-flex min-h-11 items-center rounded-lg px-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" href={`${playerProfileHref(identity)}/history`}>Game history</Link>
-            <PublicProfileShareButton identity={identity} />
+    <div className={profileStyles.page}>
+      <header className={profileStyles.hero}>
+        <div className={profileStyles.heroInner}>
+          <div className={profileStyles.identity}>
+            <p className={profileStyles.eyebrow}>Architect</p>
+            <h1 className={profileStyles.title}>{identity.displayName}</h1>
+            {identity.handle && <p className="mt-4 text-sm text-text-secondary">@{identity.handle}</p>}
+            <div className={profileStyles.actions}>
+              <Link className={profileStyles.action} href={`${playerProfileHref(identity)}/history`}>Game history <span aria-hidden="true">↗</span></Link>
+              <PublicProfileShareButton identity={identity} />
+            </div>
           </div>
+          {featured.length > 0 && <AgentCarousel agents={featured} />}
         </div>
-        <FeaturedAgents agents={featured} />
       </header>
 
-      <AwardShelf awards={profile.awards ?? []} />
-      <div className="grid gap-7 lg:grid-cols-[1.5fr_1fr] lg:gap-10">
-        <CareerSection profile={profile} />
-        <section aria-labelledby="profile-werewolf" className="min-w-0 border-t border-white/15 pt-5">
-          <h2 id="profile-werewolf" className="text-xl font-semibold tracking-tight text-text-primary">Recent Werewolf record</h2>
-          <p className="mt-1 text-sm text-text-secondary">Faction outcomes from up to 20 public appearances</p>
-          {hasWerewolfRecord(profile.werewolfRecord) ? <WerewolfMetrics record={profile.werewolfRecord} />
-            : <p className="mt-4 text-sm text-text-secondary">No public Werewolf results yet.</p>}
-        </section>
+      <div className={profileStyles.content}>
+        {profile.awards?.length ? <div className={profileStyles.rules}><AwardShelf awards={profile.awards} inline /></div> : null}
+        <div className="grid gap-7 lg:grid-cols-[1.5fr_1fr] lg:gap-10">
+          <CareerSection profile={profile} />
+          <section aria-labelledby="profile-werewolf" className={profileStyles.rules}>
+            <h2 id="profile-werewolf" className="text-xl font-semibold tracking-tight text-text-primary">Recent Werewolf record</h2>
+            <p className="mt-1 text-sm text-text-secondary">Faction outcomes from up to 20 public appearances</p>
+            {hasWerewolfRecord(profile.werewolfRecord) ? <WerewolfMetrics record={profile.werewolfRecord} />
+              : <p className="mt-4 text-sm text-text-secondary">No public Werewolf results yet.</p>}
+          </section>
+        </div>
+        <CurrentSeasonSection profile={profile} />
+        <AgentRosterSection agents={agents} />
       </div>
-      <CurrentSeasonSection profile={profile} />
-      <AgentRosterSection agents={agents} />
     </div>
   );
 }
@@ -81,7 +86,7 @@ function CurrentSeasonSection({
   return (
     <section
       aria-labelledby="profile-current-season"
-      className="influence-panel min-w-0 overflow-hidden rounded-xl p-5 sm:p-6"
+      className={profileStyles.rules}
     >
       <SectionHeading
         id="profile-current-season"
@@ -114,7 +119,7 @@ function CurrentSeasonSection({
             <EmptyState>Not ranked in {currentSeason.season.name} yet.</EmptyState>
           )}
 
-          <div className="min-w-0 border-t border-white/10 pt-4">
+          <div className="min-w-0">
             <p className="influence-copy-muted text-xs font-semibold uppercase tracking-[0.14em]">
               Honors
             </p>
@@ -146,7 +151,7 @@ function CareerSection({ profile }: { profile: PublicPlayerProfile }) {
   return (
     <section
       aria-labelledby="profile-career"
-      className="min-w-0 border-t border-white/15 pt-5"
+      className={profileStyles.rules}
     >
       <h2 id="profile-career" className="text-xl font-semibold tracking-tight text-text-primary">Influence competitive record</h2>
       <dl className="mt-5 grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-5">
@@ -171,7 +176,7 @@ function AgentRosterSection({ agents }: { agents: PublicRosterAgent[] }) {
       aria-labelledby="profile-agent-roster"
       className="min-w-0"
     >
-      <div className="min-w-0 px-1">
+      <div className={profileStyles.rules}>
         <SectionHeading
           id="profile-agent-roster"
           title="Saved competitors"
@@ -184,15 +189,13 @@ function AgentRosterSection({ agents }: { agents: PublicRosterAgent[] }) {
       </div>
 
       {agents.length === 0 ? (
-        <div className="influence-panel-dashed mt-5 rounded-xl p-6 text-center">
-          <p className="influence-copy-muted text-sm">No active agents yet.</p>
-        </div>
+        <EmptyState>No active agents yet.</EmptyState>
       ) : (
-        <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className={`mt-5 ${styles.roster}`}>
           {agents.map((agent) => (
             <article
               key={agent.profileHref ?? agent.name}
-              className="influence-panel min-w-0 overflow-hidden rounded-xl p-5"
+              className={styles.rosterEntry}
             >
               <div className="flex min-w-0 items-center gap-4">
                 <AgentAvatarPreview
@@ -215,20 +218,22 @@ function AgentRosterSection({ agents }: { agents: PublicRosterAgent[] }) {
                 </div>
               </div>
 
-              {agent.competition.gamesPlayed > 0 && <section aria-label="Rated Influence" className="mt-4 border-t border-white/10 pt-3">
-                <h4 className="text-sm font-medium text-text-primary">Rated Influence</h4>
-                <dl className="mt-3 grid min-w-0 grid-cols-3 gap-3">
-                  <Metric label="Games" value={agent.competition.gamesPlayed} />
-                  <Metric label="Wins" value={agent.competition.wins} />
-                  <Metric label="Win rate" value={formatWinRate(agent.competition.winRate)} />
-                </dl>
-              </section>}
-              {hasWerewolfRecord(agent.werewolfRecord) && <section aria-label="Recent Werewolf" className="mt-4 border-t border-white/10 pt-3">
-                <h4 className="text-sm font-medium text-text-primary">Werewolf in this architect’s recent games</h4>
-                <WerewolfMetrics record={agent.werewolfRecord} />
-              </section>}
-              {agent.competition.gamesPlayed === 0 && !hasWerewolfRecord(agent.werewolfRecord) &&
-                <p className="mt-3 text-sm text-text-secondary">No public results yet.</p>}
+              <div className={styles.rosterRecords}>
+                {agent.competition.gamesPlayed > 0 && <section aria-label="Rated Influence">
+                  <h4 className="text-sm font-medium text-text-primary">Rated Influence</h4>
+                  <dl className="mt-3 grid min-w-0 grid-cols-3 gap-3">
+                    <Metric label="Games" value={agent.competition.gamesPlayed} />
+                    <Metric label="Wins" value={agent.competition.wins} />
+                    <Metric label="Win rate" value={formatWinRate(agent.competition.winRate)} />
+                  </dl>
+                </section>}
+                {hasWerewolfRecord(agent.werewolfRecord) && <section aria-label="Recent Werewolf">
+                  <h4 className="text-sm font-medium text-text-primary">Werewolf in this architect’s recent games</h4>
+                  <WerewolfMetrics record={agent.werewolfRecord} />
+                </section>}
+                {agent.competition.gamesPlayed === 0 && !hasWerewolfRecord(agent.werewolfRecord) &&
+                  <p className="text-sm text-text-secondary">No public results yet.</p>}
+              </div>
             </article>
           ))}
         </div>
@@ -286,9 +291,7 @@ function Honor({ children }: { children: string }) {
 
 function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="influence-panel-dashed mt-5 rounded-lg p-5 text-center">
-      <p className="influence-copy-muted text-sm">{children}</p>
-    </div>
+    <p className="mt-3 text-sm text-text-secondary">{children}</p>
   );
 }
 

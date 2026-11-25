@@ -1,6 +1,6 @@
 # House short links
 
-All existing share controls (replay moments, trailers, House Cuts, public profiles)
+All existing share controls (replay moments, trailers, House Cuts, public agent and architect profiles)
 use `https://thehouse.game/s/<code>`. The ten-character cryptographically random
 Base58 code omits ambiguous characters. No external shortener or new domain is
 required. The square-with-up-arrow icon retains an accessible label and tooltip.
@@ -31,6 +31,18 @@ lets `navigator.share` work even when the creation request took longer than brow
 user activation allows. A creation failure shows an explicit retry; retries retain
 the original captured moment. It never silently publishes the long URL. Closing
 the dialog invalidates pending UI results.
+
+## Agent profiles
+
+Dashboard → Agents opens the public profile of each published agent and offers
+**Share** on the same entry. The agent profile also offers **Share** beside
+**Game history**. Both actions create a short link to `/agents/:id`, which readers
+can open signed out. The link resolves only while the agent remains public.
+
+Agents awaiting their first publication open in the edit workspace. The
+Dashboard activity list opens the editor to show submission status. Owners
+can also edit from the public profile, and account-scoped analysis remains
+available through **Analyze**.
 
 ## Automated abuse protection
 
