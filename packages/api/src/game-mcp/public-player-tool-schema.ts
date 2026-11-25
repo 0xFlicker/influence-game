@@ -47,6 +47,13 @@ const competitionSchema = closedObject(
     winRate: { type: "number" },
   },
 );
+const werewolfRecordKeys = ["wins", "losses", "draws"] as const;
+const werewolfRecordSchema = closedObject(werewolfRecordKeys, {
+  wins: { type: "integer", minimum: 0 },
+  losses: { type: "integer", minimum: 0 },
+  draws: { type: "integer", minimum: 0 },
+});
+const agentBodyPathPattern = "^/api/public/agents/[A-Za-z0-9_-]{1,128}/art\\?kind=full-body$";
 
 const awardKeys = ["id", "code", "title", "theme", "awardedAt", "sourceSeasonId", "sourceEventId"] as const;
 const awardSchema = closedObject(awardKeys, {
@@ -55,10 +62,11 @@ const awardSchema = closedObject(awardKeys, {
 });
 
 const agentSchema = closedObject(
-  ["name", "avatarUrl", "role", "competition", "awards", "profileHref"],
+  ["name", "avatarUrl", "fullBodyImageUrl", "role", "competition", "werewolfRecord", "awards", "profileHref"],
   {
     name: { type: "string" },
     avatarUrl: nullableStringSchema,
+    fullBodyImageUrl: { anyOf: [{ type: "string", pattern: agentBodyPathPattern }, { type: "null" }] },
     role: {
       anyOf: [
         publicRoleSchema,
@@ -67,6 +75,7 @@ const agentSchema = closedObject(
     },
     profileHref: { type: "string", pattern: "^/agents/[A-Za-z0-9_-]{1,128}$" },
     competition: competitionSchema,
+    werewolfRecord: werewolfRecordSchema,
     awards: { type: "array", items: awardSchema },
   },
 );
@@ -149,7 +158,7 @@ const currentSeasonSchema = closedObject(
 );
 
 const profileSchema = closedObject(
-  ["identity", "currentSeason", "career", "recentResults", "agents", "awards"],
+  ["identity", "currentSeason", "career", "werewolfRecord", "recentResults", "agents", "awards"],
   {
     identity: closedObject(
       ["publicId", "handle", "displayName"],
@@ -176,6 +185,7 @@ const profileSchema = closedObject(
       },
     ),
     recentResults: { type: "array", items: resultSchema },
+    werewolfRecord: werewolfRecordSchema,
     agents: { type: "array", items: agentSchema },
     awards: { type: "array", items: awardSchema },
   },
@@ -247,7 +257,7 @@ export function assertPublicPlayerProfileEnvelope(
 function assertProfile(value: unknown): void {
   const profile = exactObject(
     value,
-    ["identity", "currentSeason", "career", "recentResults", "agents", "awards"],
+    ["identity", "currentSeason", "career", "werewolfRecord", "recentResults", "agents", "awards"],
     "profile",
   );
   const identity = exactObject(
@@ -273,6 +283,15 @@ function assertProfile(value: unknown): void {
   arrayValue(profile.agents, "profile.agents")
     .forEach((agent, index) => assertAgent(agent, index));
   assertAwards(profile.awards, "profile.awards");
+  assertWerewolfRecord(profile.werewolfRecord, "profile.werewolfRecord");
+}
+
+function assertWerewolfRecord(value: unknown, path: string): void {
+  const record = exactObject(value, werewolfRecordKeys, path);
+  for (const key of werewolfRecordKeys) {
+    const count = record[key];
+    if (typeof count !== "number" || !Number.isInteger(count) || count < 0) throw new Error(`Invalid ${path}.${key}`);
+  }
 }
 
 function assertAwards(value: unknown, path: string): void {
@@ -365,7 +384,7 @@ function assertAgent(value: unknown, index: number): void {
   const path = `profile.agents[${index}]`;
   const agent = exactObject(
     value,
-    ["name", "avatarUrl", "role", "competition", "awards", "profileHref"],
+    ["name", "avatarUrl", "fullBodyImageUrl", "role", "competition", "werewolfRecord", "awards", "profileHref"],
     path,
   );
   assertAwards(agent.awards, `${path}.awards`);
@@ -373,6 +392,10 @@ function assertAgent(value: unknown, index: number): void {
   if (!/^\/agents\/[A-Za-z0-9_-]{1,128}$/.test(agent.profileHref as string)) throw new Error("Invalid public agent link");
   stringValue(agent.name, `${path}.name`);
   nullableString(agent.avatarUrl, `${path}.avatarUrl`);
+  if (agent.fullBodyImageUrl !== null && agent.fullBodyImageUrl !== `/api/public${agent.profileHref}/art?kind=full-body`) {
+    throw new Error("Invalid public full-body artwork link");
+  }
+  assertWerewolfRecord(agent.werewolfRecord, `${path}.werewolfRecord`);
   if (agent.role !== null) {
     const role = exactObject(agent.role, ["key", "label"], `${path}.role`);
     enumValue(role.key, PUBLIC_ROLE_KEYS, `${path}.role.key`);

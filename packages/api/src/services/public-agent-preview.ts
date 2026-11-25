@@ -41,7 +41,11 @@ export interface PublicReplayAgentPreview extends PublicAgentPreview {
 }
 
 export interface PublicPlayerCompetitionFacts {
-  agents: PublicAgentPreview[];
+  agents: Array<PublicAgentPreview & { fullBodyImageUrl: string | null }>;
+}
+
+export function publicAgentFullBodyHref(id: string, sourceUrl: string | null): string | null {
+  return sourceUrl?.trim() ? `/api/public/agents/${encodeURIComponent(id)}/art?kind=full-body` : null;
 }
 
 interface PublicAgentProfileRow {
@@ -140,6 +144,7 @@ export async function getPublicPlayerCompetitionFacts(
     id: schema.agentProfiles.id,
     name: schema.agentProfiles.name,
     avatarUrl: schema.agentProfiles.avatarUrl,
+    fullBodyReferenceUrl: schema.agentProfiles.fullBodyReferenceUrl,
     personaKey: schema.agentProfiles.personaKey,
   }).from(schema.agentProfiles)
     .where(and(eq(schema.agentProfiles.userId, internalUserId), publiclyVisibleAgentContent()))
@@ -158,7 +163,11 @@ export async function getPublicPlayerCompetitionFacts(
     getPublicAgentCompetitionAggregates(db, profileIds, internalUserId),
     publicAgentAwardsByIds(db, profileIds),
   ]);
-  return { agents: profiles.map(profile => ({ ...buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id)), awards: awardsByAgent.get(profile.id) ?? [] })) };
+  return { agents: profiles.map(profile => ({
+    ...buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id)),
+    fullBodyImageUrl: publicAgentFullBodyHref(profile.id, profile.fullBodyReferenceUrl),
+    awards: awardsByAgent.get(profile.id) ?? [],
+  })) };
 }
 
 async function getPublicAgentCompetitionAggregates(

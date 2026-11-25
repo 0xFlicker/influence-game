@@ -1,5 +1,5 @@
 import { publicAccountAwards } from "./awards.js";
-import type { HouseParticipation, ParticipationFilter } from "@influence/engine/house-participation";
+import { summarizeWerewolfParticipation, type HouseParticipation, type ParticipationFilter, type WerewolfParticipationRecord } from "@influence/engine/house-participation";
 import { readHouseParticipation } from "./house-participation.js";
 import type { DrizzleDB } from "../db/index.js";
 import {
@@ -45,7 +45,8 @@ export interface PublicPlayerProfile {
     winRate: number;
   };
   recentResults: HouseParticipation[];
-  agents: PublicAgentPreview[];
+  werewolfRecord: WerewolfParticipationRecord;
+  agents: Array<PublicAgentPreview & { fullBodyImageUrl: string | null; werewolfRecord: WerewolfParticipationRecord }>;
 }
 
 export type PublicPlayerProfileEnvelope =
@@ -72,10 +73,11 @@ export async function getPublicPlayerProfile(
   const player = await resolvePublicPlayer(db, identifier);
   if (!player) return PUBLIC_PLAYER_NOT_FOUND;
 
-  const [competition, currentSeasonDashboard, recentResults, awards] = await Promise.all([
+  const [competition, currentSeasonDashboard, recentResults, recentWerewolfResults, awards] = await Promise.all([
     getPublicPlayerCompetitionFacts(db, player.internalUserId),
     getCurrentPublicSeasonDashboard(db),
     readHouseParticipation(db, player.internalUserId, { publicOnly: true, gameKind, limit: 5 }),
+    readHouseParticipation(db, player.internalUserId, { publicOnly: true, gameKind: "werewolf", limit: 20 }),
     publicAccountAwards(db, player.internalUserId),
   ]);
   const architectStanding = currentSeasonDashboard?.architectStandings
@@ -126,7 +128,11 @@ export async function getPublicPlayerProfile(
         winRate: gamesPlayed > 0 ? player.career.wins / gamesPlayed : 0,
       },
       recentResults,
-      agents: competition.agents,
+      werewolfRecord: summarizeWerewolfParticipation(recentWerewolfResults),
+      agents: competition.agents.map(agent => ({
+        ...agent,
+        werewolfRecord: summarizeWerewolfParticipation(recentWerewolfResults.filter(entry => `/agents/${encodeURIComponent(entry.agentProfileId ?? "")}` === agent.profileHref)),
+      })),
     },
   };
 }

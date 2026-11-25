@@ -8,10 +8,10 @@ import { SeasonZeroMark } from "./award-shelf";
 import { createAgentAvatarPreviewState, isAgentAvatarPreviewOpen, reduceAgentAvatarPreviewState } from "./agent-avatar-preview-model";
 
 /** Icon-only roster achievements. Hover/focus previews; tap/click pins; Escape/outside press dismisses. */
-export function AwardIcons({ awards, agentName }: { awards: PublicAward[]; agentName: string }) {
+export function AwardIcons({ awards, agentName, inline = false }: { awards: PublicAward[]; agentName: string; inline?: boolean }) {
   if (!awards.length) return null;
-  return <ul aria-label={`${agentName} badges`} className="mt-2 flex flex-wrap gap-1">
-    {awards.map(award => <li key={award.id}><AwardIcon award={award} agentName={agentName} /></li>)}
+  return <ul role="list" aria-label={`${agentName} badges`} className={inline ? "inline" : "mt-2 flex flex-wrap gap-1"}>
+    {awards.map(award => <li key={award.id} className={inline ? "mr-1 inline-flex align-middle" : undefined}><AwardIcon award={award} agentName={agentName} /></li>)}
   </ul>;
 }
 

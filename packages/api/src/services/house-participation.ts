@@ -39,7 +39,7 @@ export function parseHistoryCursor(raw: string): HistoryCursor | null {
 }
 
 /** Bounds canonical result reconstruction to one owner-scoped page, including all owned seats. */
-export async function readHouseParticipationPage(db: DrizzleDB, ownerId: string, limit: number, cursor: HistoryCursor | null, gameKind: ParticipationFilter = "all") {
+export async function readHouseParticipationPage(db: DrizzleDB, ownerId: string, limit: number, cursor: HistoryCursor | null, gameKind: ParticipationFilter = "all", { publicOnly = false } = {}) {
   return db.transaction(async tx => {
     // Naive historical timestamps are interpreted as UTC, consistently across DB sessions.
     await tx.execute(sql`SET LOCAL TIME ZONE 'UTC'`);
@@ -50,7 +50,10 @@ export async function readHouseParticipationPage(db: DrizzleDB, ownerId: string,
           CASE WHEN config IS JSON OBJECT THEN config::jsonb ELSE NULL END AS cfg
         FROM games WHERE status = 'completed' AND ended_at IS NOT NULL AND hidden_at IS NULL
       ), valid_games AS NOT MATERIALIZED (
-        SELECT * FROM visible_games WHERE cfg IS NOT NULL AND (NOT (cfg ? 'visibility') OR cfg->'visibility' IN ('"public"'::jsonb, '"unlisted"'::jsonb))
+        SELECT * FROM visible_games WHERE cfg IS NOT NULL AND (
+          NOT (cfg ? 'visibility') OR cfg->'visibility' = '"public"'::jsonb
+          OR (${!publicOnly} AND cfg->'visibility' = '"unlisted"'::jsonb)
+        )
       ), owned AS (
         SELECT g.ended_at AS completed_at, g.id AS game_id, p.id AS player_id
         FROM valid_games g JOIN game_players p ON p.game_id = g.id
@@ -74,7 +77,7 @@ export async function readHouseParticipationPage(db: DrizzleDB, ownerId: string,
       LIMIT ${limit + 1}
     `);
     const page = keys.slice(0, limit);
-    const items = page.length ? await readParticipationSnapshot(tx, ownerId, { gameKind }, page.map(k => ({ gameId: k.game_id, playerId: k.player_id }))) : [];
+    const items = page.length ? await readParticipationSnapshot(tx, ownerId, { gameKind, publicOnly }, page.map(k => ({ gameId: k.game_id, playerId: k.player_id }))) : [];
     const last = page.at(-1);
     const nextCursor = keys.length > limit && last ? Buffer.from(JSON.stringify([3, gameKind, last.has_instant, last.epoch, last.game_id, last.player_id])).toString("base64url") : null;
     return { items, nextCursor };

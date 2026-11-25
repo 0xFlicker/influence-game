@@ -1,0 +1,75 @@
+.hero {
+  display: grid;
+  align-items: center;
+  border: 1px solid rgb(var(--border-strong) / .55);
+  background: linear-gradient(125deg, rgb(var(--surface-raised)), rgb(var(--surface)));
+}
+
+.stage {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  height: var(--profile-stage-height, clamp(17.5rem, 100vw, 25rem));
+  background: radial-gradient(ellipse at 50% 58%, rgb(var(--phase-rgb) / .24), transparent 68%), rgb(var(--surface));
+}
+
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 9% 14% -20%;
+  border: 1px solid rgb(var(--phase-rgb) / .32);
+  border-radius: 50% 50% 0 0;
+  background: linear-gradient(rgb(var(--phase-rgb) / .14), transparent 72%);
+}
+
+.bodyImage {
+  object-fit: contain;
+  padding: 1rem 1.25rem;
+}
+
+.portrait {
+  display: grid;
+  justify-content: start;
+  padding: 0 1.5rem 1.75rem;
+}
+
+.stagePortrait {
+  justify-content: center;
+  align-content: center;
+}
+
+.history :global(.influence-copy-muted) {
+  color: rgb(var(--text-secondary));
+}
+
+.history [aria-current="page"] {
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--accent-rgb) / .65);
+  background: rgb(var(--accent-rgb) / .16);
+}
+
+.history [aria-current="page"]:hover {
+  background: rgb(var(--accent-rgb) / .24);
+}
+
+@media (min-width: 768px) {
+  .hero {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+
+  .stage {
+    align-self: stretch;
+    height: auto;
+    min-height: var(--profile-stage-height, clamp(23rem, 56svh, 32rem));
+    border-left: 1px solid rgb(var(--border-strong) / .45);
+  }
+
+  .bodyImage {
+    padding: 1.5rem 2rem;
+  }
+
+  .portrait {
+    justify-content: center;
+    padding: 2rem;
+  }
+}

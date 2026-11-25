@@ -4,6 +4,7 @@ import { assertPublicPlayerProfileEnvelope } from "../game-mcp/public-player-too
 import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -156,6 +157,8 @@ describe("public player profile", () => {
         profileHref: expect.stringMatching(/^\/agents\/[A-Za-z0-9_-]+$/),
         awards: [],
         avatarUrl: null,
+        fullBodyImageUrl: null,
+        werewolfRecord: { wins: 0, losses: 0, draws: 0 },
         role: null,
         competition: {
           gamesPlayed: 0,
@@ -168,6 +171,8 @@ describe("public player profile", () => {
         profileHref: `/agents/${fixture.zuluProfileId}`,
         awards: [],
         avatarUrl: await contentImageFixture("pfp/zulu.png"),
+        fullBodyImageUrl: null,
+        werewolfRecord: { wins: 0, losses: 0, draws: 0 },
         role: {
           key: "strategic",
           label: "Strategic",
@@ -213,6 +218,62 @@ describe("public player profile", () => {
       schemaVersion: 1,
       status: "found",
       profile: { identity: { publicId: fixture.publicId, handle: "oxflick" } },
+    });
+  });
+
+  test("public architect history excludes private games before paging and counts public Werewolf factions", async () => {
+    const fixture = await seedPublicPlayerFixture(db);
+    for (let index = 0; index < 22; index++) {
+      const id = `public-history-${String(index).padStart(2, "0")}`;
+      await db.insert(schema.games).values({
+        id, slug: id, config: index === 21 ? '{"visibility":"unlisted"}' : "{}",
+        status: "completed", endedAt: "2026-08-01T00:00:00.000Z",
+      });
+      await db.insert(schema.gamePlayers).values({ id: `${id}-seat`, gameId: id, userId: fixture.userId,
+        agentProfileId: fixture.zuluProfileId, persona: '{"name":"Zulu"}', agentConfig: "{}" });
+    }
+    const gameId = randomUUID();
+    const events = await completedWerewolfResultsFixture("village", gameId);
+    const [start] = events;
+    const outcome = events.find(event => event.type === "werewolf.completed");
+    if (start?.type !== "werewolf.started" || !outcome) throw new Error("Invalid Werewolf fixture");
+    const winner = start.payload.players.find(player => outcome.payload.winnerIds.includes(player.id))!;
+    winner.agentProfileId = fixture.zuluProfileId;
+    await db.insert(schema.games).values({
+      id: gameId, slug: "public-werewolf-architect", gameKind: "werewolf",
+      config: "{}", status: "completed", endedAt: "2026-08-02T00:00:00.000Z",
+    });
+    await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId, sequence: event.sequence, event })));
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "/avatars/personas/full-body-v1/strategic.webp" })
+      .where(eq(schema.agentProfiles.id, fixture.zuluProfileId));
+
+    const app = createPublicPlayerRoutes(db);
+    const history = "/api/players/flick/history";
+    const firstResponse = await app.request(history);
+    expect(firstResponse.status).toBe(200);
+    expect(firstResponse.headers.get("cache-control")).toBe("no-store");
+    type Page = { items: { gameSlug: string }[]; nextCursor: string | null };
+    const first = await firstResponse.json() as Page;
+    expect(first.items).toHaveLength(20);
+    expect(first.items[0]?.gameSlug).toBe("public-werewolf-architect");
+    expect(first.nextCursor).not.toBeNull();
+    const second = await (await app.request(`${history}?cursor=${first.nextCursor}`)).json() as Page;
+    const gameSlugs = [...first.items, ...second.items].map(item => item.gameSlug);
+    expect(new Set(gameSlugs).size).toBe(gameSlugs.length);
+    expect(gameSlugs).not.toContain("public-history-21");
+    expect(gameSlugs).not.toContain("hidden");
+    expect((await app.request(`${history}?game=werewolf&cursor=${first.nextCursor}`)).status).toBe(400);
+    const wolves = await (await app.request(`${history}?game=werewolf`)).json() as Page;
+    expect(wolves.items.map(item => item.gameSlug)).toEqual(["public-werewolf-architect"]);
+    expect((await app.request("/api/players/missing-architect/history")).status).toBe(404);
+    const profile = await getPublicPlayerProfile(db, "flick", "influence");
+    assertPublicPlayerProfileEnvelope(profile);
+    assertNoForbiddenPublicData(profile);
+    if (profile.status !== "found") throw new Error("Expected found profile");
+    expect(profile.profile.werewolfRecord).toEqual({ wins: 1, losses: 0, draws: 0 });
+    expect(profile.profile.agents.find(agent => agent.name === "Zulu")).toMatchObject({
+      fullBodyImageUrl: `/api/public/agents/${fixture.zuluProfileId}/art?kind=full-body`,
+      werewolfRecord: { wins: 1, losses: 0, draws: 0 },
     });
   });
 

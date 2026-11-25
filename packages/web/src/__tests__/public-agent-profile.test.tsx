@@ -8,9 +8,10 @@ import type { PublicAgentProfile } from "../lib/api";
 import { generateMetadata } from "../app/(site)/agents/[id]/page";
 
 const profile: PublicAgentProfile = {
-  name: "Public Agent", avatarUrl: null, role: null, profileHref: "/agents/agent-1",
+  name: "Public Agent", avatarUrl: "/avatars/personas/strategic.png", fullBodyImageUrl: null, role: null, profileHref: "/agents/agent-1",
   owner: { publicId: "owner-1", handle: "architect", displayName: "Architect" },
   competition: { gamesPlayed: 4, wins: 1, winRate: .25 },
+  werewolfRecord: { wins: 0, losses: 0, draws: 0 },
   awards: [{ id: "award-1", code: "season-0-agent-participant", title: "Season 0 Participant", theme: "season-0", awardedAt: "2026-11-03T00:00:00Z", sourceSeasonId: "s0", sourceEventId: null }], recentResults: [],
 };
 test("public agent view presents honors, correctly scoped stats and accessible history filters", () => {
@@ -20,10 +21,29 @@ test("public agent view presents honors, correctly scoped stats and accessible h
   expect(html).toContain("Season 0 Participant");
   expect(html).toContain("Rated Influence record");
   expect(html).toContain("25%");
+  expect(html).toContain("Recent Werewolf record");
+  expect(html).toContain("No public Werewolf results yet.");
+  expect(html).toContain('src="/avatars/personas/strategic.png"');
+  expect(html).toContain('aria-label="View Public Agent portrait and stats"');
   expect(html).toContain('href="/agents/agent-1?game=werewolf"');
   expect(html).toContain('aria-current="page"');
   expect(html).toContain("No completed games in this history yet.");
   expect(html).not.toContain("Sign in to");
+});
+test("public agent view prioritizes saved full-body artwork and shows faction outcomes alongside Influence", () => {
+  const fullBodyImageUrl = "/api/public/agents/agent-1/art?kind=full-body";
+  const html = renderToString(<PublicAgentProfileView profile={{
+    ...profile,
+    fullBodyImageUrl,
+    werewolfRecord: { wins: 2, losses: 3, draws: 1 },
+  }} gameKind="influence" />);
+  expect(html).toContain(`src="${fullBodyImageUrl}"`);
+  expect(html).toContain('alt="Full-body portrait of Public Agent"');
+  expect(html).not.toContain('src="/avatars/personas/strategic.png"');
+  expect(html).toContain("25%");
+  expect(html).toContain("Losses");
+  expect(html).toContain("Draws");
+  expect(html).not.toContain("No public Werewolf results yet.");
 });
 test("agent name navigation validates canonical targets without wrapping sibling controls", () => {
   const html = renderToString(<div><AgentProfileLink agentId="agent-1">Agent</AgentProfileLink><button>Portrait</button></div>);

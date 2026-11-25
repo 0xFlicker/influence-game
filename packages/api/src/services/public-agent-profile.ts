@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import type { ParticipationFilter } from "@influence/engine/house-participation";
+import { summarizeWerewolfParticipation, type ParticipationFilter } from "@influence/engine/house-participation";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { publiclyVisibleAgentContent } from "./agent-content-eligibility.js";
-import { getPublicReplayAgentPreviewsByProfileIds } from "./public-agent-preview.js";
+import { getPublicReplayAgentPreviewsByProfileIds, publicAgentFullBodyHref } from "./public-agent-preview.js";
 import { publicAgentAwards } from "./awards.js";
 import { readHouseParticipation } from "./house-participation.js";
 
@@ -10,17 +10,24 @@ import { readHouseParticipation } from "./house-participation.js";
 export async function getPublicAgentProfile(db: DrizzleDB, id: string, gameKind: ParticipationFilter = "all") {
   const missing = { schemaVersion: 1 as const, status: "not_found" as const };
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return missing;
-  const [identity] = await db.select({ ownerId: schema.agentProfiles.userId }).from(schema.agentProfiles)
+  const [identity] = await db.select({
+    ownerId: schema.agentProfiles.userId,
+    fullBodyReferenceUrl: schema.agentProfiles.fullBodyReferenceUrl,
+  }).from(schema.agentProfiles)
     .where(and(eq(schema.agentProfiles.id, id), publiclyVisibleAgentContent()));
   if (!identity) return missing;
   const preview = (await getPublicReplayAgentPreviewsByProfileIds(db, [id])).get(id);
   if (!preview) return missing;
-  const [awards, recentResults] = await Promise.all([
+  const history = { agentProfileId: id, publicOnly: true, limit: 20 };
+  const recentResultsRead = readHouseParticipation(db, identity.ownerId, { ...history, gameKind });
+  const [awards, recentResults, werewolfHistory] = await Promise.all([
     publicAgentAwards(db, id),
-    readHouseParticipation(db, identity.ownerId, { agentProfileId: id, publicOnly: true, gameKind, limit: 20 }),
+    recentResultsRead,
+    gameKind === "werewolf" ? recentResultsRead : readHouseParticipation(db, identity.ownerId, { ...history, gameKind: "werewolf" }),
   ]);
   return { schemaVersion: 1 as const, status: "found" as const, profile: {
     name: preview.name, avatarUrl: preview.avatarUrl, role: preview.role, profileHref: preview.profileHref!,
-    owner: preview.owner ?? null, competition: preview.competition, awards, recentResults,
+    fullBodyImageUrl: publicAgentFullBodyHref(id, identity.fullBodyReferenceUrl),
+    owner: preview.owner ?? null, competition: preview.competition, werewolfRecord: summarizeWerewolfParticipation(werewolfHistory), awards, recentResults,
   } };
 }
