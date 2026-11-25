@@ -13,19 +13,15 @@ import { FARCASTER_PRODUCTION_ORIGIN, serializeMiniAppEmbedMeta } from "@/lib/fa
 
 interface Props {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ game?: string }>;
 }
 
-const getCachedPublicPlayerProfile = cache(async (identifier: string, kind: "all" | "influence" | "werewolf") => (
-  getServerPublicPlayerProfile(identifier, kind)
-));
+const getCachedPublicPlayerProfile = cache(getServerPublicPlayerProfile);
 
 async function getProfileOrNotFound(
   identifier: string,
-  kind: "all" | "influence" | "werewolf" = "all",
 ): Promise<PublicPlayerProfile> {
   try {
-    const envelope = await getCachedPublicPlayerProfile(identifier, kind);
+    const envelope = await getCachedPublicPlayerProfile(identifier);
     if (envelope.status === "not_found") notFound();
     return envelope.profile;
   } catch (error) {
@@ -36,10 +32,9 @@ async function getProfileOrNotFound(
   }
 }
 
-export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const game = (await searchParams)?.game;
-  const profile = await getProfileOrNotFound(id, game === "influence" || game === "werewolf" ? game : "all");
+  const profile = await getProfileOrNotFound(id);
   const canonical = playerProfileHref(profile.identity);
   const title = `${profile.identity.displayName} — The House`;
   const description =
@@ -63,21 +58,19 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       description,
       images,
     },
-    other: { "fc:miniapp": serializeMiniAppEmbedMeta(process.env.WEB_BASE_URL?.trim() || FARCASTER_PRODUCTION_ORIGIN, { path: `${canonical}${game === "influence" || game === "werewolf" ? `?game=${game}` : ""}`, imagePath: `${canonical}/card-image?format=farcaster`, buttonTitle: "View player" }) },
+    other: { "fc:miniapp": serializeMiniAppEmbedMeta(process.env.WEB_BASE_URL?.trim() || FARCASTER_PRODUCTION_ORIGIN, { path: canonical, imagePath: `${canonical}/card-image?format=farcaster`, buttonTitle: "View player" }) },
   };
 }
 
-export default async function PublicPlayerProfilePage({ params, searchParams }: Props) {
+export default async function PublicPlayerProfilePage({ params }: Props) {
   const { id } = await params;
-  const game = (await searchParams)?.game;
-  const kind = game === "influence" || game === "werewolf" ? game : "all";
-  const profile = await getProfileOrNotFound(id, kind);
+  const profile = await getProfileOrNotFound(id);
 
   return (
-    <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
+    <div className="flex min-h-dvh min-w-0 flex-col overflow-x-hidden">
       <Nav />
       <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
-        <PublicPlayerProfileView profile={profile} gameKind={kind} />
+        <PublicPlayerProfileView profile={profile} />
       </main>
     </div>
   );

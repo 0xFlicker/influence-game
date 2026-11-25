@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
-import type { ParticipationFilter } from "@influence/engine/house-participation";
+import { summarizeWerewolfParticipation, type ParticipationFilter } from "@influence/engine/house-participation";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { publiclyVisibleAgentContent } from "./agent-content-eligibility.js";
-import { getPublicReplayAgentPreviewsByProfileIds } from "./public-agent-preview.js";
+import { getPublicReplayAgentPreviewsByProfileIds, publicAgentFullBodyHref } from "./public-agent-preview.js";
 import { publicAgentAwards } from "./awards.js";
 import { readHouseParticipation } from "./house-participation.js";
 
@@ -25,18 +25,9 @@ export async function getPublicAgentProfile(db: DrizzleDB, id: string, gameKind:
     recentResultsRead,
     gameKind === "werewolf" ? recentResultsRead : readHouseParticipation(db, identity.ownerId, { ...history, gameKind: "werewolf" }),
   ]);
-  const werewolfRecord = { wins: 0, losses: 0, draws: 0 };
-  for (const entry of werewolfHistory) {
-    if (entry.gameKind !== "werewolf" || !entry.result) continue;
-    switch (entry.result.outcome) {
-      case "win": werewolfRecord.wins++; break;
-      case "loss": werewolfRecord.losses++; break;
-      case "draw": werewolfRecord.draws++; break;
-    }
-  }
   return { schemaVersion: 1 as const, status: "found" as const, profile: {
     name: preview.name, avatarUrl: preview.avatarUrl, role: preview.role, profileHref: preview.profileHref!,
-    fullBodyImageUrl: identity.fullBodyReferenceUrl?.trim() ? `/api/public/agents/${encodeURIComponent(id)}/art?kind=full-body` : null,
-    owner: preview.owner ?? null, competition: preview.competition, werewolfRecord, awards, recentResults,
+    fullBodyImageUrl: publicAgentFullBodyHref(id, identity.fullBodyReferenceUrl),
+    owner: preview.owner ?? null, competition: preview.competition, werewolfRecord: summarizeWerewolfParticipation(werewolfHistory), awards, recentResults,
   } };
 }

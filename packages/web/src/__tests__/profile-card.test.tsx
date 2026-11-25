@@ -10,7 +10,8 @@ const agent: PublicAgentProfile = { name: "Test Agent", profileHref: "/agents/ag
   fullBodyImageUrl: null, owner: null, competition: { gamesPlayed: 0, wins: 0, winRate: 0 },
   werewolfRecord: { wins: 0, losses: 0, draws: 0 }, awards: [], recentResults: [] };
 const player: PublicPlayerProfile = { identity: { publicId: "p1", handle: "player", displayName: "Test Player" }, currentSeason: null,
-  career: { rating: 1000, peakRating: 1000, gamesPlayed: 0, wins: 0, winRate: 0 }, recentResults: [], agents: [agent] };
+  career: { rating: 1000, peakRating: 1000, gamesPlayed: 0, wins: 0, winRate: 0 }, recentResults: [],
+  werewolfRecord: { wins: 0, losses: 0, draws: 0 }, agents: [agent] };
 
 test("cards render PNGs using only fixed public artwork routes, preferring the body for agents", async () => {
   const original = globalThis.fetch, requests: string[] = [];

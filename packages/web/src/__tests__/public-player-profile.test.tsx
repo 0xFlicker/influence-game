@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import PublicPlayerProfilePage, {
   generateMetadata,
 } from "../app/(site)/profile/[id]/page";
+import PublicPlayerHistoryPage from "../app/(site)/profile/[id]/history/page";
 import PublicPlayerProfileError from "../app/(site)/profile/[id]/error";
 import PublicPlayerProfileLoading from "../app/(site)/profile/[id]/loading";
 import PublicPlayerProfileNotFound from "../app/(site)/profile/[id]/not-found";
@@ -94,6 +95,7 @@ const profileFixture: PublicPlayerProfile = {
     wins: 5,
     winRate: 0.625,
   },
+  werewolfRecord: { wins: 3, losses: 2, draws: 1 },
   recentResults: [
     {
       gameSlug: "edge-smoke-dusk",
@@ -107,6 +109,8 @@ const profileFixture: PublicPlayerProfile = {
     {
       name: "Atlas",
       avatarUrl: "https://cdn.example.test/atlas.png",
+      fullBodyImageUrl: "/api/public/agents/atlas/art?kind=full-body",
+      werewolfRecord: { wins: 3, losses: 2, draws: 1 },
       role: { key: "strategic", label: "Strategic" },
       competition: {
         gamesPlayed: 8,
@@ -117,6 +121,8 @@ const profileFixture: PublicPlayerProfile = {
     {
       name: "Zeta",
       avatarUrl: null,
+      fullBodyImageUrl: null,
+      werewolfRecord: { wins: 0, losses: 0, draws: 0 },
       role: null,
       competition: {
         gamesPlayed: 0,
@@ -138,27 +144,32 @@ function foundEnvelope(
 }
 
 describe("public player profile", () => {
-  it("renders the public resume in source order with every non-navigational agent", () => {
+  it("features published artwork, links to public history, and shows both records", () => {
     const html = renderToString(<PublicPlayerProfileView profile={profileFixture} />);
 
     const identityIndex = html.indexOf("Flick");
     const seasonIndex = html.indexOf("Influence season");
     const careerIndex = html.indexOf("Influence competitive record");
     const resultsIndex = html.indexOf("Game history");
-    const rosterIndex = html.indexOf("Agent roster");
+    const rosterIndex = html.indexOf("Saved competitors");
 
     expect(identityIndex).toBeGreaterThanOrEqual(0);
-    expect(seasonIndex).toBeGreaterThan(identityIndex);
-    expect(careerIndex).toBeGreaterThan(seasonIndex);
-    expect(resultsIndex).toBeGreaterThan(careerIndex);
-    expect(rosterIndex).toBeGreaterThan(resultsIndex);
+    expect(resultsIndex).toBeGreaterThan(identityIndex);
+    expect(careerIndex).toBeGreaterThan(resultsIndex);
+    expect(seasonIndex).toBeGreaterThan(careerIndex);
+    expect(rosterIndex).toBeGreaterThan(seasonIndex);
+    expect(html).toContain('href="/profile/flick/history"');
+    expect(html).toContain('alt="Full-body portrait of Atlas"');
+    expect(html).toContain('aria-label="Next agent"');
+    expect(html).toContain("Recent Werewolf record");
+    expect(html).not.toContain("edge-smoke-dusk");
     expect(html.replaceAll("<!-- -->", "")).toContain("@flick");
     expect(html).toContain("Architect standing");
     expect(html).toContain("#3");
     expect(html).toContain("Agent Champion");
     expect(html).toContain("Atlas");
     expect(html).toContain("Zeta");
-    expect(html).toContain("No Influence games yet");
+    expect(html).toContain("No public results yet.");
     expect(html).toContain('aria-label="View Atlas portrait and stats"');
     expect(html).toContain('aria-label="View Zeta portrait and stats"');
     expect(html).toContain("w-12 h-12");
@@ -183,12 +194,13 @@ describe("public player profile", () => {
             winRate: 0,
           },
           recentResults: [],
+          werewolfRecord: { wins: 0, losses: 0, draws: 0 },
         }}
       />,
     );
 
     expect(html).toContain("No current season is active.");
-    expect(html).toContain("No completed games in this history yet.");
+    expect(html).toContain("No public Werewolf results yet.");
     expect(html).toContain("No Influence career games yet.");
     expect(html).toContain("Zeta");
   });
@@ -219,11 +231,8 @@ describe("public player profile", () => {
       const miniapp = JSON.parse(String(metadata.other?.["fc:miniapp"]));
       expect(miniapp.imageUrl).toContain("/profile/flick/card-image?format=farcaster");
       expect(miniapp.button.action.url).toContain("/profile/flick?app=mini");
-      const filtered = await generateMetadata({ params: Promise.resolve({ id: profileFixture.identity.publicId }), searchParams: Promise.resolve({ game: "werewolf" }) });
-      expect(JSON.parse(String(filtered.other?.["fc:miniapp"])).button.action.url).toContain("/profile/flick?game=werewolf&app=mini");
       expect(html).toContain("Flick");
       expect(requestedUrls).toContainEqual(expect.stringContaining(`/api/players/${profileFixture.identity.publicId}?game=all`));
-      expect(requestedUrls).toContainEqual(expect.stringContaining(`/api/players/${profileFixture.identity.publicId}?game=werewolf`));
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -314,6 +323,22 @@ describe("public player profile", () => {
     expect(notFoundHtml).toContain('href="/"');
     expect(notFoundHtml).toContain('href="/games"');
   });
+});
+
+it("renders history filters, results, and an older-games cursor on the dedicated route", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
+    expect(String(url)).toEndWith("/api/players/flick/history?game=influence&cursor=current");
+    return Response.json({ identity: profileFixture.identity, items: profileFixture.recentResults, nextCursor: "next" });
+  }) as typeof fetch;
+  try {
+    const page = await PublicPlayerHistoryPage({ params: Promise.resolve({ id: "flick" }), searchParams: Promise.resolve({ game: "influence", cursor: "current" }) });
+    const html = renderWithAnonymousAuth(page);
+    expect(html).toContain('href="/profile/flick"');
+    expect(html).toContain('href="/profile/flick/history?game=werewolf"');
+    expect(html).toContain('href="/profile/flick/history?game=influence&amp;cursor=next"');
+    expect(html).toContain('href="/games/edge-smoke-dusk/results"');
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 describe("public player profile sharing", () => {

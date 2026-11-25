@@ -274,9 +274,14 @@ export interface PublicAgentProfile extends PublicAgentPreview {
   profileHref: string;
   fullBodyImageUrl: string | null;
   owner: PublicPlayerIdentityRef | null;
-  werewolfRecord: { wins: number; losses: number; draws: number };
+  werewolfRecord: import("@influence/engine/house-participation").WerewolfParticipationRecord;
   awards: import("./championship").PublicAward[];
   recentResults: import("@influence/engine/house-participation").HouseParticipation[];
+}
+
+export interface PublicRosterAgent extends PublicAgentPreview {
+  fullBodyImageUrl: string | null;
+  werewolfRecord: import("@influence/engine/house-participation").WerewolfParticipationRecord;
 }
 export type PublicAgentProfileEnvelope = { schemaVersion: 1; status: "found"; profile: PublicAgentProfile }
   | { schemaVersion: 1; status: "not_found" };
@@ -318,7 +323,14 @@ export interface PublicPlayerProfile {
     winRate: number;
   };
   recentResults: HouseParticipation[];
-  agents: PublicAgentPreview[];
+  werewolfRecord: import("@influence/engine/house-participation").WerewolfParticipationRecord;
+  agents: PublicRosterAgent[];
+}
+
+export interface PublicPlayerHistoryPage {
+  identity: PublicPlayerIdentityRef;
+  items: HouseParticipation[];
+  nextCursor: string | null;
 }
 
 export type PublicPlayerProfileEnvelope =

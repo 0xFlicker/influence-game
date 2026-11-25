@@ -9,7 +9,7 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  height: clamp(17.5rem, 100vw, 25rem);
+  height: var(--profile-stage-height, clamp(17.5rem, 100vw, 25rem));
   background: radial-gradient(ellipse at 50% 58%, rgb(var(--phase-rgb) / .24), transparent 68%), rgb(var(--surface));
 }
 
@@ -60,7 +60,7 @@
   .stage {
     align-self: stretch;
     height: auto;
-    min-height: clamp(23rem, 56svh, 32rem);
+    min-height: var(--profile-stage-height, clamp(23rem, 56svh, 32rem));
     border-left: 1px solid rgb(var(--border-strong) / .45);
   }
 

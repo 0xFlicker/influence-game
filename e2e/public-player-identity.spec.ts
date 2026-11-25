@@ -959,7 +959,7 @@ test.describe("local public player identity", () => {
       .toBeVisible();
     await expect(page.getByRole("heading", { name: "Quartz E2E", level: 3 }))
       .toBeVisible();
-    await expect(page.getByText("No Influence games yet", { exact: true }))
+    await expect(page.getByText("No public results yet.", { exact: true }))
       .toBeVisible();
     await expect(page.locator('link[rel="canonical"]'))
       .toHaveAttribute("href", new RegExp(`/profile/${fixture.handle}$`));

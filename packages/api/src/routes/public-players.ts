@@ -9,9 +9,10 @@ import { readAgentTransparentBodies } from "../services/agent-transparent-bodies
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import sharp from "sharp";
 import { PublicArtworkOverloadedError, withPublicArtworkCapacity } from "../services/public-artwork-admission.js";
-import { isImportedSyntheticPlayer } from "../services/public-player-identity.js";
+import { isImportedSyntheticPlayer, resolvePublicPlayer } from "../services/public-player-identity.js";
 import { publicAgentAwards } from "../services/awards.js";
 import { AgentDraftImageUnavailable } from "../services/agent-draft-images.js";
+import { HistoryPageUnavailable, parseHistoryCursor, readHouseParticipationPage } from "../services/house-participation.js";
 
 export function createPublicPlayerRoutes(db: DrizzleDB) {
   const app = new Hono();
@@ -24,6 +25,24 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
     return result.status === "found"
       ? c.json(result)
       : c.json(result, 404);
+  });
+
+  app.get("/api/players/:identifier/history", async c => {
+    c.header("Cache-Control", "no-store");
+    const kind = c.req.query("game") ?? "all";
+    if (kind !== "all" && kind !== "influence" && kind !== "werewolf") return c.json({ error: "Invalid game type" }, 400);
+    const rawCursor = c.req.query("cursor");
+    const cursor = rawCursor === undefined ? null : parseHistoryCursor(rawCursor);
+    if (rawCursor !== undefined && cursor?.gameKind !== kind) return c.json({ error: "Invalid history cursor" }, 400);
+    const player = await resolvePublicPlayer(db, c.req.param("identifier"));
+    if (!player) return c.notFound();
+    try {
+      const page = await readHouseParticipationPage(db, player.internalUserId, 20, cursor, kind, { publicOnly: true });
+      return c.json({ identity: player.identity, ...page });
+    } catch (error) {
+      if (error instanceof HistoryPageUnavailable) return c.json({ error: error.message }, 503);
+      throw error;
+    }
   });
 
   app.get("/api/public/agents/:identifier", async c => {

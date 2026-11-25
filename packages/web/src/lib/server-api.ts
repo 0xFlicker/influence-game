@@ -7,6 +7,7 @@ import type {
   GameWatchReplayFrame,
   HouseHighlightsResponse,
   PublicPlayerProfileEnvelope,
+  PublicPlayerHistoryPage,
   PublicAgentProfileEnvelope,
   PublicPostgameMediaResponse,
   TranscriptEntry,
@@ -173,6 +174,16 @@ export function getServerPublicPlayerProfile(
     `/api/players/${encodeURIComponent(identifier)}?game=${gameKind}`,
     { cache: "no-store" },
   );
+}
+
+export function getServerPublicPlayerHistory(
+  identifier: string,
+  gameKind: "all" | "influence" | "werewolf",
+  cursor?: string,
+): Promise<PublicPlayerHistoryPage> {
+  const query = new URLSearchParams({ game: gameKind });
+  if (cursor) query.set("cursor", cursor);
+  return serverApiFetch(`/api/players/${encodeURIComponent(identifier)}/history?${query}`, { cache: "no-store" });
 }
 
 export function getServerHouseCuts(slug: string, audience?: string): Promise<import("@influence/engine/house-cuts/publication").HouseCutsResponse> {
