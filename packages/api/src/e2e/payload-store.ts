@@ -45,10 +45,10 @@ export async function installE2ePayloadStore(databaseUrl: string) {
       finally { await rm(temporary); }
     },
     async get(key) { return readFile(file(key)); },
-    async imageDelivery(ref, redirect) {
+    async imageDelivery(ref, expiresIn) {
       const contentType = await readFile(file(ref.key) + ".mime", "utf8");
       if (!isImageContentType(contentType)) throw new Error("Test image metadata missing");
-      return { contentType, url: redirect ? new URL(ref.key, server.url).href : undefined };
+      return { contentType, url: expiresIn !== undefined ? new URL(ref.key, server.url).href : undefined };
     },
   });
 }

@@ -1,6 +1,6 @@
 import { isImageContentType } from "../lib/image-content-type.js";
 import { GameModelRoutingError } from "../services/game-model-routing.js";
-import { loadPayloads, readImageDelivery } from "../services/payload-storage.js";
+import { loadPayloads, PORTRAIT_URL_TTL_SECONDS, readImageDelivery } from "../services/payload-storage.js";
 import { readPublicWerewolfSummaries } from "../services/public-library-summaries.js";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -105,7 +105,8 @@ export function createWerewolfRoutes(db: DrizzleDB) {
           c.header("Content-Type", image.contentType);
           return c.body(new Uint8Array(image.body));
         }
-        const { contentType, url } = await readImageDelivery(image, c.req.raw.method !== "HEAD", c.req.raw.signal);
+        const expiresIn = c.req.raw.method === "HEAD" ? undefined : PORTRAIT_URL_TTL_SECONDS;
+        const { contentType, url } = await readImageDelivery(image, expiresIn, c.req.raw.signal);
         if (url) {
           c.header("Referrer-Policy", "no-referrer");
           return c.redirect(url, 302);

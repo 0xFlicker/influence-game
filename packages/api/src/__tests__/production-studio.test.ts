@@ -310,10 +310,10 @@ test("missing frozen character art uses presentation fallback while available bo
       if (key.endsWith(portraitHash) || key.endsWith(bodyHash)) throw new Error("Public character route attempted a payload body read");
       return testPayloadStore.get(key);
     },
-    async imageDelivery(ref, redirect) {
+    async imageDelivery(ref, expiresIn) {
       expect([bodyHash, portraitHash]).toContain(ref.sha256);
-      if (redirect) redirects++;
-      return { contentType: "image/png", url: redirect ? new URL(ref.sha256, store.url).href : undefined };
+      if (expiresIn !== undefined) redirects++;
+      return { contentType: "image/png", url: expiresIn !== undefined ? new URL(ref.sha256, store.url).href : undefined };
     },
   });
   try {

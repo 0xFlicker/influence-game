@@ -1,31 +1,37 @@
 import sharp from "sharp";
 import { beforeEach, expect, test } from "bun:test";
 import { providerImageStorage, PROVIDER_IMAGE_URL_TTL_SECONDS } from "../services/provider-images.js";
+import { setPayloadObjectStoreForTests } from "../services/payload-storage.js";
 import { setupTestDB } from "./test-utils.js";
+import { testPayloadStore } from "./payload-test-store.js";
 import { providerImageUri } from "@influence/engine/provider-images";
 
 beforeEach(async () => { await setupTestDB(); });
 
-test("binary evidence round-trips and signs exact objects with a deadline-safe lifetime", async () => {
-  const names = ["LINODE_PRIVATE_CONTENT_BUCKET", "LINODE_PRIVATE_CONTENT_ENDPOINT", "LINODE_PRIVATE_CONTENT_ACCESS_KEY", "LINODE_PRIVATE_CONTENT_SECRET_KEY"];
-  const previous = names.map(name => process.env[name]);
+test("provider image delivery validates saved metadata and signs without downloading bytes", async () => {
+  const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "blue" } }).png().toBuffer();
+  const ref = await providerImageStorage.store(bytes, "image/png");
+  expect(await providerImageStorage.store(bytes, "image/png")).toEqual(ref);
+  expect(providerImageUri(ref)).not.toContain(bytes.toString("base64"));
+
+  const base = "https://storage.example.test/private-images/";
+  let selectedMime: "image/png" | "image/webp" = "image/png";
+  setPayloadObjectStoreForTests({
+    putIfAbsent: (key, body, type) => testPayloadStore.putIfAbsent(key, body, type),
+    async get() { throw new Error("Provider signer attempted a download"); },
+    async imageDelivery(payload, expiresIn) {
+      if (payload.byteLength !== bytes.length) throw new Error("Frozen image metadata is missing or invalid");
+      expect(payload.key).toBe(`payloads/v1/binary/${ref.sha256}`);
+      expect(expiresIn).toBe(PROVIDER_IMAGE_URL_TTL_SECONDS);
+      return { contentType: selectedMime, url: new URL(payload.key, base).href };
+    },
+  });
   try {
-    Object.assign(process.env, { LINODE_PRIVATE_CONTENT_BUCKET: "private-images", LINODE_PRIVATE_CONTENT_ENDPOINT: "https://storage.example.test",
-      LINODE_PRIVATE_CONTENT_ACCESS_KEY: "test-key", LINODE_PRIVATE_CONTENT_SECRET_KEY: "test-secret" });
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "blue" } }).png().toBuffer();
-    const ref = await providerImageStorage.store(bytes, "image/png");
-    expect(await providerImageStorage.store(bytes, "image/png")).toEqual(ref);
-    expect(providerImageUri(ref)).not.toContain(bytes.toString("base64"));
-    const signed = new URL(await providerImageStorage.sign(ref));
-    expect(signed.pathname).toBe(`/private-images/payloads/v1/binary/${ref.sha256}`);
-    expect(signed.searchParams.get("X-Amz-Expires")).toBe(String(PROVIDER_IMAGE_URL_TTL_SECONDS));
-    expect(signed.searchParams.get("response-content-type")).toBe("image/png");
+    expect(await providerImageStorage.sign(ref)).toBe(`${base}payloads/v1/binary/${ref.sha256}`);
     expect(PROVIDER_IMAGE_URL_TTL_SECONDS).toBeGreaterThan(300);
-    await expect(providerImageStorage.sign({ ...ref, byteLength: bytes.length + 1 })).rejects.toThrow("integrity mismatch");
-    await expect(providerImageStorage.sign({ ...ref, sha256: "a".repeat(64) })).rejects.toThrow();
-  } finally {
-    for (const [index, name] of names.entries()) {
-      if (previous[index] === undefined) delete process.env[name]; else process.env[name] = previous[index];
-    }
-  }
+    await expect(providerImageStorage.sign({ ...ref, byteLength: bytes.length + 1 })).rejects.toThrow("metadata is missing or invalid");
+    await expect(providerImageStorage.sign({ ...ref, sha256: "broken" })).rejects.toThrow("Invalid provider image reference");
+    selectedMime = "image/webp";
+    await expect(providerImageStorage.sign(ref)).rejects.toThrow("metadata disagrees");
+  } finally { setPayloadObjectStoreForTests(testPayloadStore); }
 });

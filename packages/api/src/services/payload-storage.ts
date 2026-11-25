@@ -22,7 +22,7 @@ export interface StoredPayload<T = unknown> {
 export interface PayloadObjectStore {
   putIfAbsent(key: string, bytes: Uint8Array, contentType: string): Promise<void | boolean>;
   get(key: string): Promise<Uint8Array>;
-  imageDelivery?(ref: StoredPayload, redirect: boolean, signal?: AbortSignal): Promise<ImageDelivery>;
+  imageDelivery?(ref: StoredPayload, expiresIn?: number, signal?: AbortSignal): Promise<ImageDelivery>;
 }
 
 type ImageDelivery = { contentType: ImageContentType; url?: string };
@@ -55,7 +55,7 @@ class S3PayloadObjectStore implements PayloadObjectStore {
     } catch (error) { throw new Error("Private payload read failed", { cause: error }); }
   }
 
-  async imageDelivery(ref: StoredPayload, redirect: boolean, signal?: AbortSignal): Promise<ImageDelivery> {
+  async imageDelivery(ref: StoredPayload, expiresIn?: number, signal?: AbortSignal): Promise<ImageDelivery> {
     const { bucket, client } = this.connection();
     const object = { Bucket: bucket, Key: ref.key };
     const deadline = AbortSignal.timeout(10_000);
@@ -63,9 +63,9 @@ class S3PayloadObjectStore implements PayloadObjectStore {
     if (head.ContentLength !== ref.storedByteLength || !isImageContentType(head.ContentType)) {
       throw new Error("Frozen image metadata is missing or invalid");
     }
-    const url = redirect ? await getSignedUrl(client, new GetObjectCommand({
+    const url = expiresIn === undefined ? undefined : await getSignedUrl(client, new GetObjectCommand({
       ...object, ResponseCacheControl: "private, no-store",
-    }), { expiresIn: PORTRAIT_URL_TTL_SECONDS }) : undefined;
+    }), { expiresIn });
     return { contentType: head.ContentType, url };
   }
 
@@ -140,10 +140,10 @@ export async function readPayload(ref: StoredPayload): Promise<Buffer> {
 }
 
 /** Look up saved MIME and sign an already-authorized immutable image without a body read. */
-export function readImageDelivery(ref: StoredPayload, redirect: boolean, signal?: AbortSignal): Promise<ImageDelivery> {
+export function readImageDelivery(ref: StoredPayload, expiresIn?: number, signal?: AbortSignal): Promise<ImageDelivery> {
   assertStoredPayload(ref);
   if (ref.codec !== "binary" || !store.imageDelivery) throw new Error("Expected an image payload with delivery metadata");
-  return store.imageDelivery(ref, redirect, signal);
+  return store.imageDelivery(ref, expiresIn, signal);
 }
 /** Bound independent bucket operations while retaining source order and stopping new batches on failure. */
 export async function mapPayloadBatch<T, R>(items: readonly T[], operation: (item: T) => Promise<R>): Promise<R[]> {
