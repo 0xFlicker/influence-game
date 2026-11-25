@@ -119,19 +119,6 @@ The [current list](../TODO.md) distinguishes implementation from remaining verif
 - **Investigation.** Trace those entries through [Influence cut evidence](../packages/engine/src/house-cuts/influence-source.ts), [publication](../packages/engine/src/house-cuts/publication.ts), and R35’s replay route. Identify which accepted records establish the exact opening position of the exchange. Preserve the full-replay action wherever an exact position cannot be verified.
 - **Done when** a signed-out viewer can open a shared cut with a verified position, choose “Watch this moment,” and see the cited exchange. Cover an existing published cut, a newly prepared cut, and a historical cut without an exact position. Preserve published quotes, source references, and audience access.
 
-### R34. Normalize literal null only for nullable structured response fields
-
-- Status: `implementation_complete/runtime_proof_pending`
-- Priority: **medium**
-- Source: a valid Mingle turn was rejected with `gotoPlayerName must be null or one remaining non-self contestant` because the model returned `"null"` instead of JSON `null`.
-- Before PR #137, compact strategy already recognized exact literal `"null"` as no change; Mingle target validation treated it as a contestant name.
-- Required direction: define one shared policy for converting exact literal `"null"` to JSON `null` only where the invocation explicitly permits null. Apply it inside the structured provider-attempt acceptance boundary, followed by full schema and semantic validation. Preserve raw provider evidence. Do not rewrite prose, required strings, arbitrary nested strings, missing fields, or malformed JSON; do not turn `"undefined"` into null by implication.
-- Name policy: reserve contestant names `null` and `undefined` under the existing normalized-name authority for new names and renames. Audit existing conflicting names before deciding remediation; do not silently rename historical game seats.
-- Validation path: nullable target accepts JSON null and exact string `"null"`; valid contestant names remain valid; required names and invalid targets still fail; ordinary prose containing these words is unchanged; nested nullable fields follow their declared schema; provider adapters share the same policy; name creation/rename enforces reserved names. Explicitly decide whitespace/case variants rather than accepting them accidentally.
-- Implementation: the shared schema normalizer runs in the game structured-output registry and Owner Learning output-acceptance path before schema/semantic validation, preserving raw responses and accepted replay. The Prompt Thread experiment broker continues returning raw provider responses. Only exact lowercase `"null"` converts; whitespace/case variants and `"undefined"` do not. Create/rename uses the shared normalized-name authority to reserve both sentinel names; imports use existing suffix allocation for a new profile without changing historical seats. Existing strategy-state literal-null no-change behavior remains for historical accepted values.
-- Name audit (2026-09-07): read-only staging and production queries found zero conflicting normalized names in agent profiles or historical game seats; no historical records were changed.
-- Verification: focused provider-free coverage exercises all native transport paths, actual Mingle nullable targets, nested unions, schema/semantic failures, unchanged raw evidence, and strict replay. Full local checks passed in [PR #137](https://github.com/0xFlicker/influence-game/pull/137). The remaining runtime check is to inspect accepted deployed gameplay and Owner Learning evidence for the exact nullable-field case.
-
 ### R5. Producer-visible decision fallback and repair ledger
 
 - Status: `ready`
@@ -350,6 +337,11 @@ The [current workspace](agent-content-submissions.md) uses durable artwork jobs.
 - Suggested slice if promoted: preserve dual-shape omit rules (`power`/`council` absent on format kernel) and sealed-ballot access scoping; add a multi-round format fixture as a cost/regression guard.
 
 ## Closed / Removed
+
+### R34. Normalize literal null only for nullable structured response fields
+
+- Status: `closed` (November 25). [PR #137](https://github.com/0xFlicker/influence-game/pull/137) shipped schema-aware normalization. The original Mingle case with `gotoPlayerName: "null"` passed through the current decision path and returned JSON null. Owner Learning accepted nullable values from both decoded objects and text while preserving the raw response.
+- Local regressions also cover nested nullable fields, required prose, case and whitespace variants, semantic validation, strict replay, and reserved profile names. The September name audit found zero conflicting profiles or historical seats on staging and production. The November review retired the request to find another naturally occurring example in deployed traffic. [Schema tests](../packages/engine/src/__tests__/structured-output.test.ts) · [Transport tests](../packages/engine/src/__tests__/provider-adapters.test.ts) · [Owner Learning tests](../packages/api/src/__tests__/owner-learning-worker.test.ts)
 
 ### R27. Complete failed-provider request evidence for producer debugging
 
