@@ -148,7 +148,7 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
           || (input.provider === "xai" && (!primary?.receipt || !isAvailabilityFailure(primary.receipt)))) {
           throw new VisualRenderRecoveryRequired(operation.id, "Visual request already dispatched or fallback is not permitted");
         }
-        await tx.insert(attempts).values(await storeFields({ id: randomUUID(), operationId: operation.id, generation: operation.generation, ...input }, {"image":"binary"}));
+        await tx.insert(attempts).values(await storeFields({ id: randomUUID(), operationId: operation.id, generation: operation.generation, ...input }, {"image":"image"}));
         if (operation.gameId) await recordVisualOperationEvent(tx, operation.gameId, `${operation.id}:${operation.generation}:${input.provider}:started`, {
           operationId: operation.id, sceneId: operation.sceneId, kind: "attempt_started", outcome: "pending", message: `${input.provider} ${input.model}: ${operation.operationKey}`,
         });
@@ -168,7 +168,7 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
             && stableJson(entry.localization) === stableJson(localization ?? null)) return;
           throw new Error("Conflicting visual render completion");
         }
-        await tx.update(attempts).set(await storeFields({ receipt, costMicrousd: entry.reconciliation ? entry.costMicrousd : visualReceiptCostMicrousd(receipt), image: image ? Buffer.from(image) : null, imageHash, localization: localization ?? null, finishedAt: new Date().toISOString() }, {"image":"binary"})).where(eq(attempts.id, entry.id));
+        await tx.update(attempts).set(await storeFields({ receipt, costMicrousd: entry.reconciliation ? entry.costMicrousd : visualReceiptCostMicrousd(receipt), image: image ? Buffer.from(image) : null, imageHash, localization: localization ?? null, finishedAt: new Date().toISOString() }, {"image":"image"})).where(eq(attempts.id, entry.id));
         if (operation.gameId) await recordVisualOperationEvent(tx, operation.gameId, `${entry.id}:finished`, {
           operationId: operation.id, sceneId: operation.sceneId, kind: "attempt_finished", outcome: receipt.chargeUncertain ? "uncertain" : receipt.failure ? "failed" : image || localization ? "success" : "failed",
           message: `${current.generation !== operation.generation || entry.reconciliation ? "Late completion retained for accounting; no scene publication. " : ""}${receipt.failure?.message ?? `${receipt.provider} HTTP ${receipt.status ?? "unknown"}`}`,

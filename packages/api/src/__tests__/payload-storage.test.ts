@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
+import sharp from "sharp";
 import { testPayloadStore } from "./payload-test-store.js";
-import { decodePayloadReference, loadPayloads, payloadHash, readJson, readPayload, storeBinary, storeFields, storeJson, storeText } from "../services/payload-storage.js";
+import { decodePayloadReference, loadPayloads, payloadHash, readJson, readPayload, storeBinary, storeFields, storeImage, storeJson, storeText } from "../services/payload-storage.js";
 
 describe("private payload storage", () => {
   beforeEach(() => testPayloadStore.objects.clear());
@@ -21,6 +22,24 @@ describe("private payload storage", () => {
     await expect(storeBinary(bytes)).rejects.toThrow("integrity mismatch");
     testPayloadStore.objects.delete(ref.key);
     await expect(readPayload(ref)).rejects.toThrow("missing");
+  });
+  test("uses the original encoded PNG, JPEG and WebP MIME and preserves legacy deduplication", async () => {
+    const put = spyOn(testPayloadStore, "putIfAbsent");
+    try {
+      for (const format of ["png", "jpeg", "webp"] as const) {
+        const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "purple" } }).toFormat(format).toBuffer();
+        const ref = await storeImage(bytes);
+        expect(put).toHaveBeenLastCalledWith(ref.key, bytes, `image/${format}`);
+        expect(await readPayload(ref)).toEqual(bytes);
+        expect(await storeImage(bytes)).toEqual(ref);
+        await expect(storeImage(bytes, "image/gif")).rejects.toThrow("mismatched encoded image format");
+      }
+      const legacy = await sharp({ create: { width: 3, height: 3, channels: 3, background: "red" } }).png().toBuffer();
+      const original = await storeBinary(legacy);
+      expect(put).toHaveBeenLastCalledWith(original.key, legacy, "application/octet-stream");
+      expect(await storeFields({ bytes: legacy }, { bytes: "image" })).toEqual({ bytes: original });
+      await expect(storeImage(Buffer.from("RIFF0000WAVE"))).rejects.toThrow("Unsupported");
+    } finally { put.mockRestore(); }
   });
   test("compresses large documents losslessly without a context size limit", async () => {
     const value = { text: "λ context\n".repeat(200_000), nested: { values: [null, true, 42] } };

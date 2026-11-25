@@ -35,7 +35,7 @@ test("image migration replays a paid historical request without rewriting eviden
   const [operation] = await loadPayloads(db.select().from(schema.visualRenderOperations));
   const journal = visualImageJournal(db, operation!);
   await journal.begin(reservation);
-  const image = Buffer.from("original paid image bytes");
+  const image = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
   await journal.finish(receipt, image);
   let calls = 0;
   globalThis.fetch = Object.assign(async () => { calls++; throw Error("Historical images must be reused"); }, { preconnect: originalFetch.preconnect });
@@ -109,7 +109,7 @@ describe("durable visual render journal", () => {
     const operation = await reserve();
     const journal = visualImageJournal(db, operation);
     await journal.begin(reservation);
-    const bytes = Buffer.from("durable image bytes");
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "blue" } }).png().toBuffer();
     await journal.finish(receipt, bytes);
     await journal.finish(receipt, bytes);
     await expect(journal.finish(receipt, Buffer.from("different image"))).rejects.toThrow("Conflicting");
@@ -129,7 +129,7 @@ describe("durable visual render journal", () => {
     await journal.begin(reservation);
     await journal.finish({ ...receipt, requestId: null, status: 503, chargeUncertain: true });
     await journal.begin(fallback);
-    await journal.finish({ ...receipt, ...fallback }, Buffer.from("fallback image"));
+    await journal.finish({ ...receipt, ...fallback }, await sharp({ create: { width: 2, height: 2, channels: 3, background: "green" } }).png().toBuffer());
     expect(await readVisualRenderAccounting(db, "visual-game")).toMatchObject({ unpricedAttempts: 2, uncertainAttempts: 1 });
     expect((await renderDurableVisualImage(db, { gameId: "visual-game", operationKey: operation.operationKey, request })).receipt.provider).toBe("xai");
   });
@@ -143,7 +143,7 @@ describe("durable visual render journal", () => {
     const next = await retryVisualRender(db, operation.id, 1);
     expect(next.generation).toBe(2);
     await expect(retryVisualRender(db, operation.id, 1)).rejects.toThrow("generation changed");
-    await expect(journal.finish(receipt, Buffer.from("late image"))).rejects.toThrow("Conflicting");
+    await expect(journal.finish(receipt, await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png().toBuffer())).rejects.toThrow("Conflicting");
     await visualImageJournal(db, next).begin(reservation);
     expect(await loadPayloads(db.select().from(schema.visualRenderAttempts))).toHaveLength(2);
   });
@@ -156,9 +156,10 @@ describe("durable visual render journal", () => {
     const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, operation.id)));
     await reconcileVisualAttempt(db, { attemptId: attempt!.id, operatorId: "operator-1", note: "Provider confirmed completed charge; pixels unavailable", costMicrousd: 123_000 });
     const next = await retryVisualRender(db, operation.id, 1);
-    await journal.finish(receipt, Buffer.from("late image"));
+    const lateImage = await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png().toBuffer();
+    await journal.finish(receipt, lateImage);
     const [retained] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id)));
-    expect(retained?.image?.toString()).toBe("late image");
+    expect(retained?.image).toEqual(lateImage);
     expect(retained?.generation).toBe(1);
     expect(next.generation).toBe(2);
     expect(await readVisualRenderAccounting(db, "visual-game")).toMatchObject({ knownCostMicrousd: 123_000, unpricedAttempts: 0, uncertainAttempts: 0 });

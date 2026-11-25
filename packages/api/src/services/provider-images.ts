@@ -1,8 +1,8 @@
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { providerImageUri, type ProviderImageReference, type ProviderImageStorage } from "@influence/engine/provider-images";
-import { readPayload, storeBinary, type StoredPayload } from "./payload-storage.js";
-import { getPrivateTraceBucket, getPrivateTraceS3Client } from "./private-trace-storage.js";
+import { objectStorageBucket, objectStorageClient } from "../lib/object-storage-config.js";
+import { readPayload, storeImage, type StoredPayload } from "./payload-storage.js";
 
 /** Longer than the maximum 300-second generation deadline; refreshed for each attempt. */
 export const PROVIDER_IMAGE_URL_TTL_SECONDS = 15 * 60;
@@ -15,7 +15,7 @@ function binaryReference(ref: ProviderImageReference): StoredPayload {
 
 export const providerImageStorage: ProviderImageStorage = {
   async store(bytes, mediaType) {
-    const stored = await storeBinary(bytes);
+    const stored = await storeImage(bytes, mediaType);
     await readPayload(stored);
     return { sha256: stored.sha256, byteLength: stored.byteLength, mediaType };
   },
@@ -23,8 +23,8 @@ export const providerImageStorage: ProviderImageStorage = {
     const stored = binaryReference(ref);
     // Do not sign missing/corrupt objects or replace the exact historical image.
     await readPayload(stored);
-    return getSignedUrl(getPrivateTraceS3Client(), new GetObjectCommand({
-      Bucket: getPrivateTraceBucket(), Key: stored.key, ResponseContentType: ref.mediaType,
+    return getSignedUrl(objectStorageClient("data"), new GetObjectCommand({
+      Bucket: objectStorageBucket("data"), Key: stored.key, ResponseContentType: ref.mediaType,
     }), { expiresIn: PROVIDER_IMAGE_URL_TTL_SECONDS });
   },
 };

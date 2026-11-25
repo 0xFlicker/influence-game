@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { objectStorageBucket, objectStorageClient } from "../lib/object-storage-config.js";
+import { imageContentType } from "../lib/image-content-type.js";
 import type { SQLWrapper } from "drizzle-orm";
 
 /** Private, immutable body. Authorization belongs to the owning relational row. */
@@ -18,7 +19,7 @@ export interface StoredPayload<T = unknown> {
 }
 
 export interface PayloadObjectStore {
-  putIfAbsent(key: string, bytes: Uint8Array): Promise<void | boolean>;
+  putIfAbsent(key: string, bytes: Uint8Array, contentType: string): Promise<void | boolean>;
   get(key: string): Promise<Uint8Array>;
 }
 
@@ -32,11 +33,11 @@ class S3PayloadObjectStore implements StreamingPayloadStore {
     return { bucket, client: objectStorageClient("data") };
   }
 
-  async putIfAbsent(key: string, bytes: Uint8Array): Promise<boolean> {
+  async putIfAbsent(key: string, bytes: Uint8Array, contentType: string): Promise<boolean> {
     const { bucket, client } = this.connection();
     try {
       await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes,
-        ContentType: "application/octet-stream", IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(60_000) });
+        ContentType: contentType, IfNoneMatch: "*" }), { abortSignal: AbortSignal.timeout(60_000) });
       return true;
     } catch (error) {
       const status = error && typeof error === "object" && "$metadata" in error
@@ -78,7 +79,7 @@ export function decodePayloadReference(value: unknown): StoredPayload {
 /** Explicit injection for deterministic tests; never an environment fallback. */
 export function setPayloadObjectStoreForTests(replacement: PayloadObjectStore & { stream?: PayloadStreamReader }): void {
   store = {
-    putIfAbsent: (key, bytes) => replacement.putIfAbsent(key, bytes),
+    putIfAbsent: (key, bytes, contentType) => replacement.putIfAbsent(key, bytes, contentType),
     get: key => replacement.get(key),
     stream: replacement.stream?.bind(replacement) ?? (async key => {
       const bytes = await replacement.get(key);
@@ -102,11 +103,15 @@ export function assertStoredPayload(value: unknown): asserts value is StoredPayl
 
 /** An acknowledged upload is durable; read only an existing object whose encoding is unknown. */
 export async function storePayload<T>(bytes: Uint8Array, codec: StoredPayload["codec"]): Promise<StoredPayload<T>> {
+  return writePayload(bytes, codec, "application/octet-stream");
+}
+
+async function writePayload<T>(bytes: Uint8Array, codec: StoredPayload["codec"], contentType: string): Promise<StoredPayload<T>> {
   const compressed = codec === "binary" ? bytes : gzipSync(bytes);
   const sha256 = payloadHash(bytes);
   const ref: StoredPayload<T> = { storage: "private-payload-v1", key: `payloads/v1/${codec}/${sha256}`,
     codec, sha256, byteLength: bytes.byteLength, storedSha256: payloadHash(compressed), storedByteLength: compressed.byteLength };
-  const created = await store.putIfAbsent(ref.key, compressed);
+  const created = await store.putIfAbsent(ref.key, compressed, contentType);
   if (created === false) {
     // Legacy gzip objects can use a different encoding. Never overwrite them:
     // previously committed references include the stored-byte digest.
@@ -163,6 +168,12 @@ export async function readText(ref: StoredPayload<string>): Promise<string> {
 }
 export async function storeBinary(value: Uint8Array): Promise<StoredPayload<Buffer>> { return storePayload(value, "binary"); }
 
+export async function storeImage(value: Uint8Array, expectedType?: string): Promise<StoredPayload<Buffer>> {
+  const type = imageContentType(value);
+  if (!type || (expectedType !== undefined && type !== expectedType)) throw new Error("Unsupported or mismatched encoded image format");
+  return writePayload(value, "binary", type);
+}
+
 export type Hydrated<T> = T extends StoredPayload<infer V> ? V
   : T extends Date | Uint8Array | SQLWrapper | ((...args: never[]) => unknown) ? T
   : T extends readonly unknown[] ? { [K in keyof T]: Hydrated<T[K]> }
@@ -187,19 +198,20 @@ export async function loadPayloads<T>(input: T | PromiseLike<T>): Promise<Hydrat
 
 type StoredValue<T> = T extends null | undefined ? T : StoredPayload<T>;
 type Mutable<T> = T extends Date | Uint8Array | SQLWrapper | ((...args: never[]) => unknown) ? T : string extends keyof T ? T : T extends object ? { -readonly [K in keyof T]: Mutable<T[K]> } : T;
+type FieldCodec = StoredPayload["codec"] | "image";
 type StoredFields<T, F> = T extends ReadonlyArray<infer V> ? StoredFields<V, F>[]
   : { -readonly [K in keyof T]: K extends keyof F ? StoredValue<Mutable<T[K]>> : Mutable<T[K]> };
 
 /** Only named body fields are uploaded. Relational fields remain unchanged. */
-export async function storeFields<const T, F extends Record<string, StoredPayload["codec"]>>(value: T, fields: F): Promise<StoredFields<T, F>> {
+export async function storeFields<const T, F extends Record<string, FieldCodec>>(value: T, fields: F): Promise<StoredFields<T, F>> {
   if (Array.isArray(value)) return await Promise.all(value.map(row => storeFields(row, fields))) as StoredFields<T, F>;
   const row = { ...value } as Record<string, unknown>;
   for (const [key, codec] of Object.entries(fields)) {
     const body = row[key];
     if (body === null || body === undefined) continue;
-    if (codec === "binary") {
+    if (codec === "binary" || codec === "image") {
       if (!(body instanceof Uint8Array)) throw new Error(`Expected binary body: ${key}`);
-      row[key] = await storeBinary(body);
+      row[key] = await (codec === "image" ? storeImage(body) : storeBinary(body));
     } else if (codec === "text-gzip") {
       if (typeof body !== "string") throw new Error(`Expected text body: ${key}`);
       row[key] = await storeText(body);

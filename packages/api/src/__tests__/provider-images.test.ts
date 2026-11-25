@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { beforeEach, expect, test } from "bun:test";
 import { providerImageStorage, PROVIDER_IMAGE_URL_TTL_SECONDS } from "../services/provider-images.js";
 import { setupTestDB } from "./test-utils.js";
@@ -11,7 +12,7 @@ test("binary evidence round-trips and signs exact objects with a deadline-safe l
   try {
     Object.assign(process.env, { LINODE_PRIVATE_CONTENT_BUCKET: "private-images", LINODE_PRIVATE_CONTENT_ENDPOINT: "https://storage.example.test",
       LINODE_PRIVATE_CONTENT_ACCESS_KEY: "test-key", LINODE_PRIVATE_CONTENT_SECRET_KEY: "test-secret" });
-    const bytes = Buffer.from("unchanged image payload");
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "blue" } }).png().toBuffer();
     const ref = await providerImageStorage.store(bytes, "image/png");
     expect(await providerImageStorage.store(bytes, "image/png")).toEqual(ref);
     expect(providerImageUri(ref)).not.toContain(bytes.toString("base64"));

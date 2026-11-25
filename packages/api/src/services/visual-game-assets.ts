@@ -113,7 +113,7 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
         request: { operation: "create", background: "opaque", width: 1536, height: 864, references: [], prompt: `${VISUAL_HOUSE_STYLE}. Empty setting: ${room.name}. ${room.direction}. Wide room view, no people, no text. Preserve uncluttered conversational furniture sections with generous headroom: ${JSON.stringify(room.sections)}. This is a lived-in social strategy game house, not a clinical studio.` } }))?.image;
       if (!image) continue;
       await assertBoundary();
-      await write(async (tx) => tx.insert(schema.visualRoomLibrary).values(await storeFields({ roomId: room.id, version: room.version, image: Buffer.from(image) }, {"image":"binary"})).onConflictDoNothing());
+      await write(async (tx) => tx.insert(schema.visualRoomLibrary).values(await storeFields({ roomId: room.id, version: room.version, image: Buffer.from(image) }, {"image":"image"})).onConflictDoNothing());
       const [accepted] = await loadPayloads(db.select().from(schema.visualRoomLibrary).where(and(eq(schema.visualRoomLibrary.roomId, room.id), eq(schema.visualRoomLibrary.version, room.version))));
       assets.backgrounds[room.id] = await storeVisualArtifact(db, gameId, accepted!.image);
       await save();
