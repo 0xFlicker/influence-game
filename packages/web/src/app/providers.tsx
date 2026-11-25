@@ -22,13 +22,7 @@ import {
   type PublicRuntimeConfig,
 } from "@/lib/runtime-config";
 import { PrivyProvider } from "@privy-io/react-auth";
-import {
-  WagmiProvider as PrivyWagmiProvider,
-  createConfig as createPrivyConfig,
-} from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { mainnet } from "viem/chains";
-import { http } from "wagmi";
 import {
   getAuthToken,
   type AuthenticatedPublicIdentity,
@@ -46,15 +40,6 @@ import {
 } from "@/components/public-identity-onboarding-model";
 import { MiniAppProvider } from "@/components/farcaster-miniapp-provider";
 import { FarcasterMiniAppAuthBootstrap } from "@/components/farcaster-miniapp-auth-bootstrap";
-
-// ---------------------------------------------------------------------------
-// Wagmi config (Privy-managed)
-// ---------------------------------------------------------------------------
-
-const wagmiConfig = createPrivyConfig({
-  chains: [mainnet],
-  transports: { [mainnet.id]: http() },
-});
 
 const queryClient = new QueryClient();
 
@@ -381,15 +366,13 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
           }}
         >
           <QueryClientProvider client={queryClient}>
-            <PrivyWagmiProvider config={wagmiConfig}>
-              <InfluenceAuthLayer
-                managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
-                clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
-              >
-                <FarcasterMiniAppAuthBootstrap />
-                {children}
-              </InfluenceAuthLayer>
-            </PrivyWagmiProvider>
+            <InfluenceAuthLayer
+              managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
+              clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
+            >
+              <FarcasterMiniAppAuthBootstrap />
+              {children}
+            </InfluenceAuthLayer>
           </QueryClientProvider>
         </PrivyProvider>
       </E2EAuthContext.Provider>

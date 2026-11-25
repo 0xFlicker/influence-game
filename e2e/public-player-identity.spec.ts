@@ -641,6 +641,7 @@ test.describe("local public player identity", () => {
       });
 
       await page.goto(`${servers.webUrl}/games`);
+      await page.getByRole("button", { name: "Refresh games", exact: true }).click();
       const librarySkeleton = page.getByRole("status", { name: "Loading Influence games", exact: true });
       await expect(librarySkeleton).toBeVisible();
       await expect(librarySkeleton.locator(".episode-skeleton").first()).toBeVisible();
@@ -806,6 +807,8 @@ test.describe("local public player identity", () => {
       await page.goto(`${servers.webUrl}/games/public`, { waitUntil: "networkidle" });
       await page.getByLabel("Search games", { exact: true }).fill(" ");
       await expect(page.getByTestId("episode-card")).toHaveCount(58);
+      await page.goto(`${servers.webUrl}/admin/games`);
+      await expect(page.getByRole("heading", { name: "Influence Admin", exact: true })).toBeVisible();
       await page.goto(`${servers.webUrl}/admin/production`, { waitUntil: "networkidle" });
       await expect(page.getByRole("heading", { name: "Production Studio" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Review naming batch" })).toBeDisabled();

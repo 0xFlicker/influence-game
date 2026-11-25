@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { parseHouseShareTarget, SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
 import { serverApiFetch, ServerApiError } from "@/lib/server-api";
-import { getPlayerCardGame } from "@/lib/server-player-card";
+import { getPlayerCardMetadataGame } from "@/lib/server-player-card";
 import { playerCardMetadata, resultsCardMetadata } from "@/lib/player-card";
 import { serializeMiniAppEmbedMeta } from "@/lib/farcaster-miniapp";
 import { getHighlightsShareMetadata, getProfileShareMetadata } from "@/lib/server-share-metadata";
@@ -31,12 +31,14 @@ export async function generateMetadata({params}: Props): Promise<Metadata> {
   const houseDescription = "Watch Influence and Werewolf in the House.";
   let metadata: Metadata = {title: "The House", description: houseDescription, openGraph: {title: "The House", description: houseDescription, images: ["/social/house-og.png"]}, twitter: {card: "summary_large_image", title: "The House", description: houseDescription, images: ["/social/house-og.png"]}};
   if (target.kind === "game") {
-    const game = await getPlayerCardGame(target.identifier!);
-    metadata = target.mode === "highlights"
-      ? await getHighlightsShareMetadata(target.identifier!, url.searchParams.get("scene") ?? undefined, url.searchParams.get("audience") ?? undefined)
-      : target.mode === "results"
+    if (target.mode === "highlights") {
+      metadata = await getHighlightsShareMetadata(target.identifier!, url.searchParams.get("scene") ?? undefined, url.searchParams.get("audience") ?? undefined);
+    } else {
+      const game = await getPlayerCardMetadataGame(target.identifier!);
+      metadata = target.mode === "results"
         ? resultsCardMetadata(game, origin)
         : playerCardMetadata(game, origin, Object.fromEntries(url.searchParams), target.sequence);
+    }
   } else if (target.kind === "profile") {
     metadata = await getProfileShareMetadata(target.identifier!, url.searchParams.get("game") ?? undefined);
   }

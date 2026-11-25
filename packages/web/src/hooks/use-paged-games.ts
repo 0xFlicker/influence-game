@@ -13,7 +13,7 @@ export function usePagedGames(query: string, initialPage?: PagedGamesPage) {
   const [error, setError] = useState<string | null>(null);
   const [stateQuery, setStateQuery] = useState(query);
   const version = useRef(0), active = useRef<AbortController | null>(null), busy = useRef(false);
-  const initial = useRef(initialPage);
+  const seededQuery = useRef(initialPage ? query : null);
   const retryRequest = useRef<{ cursor: string | null; append: boolean }>({ cursor: null, append: false });
 
   const request = useCallback(async (cursor: string | null, append: boolean) => {
@@ -50,8 +50,8 @@ export function usePagedGames(query: string, initialPage?: PagedGamesPage) {
     const requestVersion = version;
     ++requestVersion.current; active.current?.abort(); active.current = null; busy.current = false;
     setStateQuery(query); setError(null);
-    if (initial.current) { initial.current = undefined; setLoading(false); }
-    else { setItems([]); setNextCursor(null); void request(null, false); }
+    if (seededQuery.current === query) setLoading(false);
+    else { seededQuery.current = null; setItems([]); setNextCursor(null); void request(null, false); }
     return () => { ++requestVersion.current; active.current?.abort(); active.current = null; busy.current = false; };
   }, [query, request]);
 

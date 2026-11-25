@@ -10,11 +10,12 @@ import { GamesBrowser, type CategoryFilter, type FiltersState, type StatusFilter
 import { PagedOverview } from "./paged-overview";
 import { PagedCollection } from "./paged-collection";
 import { GameLibrarySkeleton } from "./game-library-loading";
+import type { OverviewPages } from "./paged-overview-queries";
 
 type GameKind = "all" | "influence" | "werewolf";
 
 /** Browse with bounded pages; use the existing complete-list search only while searching. */
-export function HybridGamesBrowser({ collection, initialSeasons, initialPage }: { collection?: GameCollection; initialSeasons?: SeasonIdentity[]; initialPage?: PagedGamesPage }) {
+export function HybridGamesBrowser({ collection, initialSeasons, initialPage, initialOverview }: { collection?: GameCollection; initialSeasons?: SeasonIdentity[]; initialPage?: PagedGamesPage; initialOverview?: OverviewPages }) {
   const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [kind, setKind] = useState<GameKind>("all");
   const [hasInteracted, setHasInteracted] = useState(false);
@@ -43,6 +44,6 @@ export function HybridGamesBrowser({ collection, initialSeasons, initialPage }: 
       : collection?.kind === "season" && seasons === undefined && !seasonError ? <GameLibrarySkeleton grid />
       : collection?.kind === "season" && seasons === undefined ? null
       : collection ? <PagedCollection collection={collection} seasons={seasons ?? []} status={filters.status} category={filters.category} initialPage={seed} />
-      : <PagedOverview seasons={seasons ?? []} initialOpen={seed} filters={{ kind, status: filters.status, category: filters.category }} />}
+      : <PagedOverview seasons={seasons ?? []} initialPages={hasInteracted ? undefined : initialOverview} filters={{ kind, status: filters.status, category: filters.category }} />}
   </div>;
 }

@@ -27,7 +27,7 @@ export function createGameEntryRoutes(db: DrizzleDB) {
     if (!game || !isViewerGame(game)) return c.json({ error: "Game not found" }, 404);
     return c.json({ id: game.id, slug: game.slug, gameKind: game.gameKind, visibility: storedGameVisibility(game.config) });
   });
-  // Bounded, anonymous social metadata: no replay history, private config or producer state.
+  // Anonymous share data. Page metadata can read the game fields separately from artwork inputs.
   app.get("/api/game-entries/:idOrSlug/card", async c => {
     c.header("Cache-Control", "private, no-store");
     const key = c.req.param("idOrSlug");
@@ -39,13 +39,14 @@ export function createGameEntryRoutes(db: DrizzleDB) {
     }).from(schema.games).leftJoin(schema.gameEpisodePresentations, eq(schema.gameEpisodePresentations.gameId, schema.games.id))
       .where(or(eq(schema.games.id,key), eq(schema.games.slug,key)));
     if (!game || !isViewerGame(game)) return c.json({error:"Game not found"},404);
+    const fields = {id:game.id, slug:game.slug, gameKind:game.gameKind, status:game.status,
+      visibility:storedGameVisibility(game.config), title:game.title ?? game.slug,
+      description:game.description ?? "Watch AI agents make allies, tell lies, and turn on each other.", coverUrl:game.coverUrl};
+    if (c.req.query("view") === "metadata") return c.json(fields);
     try {
       return await withPublicArtworkCapacity(async () => {
         const cast = ((await readEpisodeCast(db, [game])).get(game.id) ?? []).slice(0, 4);
-        return c.json({id:game.id, slug:game.slug, gameKind:game.gameKind, status:game.status,
-          visibility:storedGameVisibility(game.config), title:game.title ?? game.slug,
-          description:game.description ?? "Watch AI agents make allies, tell lies, and turn on each other.", coverUrl:game.coverUrl,
-          cast:cast.map(({id, name}) => ({id, name}))});
+        return c.json({...fields, cast:cast.map(({id, name}) => ({id, name}))});
       });
     } catch (error) {
       if (error instanceof PublicArtworkOverloadedError) {

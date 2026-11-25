@@ -11,9 +11,9 @@ const gamesPageSource = readFileSync(
   "utf8",
 );
 const navSource = readFileSync(join(import.meta.dir, "../components/nav.tsx"), "utf8");
-const pagedOverviewSource = readFileSync(join(import.meta.dir, "../app/games/paged-overview.tsx"), "utf8");
+const pagedOverviewQuerySource = readFileSync(join(import.meta.dir, "../app/games/paged-overview-queries.ts"), "utf8");
 const hybridBrowserSource = readFileSync(join(import.meta.dir, "../app/games/hybrid-games-browser.tsx"), "utf8");
-const combinedSource = `${gamesBrowserSource}\n${gamesPageSource}\n${pagedOverviewSource}\n${hybridBrowserSource}`;
+const combinedSource = `${gamesBrowserSource}\n${gamesPageSource}\n${pagedOverviewQuerySource}\n${hybridBrowserSource}`;
 
 describe("games list House/Influence rebrand", () => {
   it("uses episode titles for display and preserves game identity", () => {
@@ -44,7 +44,7 @@ describe("games list House/Influence rebrand", () => {
     expect(gamesPageSource).not.toContain('href="/games/new"');
     expect(navSource).toContain('href="/games/new"');
     expect(gamesPageSource).toContain("PagedGamesInitial");
-    expect(pagedOverviewSource).toContain('name="Werewolf"');
+    expect(pagedOverviewQuerySource).toContain('add("Werewolf"');
     expect(hybridBrowserSource).toContain('aria-label="Game type"');
     expect(gamesBrowserSource).not.toContain("WerewolfLibraryCard");
     expect(gamesBrowserSource).toContain("EpisodeCard");
