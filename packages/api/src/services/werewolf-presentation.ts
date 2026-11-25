@@ -13,7 +13,8 @@ import { mapWerewolfWatchCue, projectWerewolfWatch, type WerewolfWatchStaging } 
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readWerewolfNarratedEvents, WerewolfGameError } from "./werewolf-games.js";
 import { werewolfReferenceMetadata, WEREWOLF_AUTO_PUBLISHER } from "./werewolf-production.js";
-import { readVisualProfileImage } from "./visual-game-assets.js";
+import { readVisualProfileImage, visualProfileImageSource } from "./visual-game-assets.js";
+import { draftImageHash, readAgentDraftImageReference } from "./agent-draft-images.js";
 import { gamePlayerModelPreference } from "./game-player-model-preference.js";
 
 async function findPublicStartedWerewolf(db: Pick<DrizzleDB, "select">, id: string) {
@@ -63,7 +64,10 @@ export async function resolvePublicWerewolfCharacter(db: Pick<DrizzleDB, "select
   // Both audiences show the full opening cast at every cursor, including eliminated players.
   const player = players.find(player => player.id === playerId);
   if (!player) throw new WerewolfGameError("Character not found", 404);
-  return resolveFrozenWerewolfCharacter(db, game.id, [player], playerId, image);
+  const asset = await resolveFrozenWerewolfCharacter(db, game.id, [player], playerId, image);
+  if (!asset || "key" in asset) return asset;
+  const draft = draftImageHash(asset.url);
+  return draft ? readAgentDraftImageReference(db, draft) : visualProfileImageSource(asset.url, asset.profile);
 }
 
 export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[]) {
@@ -72,22 +76,25 @@ export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameI
   if (!player) return null;
   // Studio's frozen allowlist covers the entire cast and must be validated as a set.
   const asset = await resolveFrozenWerewolfCharacter(db, gameId, availableHashes ? players : [player], playerId, image, availableHashes);
-  return asset && !Buffer.isBuffer(asset) ? readPayload(asset) : asset;
+  if (!asset) return null;
+  return "key" in asset ? readPayload(asset) : readVisualProfileImage(asset.url, asset.profile);
 }
 
-async function resolveFrozenWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, players: readonly WerewolfPlayer[], playerId: string, image: "portrait" | "body", availableHashes?: readonly string[]): Promise<Buffer | StoredPayload<Buffer> | null> {
+type CharacterSource = { url: string | null; profile: Parameters<typeof readVisualProfileImage>[1] };
+
+async function resolveFrozenWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, players: readonly WerewolfPlayer[], playerId: string, image: "portrait" | "body", availableHashes?: readonly string[]): Promise<CharacterSource | StoredPayload<Buffer> | null> {
   const ref = (await werewolfReferenceMetadata(db, gameId, players, { availableHashes })).find(ref => ref.profile.id === playerId);
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
-  if (image === "body" && ref.transparentUrl) return readVisualProfileImage(ref.transparentUrl, ref.profile);
+  if (image === "body" && ref.transparentUrl) return { url: ref.transparentUrl, profile: ref.profile };
   const prepared = image === "body" ? ref.bodyPayload : ref.portraitPayload;
   if (prepared) return prepared;
-  if (image === "body" && ref.bundled && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
+  if (image === "body" && ref.bundled && ref.kind === "full_body") return { url: ref.profile.fullBodyReferenceUrl, profile: ref.profile };
   if (hash) {
     const [asset] = await db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash));
     return asset?.bytes ?? null;
   }
-  return image === "portrait" && ref.bundled ? readVisualProfileImage(null, ref.profile) : null;
+  return image === "portrait" && ref.bundled ? { url: null, profile: ref.profile } : null;
 }
 
 export async function publishedWerewolfScenes(db: Pick<DrizzleDB, "select">, gameId: string, publicationCutoff: string, strictCutoff = false) {

@@ -1,8 +1,5 @@
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { providerImageUri, type ProviderImageReference, type ProviderImageStorage } from "@influence/engine/provider-images";
-import { objectStorageBucket, objectStorageClient } from "../lib/object-storage-config.js";
-import { readPayload, storeImage, type StoredPayload } from "./payload-storage.js";
+import { readImageDelivery, readPayload, storeImage, type StoredPayload } from "./payload-storage.js";
 
 /** Longer than the maximum 300-second generation deadline; refreshed for each attempt. */
 export const PROVIDER_IMAGE_URL_TTL_SECONDS = 15 * 60;
@@ -20,11 +17,8 @@ export const providerImageStorage: ProviderImageStorage = {
     return { sha256: stored.sha256, byteLength: stored.byteLength, mediaType };
   },
   async sign(ref) {
-    const stored = binaryReference(ref);
-    // Do not sign missing/corrupt objects or replace the exact historical image.
-    await readPayload(stored);
-    return getSignedUrl(objectStorageClient("data"), new GetObjectCommand({
-      Bucket: objectStorageBucket("data"), Key: stored.key, ResponseContentType: ref.mediaType,
-    }), { expiresIn: PROVIDER_IMAGE_URL_TTL_SECONDS });
+    const { contentType, url } = await readImageDelivery(binaryReference(ref), PROVIDER_IMAGE_URL_TTL_SECONDS);
+    if (contentType !== ref.mediaType || !url) throw new Error("Provider image metadata disagrees with its reference");
+    return url;
   },
 };

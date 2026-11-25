@@ -84,6 +84,21 @@ export async function verifyImageObjectBytes(client: S3Client, bucket: string, r
   return sha256;
 }
 
+export async function verifyResumedImageCopy(client: S3Client, bucket: string, ref: StoredPayload,
+  before: ReturnType<typeof imageObjectReceipt>, after: HeadObjectCommandOutput, tagSha256?: string) {
+  if (imageObjectReceipt(after).preservedMetadataSha256 !== before.preservedMetadataSha256) {
+    throw new Error("Object metadata changed during an interrupted copy");
+  }
+  const object = { Bucket: bucket, Key: ref.key };
+  const access = await imageAccess(client, { ...object, VersionId: after.VersionId });
+  if (tagSha256 && access.tagSha256 !== tagSha256) throw new Error("Object tags changed during an interrupted copy");
+  if (before.version && before.version !== after.VersionId) {
+    const prior = await client.send(new HeadObjectCommand({ ...object, VersionId: before.version }), timeout());
+    if (prior.ETag !== before.etag || prior.ContentType !== before.contentType) throw new Error("Previous version changed");
+  }
+  return verifyImageObjectBytes(client, bucket, ref, after);
+}
+
 /** Copy within the same bucket/key, leaving any prior version at its original ID. */
 export async function replaceImageContentType(client: S3Client, bucket: string, ref: StoredPayload,
   before: HeadObjectCommandOutput, type: ImageContentType, recordIntent: (before: ReturnType<typeof imageObjectReceipt>, access: { tagSha256: string }) => Promise<void>) {

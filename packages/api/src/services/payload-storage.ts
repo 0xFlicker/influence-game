@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { objectStorageBucket, objectStorageClient } from "../lib/object-storage-config.js";
-import { imageContentType } from "../lib/image-content-type.js";
+import { imageContentType, isImageContentType, type ImageContentType } from "../lib/image-content-type.js";
 import type { SQLWrapper } from "drizzle-orm";
 
 /** Private, immutable body. Authorization belongs to the owning relational row. */
@@ -21,12 +22,13 @@ export interface StoredPayload<T = unknown> {
 export interface PayloadObjectStore {
   putIfAbsent(key: string, bytes: Uint8Array, contentType: string): Promise<void | boolean>;
   get(key: string): Promise<Uint8Array>;
+  imageDelivery?(ref: StoredPayload, expiresIn?: number, signal?: AbortSignal): Promise<ImageDelivery>;
 }
 
-type PayloadStreamReader = (key: string, signal?: AbortSignal) => Promise<ReadableStream<Uint8Array>>;
-type StreamingPayloadStore = PayloadObjectStore & { stream: PayloadStreamReader };
+type ImageDelivery = { contentType: ImageContentType; url?: string };
+export const PORTRAIT_URL_TTL_SECONDS = 120;
 
-class S3PayloadObjectStore implements StreamingPayloadStore {
+class S3PayloadObjectStore implements PayloadObjectStore {
   private connection() {
     const bucket = objectStorageBucket("data");
     if (bucket === process.env.LINODE_OBJ_BUCKET || bucket === process.env.HOUSE_PUBLIC_BUCKET) throw new Error("Payload storage requires a separate private bucket");
@@ -53,22 +55,32 @@ class S3PayloadObjectStore implements StreamingPayloadStore {
     } catch (error) { throw new Error("Private payload read failed", { cause: error }); }
   }
 
-  async stream(key: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
-    return (await this.open(key, signal)).transformToWebStream();
+  async imageDelivery(ref: StoredPayload, expiresIn?: number, signal?: AbortSignal): Promise<ImageDelivery> {
+    const { bucket, client } = this.connection();
+    const object = { Bucket: bucket, Key: ref.key };
+    const deadline = AbortSignal.timeout(10_000);
+    const head = await client.send(new HeadObjectCommand(object), { abortSignal: signal ? AbortSignal.any([signal, deadline]) : deadline });
+    if (head.ContentLength !== ref.storedByteLength || !isImageContentType(head.ContentType)) {
+      throw new Error("Frozen image metadata is missing or invalid");
+    }
+    const url = expiresIn === undefined ? undefined : await getSignedUrl(client, new GetObjectCommand({
+      ...object, ResponseCacheControl: "private, no-store",
+    }), { expiresIn });
+    return { contentType: head.ContentType, url };
   }
 
-  private async open(key: string, signal?: AbortSignal) {
+  private async open(key: string) {
     const { bucket, client } = this.connection();
     const deadline = AbortSignal.timeout(60_000);
     const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
-      abortSignal: signal ? AbortSignal.any([signal, deadline]) : deadline,
+      abortSignal: deadline,
     });
     if (!result.Body) throw new Error("Private payload object has no body");
     return result.Body;
   }
 }
 
-let store: StreamingPayloadStore = new S3PayloadObjectStore();
+let store: PayloadObjectStore = new S3PayloadObjectStore();
 const decodedReferences = new WeakSet<object>();
 /** Called only by the reference-column decoder, never on arbitrary document contents. */
 export function decodePayloadReference(value: unknown): StoredPayload {
@@ -77,15 +89,8 @@ export function decodePayloadReference(value: unknown): StoredPayload {
   return value;
 }
 /** Explicit injection for deterministic tests; never an environment fallback. */
-export function setPayloadObjectStoreForTests(replacement: PayloadObjectStore & { stream?: PayloadStreamReader }): void {
-  store = {
-    putIfAbsent: (key, bytes, contentType) => replacement.putIfAbsent(key, bytes, contentType),
-    get: key => replacement.get(key),
-    stream: replacement.stream?.bind(replacement) ?? (async key => {
-      const bytes = await replacement.get(key);
-      return new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } });
-    }),
-  };
+export function setPayloadObjectStoreForTests(replacement: PayloadObjectStore): void {
+  store = replacement;
 }
 export function payloadHash(bytes: Uint8Array): string { return createHash("sha256").update(bytes).digest("hex"); }
 
@@ -134,11 +139,11 @@ export async function readPayload(ref: StoredPayload): Promise<Buffer> {
   return bytes;
 }
 
-/** Serve an already-authorized immutable binary without re-reading its digest. */
-export function streamBinaryPayload(ref: StoredPayload, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+/** Look up saved MIME and sign an already-authorized immutable image without a body read. */
+export function readImageDelivery(ref: StoredPayload, expiresIn?: number, signal?: AbortSignal): Promise<ImageDelivery> {
   assertStoredPayload(ref);
-  if (ref.codec !== "binary") throw new Error("Expected binary payload");
-  return store.stream(ref.key, signal);
+  if (ref.codec !== "binary" || !store.imageDelivery) throw new Error("Expected an image payload with delivery metadata");
+  return store.imageDelivery(ref, expiresIn, signal);
 }
 /** Bound independent bucket operations while retaining source order and stopping new batches on failure. */
 export async function mapPayloadBatch<T, R>(items: readonly T[], operation: (item: T) => Promise<R>): Promise<R[]> {

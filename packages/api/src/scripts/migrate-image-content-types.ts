@@ -4,7 +4,7 @@ import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { parseProviderImageUri } from "@influence/engine/provider-images";
 import { objectStorageBucket, objectStorageClient, objectStorageClientConfig, objectStorageProvider, privateEvidenceReadBucket } from "../lib/object-storage-config.js";
 import { imagePayloadInventorySql, isImagePayloadColumn } from "../services/image-payload-inventory.js";
-import { imageObjectReceipt, inspectImageObject, replaceImageContentType, verifyImageObjectBytes } from "../services/image-payload-metadata.js";
+import { imageObjectReceipt, inspectImageObject, replaceImageContentType, verifyResumedImageCopy } from "../services/image-payload-metadata.js";
 import { assertStoredPayload, payloadHash, readText, type StoredPayload } from "../services/payload-storage.js";
 import { isImageContentType, type ImageContentType } from "../lib/image-content-type.js";
 
@@ -16,7 +16,7 @@ type SnapshotRow =
 type Image = { ref: StoredPayload; sources: string[] };
 type Inspection = { kind: "inspection"; key: string; sources: string[]; result: string; type?: ImageContentType; before?: ReturnType<typeof imageObjectReceipt>; error?: string };
 type EvidenceInventory = { kind: "evidence"; id: string; refs?: StoredPayload[]; error?: string };
-type CopyReceipt = { kind: "intent" | "verified" | "exception"; key: string; result?: string; type?: ImageContentType; error?: string };
+type CopyReceipt = { kind: "intent" | "verified" | "exception"; key: string; result?: string; type?: ImageContentType; error?: string; tagSha256?: string };
 type Receipt = Inspection | EvidenceInventory | CopyReceipt;
 
 function safeError(error: unknown): string {
@@ -72,12 +72,12 @@ async function readRecords<T>(path: string, optional = false): Promise<T[]> {
 }
 
 async function main() {
-  const [mode, snapshotPath, journalPath, database, provider, endpoint, bucket, max = "100", delay = "100", reads = "4"] = Bun.argv.slice(2);
+  const [mode, snapshotPath, journalPath, database, provider, endpoint, bucket, max = "100", delay = "100", parallel] = Bun.argv.slice(2);
   if (mode === "sql") { console.log(imagePayloadInventorySql()); return; }
   if ((mode !== "dry-run" && mode !== "apply") || !snapshotPath || !journalPath || !database || !provider || !endpoint || !bucket) {
-    throw new Error("Usage: migrate-image-content-types.ts sql | dry-run|apply SNAPSHOT JOURNAL DATABASE PROVIDER ENDPOINT BUCKET [LIMIT] [DELAY_MS] [READ_CONCURRENCY]");
+    throw new Error("Usage: migrate-image-content-types.ts sql | dry-run|apply SNAPSHOT JOURNAL DATABASE PROVIDER ENDPOINT BUCKET [LIMIT] [DELAY_MS] [CONCURRENCY]");
   }
-  const limit = Number(max), pause = Number(delay), concurrency = Number(reads);
+  const limit = Number(max), pause = Number(delay), concurrency = Number(parallel ?? (mode === "dry-run" ? 4 : 1));
   if (!Number.isInteger(limit) || limit < 1 || limit > 50_000 || !Number.isInteger(pause) || pause < 0
     || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("Invalid limit, delay or concurrency");
   const target = { database, provider, endpoint, bucket, snapshotSha256: createHash("sha256").update(await Bun.file(snapshotPath).arrayBuffer().then(Buffer.from)).digest("hex") };
@@ -165,9 +165,11 @@ async function main() {
       } else {
         if (evidence.size !== attachments.length || inspections.size !== sorted.length) throw new Error("Complete the dry-run inventory before applying");
         const attempted = new Set(receipts.flatMap(row => row.kind === "exception" ? [row.key] : []));
+        const intents = new Map(receipts.flatMap(row => row.kind === "intent" ? [[row.key, row.tagSha256] as const] : []));
         const todo = sorted.filter(({ ref }) => inspections.get(ref.key)?.result === "incorrect" && !applied.has(ref.key));
         todo.sort((a, b) => Number(attempted.has(a.ref.key)) - Number(attempted.has(b.ref.key)));
-        for (const { ref } of todo.slice(0, limit)) {
+        const batch = todo.slice(0, limit);
+        const apply = async ({ ref }: Image) => {
           const plan = inspections.get(ref.key)!;
           const type = plan.type;
           if (!isImageContentType(type) || !plan.before) throw new Error("Invalid dry-run entry");
@@ -175,7 +177,7 @@ async function main() {
             const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: ref.key }), { abortSignal: AbortSignal.timeout(15_000) });
             const current = imageObjectReceipt(head);
             if (head.ContentType === type) {
-              const sha256 = await verifyImageObjectBytes(client, bucket, ref, head);
+              const sha256 = await verifyResumedImageCopy(client, bucket, ref, plan.before, head, intents.get(ref.key));
               await save({ kind: "verified", key: ref.key, type, result: "already-correct", before: plan.before, after: current, sha256 });
             } else {
               if (JSON.stringify(current) !== JSON.stringify(plan.before)) throw new Error("Object changed after dry run");
@@ -187,6 +189,9 @@ async function main() {
           } catch (error) {
             await save({ kind: "exception", key: ref.key, type, error: safeError(error) });
           }
+        };
+        for (let start = 0; start < batch.length; start += concurrency) {
+          await Promise.all(batch.slice(start, start + concurrency).map(apply));
           if (pause) await Bun.sleep(pause);
         }
       }
