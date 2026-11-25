@@ -77,10 +77,13 @@ test("an unresponsive game lookup releases the route to the client entry", async
 }, 3000);
 
 test("API reads expose a safe message for an upstream HTML 503", async () => {
-  globalThis.fetch = (async () => new Response("<html><body>Upstream details</body></html>", {
-    status: 503,
-    headers: { "content-type": "text/html" },
-  })) as typeof fetch;
+  globalThis.fetch = Object.assign(
+    async () => new Response("<html><body>Upstream details</body></html>", {
+      status: 503,
+      headers: { "content-type": "text/html" },
+    }),
+    { preconnect: originalFetch.preconnect },
+  );
   for (const request of [anonymousApiFetch, serverApiFetch]) {
     await expect(request("/api/games/game")).rejects.toMatchObject({
       status: 503,
