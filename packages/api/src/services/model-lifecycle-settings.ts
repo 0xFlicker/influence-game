@@ -34,8 +34,18 @@ export async function currentPublishedModelPreference(
 ): Promise<ModelPreference> {
   if (submitted === "default" || (saved !== "default" && saved.catalogId === submitted.catalogId)) return submitted;
   const { cutoffs } = await readModelLifecycle(db);
-  const rule = cutoffs[submitted.catalogId];
-  if (isHouseModelCutoffActive(rule) || (rule && saved !== "default" && rule.replacementCatalogId === saved.catalogId
-    && Date.parse(submittedAt) <= Date.parse(rule.approvedAt))) return saved;
+  const first = cutoffs[submitted.catalogId];
+  if (isHouseModelCutoffActive(first)) return saved;
+  if (!first || saved === "default" || !(Date.parse(submittedAt) <= Date.parse(first.approvedAt))) return submitted;
+
+  let catalogId = first.replacementCatalogId;
+  const visited = new Set([submitted.catalogId]);
+  while (!visited.has(catalogId)) {
+    if (catalogId === saved.catalogId) return saved;
+    visited.add(catalogId);
+    const rule = cutoffs[catalogId];
+    if (!rule) break;
+    catalogId = rule.replacementCatalogId;
+  }
   return submitted;
 }

@@ -113,3 +113,26 @@ test("preview rejects inaccessible replacements and stale approvals, then enforc
     setSystemTime();
   }
 });
+
+test("a draft predating consecutive migrations cannot restore its source model before the House cutoffs", async () => {
+  const finalModel = "meta-muse:muse-ember-1.0";
+  const next = { sourceCatalogId: replacement.catalogId, replacementCatalogId: finalModel, cutoffDate: "2026-12-02" };
+  try {
+    setSystemTime(new Date("2026-11-24T12:00:00Z"));
+    await applyModelMigration(db, admin, change, (await previewModelMigration(db, admin, change)).previewId);
+    setSystemTime(new Date("2026-11-25T12:00:00Z"));
+    await applyModelMigration(db, admin, next, (await previewModelMigration(db, admin, next)).previewId);
+    const [profile] = await db.select().from(schema.agentProfiles);
+    const saved = profile!.modelPreference;
+    expect(saved).toEqual({ catalogId: finalModel, reasoningPolicy: "high" });
+    expect(await currentPublishedModelPreference(db, saved, source, "2026-11-23T12:00:00Z")).toEqual(saved);
+    expect(await currentPublishedModelPreference(db, saved, source, "2026-11-24T13:00:00Z")).toEqual(source);
+
+    setSystemTime(new Date("2026-11-26T12:00:00Z"));
+    const revised = { ...change, cutoffDate: "2026-11-30" };
+    await applyModelMigration(db, admin, revised, (await previewModelMigration(db, admin, revised)).previewId);
+    expect(await currentPublishedModelPreference(db, saved, source, "2026-11-23T12:00:00Z")).toEqual(saved);
+  } finally {
+    setSystemTime();
+  }
+});
