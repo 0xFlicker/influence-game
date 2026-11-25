@@ -1,4 +1,4 @@
-import { storeFields, loadPayloads } from "../services/payload-storage.js";
+import { storeFields, loadPayloads, setPayloadObjectStoreForTests } from "../services/payload-storage.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -27,6 +27,7 @@ import { readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { setupTestDB } from "./test-utils.js";
+import { testPayloadStore } from "./payload-test-store.js";
 import { seedProductionStudioFixture } from "./production-studio-fixtures.js";
 
 let db: DrizzleDB, app: Hono<AuthEnv>, token: string;
@@ -283,7 +284,8 @@ test("missing frozen character art uses presentation fallback while available bo
   const frozenResponse = await request(`${root(id)}/selection`,{snapshot:source.snapshot,audience:"omniscient",thinking:true,
     selection:{mode:"ids",thinking:true,ids:[thought.id]},expectedMomentIds:[thought.id],settings,copy:{}});
   expect(frozenResponse.status).toBe(200); const frozen = await frozenResponse.json() as ProductionExportDescriptor;
-  await db.insert(schema.agentContentAssets).values(await storeFields({hash:portraitHash,bytes:portraitBytes}, {"bytes":"binary"}));
+  const portraitRow = await storeFields({hash:portraitHash,bytes:portraitBytes}, {"bytes":"binary"});
+  await db.insert(schema.agentContentAssets).values(portraitRow);
   const pinned = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true,snapshot:source.snapshot});
   expect(pinned.snapshot).toEqual(source.snapshot);
   expect(pinned.window.players.find(player=>player.id===lostPortrait.id)?.avatarUrl).toBeNull();
@@ -296,9 +298,48 @@ test("missing frozen character art uses presentation fallback while available bo
   await db.update(schema.werewolfEvents).set({ event: { ...later, houseNarrationCallIds: { mystery: "unavailable-narration" } } })
     .where(eq(schema.werewolfEvents.sequence, later.sequence));
   const publicPortraitPath = `/api/werewolf/${id}/characters/${lostPortrait.id}?audience=mystery&cursor=1`;
-  const publicPortrait = await publicRoutes.request(publicPortraitPath);
-  expect(publicPortrait.status).toBe(200);
-  expect(Buffer.from(await publicPortrait.arrayBuffer())).toEqual(portraitBytes);
+  const tail = Promise.withResolvers<void>();
+  setPayloadObjectStoreForTests({
+    putIfAbsent: (key, bytes) => testPayloadStore.putIfAbsent(key, bytes),
+    get: key => {
+      if (key === portraitRow.bytes.key) throw new Error("Public portrait attempted a buffered download");
+      return testPayloadStore.get(key);
+    },
+    async stream(key) {
+      expect(key).toBe(portraitRow.bytes.key);
+      return new ReadableStream({
+        start(controller) {
+          controller.enqueue(portraitBytes.subarray(0, 2));
+          controller.enqueue(portraitBytes.subarray(2, 16));
+        },
+        async pull(controller) {
+          await tail.promise;
+          controller.enqueue(portraitBytes.subarray(16));
+          controller.close();
+        },
+      });
+    },
+  });
+  try {
+    const publicPortrait = await publicRoutes.request(publicPortraitPath);
+    expect(publicPortrait.status).toBe(200);
+    expect(publicPortrait.headers.get("Content-Type")).toBe("image/png");
+    expect(publicPortrait.headers.get("Content-Length")).toBe(String(portraitBytes.length));
+    const reader = publicPortrait.body!.getReader();
+    const { value: first } = await reader.read();
+    expect(first).toEqual(portraitBytes.subarray(0, 2));
+    const chunks = [first!];
+    tail.resolve();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    expect(Buffer.concat(chunks)).toEqual(portraitBytes);
+  } finally {
+    tail.resolve();
+    setPayloadObjectStoreForTests(testPayloadStore);
+  }
   await db.update(schema.werewolfEvents).set({ event: later }).where(eq(schema.werewolfEvents.sequence, later.sequence));
   expect(refreshed.window.players.find(player=>player.id===legacy.id)?.avatarUrl).toBeNull();
   const tamperedBody = `${root(id)}/source/characters/${bodyOnly.id}?snapshot=${encodeURIComponent(JSON.stringify({...source.snapshot,availableCharacterAssets:[]}))}&image=body`;

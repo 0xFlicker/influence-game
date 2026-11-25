@@ -1,6 +1,6 @@
 import { audioReadySequence } from "./audio-frontier.js";
 import { readRetrospectivePresentation } from "./retrospective-retakes.js";
-import { loadPayloads, readPayload } from "./payload-storage.js";
+import { readPayload, type StoredPayload } from "./payload-storage.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
 import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
@@ -57,13 +57,13 @@ async function readWerewolfOpeningPlayers(db: Pick<DrizzleDB, "select">, gameId:
   return event.payload.players;
 }
 
-export async function readPublicWerewolfCharacter(db: Pick<DrizzleDB, "select">, id: string, playerId: string, image: "portrait" | "body") {
+export async function resolvePublicWerewolfCharacter(db: Pick<DrizzleDB, "select">, id: string, playerId: string, image: "portrait" | "body") {
   const game = await findPublicStartedWerewolf(db, id);
   const players = await readWerewolfOpeningPlayers(db, game.id);
   // Both audiences show the full opening cast at every cursor, including eliminated players.
   const player = players.find(player => player.id === playerId);
   if (!player) throw new WerewolfGameError("Character not found", 404);
-  return readFrozenWerewolfCharacter(db, game.id, [player], playerId, image);
+  return resolveFrozenWerewolfCharacter(db, game.id, [player], playerId, image);
 }
 
 export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[]) {
@@ -71,19 +71,20 @@ export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameI
   const player = players.find(player => player.id === playerId);
   if (!player) return null;
   // Studio's frozen allowlist covers the entire cast and must be validated as a set.
-  return readFrozenWerewolfCharacter(db, gameId, availableHashes ? players : [player], playerId, image, availableHashes);
+  const asset = await resolveFrozenWerewolfCharacter(db, gameId, availableHashes ? players : [player], playerId, image, availableHashes);
+  return asset && !Buffer.isBuffer(asset) ? readPayload(asset) : asset;
 }
 
-async function readFrozenWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, players: readonly WerewolfPlayer[], playerId: string, image: "portrait" | "body", availableHashes?: readonly string[]) {
+async function resolveFrozenWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, players: readonly WerewolfPlayer[], playerId: string, image: "portrait" | "body", availableHashes?: readonly string[]): Promise<Buffer | StoredPayload<Buffer> | null> {
   const ref = (await werewolfReferenceMetadata(db, gameId, players, { availableHashes })).find(ref => ref.profile.id === playerId);
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
   if (image === "body" && ref.transparentUrl) return readVisualProfileImage(ref.transparentUrl, ref.profile);
   const prepared = image === "body" ? ref.bodyPayload : ref.portraitPayload;
-  if (prepared) return readPayload(prepared);
+  if (prepared) return prepared;
   if (image === "body" && ref.bundled && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
   if (hash) {
-    const [asset] = await loadPayloads(db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));
+    const [asset] = await db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash));
     return asset?.bytes ?? null;
   }
   return image === "portrait" && ref.bundled ? readVisualProfileImage(null, ref.profile) : null;
