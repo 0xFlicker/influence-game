@@ -24,6 +24,8 @@ The allowed response paths are:
 
 The admin users list includes `publicProfileId` for links to `/profile/:id`; imported synthetic users have `null` because they have no public player profile. The admin agent list includes `publicProfileAvailable` so eligible public agents link to `/agents/:id`; its separate details dialog remains available for all agents. The admin people tables support ascending and descending column sorting; registered users initially appear newest first.
 
+The public agent page at `/agents/:id` leads with a matching published cutout when one exists, the approved full-body image otherwise, or a circular headshot when there is no full-body art. Its public artwork route checks current profile eligibility and never serves private drafts. The page shows the rated Influence record and the faction wins, losses, and draws with verified outcomes among the agent's 20 most recent completed public Werewolf participations. The Werewolf summary stays visible when the history filter changes. That filter still scopes the separate recent history list, which includes up to 20 completed public participations and links to each game's results.
+
 All other REST, MCP, WebSocket, replay, leaderboard, queue, season, and public-player responses must omit email values, including an email copied or embedded in a legacy display-name field. Administrative labels such as invite-code owners use the same display-name redaction even though they never expose an email field. Public identity queries may load email internally only to reject email-derived display names. The generic authenticated request context deliberately omits email so serializing `c.get("user")` cannot expose it.
 
 ## Contract Matrix

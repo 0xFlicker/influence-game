@@ -272,7 +272,9 @@ export interface PublicAgentPreview {
 
 export interface PublicAgentProfile extends PublicAgentPreview {
   profileHref: string;
+  fullBodyImageUrl: string | null;
   owner: PublicPlayerIdentityRef | null;
+  werewolfRecord: { wins: number; losses: number; draws: number };
   awards: import("./championship").PublicAward[];
   recentResults: import("@influence/engine/house-participation").HouseParticipation[];
 }

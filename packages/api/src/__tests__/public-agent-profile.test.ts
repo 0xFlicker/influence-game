@@ -1,13 +1,15 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { createPublicPlayerRoutes } from "../routes/public-players.js";
 import { grantAward } from "../services/awards.js";
-import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedCurrentWerewolfFixture, completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { withPublicArtworkCapacity } from "../services/public-artwork-admission.js";
 import { contentImageFixture } from "./content-image-fixture.js";
+import { storeAgentDraftImage } from "../services/agent-draft-images.js";
 import { storeBinary, storeJson } from "../services/payload-storage.js";
 
 type FoundProfile = Extract<Awaited<ReturnType<typeof import("../services/public-agent-profile.js").getPublicAgentProfile>>, { status: "found" }>;
@@ -40,8 +42,10 @@ test("anonymous agent profile is allowlisted, agent-scoped before limits, and ex
   expect(response.status).toBe(200);
   expect(response.headers.get("Cache-Control")).toBe("no-store");
   const body = await response.json() as FoundProfile;
-  expect(Object.keys(body.profile).sort()).toEqual(["name", "avatarUrl", "role", "profileHref", "owner", "competition", "awards", "recentResults"].sort());
+  expect(Object.keys(body.profile).sort()).toEqual(["name", "avatarUrl", "fullBodyImageUrl", "role", "profileHref", "owner", "competition", "werewolfRecord", "awards", "recentResults"].sort());
   expect(body.profile.profileHref).toBe(`/agents/${agent}`);
+  expect(body.profile.fullBodyImageUrl).toBeNull();
+  expect(body.profile.werewolfRecord).toEqual({ wins: 0, losses: 0, draws: 0 });
   expect(body.profile.owner!.displayName).toBe("Public Architect");
   expect(Object.keys(body.profile.owner!).sort()).toEqual(["publicId", "handle", "displayName"].sort());
   expect(body.profile.awards).toHaveLength(1);
@@ -95,14 +99,39 @@ test("public artwork is limited to eligible agents and an explicit image kind", 
   expect(portrait.headers.get("cache-control")).toBe("private, no-store");
   expect((await portrait.arrayBuffer()).byteLength).toBeGreaterThan(0);
   expect((await app.request(`/api/public/agents/${agent}/art?kind=body`)).status).toBe(404);
+  expect((await app.request(`/api/public/agents/${agent}/art?kind=full-body`)).status).toBe(404);
   expect((await app.request(`/api/public/agents/${agent}/art?kind=anything`)).status).toBe(400);
   await db.update(schema.agentProfiles).set({ archivedAt: "2026-11-01T00:00:00.000Z" }).where(eq(schema.agentProfiles.id, agent));
   expect((await app.request(`/api/public/agents/${agent}/art?kind=portrait`)).status).toBe(404);
 });
 
+test("profile artwork serves the approved full body before a derivative exists and keeps drafts private", async () => {
+  const { db, app, owner, agent } = await fixture();
+  const profileUrl = `/api/public/agents/${agent}`;
+  const artUrl = `${profileUrl}/art?kind=full-body`;
+  const source = "/avatars/personas/full-body-v1/strategic.webp";
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: source }).where(eq(schema.agentProfiles.id, agent));
+  const body = await (await app.request(profileUrl)).json() as FoundProfile;
+  expect(body.profile.fullBodyImageUrl).toBe(artUrl);
+  expect(JSON.stringify(body)).not.toContain(source);
+  const response = await app.request(artUrl);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toBe("image/webp");
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+  expect((await app.request(`${profileUrl}/art?kind=body`)).status).toBe(404);
+
+  const draft = await storeAgentDraftImage(db, owner, new Uint8Array([1, 2, 3]));
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: draft }).where(eq(schema.agentProfiles.id, agent));
+  expect((await app.request(artUrl)).status).toBe(404);
+
+  await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: source, archivedAt: "2026-11-01T00:00:00.000Z" }).where(eq(schema.agentProfiles.id, agent));
+  expect((await app.request(artUrl)).status).toBe(404);
+});
+
 test("public agent artwork selects the saved derivative of the currently published body", async () => {
   const { db, app, owner, agent } = await fixture();
-  const source = await contentImageFixture(`pfp/${randomUUID()}.png`);
+  const source = "/avatars/personas/full-body-v1/strategic.webp";
   const cutout = await contentImageFixture(`characters/${randomUUID()}.png`);
   const hash = "c".repeat(64), revision = randomUUID();
   await db.insert(schema.agentContentAssets).values({ hash, bytes: await storeBinary(Buffer.from("source")), transparentUrl: cutout });
@@ -111,6 +140,9 @@ test("public agent artwork selects the saved derivative of the currently publish
   const image = await app.request(`/api/public/agents/${agent}/art?kind=body`);
   expect(image.status).toBe(200);
   expect(image.headers.get("content-type")).toBe("image/png");
+  const fullBody = await app.request(`/api/public/agents/${agent}/art?kind=full-body`);
+  expect(fullBody.status).toBe(200);
+  expect(await sharp(Buffer.from(await fullBody.arrayBuffer())).metadata()).toMatchObject({ format: "webp", width: 1, height: 1 });
   await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "/different-body.png" }).where(eq(schema.agentProfiles.id, agent));
   expect((await app.request(`/api/public/agents/${agent}/art?kind=body`)).status).toBe(404);
 });
@@ -130,16 +162,34 @@ test("public artwork rejects excess concurrent renders and releases capacity", a
 
 test("Werewolf history includes only this agent's canonical completed public participation", async () => {
   const { db, app, owner, agent, other } = await fixture();
-  const game = randomUUID(), events = await completedWerewolfResultsFixture("village", game), start = events[0]!;
-  if (start.type !== "werewolf.started") throw Error("Invalid fixture");
-  start.payload.players.forEach((player, i) => { player.agentProfileId = i === 0 ? agent : other; });
-  await db.insert(schema.games).values({ id: game, slug: "public-agent-werewolf", gameKind: "werewolf", status: "completed", endedAt: "2026-11-01T00:00:00.000Z", config: "{}" });
-  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: game, sequence: event.sequence, event })));
+  async function werewolf(slug: string, outcome: "win" | "loss" | "draw", visibility = "public", hiddenAt?: string) {
+    const game = randomUUID();
+    const events = outcome === "draw" ? await completedCurrentWerewolfFixture(game, 10) : await completedWerewolfResultsFixture("village", game);
+    const [start] = events;
+    const finish = events.find(event => event.type === "werewolf.completed");
+    if (start?.type !== "werewolf.started" || !finish) throw Error("Invalid fixture");
+    const focus = start.payload.players.find(player => outcome === "draw" || finish.payload.winnerIds.includes(player.id) === (outcome === "win"));
+    if (!focus) throw Error("Fixture has no matching outcome");
+    for (const player of start.payload.players) player.agentProfileId = player === focus ? agent : other;
+    await db.insert(schema.games).values({ id: game, slug, gameKind: "werewolf", status: "completed", endedAt: "2026-11-01T00:00:00.000Z", hiddenAt, config: JSON.stringify({ visibility }) });
+    await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: game, sequence: event.sequence, event })));
+    return focus.id;
+  }
+  const winnerId = await werewolf("public-agent-wolf-win", "win");
+  await werewolf("public-agent-wolf-loss", "loss");
+  await werewolf("public-agent-wolf-draw", "draw");
+  await werewolf("unlisted-agent-wolf-win", "win", "unlisted");
+  await werewolf("hidden-agent-wolf-win", "win", "public", "2026-11-02T00:00:00.000Z");
   await influence(db, owner, agent, "public-agent-influence");
   const response = await app.request(`/api/public/agents/${agent}?game=werewolf`), body = await response.json() as FoundProfile;
   expect(response.status).toBe(200);
-  expect(body.profile.recentResults).toHaveLength(1);
-  expect(body.profile.recentResults[0]).toMatchObject({ agentProfileId: agent, gameKind: "werewolf", playerId: start.payload.players[0]!.id });
-  expect(body.profile.recentResults[0]!.result).not.toBeNull();
-  expect(JSON.stringify(body)).not.toMatch(/PRIVATE_|nightActions|thinking|strategyStyle/);
+  expect(body.profile.recentResults).toHaveLength(3);
+  expect(body.profile.recentResults.find(row => row.gameSlug === "public-agent-wolf-win"))
+    .toMatchObject({ agentProfileId: agent, gameKind: "werewolf", playerId: winnerId, result: { outcome: "win" } });
+  expect(body.profile.werewolfRecord).toEqual({ wins: 1, losses: 1, draws: 1 });
+  expect(body.profile.competition).toEqual({ gamesPlayed: 0, wins: 0, winRate: 0 });
+  const influenceOnly = await (await app.request(`/api/public/agents/${agent}?game=influence`)).json() as FoundProfile;
+  expect(influenceOnly.profile.recentResults.map(row => row.gameSlug)).toEqual(["public-agent-influence"]);
+  expect(influenceOnly.profile.werewolfRecord).toEqual(body.profile.werewolfRecord);
+  expect(JSON.stringify(body)).not.toMatch(/PRIVATE_|SECRET_|nightActions|thinking|strategyStyle|unlisted-agent-wolf|hidden-agent-wolf/);
 });

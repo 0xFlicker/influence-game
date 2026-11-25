@@ -7,7 +7,8 @@ import { GET as getAgentCard } from "../app/(site)/agents/[id]/card-image/route"
 import { GET as getPlayerCard } from "../app/(site)/profile/[id]/card-image/route";
 
 const agent: PublicAgentProfile = { name: "Test Agent", profileHref: "/agents/agent-1", avatarUrl: null, role: null,
-  owner: null, competition: { gamesPlayed: 0, wins: 0, winRate: 0 }, awards: [], recentResults: [] };
+  fullBodyImageUrl: null, owner: null, competition: { gamesPlayed: 0, wins: 0, winRate: 0 },
+  werewolfRecord: { wins: 0, losses: 0, draws: 0 }, awards: [], recentResults: [] };
 const player: PublicPlayerProfile = { identity: { publicId: "p1", handle: "player", displayName: "Test Player" }, currentSeason: null,
   career: { rating: 1000, peakRating: 1000, gamesPlayed: 0, wins: 0, winRate: 0 }, recentResults: [], agents: [agent] };
 

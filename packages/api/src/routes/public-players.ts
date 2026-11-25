@@ -11,6 +11,7 @@ import sharp from "sharp";
 import { PublicArtworkOverloadedError, withPublicArtworkCapacity } from "../services/public-artwork-admission.js";
 import { isImportedSyntheticPlayer } from "../services/public-player-identity.js";
 import { publicAgentAwards } from "../services/awards.js";
+import { AgentDraftImageUnavailable } from "../services/agent-draft-images.js";
 
 export function createPublicPlayerRoutes(db: DrizzleDB) {
   const app = new Hono();
@@ -51,7 +52,7 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
   app.get("/api/public/agents/:identifier/art", async c => {
     c.header("Cache-Control", "private, no-store");
     const id = c.req.param("identifier"), kind = c.req.query("kind");
-    if (kind !== "body" && kind !== "portrait") return c.json({ error: "Invalid artwork kind" }, 400);
+    if (kind !== "body" && kind !== "portrait" && kind !== "full-body") return c.json({ error: "Invalid artwork kind" }, 400);
     try {
       return await withPublicArtworkCapacity(async () => {
         const [initial] = await db.select({ profile: schema.agentProfiles, wallet: schema.users.walletAddress }).from(schema.agentProfiles)
@@ -59,10 +60,13 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
           .where(and(eq(schema.agentProfiles.id, id), publiclyVisibleAgentContent()));
         if (!initial || isImportedSyntheticPlayer(initial.wallet)) return c.notFound();
         const profile = initial.profile;
-        const url = kind === "body" ? (await readAgentTransparentBodies(db, [profile])).get(id) : profile.avatarUrl;
+        const url = kind === "portrait" ? profile.avatarUrl
+          : (await readAgentTransparentBodies(db, [profile])).get(id)
+            ?? (kind === "full-body" ? profile.fullBodyReferenceUrl : null);
         if (!url) return c.notFound();
         const bytes = await readVisualProfileImage(url, { name: profile.name, personaKey: profile.personaKey ?? "" }, { db });
-        const image = await sharp(bytes, { limitInputPixels: 32_000_000 }).resize(800, 800, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
+        const resized = sharp(bytes, { limitInputPixels: 32_000_000 }).resize(800, 800, { fit: "inside", withoutEnlargement: true });
+        const image = await (kind === "full-body" ? resized.webp({ quality: 88 }) : resized.png()).toBuffer();
         // A profile can be hidden or changed while the image is being fetched.
         // Revalidate before returning the old bytes, never cache visibility.
         const [current] = await db.select({ revision: schema.agentProfiles.contentRevisionId, body: schema.agentProfiles.fullBodyReferenceUrl, avatar: schema.agentProfiles.avatarUrl, wallet: schema.users.walletAddress })
@@ -72,9 +76,10 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
         if (current.revision !== profile.contentRevisionId || current.body !== profile.fullBodyReferenceUrl || current.avatar !== profile.avatarUrl) {
           return new Response(null, { status: 503, headers: { "Cache-Control": "private, no-store", "Retry-After": "1" } });
         }
-        return new Response(new Uint8Array(image), { headers: { "Content-Type": "image/png", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
+        return new Response(new Uint8Array(image), { headers: { "Content-Type": kind === "full-body" ? "image/webp" : "image/png", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });
       });
     } catch (error) {
+      if (error instanceof AgentDraftImageUnavailable) return c.notFound();
       if (error instanceof PublicArtworkOverloadedError) return new Response(null, { status: 503, headers: { "Cache-Control": "private, no-store", "Retry-After": "5" } });
       throw error;
     }
