@@ -13,7 +13,7 @@ import { mapWerewolfWatchCue, projectWerewolfWatch, type WerewolfWatchStaging } 
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readWerewolfNarratedEvents, WerewolfGameError } from "./werewolf-games.js";
 import { werewolfReferenceMetadata, WEREWOLF_AUTO_PUBLISHER } from "./werewolf-production.js";
-import { readVisualProfileImage, readVisualProfileImageSource } from "./visual-game-assets.js";
+import { readVisualProfileImage, visualProfileImageSource } from "./visual-game-assets.js";
 import { draftImageHash, readAgentDraftImageReference } from "./agent-draft-images.js";
 import { gamePlayerModelPreference } from "./game-player-model-preference.js";
 
@@ -67,7 +67,7 @@ export async function resolvePublicWerewolfCharacter(db: Pick<DrizzleDB, "select
   const asset = await resolveFrozenWerewolfCharacter(db, game.id, [player], playerId, image);
   if (!asset || "key" in asset) return asset;
   const draft = draftImageHash(asset.url);
-  return draft ? readAgentDraftImageReference(db, draft) : readVisualProfileImageSource(asset.url, asset.profile);
+  return draft ? readAgentDraftImageReference(db, draft) : visualProfileImageSource(asset.url, asset.profile);
 }
 
 export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[]) {

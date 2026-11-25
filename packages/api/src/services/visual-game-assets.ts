@@ -21,50 +21,55 @@ export class VisualRecoveryRequired extends Error {
   constructor(message: string) { super(message); this.name = "VisualRecoveryRequired"; }
 }
 
+type VisualProfile = Pick<FrozenVisualProfile, "name" | "personaKey">;
+
 /** Only application-owned uploads or bundled persona art enter provider requests. */
-export async function readVisualProfileImage(url: string | null, profile: Pick<FrozenVisualProfile, "name" | "personaKey">, access?: {db: Pick<DrizzleDB,"select">;userId?:string}): Promise<Buffer> {
+export async function readVisualProfileImage(url: string | null, profile: VisualProfile, access?: {db: Pick<DrizzleDB,"select">;userId?:string}): Promise<Buffer> {
   const privateHash = draftImageHash(url);
-  if(privateHash)return readAgentDraftImage(access?.db ?? createDB(),privateHash,access?.userId);
-  return (await readVisualProfileImageSource(url, profile)).body;
+  if (privateHash) return readAgentDraftImage(access?.db ?? createDB(), privateHash, access?.userId);
+  const source = visualProfileImageSource(url, profile);
+  if (source.kind === "bundled") {
+    const bytes = await readFile(source.file);
+    if (source.sha256 && createHash("sha256").update(bytes).digest("hex") !== source.sha256) throw new Error("Bundled House full-body integrity mismatch");
+    return bytes;
+  }
+  if (source.kind === "local") {
+    const image = await readLocalUpload(source.key);
+    if (!image) throw new Error("Visual upload is unavailable");
+    return image.body;
+  }
+  const maxBytes = /^characters\/[a-f0-9]{64}\.png$/.test(source.key) ? 32 * 1024 * 1024 : 16_000_000;
+  const response = await fetch(source.url, { redirect: "error", signal: AbortSignal.timeout(30_000) });
+  if (!response.ok || Number(response.headers.get("content-length") ?? 0) > maxBytes) throw new Error("Visual reference download failed");
+  const image = Buffer.from(await response.arrayBuffer());
+  if (image.length > maxBytes) throw new Error("Visual reference exceeds the image upload limit");
+  return image;
 }
 
-/** MIME comes from the bundled catalog or the owned public upload response. */
-export async function readVisualProfileImageSource(url: string | null, profile: Pick<FrozenVisualProfile, "name" | "personaKey">) {
+export function visualProfileImageSource(url: string | null, profile: VisualProfile) {
+  const directory = process.env.INFLUENCE_PERSONA_ASSET_DIR;
   const bundled = bundledHouseBody(url);
   if (bundled) {
     const relative = bundled.url.slice("/avatars/personas/".length);
-    const directory = process.env.INFLUENCE_PERSONA_ASSET_DIR;
-    const bytes = await readFile(directory ? join(directory, relative) : new URL(`../../../web/public/avatars/personas/${relative}`, import.meta.url));
-    if (createHash("sha256").update(bytes).digest("hex") !== bundled.sha256) throw new Error("Bundled House full-body integrity mismatch");
-    return { body: bytes, contentType: "image/webp" };
+    const file = directory ? join(directory, relative) : new URL(`../../../web/public/avatars/personas/${relative}`, import.meta.url);
+    return { kind: "bundled", file, contentType: "image/webp", sha256: bundled.sha256 } as const;
   }
-  // Explicit bundled portrait URLs are application assets too. Match the exact allowlist,
-  // not arbitrary paths or remote URLs with a similar pathname.
+  // Match the exact bundled allowlist for explicit URLs.
   const portraitKey = HOUSE_PORTRAIT_KEYS.find(key => url === `/avatars/personas/${key}.png`);
   if (!url || portraitKey) {
     const key = portraitKey ?? getHousePortraitKey(profile.name, profile.personaKey);
-    const directory = process.env.INFLUENCE_PERSONA_ASSET_DIR;
-    const body = await readFile(directory
-      ? join(directory, `${key}.png`)
-      : new URL(`../../../web/public/avatars/personas/${key}.png`, import.meta.url));
-    return { body, contentType: "image/png" };
+    const file = directory ? join(directory, `${key}.png`) : new URL(`../../../web/public/avatars/personas/${key}.png`, import.meta.url);
+    return { kind: "bundled", file, contentType: "image/png", sha256: undefined } as const;
   }
   const parsed = new URL(url, "http://visual.invalid");
   if (parsed.pathname === "/api/uploads/local") {
     const key = parsed.searchParams.get("key");
     if (!key) throw new Error("Visual upload is missing its storage key");
-    const image = await readLocalUpload(key);
-    if (!image) throw new Error("Visual upload is unavailable");
-    return { body: image.body, contentType: image.contentType };
+    return { kind: "local", key } as const;
   }
   const key = ownedPublicAvatarStorageKey(url);
   if (!key) throw new Error("Visual reference must use application image storage");
-  const maxBytes = /^characters\/[a-f0-9]{64}\.png$/.test(key) ? 32 * 1024 * 1024 : 16_000_000;
-  const response = await fetch(resolvePublicObjectDeliveryUrl(url), { redirect: "error", signal: AbortSignal.timeout(30_000) });
-  if (!response.ok || Number(response.headers.get("content-length") ?? 0) > maxBytes) throw new Error("Visual reference download failed");
-  const image = Buffer.from(await response.arrayBuffer());
-  if (image.length > maxBytes) throw new Error("Visual reference exceeds the image upload limit");
-  return { body: image, contentType: response.headers.get("content-type") };
+  return { kind: "public", key, url: resolvePublicObjectDeliveryUrl(url) } as const;
 }
 
 export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, assertBoundary: VisualBoundaryGuard) {

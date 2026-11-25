@@ -34,7 +34,7 @@ A normal app credential can have object read/write rights without ACL, tag or ve
 
 ## Public Werewolf portrait delivery
 
-The public character route checks game visibility, the frozen opening cast and the requested character before looking up private image metadata. For stored images, GET returns a private, non-cacheable redirect to the original key with a two-minute signature. The storage GET serves the saved Content-Type. HEAD checks the same authorization and returns the image type and length from the API. Bundled images and existing public uploads use their catalog or origin MIME.
+The public character route checks game visibility, the frozen opening cast and the requested character before looking up private image metadata. For stored images, GET returns a private, non-cacheable redirect to the original key with a two-minute signature. The storage GET serves the saved Content-Type. HEAD checks the same authorization and returns the image type and length from the API. Bundled images stream from the immutable application image with their catalog MIME. Existing public uploads redirect to their owned upload URLs.
 
 Confirm the image loads in the viewer and that the replay asset loader follows the redirect without forwarding API authorization across origins. Studio and export source reads use the same frozen bytes. Existing source selections, bundles and movies retain their pinned images and require no refresh for this transport change.
 

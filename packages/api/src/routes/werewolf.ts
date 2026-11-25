@@ -1,4 +1,3 @@
-import { isImageContentType } from "../lib/image-content-type.js";
 import { GameModelRoutingError } from "../services/game-model-routing.js";
 import { loadPayloads, PORTRAIT_URL_TTL_SECONDS, readImageDelivery } from "../services/payload-storage.js";
 import { readPublicWerewolfSummaries } from "../services/public-library-summaries.js";
@@ -100,10 +99,18 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       if (player) {
         const image = await resolvePublicWerewolfCharacter(db, c.req.param("id")!, player, c.req.query("image") === "body" ? "body" : "portrait");
         if (!image) return c.json({ error: "Frozen character reference unavailable" }, 404);
-        if ("body" in image) {
-          if (!isImageContentType(image.contentType)) throw new Error("Frozen image metadata is missing or invalid");
-          c.header("Content-Type", image.contentType);
-          return c.body(new Uint8Array(image.body));
+        if ("kind" in image) {
+          if (image.kind === "bundled") {
+            const file = Bun.file(image.file);
+            if (!await file.exists()) return c.json({ error: "Frozen character reference unavailable" }, 404);
+            c.header("Content-Type", image.contentType);
+            c.header("Content-Length", String(file.size));
+            if (c.req.raw.method === "HEAD") return c.body(null);
+            return c.body(file.stream());
+          }
+          const url = image.kind === "local" ? `/api/uploads/local?${new URLSearchParams({ key: image.key })}` : image.url;
+          c.header("Referrer-Policy", "no-referrer");
+          return c.redirect(url, 307);
         }
         const expiresIn = c.req.raw.method === "HEAD" ? undefined : PORTRAIT_URL_TTL_SECONDS;
         const { contentType, url } = await readImageDelivery(image, expiresIn, c.req.raw.signal);
