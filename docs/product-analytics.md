@@ -306,8 +306,8 @@ Use ordered funnels, production/web filters, and raw counts alongside percentage
 
 ## Privacy and reliability
 
-No request/response bodies, raw errors, agent text, wallet addresses or emails are
-captured. Automatic clicks and surveys
+Analytics omits request/response bodies, agent text, wallet addresses and emails.
+Browser error messages follow the rules below. Automatic clicks and surveys
 are disabled. SDK-generated URLs, including nested acquisition properties, lose
 queries/fragments; referrers retain origin only. The recorder's URL masking hook
 also strips credentials, queries and fragments from rrweb metadata and SPA URLs.
@@ -323,15 +323,17 @@ repeat coverage, pauses, stalled clocks and browser sleep.
 
 ## Error reports and source maps
 
-Error messages can contain prompts, responses and credentials, so they are
-replaced entirely, rather than relying on a list of secret patterns. Only
-standard error types, handled/synthetic flags, exception relationships and
-same-origin `/_next/static/*.js` frame coordinates survive. Function names,
-locals, source snippets, breadcrumbs, custom exception types and derived raw
-exception values/fingerprints are removed. Queries and fragments are removed
-from frame URLs. Valid chunk/release IDs are retained for source-map resolution.
-This trades message detail for privacy; diagnosis uses the original source and
-line/column. Error types without app frames may group broadly.
+An explicit product analytics opt-in includes the browser exception message in
+PostHog. The message scrubber removes URL credentials, queries and fragments,
+email and wallet addresses, recognizable credential and private content fields,
+and known diagnostic payload dumps. Default-on US collection uses redacted
+messages until the visitor explicitly enables product analytics.
+
+Reports retain standard error types and `ApiError`, handled/synthetic flags,
+exception relationships and same-origin `/_next/static/*.js` frame coordinates.
+Valid chunk/release IDs are retained for source-map resolution. Reports omit
+function names, locals, source snippets, breadcrumbs and derived raw exception
+values and fingerprints. Frame URLs exclude queries and fragments.
 
 The scope is browser failures, including the app and profile route boundaries.
 This does not instrument API/worker/server exceptions or failures before SDK
@@ -360,9 +362,10 @@ immutable image, so the uploaded maps match the shipped chunks.
 Tests exercise the installed plugin's compiler hook with a fake upload transport:
 release IDs and native debug IDs, upload-before-delete, and failing the build on
 upload errors. They do not prove production PostHog permissions or symbolication.
-After deployment, verify a controlled non-sensitive error from a non-staff account
-appears with redacted text and an original-source stack frame, and confirm a
-browser request for the corresponding `.map` is not served.
+After deployment, verify that a controlled non-sensitive error from a non-staff
+account with an explicit product analytics opt-in appears with its message and
+an original-source stack frame. Confirm that a browser request for the
+corresponding `.map` receives no source map.
 
 ## Release verification
 
