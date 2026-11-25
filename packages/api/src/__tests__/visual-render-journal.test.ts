@@ -156,9 +156,10 @@ describe("durable visual render journal", () => {
     const [attempt] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, operation.id)));
     await reconcileVisualAttempt(db, { attemptId: attempt!.id, operatorId: "operator-1", note: "Provider confirmed completed charge; pixels unavailable", costMicrousd: 123_000 });
     const next = await retryVisualRender(db, operation.id, 1);
-    await journal.finish(receipt, await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png().toBuffer());
+    const lateImage = await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png().toBuffer();
+    await journal.finish(receipt, lateImage);
     const [retained] = await loadPayloads(db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id)));
-    expect(retained?.image?.toString()).toBe("late image");
+    expect(retained?.image).toEqual(lateImage);
     expect(retained?.generation).toBe(1);
     expect(next.generation).toBe(2);
     expect(await readVisualRenderAccounting(db, "visual-game")).toMatchObject({ knownCostMicrousd: 123_000, unpricedAttempts: 0, uncertainAttempts: 0 });
