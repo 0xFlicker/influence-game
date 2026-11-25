@@ -471,8 +471,12 @@
 .cardActions {
   display: flex;
   margin-top: 9px;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+.cardActions > :is(button, a:global(.action)) {
+  min-width: 44px;
+  padding-inline: 8px;
 }
 .cardShare {
   display: inline-flex;
