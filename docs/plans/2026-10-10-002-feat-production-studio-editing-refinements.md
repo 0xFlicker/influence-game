@@ -1,7 +1,7 @@
 ---
 title: Production Studio timeline, editorial labels and workspace sizing
 type: feat
-status: in_progress
+status: implemented-operator-accepted
 date: 2026-10-10
 pillar: A2
 slices: [A2.1, A2.2]
@@ -9,7 +9,7 @@ slices: [A2.1, A2.2]
 
 # Production Studio editing refinements
 
-Implementation authorized on 2026-10-10. This follows real local Studio use and supplements the [combined delivery plan](2026-10-09-001-feat-production-studio-moment-editor.md) and [keyboard proposal](2026-10-10-001-feat-production-studio-keyboard-shortcuts.md). The operator approved the isolated interactive refinements prototype at `http://127.0.0.1:63098/` before final component/layout choices. The original planning findings below describe the pre-edit checkpoint. Current implementation/proof is recorded at the end; delivered-workspace acceptance remains pending.
+Implementation authorized on 2026-10-10. This follows real local Studio use and supplements the [combined delivery plan](2026-10-09-001-feat-production-studio-moment-editor.md) and [keyboard proposal](2026-10-10-001-feat-production-studio-keyboard-shortcuts.md). The operator approved the isolated interactive refinements prototype at `http://127.0.0.1:63098/` before final component/layout choices. The original planning findings below describe the pre-edit checkpoint. The dated entries below preserve the implementation and test history. On November 25 the operator confirmed acceptance of the delivered Studio workspace.
 
 ## Operator decisions from 2026-10-10
 
@@ -158,7 +158,7 @@ Export readiness/concurrency, broad transport audit, harmonize schema alignment 
 - [x] Integrate compact navigation/dialog homes and desktop resizing. Preserve Player subtree and movie geometry across responsive layout changes. Keyboard hint copy covers current local control/save bindings; broader character shortcuts remain a separate proposal.
 - [x] Complete current canonical browser, required baseline and encoded-media checks; fix failures before marking proof complete.
 - [x] Final bounded simplification/consistency review: one selector/compiler/Player/audio owner and annotation mutation owner. Fix private draft cleanup, settlement across inspector remounts and synchronous audience invalidation; recipe summary now includes gameplay/opening/result and kind overrides. No remaining material reviewer findings.
-- [ ] Delivered operator acceptance. Approved prototype direction is recorded separately above.
+- [x] The operator confirmed acceptance of the delivered Studio workspace on November 25.
 
 Concrete findings during implementation:
 

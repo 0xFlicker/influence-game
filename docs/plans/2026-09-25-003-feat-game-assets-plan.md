@@ -2,18 +2,18 @@
 title: "feat: Game asset CRUD with scoped OAuth and private banners"
 type: feat
 date: 2026-09-25
-status: ready-after-current-repo-work
+status: implemented-banner-use-confirmed
 origin: docs/brainstorms/2026-09-25-game-assets-brainstorm.md
 tasks: docs/plans/2026-09-25-003-feat-game-assets-tasks.md
 ---
 
 # Game asset CRUD with scoped OAuth and private banners
 
+**November 25 audit.** [PR #153](https://github.com/0xFlicker/influence-game/pull/153) delivered editorial game assets. The original design below records the proposal. Use the [delivered visibility contract](../game-assets.md) and [reconciled task checklist](2026-09-25-003-feat-game-assets-tasks.md).
+
 ## Outcome and authorization
 
-An external workflow can use a short-lived token to upload, read, update, replace, and delete labeled images belonging to an Influence game. A private `banner` appears exclusively on `/games/[slug]/results` for authorized viewers. The same S3 storage path uses local MinIO in development and private Linode storage on deployed servers; PostgreSQL owns game association, metadata, and publication state. Deployment testing targets an ephemeral environment or staging.
-
-This is an implementation handoff, not implementation completed. The user authorized planning documents only for this iteration. Do not execute application edits, migrations, cloud writes, role assignments, deployment, commits, or pushes from this planning turn. After the current repo work finishes, re-read the checkout and implement the ordered tasks under the user's execution authorization.
+The September proposal called for scoped image uploads, results-only private banners and a shared storage adapter for local MinIO and deployed Linode storage. The requirements below preserve that proposal. In the shipped feature, image reads follow game access, including signed-out access on public games. Writes require current game-asset management permission.
 
 ## Requirements
 

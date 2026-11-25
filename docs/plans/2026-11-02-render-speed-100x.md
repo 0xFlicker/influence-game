@@ -1,10 +1,10 @@
 # Render speed: make the existing renderer faster without sacrificing quality
 
-Status: **implemented and locally qualified; benchmarks and bounded Linux output proof complete**.
+**November 25 status.** The operator marked current render performance verified. The benchmarks below record the measured results.
 The user authorized implementation after the relevant experimental gates pass.
 Both-game qualification now supports eager export image loading and screenshot-free
 preparation. Required local baselines and final viewer/Studio/export proofs now pass;
-combined local benchmarks are complete. Platform proof and remaining measurement limitations are tracked below.
+combined local benchmarks are complete. The follow-up section records measurement limits to revisit if render defaults change.
 
 ## Offline Linux worker correctness — 2026-11-03
 

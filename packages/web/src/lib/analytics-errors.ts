@@ -1,6 +1,6 @@
 const errorTypes = new Set([
   "Error", "TypeError", "ReferenceError", "SyntaxError", "RangeError",
-  "URIError", "EvalError", "AggregateError", "DOMException",
+  "URIError", "EvalError", "AggregateError", "DOMException", "ApiError",
 ]);
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function record(value: unknown): Record<string, unknown> {
@@ -8,7 +8,7 @@ function record(value: unknown): Record<string, unknown> {
     ? value as Record<string, unknown> : {};
 }
 
-/** Keep only symbolication coordinates. Never retain messages, locals or source snippets. */
+/** Keep symbolication coordinates without frame locals or source snippets. */
 function scrubFrame(value: unknown): Record<string, unknown> | null {
   const frame = record(value);
   if (typeof frame.filename !== "string") return null;
@@ -27,7 +27,22 @@ function scrubFrame(value: unknown): Record<string, unknown> | null {
   return clean;
 }
 
-export function scrubExceptionProperties(properties: Record<string, unknown>): void {
+function scrubExceptionMessage(message: string): string {
+  return message
+    // Some renderer errors append the entire invalid record, which can contain dialogue or strategy.
+    .replace(/((?:Unsupported visual presentation|Unsupported format presentation cue|Unhandled completed-results format scoring): )\{[\s\S]*$/, "$1[redacted]")
+    .replace(/(\bUnexpected token .+?,\s*)"[^\n]*"(?:\.{3})?(\s+is not valid JSON)/g, "$1[redacted]$2")
+    .replace(/\bhttps?:\/\/[^\s<>"'`()[\]{}]+/gi, url =>
+      url.replace(/^(https?:\/\/)[^/?#]*@/i, "$1").split(/[?#]/, 1)[0])
+    .replace(/(^|[\s"'`(])((?:\/\/[^\s/?#<>"'`()[\]{}]+)?\/[^\s?#<>"'`()[\]{}]*)[?#][^\s<>"'`()[\]{}]+/g, "$1$2")
+    .replace(/(\b(?:authorization|password|(?:access[_ -]?|refresh[_ -]?|id[_ -]?)?token|oauth[_ -]?code|authorization[_ -]?code|api[_ -]?key|client[_ -]?secret)\b["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:(?:Bearer|Basic)\s+)?[^\s,;<>()[\]{}]+)/gi, "$1[redacted]")
+    .replace(/\b(Bearer)\s+[^\s,;"'<>()[\]{}]+/gi, "$1 [redacted]")
+    .replace(/(\b(?:prompt|strategy|request[_ -]?body|response[_ -]?body)\b["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\r\n]+)/gi, "$1[redacted]")
+    .replace(/\b[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted]")
+    .replace(/\b0x[0-9a-f]{40}\b/gi, "[redacted]");
+}
+
+export function scrubExceptionProperties(properties: Record<string, unknown>, includeMessages: boolean): void {
   const exceptions = Array.isArray(properties.$exception_list) ? properties.$exception_list : [];
   // Remove all SDK exception derivatives too: values, fingerprints, raw stacks,
   // step breadcrumbs and future exception properties must not bypass the list.
@@ -47,7 +62,9 @@ export function scrubExceptionProperties(properties: Record<string, unknown>): v
     }
     return {
       type: typeof exception.type === "string" && errorTypes.has(exception.type) ? exception.type : "Error",
-      value: "Error details redacted",
+      value: includeMessages && typeof exception.value === "string"
+        ? scrubExceptionMessage(exception.value)
+        : "Error details redacted",
       mechanism: cleanMechanism,
       stacktrace: { type: "raw", frames: Array.isArray(frames) ? frames.slice(-50).map(scrubFrame).filter(Boolean) : [] },
     };

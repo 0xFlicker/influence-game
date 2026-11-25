@@ -1,4 +1,6 @@
-import Link from "next/link";
+"use client";
+
+import Link, { useLinkStatus } from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { GameLogo } from "../game-logo";
 import type { BrandedGame } from "@/lib/game-brand";
@@ -14,16 +16,22 @@ interface GameCardProps extends Omit<ComponentProps<"article">, "title" | "child
   artwork: ReactNode;
   actions: ReactNode;
   management?: ReactNode;
-  onOpen?: ComponentProps<typeof Link>["onClick"];
+  onOpen?: ComponentProps<typeof Link>["onNavigate"];
+}
+
+function GameCardPending() {
+  const { pending } = useLinkStatus();
+  return pending ? <span className="episode-card-pending" role="status">Opening game…</span> : null;
 }
 
 export function GameCard({ title, href, status, statusLabel, gameKind, description, meta, artwork, actions, management, onOpen, ...article }: GameCardProps) {
   return <article {...article} className={`episode-card ${article.className ?? ""}`}>
-    <Link className="episode-card-link" href={href} onClick={onOpen}>
+    <Link className="episode-card-link" href={href} onNavigate={onOpen}>
       <div className="episode-card-media">
         {artwork}
         <span className={`episode-status episode-status-${status}`}>{statusLabel}</span>
         <GameLogo game={gameKind} className="episode-card-logo" />
+        <GameCardPending />
       </div>
       <div className="episode-copy">
         <h2>{title}</h2>

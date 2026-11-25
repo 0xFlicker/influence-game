@@ -7,7 +7,7 @@ import { sealGameModelRouting } from "@influence/engine";
 import { resolveWerewolfStrategy } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { ChampionshipError, type FrozenCompetitionBuild } from "./championships.js";
-import { readJson, readPayload, storeBinary, storeJson, type StoredPayload } from "./payload-storage.js";
+import { readJson, readPayload, storeImage, storeJson, type StoredPayload } from "./payload-storage.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
 import { publishCharacterArt } from "./character-art-save.js";
 import { renderChampionshipVisualReference, reconcileVisualAttempt, VisualRenderRecoveryRequired } from "./visual-render-journal.js";
@@ -179,7 +179,7 @@ export async function processChampionshipArtwork(db: DrizzleDB, options: { event
       try {
         const save = async (kind: "body" | "avatar", bytes: Buffer) => {
           const normalized = await sharp(bytes).rotate().png().toBuffer();
-          const ref = await storeBinary(normalized); await readPayload(ref);
+          const ref = await storeImage(normalized); await readPayload(ref);
           await guard();
           await db.update(schema.championshipArtwork).set({ [kind]: ref }).where(and(eq(schema.championshipArtwork.id, job.id), eq(schema.championshipArtwork.leaseId, leaseId)));
           job[kind] = ref;

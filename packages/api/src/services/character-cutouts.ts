@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, asc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { payloadHash, readPayload, storeBinary } from "./payload-storage.js";
+import { payloadHash, readPayload, storeImage } from "./payload-storage.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
 import { saveReadyCharacterArt } from "./character-art-save.js";
 
@@ -33,7 +33,7 @@ export async function enqueueCutout(db: DrizzleDB, bytes: Buffer, privateSource 
   const metadata = await sharp(bytes, { limitInputPixels: 16_000_000 }).metadata();
   if (!metadata.width || !metadata.height || (metadata.pages ?? 1) !== 1) throw new Error("Invalid cutout source image");
   const rotated = metadata.orientation && metadata.orientation >= 5;
-  const source = await storeBinary(bytes);
+  const source = await storeImage(bytes);
   await db.insert(jobs).values({ id: crypto.randomUUID(), sourceHash: payloadHash(bytes), recipe: CUTOUT_RECIPE, source, privateSource,
     width: rotated ? metadata.height : metadata.width, height: rotated ? metadata.width : metadata.height,
   }).onConflictDoUpdate({ target: [jobs.sourceHash, jobs.recipe], set: { privateSource: sql`${jobs.privateSource} OR ${privateSource}` } });
@@ -147,7 +147,7 @@ export async function acceptCutout(db: DrizzleDB, id: string, token: string, byt
   if (meta.format !== "png" || !meta.hasAlpha || meta.channels !== 4 || meta.width !== job.width || meta.height !== job.height || (meta.pages ?? 1) !== 1) throw new Error("Cutout must be RGBA PNG with source dimensions");
   const alpha = await decoder.extractChannel("alpha").raw().toBuffer();
   if (!alpha.some(value => value === 0) || !alpha.some(value => value >= 250)) throw new Error("Cutout must contain foreground and transparent background");
-  const image = await storeBinary(bytes);
+  const image = await storeImage(bytes);
   // Persist finished bytes before public publication. A storage outage after this
   // commit retries only saving these bytes, never the background-removal worker.
   const [finished] = await db.update(jobs).set({ image, status: "ready", readyAt: sql`clock_timestamp()`, artSavedAt: null,

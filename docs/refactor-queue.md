@@ -1,5 +1,7 @@
 # Influence Refactor Queue
 
+Use [The House to-do list](../TODO.md) for current work across the product. This file keeps the detailed evidence and stable R/W identifiers referenced by older plans. Dates below describe the original investigations.
+
 ## Completed — operator-mandated storage migration — 2026-10-16
 
 - Status: `closed` (rollout verified 2026-10-18). Local development, staging and production cutovers are complete. Staging converted all 33 columns and accounted for 105,651 references; production [workflow 39075295753](https://github.com/0xFlicker/linode-iac/actions/runs/39075295753) accepted release `9d50818a108465f0f76bf1333345c58464631be8` and passed canonical smoke. Historical pending-rollout wording in the runbooks is superseded by this deployment evidence.
@@ -12,7 +14,7 @@
 ## HIGHEST PRIORITY — eliminate context-size game failures — 2026-10-16
 
 - Plan: [context-overflow adaptation](plans/2026-10-18-001-context-overflow-adaptation.md) (2026-10-18). Start with measured context contracts and durable retrospective adaptation, then cover live player and House calls. Keep mechanical action fields exact; evaluate lossy compaction of contextual history without claiming to identify every strategically required fact. Integrate adaptation with existing durable retry budgets and engine exhaustion/recovery handling; do not add a separate terminal policy.
-- Status: `implementation_complete/runtime_proof_pending` (2026-10-18); shared adaptation, actor/task-aware compaction, game/House builders and durable summary replay implemented. See [runtime contract and invocation inventory](context-adaptation.md). The [initial synthetic hosted evaluation](evaluations/2026-10-18-context-compaction.md) passed explicit probes on Luna/Muse; a Katana fallback evaluation and minimal GLM diagnostics are recorded in the report. Summary recommendations are not themselves a quality defect. Broader quality evaluation and staging/production rollout remain pending. **A game must NEVER fail or suspend solely because its context input is too large.**
+- Status: `implementation_complete/runtime_proof_pending` (2026-10-18); shared adaptation, actor/task-aware compaction, game/House builders and durable summary replay implemented. See [runtime contract and invocation inventory](context-adaptation.md). The [initial synthetic hosted evaluation](evaluations/2026-10-18-context-compaction.md) passed explicit probes on Luna/Muse; a Katana fallback evaluation and minimal GLM diagnostics are recorded in the report. Summary recommendations are not themselves a quality defect. Broader quality evaluation remains open. [PR #201](https://github.com/0xFlicker/influence-game/pull/201) is included in the revision [verified active in staging and production](https://github.com/0xFlicker/influence-game/pull/374). **A game must NEVER fail or suspend solely because its context input is too large.**
 - Focused source audit (2026-10-18): no additional active gameplay input-size gate was found. Before implementation, `provider-execution.ts` classified context overflow as generic `request_error`; `retrospective-invocation.ts` submits the full frozen account. The implementation adds dedicated overflow classification and lossy compaction/adaptation with unchanged mechanical action contracts; summary quality requires evaluation. Larger-model fallback alone is not a guarantee. Owner Learning, House Cuts and cognitive-artifact capture limits are separate; the cognitive-artifact 256 KiB cap degrades evidence rather than suspending gameplay.
 - Preserve the rule against ALL application-side context input byte/token checks that directly fail, suspend, cancel or require repair of Influence or Werewolf games. Audit initialization, every decision phase, retrospectives, provider adapters/coordinator, fallback traversal and recovery. Include genuine provider context-overflow handling: adapt/summarize context and retry a valid request rather than exhausting identical oversized calls into suspension.
 - Replace every test asserting size-only failure with coverage proving continuation for large valid context, including Unicode, JSON escaping, long games, full rosters, growing prior statements and restart/resume. Preserve canonical outcome, accepted decisions, identity/privacy, required strategic information and stable accepted provider replay. Summaries are model context, never canonical state.
@@ -22,7 +24,7 @@
 
 ## Shared presentation-time scrubber — 2026-10-07
 
-- Status: `implemented; PR validation complete, deployment pending` (2026-10-18). Both watch players now seek a 30 fps elapsed-time timeline compiled with Studio’s shared timing compiler; Previous/Next retain cue semantics. Werewolf supplies full-history per-step durations and keys while fetching only the selected replay window. See [watch timeline contract](watch-timeline.md).
+- Status: `closed` for implementation and release. [PR #200](https://github.com/0xFlicker/influence-game/pull/200) is included in the [verified deployed revision](https://github.com/0xFlicker/influence-game/pull/374). Both watch players now seek a 30 fps elapsed-time timeline compiled with Studio’s shared timing compiler; Previous/Next retain cue semantics. Werewolf supplies full-history per-step durations and keys while fetching only the selected replay window. See [watch timeline contract](watch-timeline.md).
 - Use the replay exporter's shared presentation timing compiler for the Influence and Werewolf browser scrubber. Represent elapsed presentation time instead of equally spaced cue ordinals, including precise positions inside speech, thinking, camera moves, transformations and vote holds.
 - Preserve Previous/Next as meaningful cue stops on the same timeline, including every ballot and the completed tally. Canonical events remain game authority; shared links retain stable source/cue anchors rather than depending on mutable elapsed time.
 - When thinking preferences or timing change, rebuild timing while preserving the active cue and local position. For windowed Werewolf playback, supply a lightweight complete timing index without loading all scene assets; live games append available history without moving a paused viewer.
@@ -33,7 +35,7 @@
 
 Generated: 2026-06-21
 
-Last audited against `main`: 2026-09-07 (R20 live ruleset verification; R23/R31 staging evidence audit; R34 implementation and local validation)
+The September 7 audit covered R20, R23, R31 and R34. The [November 25 to-do list](../TODO.md) records the later review of open work and closures.
 
 Last format-kernel review follow-ups added: 2026-07-25
 
@@ -75,7 +77,7 @@ Inputs:
 
 Method: merge duplicate candidates across plans, brainstorms, ideation, statefulness notes, and solution docs; preserve concrete source evidence; remove already-landed/product-feature/process-only items; rank the remaining work by current product value.
 
-Explicit product follow-up: R35 is retained here at the user’s request even though it extends an existing player capability.
+R35 and R36 track replay-sharing product follow-ups at the user’s request.
 
 Five-question gate:
 
@@ -90,11 +92,12 @@ Status legend:
 - `ready`: good candidate for near-term planning.
 - `implementation_complete/runtime_proof_pending`: implementation and automated proof landed; one explicit live validation gate remains before `closed`.
 - `implementation_complete/operator_rollout_pending`: implementation and automated proof landed; one explicit repository or operational configuration step remains before `closed`.
-- `verification_audit_pending`: substantial implementation exists; reconcile current behavior and tests with the original requirement before scheduling code or claiming closure.
 - `future`: coherent, but should not be in the active queue unless the pain becomes visible.
 - `closed`: already implemented, superseded, or not a coherent current ask.
 
 ## Ready Backlog
+
+The [current list](../TODO.md) distinguishes implementation from remaining verification.
 
 ### R35. Share the current replay moment across House game players
 
@@ -109,99 +112,12 @@ Status legend:
 - Validation path: share/open round trips for both games from paused and playing states, later fetch windows, resolved votes and the live frontier; reject invalid/cross-audience locations; no future-fact flash on load; public links work signed out, private/hidden games remain protected. Browser tests must assert the actual opened moment and access boundary, not only the generated URL. Test clipboard/native-share failure feedback without modifying playback intent.
 - Relationship: W1 Results and W2 MCP consume this same moment-link contract once implemented. W4 cards can link to it; do not build independent URL schemes in those slices.
 
+### R36. Open a shared Influence House Cut at the quoted exchange
 
-Near-term order: R34 nullable-field policy. R23 is closed with occasional repetition accepted; R31 runtime verification and R20 required-check configuration are complete. R27/R28/R29 require verification audits before new implementation. Historical numbering is retained for stable references.
-
-
-### R31. Make producer match narrative satisfy its declared response schema
-
-- Status: `closed` (PR #135 merged; staging runtime proof completed 2026-09-07)
-- Priority: **high**
-- Sources: authenticated production evaluation of completed current-meta game `dead-fawn-ice` on 2026-08-25; `packages/api/src/services/match-narrative-compact-v2.ts`, `packages/api/src/services/match-narrative-read-model.ts`, `packages/api/src/game-mcp/contracts.ts`, and the production Game MCP read-model/server tests.
-- Signal: `read_producer_match_narrative` failed before returning the completed game's all-seat narrative with `match narrative result.limitations is required`. The read model computed an empty limitations collection, but the compact v2 encoder omitted the field while the exposed result contract required it. Lower-level producer traces and cognitive artifacts remained readable, but that workaround defeats the intended one-shot grouped narrative surface and blocks its accepted/rejected strategy review.
-- Pre-fix source confirmation (2026-09-07): `encodeCompactV2Page` omits empty `limitations`; the published v2 schema permits omission, while `assertMatchNarrativePageResult` requires `limitations`, `access`, and `filters` without distinguishing versions. `matchNarrativeContent` invokes that assertion before returning MCP content. Reconcile encoder, published schema, and runtime validator together; audit all compact optional fields, not just the first reported error. This audit did not repeat the authenticated production read.
-- Required direction: make the compact v2 encoder and the declared MCP result contract agree. Successful narrative pages must return an explicit `limitations: []` when there are no limitations and preserve the typed non-empty array when limitations exist. Do not weaken producer authorization, private-lane policy, cursor binding, content-trust labels, or board-authority disclaimers, and do not substitute a client-side merge of lower-level evidence.
-- Validation path: add encoder coverage for empty and non-empty limitations; validate the encoded result against the actual MCP output schema; and exercise `read_producer_match_narrative` through the production MCP server for a completed current-meta producer game across terminal and paginated pages. Retain owner/producer isolation, schema v1 behavior, stable cursors, and existing strategy/thinking privacy coverage.
-- Implemented fix: compact v2 always emits `limitations`, including an empty array. Its published schema reflects omitted nullable metadata in game/access/filter objects; runtime validation permits optional v2 access/filters while retaining v1 requirements. Regression coverage exercises real encoded pages through MCP and validates the advertised output schema; DB-backed narrative pages retain privacy and cursor coverage.
-- Runtime proof (2026-09-07): authenticated staging `zero-teal-cove` read with schema v2, `full_cognition`, and full detail completed all 11 pages / 506 groups through the terminal page, each with `ok: true` and explicit `limitations: []`. No new provider-backed game was started.
-
-### R20. Complete CI test discovery without paid or external side effects
-
-- Status: `closed` (PR #117 implementation; required-check ruleset updated 2026-09-07)
-- Priority: **high**
-- Sources: `docs/brainstorms/2026-08-16-ci-test-discovery-requirements.md`, `docs/plans/2026-08-16-001-test-complete-ci-discovery-plan.md`, root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
-- Historical signal: required CI ran hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repaired known gaps but did not prove the lists were complete.
-- Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
-- Implemented shape: PR #117 made ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in. The exact implementation head passed `check`, `Provider-free tests`, `API / PostgreSQL tests`, and all four Browser Coverage jobs.
-- Operator proof (2026-09-07): all three checks passed on exact `main` commit `bc087190a04b89dba5d999d68602af295de5cbc2`. Active ruleset `20924439` now requires `check`, `Provider-free tests`, and `API / PostgreSQL tests`, each bound to GitHub Actions app `15368`. All other ruleset settings were preserved; Browser Coverage remains visible and non-required.
-
-### R23. Exceptional, actionable compact strategy diffs
-
-- Status: `closed` (PR #113 implemented; user accepted observed repetition on 2026-09-07)
-- Priority: **high**
-- Sources: production game `used-lilac-ash`, `packages/engine/src/strategy-state.ts`, `packages/engine/src/agent.ts`, `docs/reasoning-transcript-observability.md`, and `docs/plans/2026-08-14-001-perf-compact-decision-envelope-plan.md`.
-- Signal: the compact strategy lifecycle and mechanical validation behaved correctly in the reviewed game, but agents emitted strategy candidates across many ordinary Mingle, alliance-action, and huddle turns even when the text mostly restated the current posture. Frequent low-information deltas consume output tokens and make material changes harder for producers and future prompts to distinguish.
-- Product decision: keep `strategyDelta` optional and make omission the expected result when the current strategy still applies. A delta should record a material, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies; it should not summarize the action, repeat the baseline, narrate unchanged intent, or prove that the agent considered strategy.
-- Authority boundary: strategy remains private, fallible cognition. Deltas never become canonical game facts, alliance obligations, or evidence that an agent must vote a particular way. Malformed or rejected strategy metadata must remain independent from acceptance of an otherwise legal gameplay action.
-- Concrete seam: shared strategic-decision guidance, tool-field descriptions, compact-strategy application diagnostics, prompt scenario fixtures, and producer strategy-result reads.
-- Closure basis: implementation and live evidence demonstrate useful pivots and null no-change behavior. Some redundant updates are tolerated; eliminating repetition or proving a subjective reduction is not a release requirement.
-- Implemented shape: PR #113 tightened shared strategy-delta guidance and schemas, added explicit private `no_change` diagnostics for omitted and exact literal-null deltas, preserved legal gameplay acceptance independently from rejected strategy metadata, and retained the existing state machine and character limits.
-- Runtime audit (2026-09-07): completed staging `zero-teal-cove` yielded 286 proposals: 137 substantive deltas, 27 required replacement baselines, 121 JSON nulls, and one exact literal `"null"`. Luna round-5 decision `a53659b6-24d9-5ed3-8a4b-1ecc68639372` links to canonical event 245; next-request prior-epoch revision 28 preserves the same baseline/refinement, proving the literal-null no-change boundary.
-- Accepted limitation: Echo round-4 traces `87610632-c1ec-438b-a4a2-4feeac6bcdd4` and `fedac58c-6dfe-4784-82ea-d48c5c9c8936` show a rephrased Override contingency retained alongside the existing one. Useful target pivots also exist. The user accepted occasional repetition rather than adding another quality gate.
-- Evidence limits (not closure blockers): producer strategy artifacts expose proposals without application outcomes, so exact accepted/rejected/no-change totals are unavailable. All 21 exposed failure traces were timeouts, while accounting reports 59 failed calls; comprehensive retry attribution is unproven. Producer-authorized access does not prove cross-owner isolation.
-- Revisit only if repetition demonstrably crowds out useful context, increases costs materially, or harms gameplay. No application-receipt expansion, additional LLM gate, or prompt experiment is required for closure. No paid run was started for this audit.
-
-### R34. Normalize literal null only for nullable structured response fields
-
-- Status: `implementation_complete/runtime_proof_pending`
-- Priority: **medium**
-- Source: a valid Mingle turn was rejected with `gotoPlayerName must be null or one remaining non-self contestant` because the model returned `"null"` instead of JSON `null`.
-- Current behavior: compact strategy already recognizes exact literal `"null"` as no change; Mingle target validation treats it as a contestant name. No consistent schema-aware policy has been established.
-- Required direction: define one shared policy for converting exact literal `"null"` to JSON `null` only where the invocation explicitly permits null. Apply it inside the structured provider-attempt acceptance boundary, followed by full schema and semantic validation. Preserve raw provider evidence. Do not rewrite prose, required strings, arbitrary nested strings, missing fields, or malformed JSON; do not turn `"undefined"` into null by implication.
-- Name policy: reserve contestant names `null` and `undefined` under the existing normalized-name authority for new names and renames. Audit existing conflicting names before deciding remediation; do not silently rename historical game seats.
-- Validation path: nullable target accepts JSON null and exact string `"null"`; valid contestant names remain valid; required names and invalid targets still fail; ordinary prose containing these words is unchanged; nested nullable fields follow their declared schema; provider adapters share the same policy; name creation/rename enforces reserved names. Explicitly decide whitespace/case variants rather than accepting them accidentally.
-- Implementation: the shared schema normalizer runs in the game structured-output registry and Owner Learning output-acceptance path before schema/semantic validation, preserving raw responses and accepted replay. The Prompt Thread experiment broker continues returning raw provider responses. Only exact lowercase `"null"` converts; whitespace/case variants and `"undefined"` do not. Create/rename uses the shared normalized-name authority to reserve both sentinel names; imports use existing suffix allocation for a new profile without changing historical seats. Existing strategy-state literal-null no-change behavior remains for historical accepted values.
-- Name audit (2026-09-07): read-only staging and production queries found zero conflicting normalized names in agent profiles or historical game seats; no historical records were changed.
-- Verification: focused provider-free coverage exercises all native transport paths, actual Mingle nullable targets, nested unions, schema/semantic failures, unchanged raw evidence, and strict replay. Full checks and deployed verification are tracked in the implementation PR.
-
-### R27. Complete failed-provider request evidence for producer debugging
-
-- Status: `verification_audit_pending`
-- Priority: **high**
-- Current audit (2026-09-07): provider execution already captures `rawRequest` and transport failure evidence; journal tests verify persisted request evidence and exclusion of authorization headers. Audit local artifacts and producer retrieval against the full original evidence contract before adding storage. Preserve diagnostic payloads while keeping credentials out of evidence; the old blanket unredacted wording must not authorize credential retention.
-- Sources: the failed local `gpt-5.6-luna` simulation batch from 2026-08-21, `packages/engine/src/agent.ts`, simulation artifact writing, API-backed private decision evidence, and producer game-debugging reads.
-- Historical signal: an OpenAI Responses request was rejected with HTTP 400 after Round 1, but the saved simulation contained neither the rejected request nor its provider request ID or complete error response. The same gap prevents a producer from inspecting an equivalent failure after API-backed gameplay. Aggregate token, prompt-reuse, and recall receipts cannot explain why a specific provider request failed.
-- Required evidence contract: preserve the complete failed request exactly as submitted, including system and user prompts, strategy context, dialogue context, reasoning settings, schemas and tools, provider/model configuration, and request parameters. Preserve the complete provider error response and headers exactly as received, including the provider request ID. Attach game, round, phase, action, actor, attempt, and timestamps. Do not replace the request or error with a hash, summary, sanitized receipt, reduced field set, or redacted producer view.
-- Storage and access: local simulations write the complete evidence into their batch artifacts. API-backed games store the complete evidence through the existing private gameplay-evidence authority and make it retrievable by the producer. Public/player events, transcripts, and viewer APIs remain separate from producer evidence.
-- Validation path: deterministic failed Responses and Chat Completions requests round-trip every request field, error field, header, and request ID byte-for-byte; simulation artifacts retain the evidence after a failed or recovered call; API-backed tests prove producer retrieval for the correct game and reject non-producer access; successful requests and canonical gameplay remain unchanged.
-- Original suggested slice (reconcile before implementation): first persist and retrieve one failed ordinary-speech Responses request end to end in both a local batch and an API-backed game, using the same complete evidence schema. Then cover structured tool calls, retry attempts, and other providers without weakening the evidence contract.
-
-### R28. Eliminate synthetic `[No response]` gameplay outputs
-
-- Status: `verification_audit_pending`
-- Priority: **high**
-- Current audit (2026-09-07): no literal `[No response]` remains in package TypeScript/TSX sources. Typed provider exhaustion and House malformed-output/no-fabricated-prose tests already exist. The removal request is stale; remaining work is to map former failure paths to current phase policies and coverage. Absence of the literal alone does not prove all failure semantics.
-- Sources: every provider adapter, agent decision method, House narration path, phase runner, retry path, and transcript/publication seam that constructs, returns, accepts, or publishes the literal `[No response]` after a provider failure, timeout, empty result, or malformed result.
-- Historical signal: `[No response]` is fabricated prose. When it is returned through a normal player or House response type, downstream code can mistake an absent or failed model result for dialogue that the agent actually produced. Retrying a request, skipping optional speech, failing a required decision, and applying a legal deterministic decision fallback are materially different outcomes and must not collapse into the same synthetic text.
-- Required direction: inventory and remove every synthetic `[No response]` path. Represent provider rejection, timeout/network failure, auth or configuration failure, successful-but-empty output, malformed or undecodable structured output, and cancellation as explicit typed outcomes with their original failure provenance. The phase policy—not the provider adapter—decides whether a given outcome retries, skips optional speech, or aborts the action/game. No synthetic placeholder may be published as player speech, House narration, transcript dialogue, or an accepted decision.
-- Decision integrity: optional speech may be absent without inventing dialogue. Required structured decisions must either succeed or use an explicit, deterministic, rules-legal fallback whose provenance is recorded as a fallback rather than model output. Failed or absent calls must not create or update strategy, commitments, diary content, or other agent-authored state.
-- Runtime parity: apply the same semantics to local simulations and API-backed gameplay, including Responses, Chat Completions, local OpenAI-compatible providers, House calls, tool/structured-output calls, and retry exhaustion. Keep this item separate from R27: R27 preserves complete producer-debugging evidence; R28 defines gameplay behavior after a call does not yield usable model output.
-- Validation path: deterministic coverage enumerates every former constructor and consumer of `[No response]`; asserts the literal never appears in turns, transcript rows, House events, public events, decisions, strategy state, or simulation text; and proves the intended retry, optional-speech skip, required-decision fallback, cancellation, and fatal-failure semantics in both simulation and API-backed execution.
-- Original suggested slice (reconcile before implementation): begin with ordinary player speech across Responses and Chat Completions, replacing string fallback with a typed absent/failed result through the real phase runner and proving that the phase continues without publishing fake dialogue. Then migrate structured decisions, House narration, local-provider retries, and remaining literal consumers until a repository-wide assertion shows no synthetic gameplay output remains.
-
-### R29. Game-sealed provider fallback manifest
-
-- Status: `verification_audit_pending`
-- Priority: **high**
-- Current audit (2026-09-07): sealed manifests already exist in migration `0059_sealed_provider_manifest`, the simulator, daily-provider configuration, and `ProviderExecution` manifest traversal, including fallback budgets and durable accepted results. Reconcile these implementations and qualification tests with the current requirement; do not implement a second manifest/coordinator. A fresh paid qualification run is not authorized by this queue edit.
-- Sources: repeated hosted OpenAI `invalid_prompt` rejections during local `gpt-5.6-luna` games; the existing model catalog and provider profiles in `packages/engine/src/model-catalog.ts`; provider construction in `packages/engine/src/llm-client.ts` and `packages/api/src/services/game-lifecycle.ts`; simulation launch/configuration; R27 failed-request evidence; and R28 typed provider-failure outcomes.
-- Historical signal: a game currently seals one model/provider selection. A nonretryable provider refusal during required gameplay can therefore fail or suspend an otherwise healthy game even when another configured, game-ready provider could execute the same logical call. In the observed evening sample, two of four local games ended on OpenAI HTTP 400 `invalid_prompt` responses after substantial prior paid gameplay, while equivalent failures appear uncommon but possible across the larger live-game history.
-- Required direction: replace the single game model selection with an ordered, bounded provider manifest sealed into the game before it starts. The unattended Daily default is `openai:gpt-5.6-luna` followed by `katana:glm-5-2` and `katana:grok-4-5`; exact entries must retain Influence speech, structured-decision, and tool compatibility, with current price—not response speed—governing the fallback choice. Validate every entry's provider credentials and compatibility before admitting the game. Local simulation and API-backed gameplay must execute the same manifest.
-- Failover semantics: one logical gameplay call starts at the primary manifest entry. A typed, nonretryable provider refusal such as OpenAI `invalid_prompt` must not resend the unchanged request to that provider; it advances once to the next compatible manifest entry. Existing bounded same-provider handling for genuinely retryable capacity or transport failures completes before provider failover. Successful primary calls never contact a fallback. Exhausting the manifest returns one explicit typed call failure to the phase policy defined by R28.
-- Gameplay integrity: failover preserves the actor, action, canonical boundary, player memory, strategy state, authorized evidence, semantic prompt content, output contract, and acceptance rules. Provider adapters may translate only the transport/schema envelope required by the selected model's declared capabilities. They must not replay already accepted actions, restart the phase, weaken validation, fabricate dialogue, or parse transcript prose into authority. Exactly one accepted result may commit for the logical call.
-- Durability and observability: persist the sealed manifest and current logical-call attempt chain through the provider journal and durable logical turns. Record every provider attempt, fallback reason, request/response identity, usage, service tier, latency, and actual or estimated cost as producer evidence, using R27's complete failure evidence rather than a parallel reduced receipt. Public dialogue may identify the producing agent but must not expose provider credentials or private failure evidence.
-- Validation path: deterministic Responses-to-Katana and Chat-Completions-to-Katana tests prove an OpenAI `invalid_prompt` receives no unchanged OpenAI retry, the next provider receives exactly one semantically equivalent request, and one result commits once. Additional cases prove primary success makes zero fallback calls; retryable 429/transport handling remains bounded; incompatible or unavailable manifest entries fail admission before paid gameplay; all-provider failure stays typed and non-synthetic; recovery resumes the same manifest/attempt boundary without duplicate effects; and per-provider/per-game accounting reconciles every attempted call.
-- Original suggested slice (reconcile before implementation): first validate and catalog `katana:grok-4-5` and `katana:glm-5-2`, then support the sealed three-entry manifest `openai:gpt-5.6-luna` → `katana:glm-5-2` → `katana:grok-4-5` for ordinary player speech in both the simulator and API lifecycle. Drive an exact captured OpenAI `invalid_prompt` into one Katana request, publish only the validated fallback speech, preserve every provider evidence record, and prove the primary-success zero-fallback path. Expand to structured decisions and House calls only after that end-to-end slice is green.
+- **Status** `ready` for investigation.
+- **Evidence (2026-11-25).** Of the five most recent public Influence games inspected through MCP, three had published cuts. Five of their ten cuts lacked a moment link. For example, [A Rumor Gets Cross-Examined—and Still Wins](https://thehouse.game/games/championship-c137cc10-ca78-4895-ab19-0d8b52132a96-7c70fef6-9b65-4f74-930f-13097dd88635/highlights?scene=f34f122f-b856-4a3d-a14d-5bdbb70941ba-1&audience=public) cites public dialogue entries 367–373 and offers only “Watch the replay.”
+- **Investigation.** Trace those entries through [Influence cut evidence](../packages/engine/src/house-cuts/influence-source.ts), [publication](../packages/engine/src/house-cuts/publication.ts), and R35’s replay route. Identify which accepted records establish the exact opening position of the exchange. Preserve the full-replay action wherever an exact position cannot be verified.
+- **Done when** a signed-out viewer can open a shared cut with a verified position, choose “Watch this moment,” and see the cited exchange. Cover an existing published cut, a newly prepared cut, and a historical cut without an exact position. Preserve published quotes, source references, and audience access.
 
 ### R5. Producer-visible decision fallback and repair ledger
 
@@ -221,16 +137,6 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Confirmed gap (2026-10-18): `packages/web/src/components/watch/watch-inspector.tsx` declares tabs but lacks arrow-key navigation, roving focus and tab/panel associations. Shared playback controls already have accessible names; the frame scrubber has a named range, frame keyboard steps and elapsed-time value text.
 - Concrete slice: implement the inspector tab keyboard pattern and linked tab/panel roles, with focused keyboard and role/state tests.
 - Separate audit questions: canonical live-event announcements and focus retention through responsive reflow. Verify these before treating them as defects or expanding the implementation scope.
-
-### R19. Extract a lightweight simulation package above the engine
-
-- Status: `ready`
-- Priority: **medium**
-- Sources: `packages/engine/package.json`, `packages/engine/src/index.ts`, `packages/engine/src/simulate.ts`, `packages/engine/src/api-simulate.ts`, `packages/engine/src/simulation-instrumentation.ts`, `packages/engine/src/game-mcp/`, `packages/engine/src/agent.ts`, `packages/engine/src/house-interviewer.ts`, and the format-aware game-viewer planning review on 2026-07-26.
-- Signal: `@influence/engine` has one broad source entry and no explicit exports map. Its public barrel combines pure domain events/projections with the filesystem-backed local simulation MCP, simulation runners, artifact writers, OpenAI-coupled agents, provider configuration, and Node-only utilities. The simulator is a major source of package-boundary pollution, although it is not the only one: crypto and provider dependencies also remain in core-adjacent agent, House, state, hashing, and prompt-reuse modules.
-- Concrete seam: a new lightweight `@influence/simulation` workspace package above the engine; simulator CLI/configuration, artifact writers, local corpus MCP, Node filesystem/process utilities, and simulation-only dependencies; explicit engine exports for pure domain, runtime/provider adapters, and browser-safe leaves.
-- Validation path: preserve existing root simulation commands and artifact formats through the new package; keep deterministic engine and API tests passing; prove browser-safe engine subpaths with a production Next.js build; add an import-boundary test that rejects Node/provider/simulation dependencies from designated pure/browser entries.
-- Suggested slice: first move `simulate.ts`, `api-simulate.ts`, simulation instrumentation, local artifact writing, and the filesystem-backed simulation MCP into `@influence/simulation` without redesigning gameplay. Then inventory the remaining Node/OpenAI coupling and lift it behind injected runtime/provider/UUID/hash ports in bounded follow-ups. Do not claim the engine is environment-agnostic until those remaining imports are removed from its designated core boundary.
 
 ### R30. Remove stale simulator variant aliases
 
@@ -254,6 +160,8 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 
 ### R8. Durable draft-avatar recovery ownership
 
+The [current workspace](agent-content-submissions.md) uses durable artwork jobs. Limit this investigation to callers of the separate draft-avatar completion route and its restart behavior.
+
 - Status: `ready`
 - Consolidates: Standing Daily Agent implementation review finding #7.
 - Sources: `packages/api/src/services/avatar-generation.ts`, `packages/api/src/routes/agent-profiles.ts`, `packages/web/src/app/dashboard/agents/agent-form.tsx`, `docs/solutions/runtime-errors/api-startup-recovery-resumes-interrupted-games.md`, `docs/solutions/architecture-patterns/house-highlights-postgame-media-pipeline.md`
@@ -262,6 +170,11 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Validation path: interrupt the API after a draft is queued and after provider submission; restart without the originating form; verify the same request is reclaimed, completes once, stores one image, and does not create duplicate provider jobs.
 - Suggested slice: add a server-owned startup or periodic reconciler that claims queued and stale avatar requests. Keep browser polling as progress UI, not execution ownership.
 ## Future / Watchlist
+
+### R19. Extract a lightweight simulation package above the engine
+
+- Status: `future` (audited November 25). The engine exposes explicit subpaths, but its package still owns the simulation CLI, artifact writing and local simulation MCP. The workspace has no separate simulation package.
+- Revisit when a consumer needs a browser-safe import it cannot use today, or when a concrete simulator change requires the split. [Engine exports and commands](../packages/engine/package.json) · [Simulator](../packages/engine/src/simulate.ts) · [Engine entry point](../packages/engine/src/index.ts)
 
 ### Dramatic thinking presentation (2026-10-08)
 
@@ -372,15 +285,15 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 
 ### W13. Postgame media scale-out and runtime portability
 
-- Status: `staging_batch_accepted/production_preparation` (2026-11-03). Both staging workloads use Batch. Real Influence and Werewolf trailers and a Studio export completed with verified storage/playback, overlapping lane execution and worker/network cleanup after application #283. Production bootstrap, approved admission and acceptance are prepared in the [production release runbook](deployment/batch-render-production.md); production activation remains pending. Earlier [local Docker](solutions/infrastructure/2026-11-02-batch-render-local-proof.md) and [browser/MCP](solutions/infrastructure/2026-11-02-studio-browser-mcp-orders.md) evidence remains useful; older rollout notes below are historical.
-- Current plan: [Shared Batch rendering for trailers and Studio exports](plans/2026-11-01-001-feat-studio-cloud-exports.md). Add AWS Batch as a new renderer target for **both** workloads; preserve the current renderer as-is until each environment/workload is explicitly migrated. Use one Batch integration with separate trailer/export queues and compute budgets; reserve trailer capacity that long Studio exports cannot consume. Priority alone is insufficient.
+- Status: `ready to retire the single-job production renderer` (2026-11-25). The operator confirmed Batch has worked in production for weeks and the old controller is still present. Retirement is on the [ready list](../TODO.md#ready-to-work-on). Both staging workloads use Batch. Real Influence and Werewolf trailers and a Studio export completed with verified storage/playback, overlapping lane execution and worker/network cleanup after application #283. Production bootstrap completed and target selection for both workloads merged in [PR #286](https://github.com/0xFlicker/influence-game/pull/286), included in the [verified deployed revision](https://github.com/0xFlicker/influence-game/pull/374). Use the [production release runbook](deployment/batch-render-production.md) to reconcile actual workload receipts and the retirement window. Earlier [local Docker](solutions/infrastructure/2026-11-02-batch-render-local-proof.md) and [browser/MCP](solutions/infrastructure/2026-11-02-studio-browser-mcp-orders.md) evidence remains useful; older rollout notes below are historical.
+- The [Batch rendering plan](plans/2026-11-01-001-feat-studio-cloud-exports.md) uses separate trailer and export queues with reserved trailer capacity. The single-concurrency renderer stays available through the rollback window.
 - Migration is included in that plan: persist target ownership, drain old claims and reconcile uncertain tasks, transfer queued work without regenerating inputs or changing artifact versions, and prevent old wakes from reclaiming migrated jobs. Preserve trailer public publication and Studio private outputs. No automatic target fallback or duplicate submission authority.
 - **Explicit follow-up PR: Remove the single-concurrency Fargate production renderer after Batch migration.** Open after both workloads pass Batch acceptance in staging and production and the agreed rollback window closes. Remove the old direct-ECS singleton controller, obsolete wake/release/handoff paths, dedicated credentials/IAM/cloud resources, configuration and associated production-only code/tests/docs. Coordinate infrastructure and host companion PRs as needed; do not leave cleanup indefinitely deferred.
 - Cleanup entry/exit gates: zero old queued assignments, leases, active/uncertain tasks, upload or tailnet-cleanup obligations; verified inventory of shared versus obsolete resources; Batch protected-capacity, render/publication/download and deploy/rollback proofs pass after removal. **Keep local development rendering and the local replay exporter**, shared render functions/assets/storage and Batch-required networking. Retain history, receipts, published media and routing/epoch evidence. Prove local rendering without AWS, and no enabled wake paths or orphan tasks for the retired controller. See the plan's explicit follow-up PR section for the full checklist.
 - Consolidates: former W13 queue infrastructure and W16 render-worker portability.
 - Existing execution seams: PostgreSQL-authoritative jobs with atomic wake outbox, authenticated wake retries and expired-lease repair, exact generation/digest claim admission, drain fencing and retired-epoch tombstones, finite remote batches/quiet exit. Active leases heartbeat, upload and finalize during drain. Preserve these guarantees across target handoff.
 - Repository ownership: [falsefloor/infra](https://github.com/falsefloor/infra) owns renderer AWS resources and deployment IAM; `influence-game` owns the worker/API contract; `linode-iac` owns host release handoff and rollback. The renderer keeps its immutable image in the existing three-image release family.
-- Required migration proof: both workload contracts on Batch, reserved capacity under export saturation, machine-authenticated staging networking, uncertain-submission recovery, interrupted cutover/rollback, and no duplicate execution or publication. Local implementation is authorized and underway; local tests do not establish live deployment or long-render behavior. Cloud activation/migration and later resource retirement remain separate operator steps.
+- Production follow-up: check existing trailer and Studio export receipts against the release runbook. Verify any gaps in canary renders, reserved capacity under load, cancellation, retry, and release overlap or rollback before retiring the old controller.
 - Deferred: image generation/visual repair offload and gateway polling optimization. Rendering stays outside API/web request containers.
 
 ### W14. Postgame media version retention
@@ -409,15 +322,8 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 
 ### W17. Extract format decision surfaces from InfluenceAgent
 
-- Status: `verification_audit_pending`
-- Consolidates: format-kernel code review finding #16 (manual class).
-- Current audit (2026-09-07): Two Names has shipped, so the new-format trigger occurred. A shared `runSealedElimTargetDecision` helper is already used by `InfluenceAgent`; inspect remaining duplication before deciding whether any further extraction is useful.
-- Historical decision (2026-07-25): **do with the next launch format** — not a standalone refactor while the launch trio is stable. Extract shared helpers as part of adding the fourth format so tool wiring lands once.
-- Sources: `packages/engine/src/agent.ts` (format pick / SoE / Vote Bomb / bounce / tiebreak tools and methods), `packages/engine/src/phases/format-kernel.ts`, ce-code-review on `feat/sequester-format-kernel`.
-- Signal: five format decision surfaces copy the same validate → tool-call → fallback → `decisionSource`/`fallbackReason` pattern into a very large `agent.ts`, raising merge conflict cost and making a fourth launch format multi-site edits.
-- Concrete seam: new module (e.g. `agent-format-decisions.ts` or `formats/agent-surface.ts`) for tool schemas + shared decision runner; thin `InfluenceAgent` delegates; MockAgent and structured-output tests unchanged for tool IDs.
-- Promotion trigger: **adding a new launch format** (or a product decision that forces large format-tool rewrites). Do not promote solely for file-size aesthetics.
-- Suggested slice if promoted: extract helpers in the same change set as the new format’s tool/legality path, without renaming existing tools or changing product prompts/MockAgent contracts unless the new format requires it. Keep runner legality predicates as injected params per format.
+- Status: `future` (audited November 25). Vote Bomb, Majority Elimination, Even Votes and Restricted History all delegate sealed ballots to the same runner. Two Names shares tool builders and one target-decision path for replacement, ballot and tiebreak.
+- Format selection, Save or Eliminate and Safety Bounce still have distinct validation and fallback code in `InfluenceAgent`. Revisit extraction when a new format repeats one of those decisions. [Agent call sites](../packages/engine/src/agent.ts) · [Shared format surface](../packages/engine/src/formats/agent-surface.ts) · [Format integration tests](../packages/engine/src/__tests__/format-kernel-integration.test.ts)
 
 ### W18. Single-pass revealed round facts for postgame / completed results
 
@@ -431,6 +337,64 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Suggested slice if promoted: preserve dual-shape omit rules (`power`/`council` absent on format kernel) and sealed-ballot access scoping; add a multi-round format fixture as a cost/regression guard.
 
 ## Closed / Removed
+
+### R34. Normalize literal null only for nullable structured response fields
+
+- Status: `closed` (November 25). [PR #137](https://github.com/0xFlicker/influence-game/pull/137) shipped schema-aware normalization. The original Mingle case with `gotoPlayerName: "null"` passed through the current decision path and returned JSON null. Owner Learning accepted nullable values from both decoded objects and text while preserving the raw response.
+- Local regressions also cover nested nullable fields, required prose, case and whitespace variants, semantic validation, strict replay, and reserved profile names. The September name audit found zero conflicting profiles or historical seats on staging and production. The November review retired the request to find another naturally occurring example in deployed traffic. [Schema tests](../packages/engine/src/__tests__/structured-output.test.ts) · [Transport tests](../packages/engine/src/__tests__/provider-adapters.test.ts) · [Owner Learning tests](../packages/api/src/__tests__/owner-learning-worker.test.ts)
+
+### R27. Complete failed-provider request evidence for producer debugging
+
+- Status: `closed` (verified November 25). The transport captures the submitted request, response body and status, safe headers and available provider request ID. Local simulations save attempts in the per-game artifact. API games retain them in private evidence storage. Producers can page through the evidence for a game with producer scope and role. Credentials are scrubbed before persistence.
+- Verification covered a rejected HTTP request, recovered and exhausted rate limits, local artifact persistence, durable evidence reconciliation and the producer read path. [Transport tests](../packages/engine/src/__tests__/provider-execution.test.ts) · [Simulator journal](../packages/engine/src/__tests__/simulate-provider-journal.test.ts) · [API journal](../packages/api/src/services/provider-call-journal.test.ts) · [Producer access and reads](../packages/api/src/__tests__/production-game-mcp-server.test.ts)
+
+### R28. Eliminate synthetic `[No response]` gameplay outputs
+
+- Status: `closed` (verified November 25). No package TypeScript source contains the old placeholder. On output exhaustion the owning phase can omit optional speech or choose a legal fallback with engine provenance. When all routes are unavailable the coordinator defers the call. Owner cancellation propagates. Failed calls do not become contestant dialogue.
+- Verification covered missing optional dialogue, a required vote with fallback provenance, malformed House output, cancellation versus timeout, and safe replay of an unavailable API turn. [Engine behavior](../packages/engine/src/__tests__/game-engine.test.ts) · [House output](../packages/engine/src/__tests__/house-interviewer-structured-output.test.ts) · [Durable API turn](../packages/api/src/__tests__/game-turn-commit.test.ts) · [Current routing policy](model-routing.md)
+
+### R29. Game-sealed provider fallback manifest
+
+- Status: `closed` (verified November 25). Games freeze the configured model routes. A refusal can advance to the next entry, the next logical call starts at primary, and the journal reuses accepted results after restart. Fallback budgets are enforced at dispatch. The original August model list was superseded by the current routing policy.
+- Verification covered primary success without fallback, ordered failover, concurrent reservations for the last fallback call, replay without redispatch, and API preservation of explicit and historical routes. [Original rollout](https://github.com/0xFlicker/influence-game/pull/120) · [Coordinator tests](../packages/engine/src/__tests__/provider-execution.test.ts) · [API routing tests](../packages/api/src/services/game-model-routing.test.ts) · [Current route contract](model-routing.md)
+
+### R31. Make producer match narrative satisfy its declared response schema
+
+- Status: `closed` (PR #135 merged; staging runtime proof completed 2026-09-07)
+- Priority: **high**
+- Sources: authenticated production evaluation of completed current-meta game `dead-fawn-ice` on 2026-08-25; `packages/api/src/services/match-narrative-compact-v2.ts`, `packages/api/src/services/match-narrative-read-model.ts`, `packages/api/src/game-mcp/contracts.ts`, and the production Game MCP read-model/server tests.
+- Signal: `read_producer_match_narrative` failed before returning the completed game's all-seat narrative with `match narrative result.limitations is required`. The read model computed an empty limitations collection, but the compact v2 encoder omitted the field while the exposed result contract required it. Lower-level producer traces and cognitive artifacts remained readable, but that workaround defeats the intended one-shot grouped narrative surface and blocks its accepted/rejected strategy review.
+- Pre-fix source confirmation (2026-09-07): `encodeCompactV2Page` omits empty `limitations`; the published v2 schema permits omission, while `assertMatchNarrativePageResult` requires `limitations`, `access`, and `filters` without distinguishing versions. `matchNarrativeContent` invokes that assertion before returning MCP content. Reconcile encoder, published schema, and runtime validator together; audit all compact optional fields, not just the first reported error. This audit did not repeat the authenticated production read.
+- Required direction: make the compact v2 encoder and the declared MCP result contract agree. Successful narrative pages must return an explicit `limitations: []` when there are no limitations and preserve the typed non-empty array when limitations exist. Do not weaken producer authorization, private-lane policy, cursor binding, content-trust labels, or board-authority disclaimers, and do not substitute a client-side merge of lower-level evidence.
+- Validation path: add encoder coverage for empty and non-empty limitations; validate the encoded result against the actual MCP output schema; and exercise `read_producer_match_narrative` through the production MCP server for a completed current-meta producer game across terminal and paginated pages. Retain owner/producer isolation, schema v1 behavior, stable cursors, and existing strategy/thinking privacy coverage.
+- Implemented fix: compact v2 always emits `limitations`, including an empty array. Its published schema reflects omitted nullable metadata in game/access/filter objects; runtime validation permits optional v2 access/filters while retaining v1 requirements. Regression coverage exercises real encoded pages through MCP and validates the advertised output schema; DB-backed narrative pages retain privacy and cursor coverage.
+- Runtime proof (2026-09-07): authenticated staging `zero-teal-cove` read with schema v2, `full_cognition`, and full detail completed all 11 pages / 506 groups through the terminal page, each with `ok: true` and explicit `limitations: []`. No new provider-backed game was started.
+
+### R20. Complete CI test discovery without paid or external side effects
+
+- Status: `closed` (PR #117 implementation; required-check ruleset updated 2026-09-07)
+- Priority: **high**
+- Sources: `docs/brainstorms/2026-08-16-ci-test-discovery-requirements.md`, `docs/plans/2026-08-16-001-test-complete-ci-discovery-plan.md`, root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
+- Historical signal: required CI ran hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repaired known gaps but did not prove the lists were complete.
+- Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
+- Implemented shape: PR #117 made ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in. The exact implementation head passed `check`, `Provider-free tests`, `API / PostgreSQL tests`, and all four Browser Coverage jobs.
+- Operator proof (2026-09-07): all three checks passed on exact `main` commit `bc087190a04b89dba5d999d68602af295de5cbc2`. Active ruleset `20924439` now requires `check`, `Provider-free tests`, and `API / PostgreSQL tests`, each bound to GitHub Actions app `15368`. All other ruleset settings were preserved; Browser Coverage remains visible and non-required.
+
+### R23. Exceptional, actionable compact strategy diffs
+
+- Status: `closed` (PR #113 implemented; user accepted observed repetition on 2026-09-07)
+- Priority: **high**
+- Sources: production game `used-lilac-ash`, `packages/engine/src/strategy-state.ts`, `packages/engine/src/agent.ts`, `docs/reasoning-transcript-observability.md`, and `docs/plans/2026-08-14-001-perf-compact-decision-envelope-plan.md`.
+- Signal: the compact strategy lifecycle and mechanical validation behaved correctly in the reviewed game, but agents emitted strategy candidates across many ordinary Mingle, alliance-action, and huddle turns even when the text mostly restated the current posture. Frequent low-information deltas consume output tokens and make material changes harder for producers and future prompts to distinguish.
+- Product decision: keep `strategyDelta` optional and make omission the expected result when the current strategy still applies. A delta should record a material, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies; it should not summarize the action, repeat the baseline, narrate unchanged intent, or prove that the agent considered strategy.
+- Authority boundary: strategy remains private, fallible cognition. Deltas never become canonical game facts, alliance obligations, or evidence that an agent must vote a particular way. Malformed or rejected strategy metadata must remain independent from acceptance of an otherwise legal gameplay action.
+- Concrete seam: shared strategic-decision guidance, tool-field descriptions, compact-strategy application diagnostics, prompt scenario fixtures, and producer strategy-result reads.
+- Closure basis: implementation and live evidence demonstrate useful pivots and null no-change behavior. Some redundant updates are tolerated; eliminating repetition or proving a subjective reduction is not a release requirement.
+- Implemented shape: PR #113 tightened shared strategy-delta guidance and schemas, added explicit private `no_change` diagnostics for omitted and exact literal-null deltas, preserved legal gameplay acceptance independently from rejected strategy metadata, and retained the existing state machine and character limits.
+- Runtime audit (2026-09-07): completed staging `zero-teal-cove` yielded 286 proposals: 137 substantive deltas, 27 required replacement baselines, 121 JSON nulls, and one exact literal `"null"`. Luna round-5 decision `a53659b6-24d9-5ed3-8a4b-1ecc68639372` links to canonical event 245; next-request prior-epoch revision 28 preserves the same baseline/refinement, proving the literal-null no-change boundary.
+- Accepted limitation: Echo round-4 traces `87610632-c1ec-438b-a4a2-4feeac6bcdd4` and `fedac58c-6dfe-4784-82ea-d48c5c9c8936` show a rephrased Override contingency retained alongside the existing one. Useful target pivots also exist. The user accepted occasional repetition rather than adding another quality gate.
+- Evidence limits (not closure blockers): producer strategy artifacts expose proposals without application outcomes, so exact accepted/rejected/no-change totals are unavailable. All 21 exposed failure traces were timeouts, while accounting reports 59 failed calls; comprehensive retry attribution is unproven. Producer-authorized access does not prove cross-owner isolation.
+- Revisit only if repetition demonstrably crowds out useful context, increases costs materially, or harms gameplay. No application-receipt expansion, additional LLM gate, or prompt experiment is required for closure. No paid run was started for this audit.
 
 ### R32. Remove prose-parsing escape hatches from structured model turns
 
@@ -559,9 +523,7 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 
 ## Account RBAC rollout follow-up (2026-09-30)
 
-- `implementation_complete/operator_rollout_pending`: retire inactive `address_roles` after inventory and
-  explicit review of unmatched/ambiguous grants; verify zero-address scheduler
-  principal and existing cron flow during the coordinated application replacement.
+- **Ready to remove the inactive wallet-role table.** On November 25 the operator confirmed that account grants were settled. Remove `address_roles` and its obsolete references, preserving account-based grants and the registered scheduler principal. [Ready list](../TODO.md#ready-to-work-on)
 - `ready`: replace legacy scheduler app JWT issuance with a dedicated scoped
   service credential issuer/rotation flow if needed. Current repository has no
   issuer utility for the deployed cron token; deployed credential inspection and

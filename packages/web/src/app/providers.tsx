@@ -21,14 +21,7 @@ import {
   useRuntimeConfig,
   type PublicRuntimeConfig,
 } from "@/lib/runtime-config";
-import { PrivyProvider } from "@privy-io/react-auth";
-import {
-  WagmiProvider as PrivyWagmiProvider,
-  createConfig as createPrivyConfig,
-} from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { mainnet } from "viem/chains";
-import { http } from "wagmi";
 import {
   getAuthToken,
   type AuthenticatedPublicIdentity,
@@ -46,15 +39,6 @@ import {
 } from "@/components/public-identity-onboarding-model";
 import { MiniAppProvider } from "@/components/farcaster-miniapp-provider";
 import { FarcasterMiniAppAuthBootstrap } from "@/components/farcaster-miniapp-auth-bootstrap";
-
-// ---------------------------------------------------------------------------
-// Wagmi config (Privy-managed)
-// ---------------------------------------------------------------------------
-
-const wagmiConfig = createPrivyConfig({
-  chains: [mainnet],
-  transports: { [mainnet.id]: http() },
-});
 
 const queryClient = new QueryClient();
 
@@ -280,16 +264,18 @@ const E2E_PRIVY_APP_ID = "e2e-test-privy-app-id-001";
 function ClerkInfluenceAuth({
   children,
   managedAuthMode,
+  privyAppId,
 }: {
   children: React.ReactNode;
   managedAuthMode: "existing-only" | "full";
+  privyAppId: string;
 }) {
   const clerk = useClerk();
   const clerkLogout = useCallback(async () => {
     await clerk.signOut();
   }, [clerk]);
   return (
-    <InfluenceAuthProvider clerkLogout={clerkLogout} managedAuthEnabled>
+    <InfluenceAuthProvider clerkLogout={clerkLogout} managedAuthEnabled privyAppId={privyAppId}>
       <><ProductAnalytics /><AuthExperience>{children}</AuthExperience></>
       <AuthenticationWrapper managedAuthMode={managedAuthMode} />
     </InfluenceAuthProvider>
@@ -300,14 +286,16 @@ function InfluenceAuthLayer({
   children,
   managedAuthMode,
   clerkPublishableKey,
+  privyAppId,
 }: {
   children: React.ReactNode;
   managedAuthMode: PublicRuntimeConfig["MANAGED_AUTH_MODE"];
   clerkPublishableKey: string;
+  privyAppId: string;
 }) {
   if (isLayeredAuthE2EAdapterEnabled()) {
     return (
-      <InfluenceAuthProvider managedAuthEnabled>
+      <InfluenceAuthProvider managedAuthEnabled privyAppId={privyAppId}>
         <><ProductAnalytics /><AuthExperience>{children}</AuthExperience></>
         <AuthenticationWrapper managedAuthMode={managedAuthMode} />
       </InfluenceAuthProvider>
@@ -315,7 +303,7 @@ function InfluenceAuthLayer({
   }
   if (managedAuthMode === "disabled") {
     return (
-      <InfluenceAuthProvider managedAuthEnabled>
+      <InfluenceAuthProvider managedAuthEnabled privyAppId={privyAppId}>
         <><ProductAnalytics /><AuthExperience>{children}</AuthExperience></>
         <AuthenticationWrapper managedAuthMode="disabled" />
       </InfluenceAuthProvider>
@@ -323,7 +311,7 @@ function InfluenceAuthLayer({
   }
   return (
     <ClerkProvider publishableKey={clerkPublishableKey}>
-      <ClerkInfluenceAuth managedAuthMode={managedAuthMode}>
+      <ClerkInfluenceAuth managedAuthMode={managedAuthMode} privyAppId={privyAppId}>
         {children}
       </ClerkInfluenceAuth>
     </ClerkProvider>
@@ -359,39 +347,19 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
     return { isE2E: true, authenticated: hasToken, ready: true };
   }, [e2e]);
 
-  if (!privyAppId) {
-    throw new Error("PRIVY_APP_ID is not set (check runtime env or NEXT_PUBLIC_PRIVY_APP_ID)");
-  }
-
   return (
     <MiniAppProvider>
       <E2EAuthContext.Provider value={e2eAuth}>
-        <PrivyProvider
-          key={privyAppId}
-          appId={privyAppId}
-          config={{
-            loginMethods: ["email", "wallet"],
-            appearance: {
-              theme: "dark",
-              accentColor: "#6366f1",
-            },
-            embeddedWallets: {
-              ethereum: { createOnLogin: "off" },
-            },
-          }}
-        >
-          <QueryClientProvider client={queryClient}>
-            <PrivyWagmiProvider config={wagmiConfig}>
-              <InfluenceAuthLayer
-                managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
-                clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
-              >
-                <FarcasterMiniAppAuthBootstrap />
-                {children}
-              </InfluenceAuthLayer>
-            </PrivyWagmiProvider>
-          </QueryClientProvider>
-        </PrivyProvider>
+        <QueryClientProvider client={queryClient}>
+          <InfluenceAuthLayer
+            managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
+            clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
+            privyAppId={privyAppId ?? ""}
+          >
+            <FarcasterMiniAppAuthBootstrap />
+            {children}
+          </InfluenceAuthLayer>
+        </QueryClientProvider>
       </E2EAuthContext.Provider>
     </MiniAppProvider>
   );

@@ -63,7 +63,7 @@ function clerkApiResponseError(code: string, message: string) {
 describe("unified authentication wrapper", () => {
   it("disables automatic embedded wallets while preserving email and wallet login", () => {
     const providerSource = readFileSync(
-      join(import.meta.dir, "../app/providers.tsx"),
+      join(import.meta.dir, "../components/privy-runtime.tsx"),
       "utf8",
     );
     expect(providerSource).toMatch(/ethereum:\s*\{\s*createOnLogin:\s*"off"\s*\}/);
@@ -192,7 +192,7 @@ describe("unified authentication wrapper", () => {
       'const isModalVisible = presentation === "modal"',
     );
     expect(wrapperSource).toContain(
-      "&& (attempt !== null || Boolean(reversePrivyToken));",
+      "&& (attempt !== null || Boolean(reversePrivyToken) || privyStarting);",
     );
     expect(wrapperSource).toContain("if (!isModalVisible) return;");
   });
@@ -813,11 +813,11 @@ describe("unified authentication wrapper", () => {
       "const openPrivySignIn = useCallback",
     );
     const currentProof = authHookSource.indexOf(
-      "currentPrivyProof(getAccessToken)",
+      "currentPrivyProof(runtime.getAccessToken)",
       signIn,
     );
     const interactiveLogin = authHookSource.indexOf(
-      "openPrivyLogin();",
+      "runtime.login();",
       currentProof,
     );
     expect(signIn).toBeGreaterThan(0);
@@ -827,7 +827,7 @@ describe("unified authentication wrapper", () => {
       "completePrivyAttempt(providerToken)",
     );
     expect(authHookSource).toContain(
-      "pendingPrivyProofResolution.current !== resolve",
+      'pendingPrivyProofResolution.current === resolve',
     );
     expect(authHookSource).toContain(
       "pendingPrivyProofResolution.current !== resolveProof",

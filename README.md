@@ -18,6 +18,7 @@ Influence alliance introductions show the alliance name and members with House t
 
 | Start here | Guide |
 | --- | --- |
+| Current to-dos, outstanding verification and completed work | [The House to-do list](TODO.md) |
 | Architecture, service boundaries and repository map | [Architecture](docs/architecture.md) |
 | Setup, local services, tests and operations | [Development and operations](docs/development-and-operations.md) |
 | Contributor workflow and shared vocabulary | [Development workflow](DEVELOPMENT.md) · [Concepts](CONCEPTS.md) |

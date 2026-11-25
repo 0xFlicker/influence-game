@@ -35,6 +35,17 @@ flowchart TD
 
 A single `join_game` agent-creation flow resolves identity before joining through the corresponding API. Preserve draft recovery and both games' separate strategy fields. Do not infer a game from a URL prefix or reuse Influence strategy for Werewolf.
 
+Entry and Details have their own route loading boundaries. Reuse the
+request-scoped identity read for metadata and dispatch, and keep the optional
+initial detail snapshot bounded. Casting and results render independently of
+the replay viewer. The waiting Influence lobby retains its cast polling and
+loads the viewer on the transition out of casting.
+
+Game and results share tags read `GET /api/game-entries/:slug/card?view=metadata`.
+This uses the same public visibility check as the card-image input and reads only
+game fields. Opening-cast projection and artwork capacity belong to image requests.
+Initial HTML still carries the share tags for crawlers.
+
 ## Replay links
 
 - Influence: `/games/:slug/replay/:sequence`, using the active cue's canonical event sequence.

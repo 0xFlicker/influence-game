@@ -3,10 +3,11 @@ import type {GameStatus, GameVisibility} from "./api";
 import {parseReplayAudience, parseReplayCursor, parseReplaySequenceParam} from "./game-links";
 import {parseReplayShare, REPLAY_SHARE_KEYS} from "./replay-share";
 import {serializeMiniAppEmbedMeta} from "./farcaster-miniapp";
-export interface PlayerCardGame {
+export interface PlayerCardMetadataGame {
   id:string; slug:string; gameKind:"influence"|"werewolf"; status:GameStatus;
-  visibility:GameVisibility; title:string; description:string; coverUrl:string|null; cast: Array<{id:string;name:string}>;
+  visibility:GameVisibility; title:string; description:string; coverUrl:string|null;
 }
+export interface PlayerCardGame extends PlayerCardMetadataGame { cast: Array<{id:string;name:string}> }
 export type ReplaySearch = Record<string,string|string[]|undefined>;
 /** Forward only validated playback inputs; never a token, redirect, or arbitrary query. */
 export function playerSearch(search:ReplaySearch, kind:PlayerCardGame["gameKind"]): string {
@@ -26,7 +27,7 @@ export function playerSearch(search:ReplaySearch, kind:PlayerCardGame["gameKind"
   }
   return query.size ? `?${query}` : "";
 }
-export function playerCardMetadata(game:PlayerCardGame, origin:string, search:ReplaySearch = {}, sequence?:string): Metadata {
+export function playerCardMetadata(game:PlayerCardMetadataGame, origin:string, search:ReplaySearch = {}, sequence?:string): Metadata {
   const title = `${game.title} — ${game.gameKind === "werewolf" ? "Werewolf" : "Influence"} · The House`;
   const description = game.gameKind === "werewolf" ? "Meet the cast of a Werewolf game at The House." : "Meet the cast of an Influence game at The House.";
   const image = new URL(`/games/${encodeURIComponent(game.slug)}/card-image`,origin).href;
@@ -58,7 +59,7 @@ export function playerCardMetadata(game:PlayerCardGame, origin:string, search:Re
 }
 
 /** Results shares identify the destination without disclosing the outcome. */
-export function resultsCardMetadata(game:PlayerCardGame, origin:string): Metadata {
+export function resultsCardMetadata(game:PlayerCardMetadataGame, origin:string): Metadata {
   const kind = game.gameKind === "werewolf" ? "Werewolf" : "Influence";
   const title = `Results · ${game.title} — ${kind} · The House`;
   const description = `View results for a ${kind} game at The House.`;

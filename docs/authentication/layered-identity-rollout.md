@@ -23,6 +23,12 @@ authentication without replacing Privy or changing any Influence account ID.
 Clerk setup and environment variables are documented in
 [`managed-provider-selection.md`](managed-provider-selection.md).
 
+Public pages bootstrap the House session before any Privy SDK download. Selecting
+Privy sign-in or explicitly verifying a wallet loads the provider. Session
+cleanup can load it to clear credentials retained by Privy across page reloads.
+Administration can initialize Privy on entry and retains its connected wallet
+display. A slow SDK start shows a loading state and can be retried.
+
 ## What to do in each environment
 
 | Environment | Purpose | Data |

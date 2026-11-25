@@ -91,11 +91,12 @@ export async function initializeAnalytics(key: string, host: string): Promise<vo
         },
       },
       before_send: event => {
-        if (!event || excluded || !getAnalyticsConsent().analytics) return null;
+        const consent = getAnalyticsConsent();
+        if (!event || excluded || !consent.analytics) return null;
         // SDK-generated events must use the same dashboard filters as ours.
         event.properties.channel = "web";
         event.properties.environment = "production";
-        if (event.event === "$exception") scrubExceptionProperties(event.properties);
+        if (event.event === "$exception") scrubExceptionProperties(event.properties, consent.choice?.analytics === true);
         // SDK defaults can contain full URLs; never send query strings, fragments,
         // OAuth codes, private editor text or request bodies.
         sanitizeAnalyticsProperties(event.properties);

@@ -16,9 +16,12 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       let sdkConfig;
       const events = [];
       const errors = [];
+      const sendException = value => sdkConfig.before_send({ event: "$exception", properties: {
+        $exception_list: [{ type: "Error", value }], $exception_values: [value],
+      } });
       mock.module("posthog-js", () => ({ default: {
         init: (key, config) => { initialized++; sdkConfig = config; }, capture: name => events.push(name),
-        captureException: error => errors.push(error),
+        captureException: error => errors.push(sendException(error.message)),
         identify: () => {}, reset: () => {}, get_property: () => null,
         opt_in_capturing: () => optedIn++, opt_out_capturing: () => optedOut++, clear_opt_in_out_capturing: () => {},
         stopSessionRecording: () => stopped++, startSessionRecording: () => {},
@@ -43,8 +46,10 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
         assert.equal(values.get("house:analytics-us-notice-shown"), "true");
         analytics.setAnalyticsIdentity(null, false);
         assert.equal(optedIn, 0);
+        const defaultReport = sendException("Default US collection");
+        assert.equal(defaultReport.properties.$exception_list[0].value, "Error details redacted");
       }
-      consent.saveAnalyticsChoice({ analytics: true, advertising: true });
+      consent.saveAnalyticsChoice({ analytics: true, advertising: false });
       await analytics.initializeAnalytics("test", "https://invalid.example");
       analytics.setAnalyticsIdentity(null, false);
       analytics.captureProductEvent("allowed");
@@ -54,12 +59,12 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       assert.deepEqual(sdkConfig.capture_exceptions, {
         capture_unhandled_errors: true, capture_unhandled_rejections: true, capture_console_errors: false,
       });
-      analytics.captureProductException(new Error("allowed"));
+      analytics.captureProductException(new Error("Replay source failed to load"));
       assert.equal(errors.length, 1);
-      const exception = sdkConfig.before_send({ event: "$exception", properties: {
-        $exception_list: [{ type: "Error", value: "private-prompt" }], $exception_values: ["private-prompt"],
-      } });
-      assert.ok(!JSON.stringify(exception).includes("private-prompt"));
+      assert.equal(errors[0].properties.$exception_list[0].value, "Replay source failed to load");
+      const exception = sendException("ResizeObserver loop completed with undelivered notifications.");
+      assert.equal(exception.properties.$exception_list[0].value, "ResizeObserver loop completed with undelivered notifications.");
+      assert.equal(exception.properties.$exception_values, undefined);
       // SDK-originated exit/performance events share our filtering and privacy
       // boundary even though they don't call captureProductEvent.
       const automaticEvent = event => ({ event, properties: {

@@ -12,7 +12,7 @@ import {
   setApiBase,
   type PublicPostgameMediaResponse,
 } from "../lib/api";
-import { generateMetadata } from "../app/(site)/games/[slug]/page";
+import { generateMetadata } from "../app/(site)/games/[slug]/(entry)/page";
 import { HouseGameRoute } from "../app/games/[slug]/house-route";
 import { HouseGameEntry } from "../components/games/house-game-entry";
 
@@ -178,7 +178,7 @@ describe("CompletedGameEntry", () => {
       expect(metadata.description).toBe("Meet the cast of a Werewolf game at The House.");
       expect(metadata.openGraph?.images).toEqual([{url:"https://thehouse.game/games/wolf-game/card-image",width:1200,height:630,alt:"Lanterns and Lies — Werewolf at The House"}]);
       expect(JSON.stringify(metadata.twitter)).toContain('"card":"player"');
-      expect(calls).toHaveLength(1);expect(calls[0]).toEndWith("/api/game-entries/wolf-game/card");
+      expect(calls).toHaveLength(1);expect(calls[0]).toEndWith("/api/game-entries/wolf-game/card?view=metadata");
       globalThis.fetch = (async () => new Response("Unavailable",{status:404})) as unknown as typeof fetch;
       const unavailable = await generateMetadata({params:Promise.resolve({slug:"missing"})});
       expect(JSON.stringify(unavailable.twitter)).not.toContain('"card":"player"');
@@ -221,7 +221,7 @@ describe("CompletedGameEntry", () => {
       const viewer = findElementByType(page, HouseGameEntry);
 
       expect(requestedUrls).toEqual([
-        `http://api:3001/api/game-entries/${gameId}`,
+        `http://api:3001/api/game-entries/${gameId}/card?view=metadata`,
         `http://api:3001/api/games/${gameId}`,
       ]);
       expect(viewer?.props.initialGame?.slug).toBe(gameId);
@@ -262,7 +262,7 @@ describe("CompletedGameEntry", () => {
 
     try {
       await HouseGameRoute({ slug: gameId, mode:"entry" });
-      expect(requestedUrls).toEqual([`http://api:3001/api/game-entries/${gameId}`, `http://api:3001/api/games/${gameId}`]);
+      expect(requestedUrls).toEqual([`http://api:3001/api/game-entries/${gameId}/card?view=metadata`, `http://api:3001/api/games/${gameId}`]);
     } finally {
       if (originalApiBackendUrl === undefined) {
         delete process.env.API_BACKEND_URL;

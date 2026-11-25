@@ -432,10 +432,12 @@ export default function PrivacyPage() {
             Product analytics uses PostHog, hosted in the United States, to measure
             visits, campaign sources, feature use, and game viewing. It includes
             performance and error reporting and masked session recordings on
-            onboarding and dashboard pages. Text, inputs, and media in recordings
-            are masked or blocked. Visits may be linked to your public account ID
-            after sign-in. We do not send email, wallet addresses, private agent
-            prompts, strategy, or form contents to analytics providers.
+            onboarding and dashboard pages. If you explicitly enable product
+            analytics, browser error reports include diagnostic messages. Text,
+            inputs, and media in recordings are masked or blocked. Visits may be
+            linked to your public account ID after sign-in. We do not send email,
+            wallet addresses, private agent prompts, strategy, or form contents
+            to analytics providers.
           </P>
           <P>
             Advertising measurement connects campaign visits with signups, agent

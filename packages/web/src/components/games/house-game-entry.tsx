@@ -3,13 +3,16 @@
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { GameSiteEntry } from "./game-site-entry";
+import { GameEntryError, GameEntryLoading, GameEntrySkeleton } from "./game-entry-loading";
 import { ApiError, type GameDetail, type GameWatchReplayFrame, type TranscriptEntry } from "@/lib/api";
 import { getGameEntry, type GameEntryIdentity } from "@/lib/game-entry";
 import { parseReplayAudience, parseReplayCursor } from "@/lib/game-links";
+import type { WerewolfLobbyData } from "@/lib/werewolf-api";
 
-const WerewolfResults = dynamic(() => import("./werewolf/werewolf-results").then(m => m.WerewolfResultsPage));
-const WerewolfEntry = dynamic(() => import("./werewolf/werewolf-entry").then(m => m.WerewolfEntry));
-const EpisodeLanding = dynamic(() => import("@/app/games/episode-landing").then(m => m.EpisodeLanding));
+const WerewolfResults = dynamic(() => import("./werewolf/werewolf-results").then(m => m.WerewolfResultsPage), { loading: () => <GameEntrySkeleton results /> });
+const WerewolfEntry = dynamic(() => import("./werewolf/werewolf-entry").then(m => m.WerewolfEntry), { loading: () => <GameEntryLoading /> });
+const EpisodeLanding = dynamic(() => import("@/app/games/episode-landing").then(m => m.EpisodeLanding), { loading: () => <GameEntryLoading /> });
+const InfluenceResults = dynamic(() => import("@/app/games/[slug]/components/influence-results-entry").then(m => m.InfluenceResultsEntry), { loading: () => <GameEntrySkeleton results /> });
 const GameViewer = dynamic(() => import("@/app/games/[slug]/game-viewer").then(m => m.GameViewer));
 const Highlights = dynamic(() => import("@/app/games/[slug]/highlights/house-cuts-client").then(m => m.HouseCutsClient));
 
@@ -19,6 +22,7 @@ export interface HouseGameEntryProps {
   identity?: GameEntryIdentity;
   initialStatus?: number;
   initialGame?: GameDetail;
+  initialWerewolfLobby?: WerewolfLobbyData;
   initialMessages?: TranscriptEntry[];
   initialReplayFrames?: GameWatchReplayFrame[];
   audience?: string | string[];
@@ -30,7 +34,7 @@ export interface HouseGameEntryProps {
 export function HouseGameEntry(props: HouseGameEntryProps) {
   const query = useQuery({
     queryKey: ["house-entry", props.slug],
-    queryFn: ({ signal }) => getGameEntry(props.slug, signal),
+    queryFn: ({ signal }) => getGameEntry(props.slug, AbortSignal.any([signal, AbortSignal.timeout(6000)])),
     initialData: props.identity,
     enabled: !props.identity,
     retry: false,
@@ -39,13 +43,8 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
   });
   const identity = query.data;
   if (!identity) {
-    return <GameSiteEntry>{query.error ? (
-      <div role="alert">
-        <h1>{query.error instanceof ApiError && query.error.status === 404
-          ? "Game not found" : "Could not open this game"}</h1>
-        <button onClick={() => void query.refetch()}>Try again</button>
-      </div>
-    ) : <p role="status">Opening the House…</p>}</GameSiteEntry>;
+    if (query.isFetching || !query.error) return <GameEntryLoading results={props.mode === "results"} />;
+    return <GameEntryError missing={query.error instanceof ApiError && query.error.status === 404} onRetry={() => void query.refetch()} />;
   }
 
   if (props.mode === "highlights") return <GameSiteEntry><Highlights slug={identity.slug} selectedId={props.scene} audience={Array.isArray(props.audience) ? props.audience[0] : props.audience} /></GameSiteEntry>;
@@ -60,13 +59,16 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
       return <GameSiteEntry><p role="alert">Invalid replay link. Choose Mystery or Omniscient from the game page.</p></GameSiteEntry>;
     }
     return <WerewolfEntry slug={identity.slug} audience={audience}
-      replay={props.mode === "replay"} startCursor={cursor} />;
+      replay={props.mode === "replay"} startCursor={cursor} initialGame={props.initialWerewolfLobby} />;
   }
 
   if (props.mode === "entry") {
     return <EpisodeLanding key={identity.id} slug={identity.slug} initialGame={props.initialGame} />;
   }
-  const viewer = <GameViewer
+  if (props.mode === "results") {
+    return <GameSiteEntry><InfluenceResults key={identity.id} slug={identity.slug} initialGame={props.initialGame} /></GameSiteEntry>;
+  }
+  return <GameViewer
     key={identity.id}
     gameId={identity.slug}
     completedMode={props.mode}
@@ -75,5 +77,4 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
     initialReplayFrames={props.initialReplayFrames}
     startSequence={props.startSequence}
   />;
-  return props.mode === "results" ? <GameSiteEntry>{viewer}</GameSiteEntry> : viewer;
 }

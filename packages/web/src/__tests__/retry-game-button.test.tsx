@@ -15,7 +15,7 @@ test("retry stays mounted after delivery failure and resubmits the same attempt"
   const view = render(<RetryGameButton gameId="old-game" onRetried={() => { refreshed++; }} />);
   const button = view.getByRole("button", { name: "Retry game" }) as HTMLButtonElement;
   button.focus(); fireEvent.click(button);
-  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Launch pending"));
+  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Request failed (HTTP 503)."));
   expect(refreshed).toBe(0); expect(view.getByRole("button")).toBe(button);
   fireEvent.click(button); await waitFor(() => expect(refreshed).toBe(1));
   expect(paths).toEqual(["/api/admin/games/old-game/retry", "/api/admin/games/old-game/retry"]);

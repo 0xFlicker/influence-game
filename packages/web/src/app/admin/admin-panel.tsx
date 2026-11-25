@@ -1,10 +1,10 @@
 "use client";
 import { RetryGameButton } from "./retry-game-button";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useContext, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { AdminWalletAddressContext } from "@/hooks/use-privy-runtime";
 import { fillGame, hideGame, listAdminGames, startGame, stopGame, unhideGame, type AdminGameSummary, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
@@ -610,7 +610,7 @@ function RecentGameRow({
 // ---------------------------------------------------------------------------
 
 export function AdminPanel() {
-  const { address } = useAccount();
+  const address = useContext(AdminWalletAddressContext);
   const { hasPermission, roles } = usePermissions();
 
   const canCreateGame = hasPermission("create_game");

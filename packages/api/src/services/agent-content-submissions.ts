@@ -87,7 +87,7 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
   for (const url of new Set([profile.avatarUrl, profile.fullBodyReferenceUrl, profile.portraitCrop?.sourceUrl])) {
     if (!url) continue;
     const captured = evidence?.[url];
-    if (captured) { await tx.insert(schema.agentContentAssets).values(await storeFields(captured, {"bytes":"binary"})).onConflictDoNothing(); assets[url] = captured.hash; }
+    if (captured) { await tx.insert(schema.agentContentAssets).values(await storeFields(captured, {"bytes":"image"})).onConflictDoNothing(); assets[url] = captured.hash; }
     else assets[url] = previousAssets[url]!;
   }
   const fingerprint = sha256StableJson({ ...snapshot, assets });
@@ -232,7 +232,7 @@ export async function captureExistingAgentBaseline(tx:Tx,profile:Profile,evidenc
   if(profile.latestContentRevisionId || profile.contentRevisionId || profile.moderationRequired)return profile;
   const captured=await prepareContentAssets(profile,evidence,{db:tx,userId:profile.userId});
   const assets:Record<string,string>={};
-  for(const [url,asset] of Object.entries(captured)){await tx.insert(schema.agentContentAssets).values(await storeFields({...asset,isPublic:true},{bytes:"binary"})).onConflictDoNothing();assets[url]=asset.hash;}
+  for(const [url,asset] of Object.entries(captured)){await tx.insert(schema.agentContentAssets).values(await storeFields({...asset,isPublic:true},{bytes:"image"})).onConflictDoNothing();assets[url]=asset.hash;}
   const snapshot={...contentSnapshot(profile),assets}; const id=randomUUID();
   await tx.insert(schema.agentContentRevisions).values(await storeFields({id,agentProfileId:profile.id,userId:profile.userId,competitiveRevisionId:profile.currentRevisionId,ancestryKnown:false,snapshot,fingerprint:sha256StableJson(snapshot)},{snapshot:"json-gzip"}));
   await tx.insert(schema.agentModerationReviews).values({id:randomUUID(),contentRevisionId:id,status:"resolved",held:false});

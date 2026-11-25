@@ -154,13 +154,29 @@ admin workspace and form layouts are outside this discovery redesign.
 Artwork mounts only the current cast/scene frame. This avoids briefly drawing
 both groups of names together and prevents invisible cast frames from fetching
 images. The selected frame order and rotation timing are unchanged. Card links
-use their visible content as the accessible name. Shared footer labels use a
-higher-contrast neutral after the discovery-page accessibility audit.
+use their visible content as the accessible name and open the game's entry page
+from the artwork, copy or non-control footer area on desktop and touch. Watch,
+Details, Join and management controls have their own actions. Shared footer
+labels use a higher-contrast neutral after the discovery-page accessibility audit.
 
 House narration previews size text against the artwork container (`cqw`), not
 the viewport. They reserve the top for logo/status and the bottom for the frame
-caption, with a five-line excerpt limit. Full episode copy remains in the card
-preview dialog and detail page.
+caption, with a five-line excerpt limit. The game entry page shows the full
+episode copy and the trailer when one is available.
+
+The library starts one bounded page read per visible shelf on the server and
+streams each shelf behind its own card skeleton. Open and Werewolf can start
+while seasons load. The two Influence shelves use the active season to determine
+their queries. Refresh, filters and pagination read fresh pages in the browser.
+Game entry and Details
+have route skeletons that persist while their data or code is loading. The
+waiting Influence lobby renders from the server game snapshot and polls the cast
+directly. It loads the replay viewer only if the game starts. Werewolf game entry
+starts its lobby read on the server, and Details loads the game-specific results
+screen without starting the playback viewer. The optional server snapshot gets a
+1.5-second budget, after which the browser can fetch it while showing the shell.
+The admin games panel owns its wallet connector provider, which public browsing
+and casting routes can omit from their initial JavaScript.
 
 ## Homepage on large displays
 

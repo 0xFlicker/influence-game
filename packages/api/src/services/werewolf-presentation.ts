@@ -1,10 +1,11 @@
 import { audioReadySequence } from "./audio-frontier.js";
 import { readRetrospectivePresentation } from "./retrospective-retakes.js";
-import { loadPayloads, readPayload } from "./payload-storage.js";
+import { readPayload, type StoredPayload } from "./payload-storage.js";
 import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
 import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
 import { projectWerewolfPresentation, type WerewolfPresentation } from "@influence/engine/werewolf/presentation";
+import type { WerewolfPlayer } from "@influence/engine/werewolf";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import type { StoredVisualShot, VisualShot } from "@influence/engine/visual-mode";
 import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
@@ -12,14 +13,20 @@ import { mapWerewolfWatchCue, projectWerewolfWatch, type WerewolfWatchStaging } 
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readWerewolfNarratedEvents, WerewolfGameError } from "./werewolf-games.js";
 import { werewolfReferenceMetadata, WEREWOLF_AUTO_PUBLISHER } from "./werewolf-production.js";
-import { readVisualProfileImage } from "./visual-game-assets.js";
+import { readVisualProfileImage, visualProfileImageSource } from "./visual-game-assets.js";
+import { draftImageHash, readAgentDraftImageReference } from "./agent-draft-images.js";
 import { gamePlayerModelPreference } from "./game-player-model-preference.js";
 
-/** One audience-safe prefix, plus an exact public version; no producer DTO escapes. */
-export async function readWerewolfPresentation(db: DrizzleDB, id: string, audience: WerewolfAudience, cursor?: number, publicationCutoff = new Date().toISOString()) {
+async function findPublicStartedWerewolf(db: Pick<DrizzleDB, "select">, id: string) {
   const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
+  return game;
+}
+
+/** One audience-safe prefix, plus an exact public version; no producer DTO escapes. */
+export async function readWerewolfPresentation(db: DrizzleDB, id: string, audience: WerewolfAudience, cursor?: number, publicationCutoff = new Date().toISOString()) {
+  const game = await findPublicStartedWerewolf(db, id);
   const ready = await audioReadySequence(db,game.id);
   const events = (await readWerewolfNarratedEvents(db, game.id, audience)).filter(event => ready === null || event.sequence <= ready || ready === 0 && event.type === "werewolf.started");
   const awaitingOpening = JSON.parse(game.config).houseNarrationVersion === 1 && events.length === 1 && !events[0]?.houseNarrationCallIds;
@@ -40,20 +47,54 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
     view, scene };
   return { presentation, permitted };
 }
+async function readWerewolfOpeningPlayers(db: Pick<DrizzleDB, "select">, gameId: string) {
+  const [row] = await db.select({ event: schema.werewolfEvents.event }).from(schema.werewolfEvents)
+    .where(and(eq(schema.werewolfEvents.gameId, gameId), eq(schema.werewolfEvents.sequence, 1)));
+  if (!row) return [];
+  const { event } = row;
+  if (event.type !== "werewolf.started" || event.gameId !== gameId || event.sequence !== 1) {
+    throw new Error("Invalid frozen Werewolf cast");
+  }
+  return event.payload.players;
+}
+
+export async function resolvePublicWerewolfCharacter(db: Pick<DrizzleDB, "select">, id: string, playerId: string, image: "portrait" | "body") {
+  const game = await findPublicStartedWerewolf(db, id);
+  const players = await readWerewolfOpeningPlayers(db, game.id);
+  // Both audiences show the full opening cast at every cursor, including eliminated players.
+  const player = players.find(player => player.id === playerId);
+  if (!player) throw new WerewolfGameError("Character not found", 404);
+  const asset = await resolveFrozenWerewolfCharacter(db, game.id, [player], playerId, image);
+  if (!asset || "key" in asset) return asset;
+  const draft = draftImageHash(asset.url);
+  return draft ? readAgentDraftImageReference(db, draft) : visualProfileImageSource(asset.url, asset.profile);
+}
+
 export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[]) {
-  const players = (await readWerewolfNarratedEvents(db, gameId)).find(event => event.type === "werewolf.started")?.payload.players ?? [];
+  const players = await readWerewolfOpeningPlayers(db, gameId);
+  const player = players.find(player => player.id === playerId);
+  if (!player) return null;
+  // Studio's frozen allowlist covers the entire cast and must be validated as a set.
+  const asset = await resolveFrozenWerewolfCharacter(db, gameId, availableHashes ? players : [player], playerId, image, availableHashes);
+  if (!asset) return null;
+  return "key" in asset ? readPayload(asset) : readVisualProfileImage(asset.url, asset.profile);
+}
+
+type CharacterSource = { url: string | null; profile: Parameters<typeof readVisualProfileImage>[1] };
+
+async function resolveFrozenWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, players: readonly WerewolfPlayer[], playerId: string, image: "portrait" | "body", availableHashes?: readonly string[]): Promise<CharacterSource | StoredPayload<Buffer> | null> {
   const ref = (await werewolfReferenceMetadata(db, gameId, players, { availableHashes })).find(ref => ref.profile.id === playerId);
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
-  if (image === "body" && ref.transparentUrl) return readVisualProfileImage(ref.transparentUrl, ref.profile);
+  if (image === "body" && ref.transparentUrl) return { url: ref.transparentUrl, profile: ref.profile };
   const prepared = image === "body" ? ref.bodyPayload : ref.portraitPayload;
-  if (prepared) return readPayload(prepared);
-  if (image === "body" && ref.bundled && ref.kind === "full_body") return readVisualProfileImage(ref.profile.fullBodyReferenceUrl, ref.profile);
+  if (prepared) return prepared;
+  if (image === "body" && ref.bundled && ref.kind === "full_body") return { url: ref.profile.fullBodyReferenceUrl, profile: ref.profile };
   if (hash) {
-    const [asset] = await loadPayloads(db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)));
+    const [asset] = await db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash));
     return asset?.bytes ?? null;
   }
-  return image === "portrait" && ref.bundled ? readVisualProfileImage(null, ref.profile) : null;
+  return image === "portrait" && ref.bundled ? { url: null, profile: ref.profile } : null;
 }
 
 export async function publishedWerewolfScenes(db: Pick<DrizzleDB, "select">, gameId: string, publicationCutoff: string, strictCutoff = false) {

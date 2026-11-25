@@ -11,15 +11,22 @@ const originalFetch = globalThis.fetch;
 const auth = { ready: true, authenticated: false, account: null, hydrationError: false } as InfluenceAuthState;
 const seasons = [{ id: "season-id", slug: "season-slug", name: "First season", status: "active" }] as SeasonIdentity[];
 let dom: HappyDOMWindow;
+let reachEnd: (() => void) | undefined;
 
 function setup() {
   dom = new HappyDOMWindow({ url: "http://localhost/games" });
   for (const key of ["window", "document", "navigator", "localStorage"] as const) Object.defineProperty(globalThis, key, { configurable: true, value: dom[key] });
-  class Observer { observe() {} disconnect() {} unobserve() {} }
+  class Observer {
+    constructor(readonly callback: (entries: Array<{ isIntersecting: boolean }>) => void, readonly options?: IntersectionObserverInit) {}
+    observe() { if (this.options?.rootMargin) reachEnd = () => this.callback([{ isIntersecting: true }]); }
+    disconnect() {}
+    unobserve() {}
+  }
   Object.defineProperty(globalThis, "IntersectionObserver", { configurable: true, value: Observer });
 }
 afterEach(async () => {
   await act(async () => { cleanup(); });
+  reachEnd = undefined;
   dom?.close(); globalThis.fetch = originalFetch;
   for (const [key, descriptor] of saved) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key);
@@ -54,7 +61,7 @@ test("unknown seasons fail closed without a request", async () => {
   expect(view.getByRole("alert").textContent).toContain("season is unavailable"); expect(calls).toBe(0);
 });
 
-test("werewolf collection requests the next page only after a click", async () => {
+test("werewolf collection requests the next page when its end comes into view", async () => {
   setup(); const calls: URL[] = [];
   globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost"); calls.push(url);
@@ -64,6 +71,25 @@ test("werewolf collection requests the next page only after a click", async () =
   }, {preconnect:originalFetch.preconnect}) as typeof fetch;
   const view = render(<InfluenceAuthContext.Provider value={auth}><HybridGamesBrowser collection={{kind:"game",game:"werewolf"}} initialSeasons={seasons} /></InfluenceAuthContext.Provider>);
   await view.findByText("Moon game"); expect(calls).toHaveLength(1);
-  fireEvent.click(view.getByRole("button",{name:"Load more games"}));
+  expect(view.queryByRole("button", { name: /load more|refresh games/i })).toBeNull();
+  await act(async () => { reachEnd?.(); reachEnd?.(); });
   await view.findByText("Moon sequel"); expect(calls).toHaveLength(2); expect(calls[1]?.searchParams.get("cursor")).toBe("next");
+});
+
+test("the Open collection keeps both games and applies its game filter", async () => {
+  setup();
+  const calls: URL[] = [];
+  globalThis.fetch = Object.assign(async (input: RequestInfo | URL) => {
+    calls.push(new URL(String(input), "http://localhost"));
+    return Response.json({ items: [{ kind: "influence", game: influence }, { kind: "werewolf", game: { ...wolf, status: "waiting" } }], nextCursor: null });
+  }, { preconnect: originalFetch.preconnect });
+  const view = render(<InfluenceAuthContext.Provider value={auth}><HybridGamesBrowser collection={{ kind: "open" }} initialSeasons={seasons} /></InfluenceAuthContext.Provider>);
+  await view.findByText("House game");
+  await view.findByText("Moon game");
+  expect(view.queryByLabelText("Game status")).toBeNull();
+  expect(calls[0]?.searchParams.get("kind")).toBe("all");
+  expect(calls[0]?.searchParams.get("status")).toBe("waiting");
+  fireEvent.change(view.getByLabelText("Game type"), { target: { value: "werewolf" } });
+  await waitFor(() => expect(calls.at(-1)?.searchParams.get("kind")).toBe("werewolf"));
+  expect(calls.at(-1)?.searchParams.get("status")).toBe("waiting");
 });

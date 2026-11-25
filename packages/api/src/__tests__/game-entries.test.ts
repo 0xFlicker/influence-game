@@ -77,11 +77,17 @@ test("card cast and portraits use original public identities, and disappear when
   const overloaded=await portrait();expect(overloaded.status).toBe(503);expect(overloaded.headers.get("retry-after")).toBe("5");
   const overloadedCard=await app.request(`/api/game-entries/${game.slug}/card`);
   expect(overloadedCard.status).toBe(503);expect(overloadedCard.headers.get("retry-after")).toBe("5");
+  const metadata=await app.request(`/api/game-entries/${game.slug}/card?view=metadata`);
+  expect(metadata.status).toBe(200);
+  expect(metadata.headers.get("cache-control")).toBe("private, no-store");
+  const { cast: _cast, ...fields } = json;
+  expect(await metadata.json()).toEqual(fields);
  }
  finally {release();await Promise.all(busy);}
  expect((await app.request(`/api/game-entries/${game.slug}/card/portrait/outsider`)).status).toBe(404);
  await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,game.id));
  expect((await portrait()).status).toBe(404);
+ expect((await app.request(`/api/game-entries/${game.slug}/card?view=metadata`)).status).toBe(404);
 });
 
 test("Werewolf card cast contains only sequence-one identity, never hidden roles or later facts",async()=>{

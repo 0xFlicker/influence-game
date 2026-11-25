@@ -9,12 +9,14 @@ import type { PagedGamesPage } from "@/lib/paged-games";
 import { GamesBrowser, type CategoryFilter, type FiltersState, type StatusFilter } from "./games-browser";
 import { PagedOverview } from "./paged-overview";
 import { PagedCollection } from "./paged-collection";
+import { GameLibrarySkeleton } from "./game-library-loading";
+import type { OverviewPages } from "./paged-overview-queries";
 
 type GameKind = "all" | "influence" | "werewolf";
 
 /** Browse with bounded pages; use the existing complete-list search only while searching. */
-export function HybridGamesBrowser({ collection, initialSeasons, initialPage }: { collection?: GameCollection; initialSeasons?: SeasonIdentity[]; initialPage?: PagedGamesPage }) {
-  const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
+export function HybridGamesBrowser({ collection, initialSeasons, initialPage, initialOverview }: { collection?: GameCollection; initialSeasons?: SeasonIdentity[]; initialPage?: PagedGamesPage; initialOverview?: OverviewPages }) {
+  const [filters, setFilters] = useState<FiltersState>({ status: collection?.kind === "open" ? "waiting" : "all", category: "all", search: "" });
   const [kind, setKind] = useState<GameKind>("all");
   const [hasInteracted, setHasInteracted] = useState(false);
   const [seasons, setSeasons] = useState(initialSeasons);
@@ -26,21 +28,22 @@ export function HybridGamesBrowser({ collection, initialSeasons, initialPage }: 
     return () => controller.abort();
   }, [seasons, seasonAttempt]);
   const enabled = enabledGameKinds();
-  const showWerewolf = !collection || (collection.kind === "game" && collection.game === "werewolf");
+  const showWerewolf = !collection || collection.kind === "open" || (collection.kind === "game" && collection.game === "werewolf");
   const selectedKind = collection?.kind === "game" ? collection.game : kind;
   const seed = hasInteracted ? undefined : initialPage;
   return <div>
     <div className="episode-library-toolbar">
       <input aria-label="Search games" value={filters.search} placeholder="Search titles, Agents, or code words…" onChange={event => { const search = event.target.value; if (search) setHasInteracted(true); setFilters(current => ({ ...current, search })); }} />
-      {!collection && <select aria-label="Game type" value={kind} onChange={event => { setHasInteracted(true); setKind(event.target.value as GameKind); }}><option value="all">All types</option>{enabled.map(game => <option key={game} value={game}>{game === "werewolf" ? "Werewolf" : "Influence"}</option>)}</select>}
-      <select aria-label="Game status" value={filters.status} onChange={event => { setHasInteracted(true); setFilters(current => ({ ...current, status: event.target.value as StatusFilter })); }}><option value="all">All</option><option value="waiting">Open</option><option value="in_progress">Live</option><option value="suspended">Failed</option><option value="completed">Done</option></select>
+      {(!collection || collection.kind === "open") && <select aria-label="Game type" value={kind} onChange={event => { setHasInteracted(true); setKind(event.target.value as GameKind); }}><option value="all">All types</option>{enabled.map(game => <option key={game} value={game}>{game === "werewolf" ? "Werewolf" : "Influence"}</option>)}</select>}
+      {collection?.kind !== "open" && <select aria-label="Game status" value={filters.status} onChange={event => { setHasInteracted(true); setFilters(current => ({ ...current, status: event.target.value as StatusFilter })); }}><option value="all">All</option><option value="waiting">Open</option><option value="in_progress">Live</option><option value="suspended">Failed</option><option value="completed">Done</option></select>}
       <select aria-label="Game category" value={filters.category} onChange={event => { setHasInteracted(true); setFilters(current => ({ ...current, category: event.target.value as CategoryFilter })); }}><option value="all">All games</option>{(seasons ?? []).map(season => <option key={season.id} value={`season:${season.id}`}>{season.name}</option>)}<option value="free">Free</option><option value="custom">Custom</option></select>
       {collection && <Link href="/games">All shelves</Link>}
     </div>
     {seasonError && <p role="alert">Could not load seasons. <button onClick={() => { setSeasonError(false); setSeasonAttempt(value => value + 1); }}>Try again</button></p>}
     {filters.search ? <GamesBrowser collection={collection} includeWerewolf={showWerewolf} externalFilters={filters} externalKind={selectedKind} hideToolbar uncappedWerewolfSearch />
-      : collection?.kind === "season" && seasons === undefined ? <p role="status">Loading season games…</p>
-      : collection ? <PagedCollection collection={collection} seasons={seasons ?? []} status={filters.status} category={filters.category} initialPage={seed} />
-      : <PagedOverview seasons={seasons ?? []} initialOpen={seed} filters={{ kind, status: filters.status, category: filters.category }} />}
+      : collection?.kind === "season" && seasons === undefined && !seasonError ? <GameLibrarySkeleton grid />
+      : collection?.kind === "season" && seasons === undefined ? null
+      : collection ? <PagedCollection collection={collection} seasons={seasons ?? []} status={filters.status} category={filters.category} kind={selectedKind} initialPage={seed} />
+      : <PagedOverview seasons={seasons ?? []} initialPages={hasInteracted ? undefined : initialOverview} filters={{ kind, status: filters.status, category: filters.category }} />}
   </div>;
 }

@@ -1,5 +1,5 @@
 import { GameModelRoutingError } from "../services/game-model-routing.js";
-import { loadPayloads } from "../services/payload-storage.js";
+import { loadPayloads, PORTRAIT_URL_TTL_SECONDS, readImageDelivery } from "../services/payload-storage.js";
 import { readPublicWerewolfSummaries } from "../services/public-library-summaries.js";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -9,7 +9,7 @@ import { WerewolfRulesVersionError, replayWerewolf } from "@influence/engine/wer
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, requireRole, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfEvents, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
-import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch, readWerewolfWatchPosition } from "../services/werewolf-presentation.js";
+import { readWerewolfPresentation, resolvePublicWerewolfCharacter, readWerewolfWatch, readWerewolfWatchPosition } from "../services/werewolf-presentation.js";
 import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
@@ -95,22 +95,41 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 1)) return c.json({ error: "Invalid replay position" }, 400);
       const publishedBefore = c.req.query("publishedBefore");
       if (publishedBefore !== undefined && (!Number.isFinite(Date.parse(publishedBefore)) || new Date(publishedBefore).toISOString() !== publishedBefore)) return c.json({ error: "Invalid publication snapshot" }, 400);
+      const player = c.req.param("player");
+      if (player) {
+        const image = await resolvePublicWerewolfCharacter(db, c.req.param("id")!, player, c.req.query("image") === "body" ? "body" : "portrait");
+        if (!image) return c.json({ error: "Frozen character reference unavailable" }, 404);
+        if ("kind" in image) {
+          if (image.kind === "bundled") {
+            const file = Bun.file(image.file);
+            if (!await file.exists()) return c.json({ error: "Frozen character reference unavailable" }, 404);
+            c.header("Content-Type", image.contentType);
+            c.header("Content-Length", String(file.size));
+            if (c.req.raw.method === "HEAD") return c.body(null);
+            return c.body(file.stream());
+          }
+          const url = image.kind === "local" ? `/api/uploads/local?${new URLSearchParams({ key: image.key })}` : image.url;
+          c.header("Referrer-Policy", "no-referrer");
+          return c.redirect(url, 307);
+        }
+        const expiresIn = c.req.raw.method === "HEAD" ? undefined : PORTRAIT_URL_TTL_SECONDS;
+        const { contentType, url } = await readImageDelivery(image, expiresIn, c.req.raw.signal);
+        if (url) {
+          c.header("Referrer-Policy", "no-referrer");
+          return c.redirect(url, 302);
+        }
+        c.header("Content-Type", contentType);
+        c.header("Content-Length", String(image.byteLength));
+        return c.body(null);
+      }
       const { presentation, permitted } = await readWerewolfPresentation(db, c.req.param("id")!, audience, cursor, publishedBefore);
-      const asset = c.req.param("asset"), player = c.req.param("player");
+      const asset = c.req.param("asset");
       if (asset) {
         if (!permitted.has(asset)) return c.json({ error: "Image not available at this replay position" }, 404);
         const [image] = await loadPayloads(db.select({ bytes: schema.visualArtifacts.image }).from(schema.visualArtifacts)
           .where(and(eq(schema.visualArtifacts.id, asset), eq(schema.visualArtifacts.gameId, presentation.view.gameId))));
         if (!image) return c.json({ error: "Image not found" }, 404);
         c.header("Content-Type", "image/png"); return c.body(new Uint8Array(image.bytes));
-      }
-      if (player) {
-        if (!presentation.view.players.some(p => p.id === player)) return c.json({ error: "Character not found" }, 404);
-        const bytes = await readWerewolfCharacter(db, presentation.view.gameId, player, c.req.query("image") === "body" ? "body" : "portrait");
-        if (!bytes) return c.json({ error: "Frozen character reference unavailable" }, 404);
-        // Frozen references may be JPEG/WebP as well as PNG. Browsers decode the bytes.
-        c.header("Content-Type", bytes[0] === 0xff ? "image/jpeg" : bytes.toString("ascii", 0, 4) === "RIFF" ? "image/webp" : "image/png");
-        return c.body(new Uint8Array(bytes));
       }
       return c.json(presentation);
     });

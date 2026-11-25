@@ -1,7 +1,7 @@
 ---
 title: Admin continuity — implementation task specifications
 type: tasks
-status: implemented-with-evidence-followups
+status: implemented-operator-accepted
 date: 2026-09-30
 pillar: A1
 ---
@@ -10,7 +10,7 @@ pillar: A1
 
 Parent: [A1 implementation plan](2026-09-30-002-refactor-admin-continuity-and-production-studio.md). Product map: [four pillars](../ideation/2026-09-30-house-admin-and-production.md). Review: [findings and dispositions](../reviews/2026-09-30-admin-continuity-plan-review.md).
 
-A1 implementation is delivered and locally validated; unchecked items below are remaining evidence work, not missing product features. See the parent plan’s implementation record for commands, results and explicit proof boundaries. Each task owns a concrete deliverable and acceptance proof; do not mark a task complete merely because its files exist. Use the existing Werewolf worktree and preserve unrelated dirty work. No paid generation, server deployment or public viewer change is required.
+The operator confirmed admin acceptance on November 25. The September checklist below records the original scope and which measurements and test scenarios were documented during implementation. See the parent plan’s implementation record for commands, results and explicit proof boundaries. Each task owns a concrete deliverable and acceptance proof; do not mark a task complete merely because its files exist. Use the existing Werewolf worktree and preserve unrelated dirty work. No paid generation, server deployment or public viewer change is required.
 
 ## Order and gates
 

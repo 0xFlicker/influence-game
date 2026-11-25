@@ -1,10 +1,10 @@
-import { storeFields, loadPayloads } from "../services/payload-storage.js";
+import { storeFields, loadPayloads, setPayloadObjectStoreForTests } from "../services/payload-storage.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
-import { GameState, Phase } from "@influence/engine";
+import { GameState, getHousePortraitKey, Phase } from "@influence/engine";
 import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf, werewolfActionPlans } from "@influence/engine/werewolf";
 import { werewolfConversationScene } from "@influence/engine/werewolf/visual-scenes";
@@ -16,6 +16,7 @@ import { getPermissionsForUser } from "../db/rbac.js";
 import { createSessionToken, type AuthEnv } from "../middleware/auth.js";
 import { createProductionStudioRoutes } from "../routes/production-studio.js";
 import { createAudioRoutes } from "../routes/audio.js";
+import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
 import { appendGameEvents } from "../services/game-events.js";
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
@@ -26,6 +27,7 @@ import { readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { setupTestDB } from "./test-utils.js";
+import { testPayloadStore } from "./payload-test-store.js";
 import { seedProductionStudioFixture } from "./production-studio-fixtures.js";
 
 let db: DrizzleDB, app: Hono<AuthEnv>, token: string;
@@ -235,8 +237,8 @@ test("missing frozen character art uses presentation fallback while available bo
   await producer();
   const id = "studio-missing-character-art", events = await werewolfResultsFixture("saved", id, 2);
   const started = events.find(event => event.type === "werewolf.started")!;
-  const [legacy, bodyOnly, lostPortrait] = started.payload.players;
-  if (!legacy || !bodyOnly || !lostPortrait) throw new Error("Character fallback fixture needs three players");
+  const [legacy, bodyOnly, lostPortrait, bundled] = started.payload.players;
+  if (!legacy || !bodyOnly || !lostPortrait || !bundled) throw new Error("Character fallback fixture needs four players");
   legacy.agentProfileId = "legacy-without-revision"; legacy.contentRevisionId = null;
   bodyOnly.agentProfileId = "body-only-profile"; bodyOnly.contentRevisionId = "body-only-revision";
   lostPortrait.agentProfileId = "lost-portrait-profile"; lostPortrait.contentRevisionId = "lost-portrait-revision";
@@ -269,6 +271,21 @@ test("missing frozen character art uses presentation fallback while available bo
   expect(publicWatch.players.find(player=>player.id===legacy.id)?.avatarUrl).toContain(`/api/werewolf/${id}/characters/${legacy.id}`);
   const bodyUrl = source.window.players.find(player=>player.id===bodyOnly.id)!.fullBodyReferenceUrl!;
   const body = await request(bodyUrl); expect(body.status).toBe(200); expect(Buffer.from(await body.arrayBuffer())).toEqual(bodyBytes);
+  const publicRoutes = createWerewolfRoutes(db);
+  const bundledPath = `/api/werewolf/${id}/characters/${bundled.id}?audience=mystery&cursor=1`;
+  const bundledPortrait = await publicRoutes.request(bundledPath);
+  const bundledKey = getHousePortraitKey(bundled.name, bundled.personaKey);
+  expect(bundledPortrait.status).toBe(200);
+  expect(bundledPortrait.headers.get("Content-Type")).toBe("image/png");
+  expect(Buffer.from(await bundledPortrait.arrayBuffer())).toEqual(await readFile(new URL(`../../../web/public/avatars/personas/${bundledKey}.png`, import.meta.url)));
+  const publicBodyPath = `/api/werewolf/${id}/characters/${bodyOnly.id}?audience=mystery&cursor=1&image=body`;
+  expect((await publicRoutes.request(publicBodyPath.replace(bodyOnly.id, "foreign-seat"))).status).toBe(404);
+  await db.update(schema.agentContentAssets).set({ transparentUrl: "/api/uploads/local?key=legacy-transparent.png" })
+    .where(eq(schema.agentContentAssets.hash, bodyHash));
+  const publicCutout = await publicRoutes.request(publicBodyPath);
+  expect(publicCutout.status).toBe(307);
+  expect(publicCutout.headers.get("Location")).toBe("/api/uploads/local?key=legacy-transparent.png");
+  await db.update(schema.agentContentAssets).set({ transparentUrl: null }).where(eq(schema.agentContentAssets.hash, bodyHash));
   const legacyUrl = `${root(id)}/source/characters/${legacy.id}?snapshot=${encodeURIComponent(JSON.stringify(source.snapshot))}`;
   expect((await request(legacyUrl)).status).toBe(404);
   const thought = source.catalog.moments.find(moment=>moment.kind==="thinking" && moment.actorId===legacy.id)!;
@@ -276,7 +293,8 @@ test("missing frozen character art uses presentation fallback while available bo
   const frozenResponse = await request(`${root(id)}/selection`,{snapshot:source.snapshot,audience:"omniscient",thinking:true,
     selection:{mode:"ids",thinking:true,ids:[thought.id]},expectedMomentIds:[thought.id],settings,copy:{}});
   expect(frozenResponse.status).toBe(200); const frozen = await frozenResponse.json() as ProductionExportDescriptor;
-  await db.insert(schema.agentContentAssets).values(await storeFields({hash:portraitHash,bytes:portraitBytes}, {"bytes":"binary"}));
+  const portraitRow = await storeFields({hash:portraitHash,bytes:portraitBytes}, {"bytes":"binary"});
+  await db.insert(schema.agentContentAssets).values(portraitRow);
   const pinned = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true,snapshot:source.snapshot});
   expect(pinned.snapshot).toEqual(source.snapshot);
   expect(pinned.window.players.find(player=>player.id===lostPortrait.id)?.avatarUrl).toBeNull();
@@ -284,9 +302,62 @@ test("missing frozen character art uses presentation fallback while available bo
   const refreshed = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true,snapshot:source.snapshot,refreshVisuals:true});
   expect(refreshed.snapshot.throughEventSequence).toBe(source.snapshot.throughEventSequence);
   expect(refreshed.window.players.find(player=>player.id===lostPortrait.id)?.avatarUrl).toContain(`/source/characters/${lostPortrait.id}`);
+  // A portrait reads only the accepted opening cast even when the replay cannot hydrate a later narration.
+  const later = events.at(-1)!;
+  await db.update(schema.werewolfEvents).set({ event: { ...later, houseNarrationCallIds: { mystery: "unavailable-narration" } } })
+    .where(eq(schema.werewolfEvents.sequence, later.sequence));
+  const publicPortraitPath = `/api/werewolf/${id}/characters/${lostPortrait.id}?audience=mystery&cursor=1`;
+  let redirects = 0;
+  const store = Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    fetch(request) {
+      const pathname = new URL(request.url).pathname;
+      const bytes = pathname === `/${portraitHash}` ? portraitBytes : pathname === `/${bodyHash}` ? bodyBytes : null;
+      return bytes ? new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/png" } }) : new Response(null, { status: 404 });
+    },
+  });
+  setPayloadObjectStoreForTests({
+    putIfAbsent: (key, bytes, type) => testPayloadStore.putIfAbsent(key, bytes, type),
+    get: key => {
+      if (key.endsWith(portraitHash) || key.endsWith(bodyHash)) throw new Error("Public character route attempted a payload body read");
+      return testPayloadStore.get(key);
+    },
+    async imageDelivery(ref, expiresIn) {
+      expect([bodyHash, portraitHash]).toContain(ref.sha256);
+      if (expiresIn !== undefined) redirects++;
+      return { contentType: "image/png", url: expiresIn !== undefined ? new URL(ref.sha256, store.url).href : undefined };
+    },
+  });
+  try {
+    for (const [path, bytes] of [[publicPortraitPath, portraitBytes], [publicBodyPath, bodyBytes]] as const) {
+      const head = await publicRoutes.request(path, { method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(head.headers.get("Content-Type")).toBe("image/png");
+      expect(head.headers.get("Content-Length")).toBe(String(bytes.length));
+      expect(head.headers.get("Location")).toBeNull();
+
+      const redirect = await publicRoutes.request(path);
+      expect(redirect.status).toBe(302);
+      expect(redirect.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(redirect.headers.get("Referrer-Policy")).toBe("no-referrer");
+      const original = await fetch(redirect.headers.get("Location")!);
+      expect(original.headers.get("Content-Type")).toBe("image/png");
+      expect(Buffer.from(await original.arrayBuffer())).toEqual(bytes);
+    }
+    await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id,id));
+    expect((await publicRoutes.request(publicPortraitPath)).status).toBe(404);
+    expect(redirects).toBe(2);
+    await db.update(schema.games).set({ hiddenAt: null }).where(eq(schema.games.id,id));
+  } finally {
+    setPayloadObjectStoreForTests(testPayloadStore);
+    await store.stop(true);
+  }
+  await db.update(schema.werewolfEvents).set({ event: later }).where(eq(schema.werewolfEvents.sequence, later.sequence));
   expect(refreshed.window.players.find(player=>player.id===legacy.id)?.avatarUrl).toBeNull();
   const tamperedBody = `${root(id)}/source/characters/${bodyOnly.id}?snapshot=${encodeURIComponent(JSON.stringify({...source.snapshot,availableCharacterAssets:[]}))}&image=body`;
   expect((await request(tamperedBody)).status).toBe(409);
+  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id,id));
+  expect((await publicRoutes.request(publicPortraitPath)).status).toBe(404);
 });
 
 test.each([true, false])("Influence without a retrospective remains editable in Studio (canonical history: %s)", async canonicalHistory => {
