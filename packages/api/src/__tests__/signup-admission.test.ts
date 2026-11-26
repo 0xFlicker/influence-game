@@ -118,9 +118,10 @@ test("Farcaster requires proof for a new account, preserves existing sign-in and
 test("Clerk, Privy and Farcaster compete for the same one-use verification", async () => {
   const db = await setupTestDB();
   process.env.JWT_SECRET = "shared-signup-verification-test";
+  let invitesRequired = true;
   const app = new Hono().route("/", createAuthRoutes(db, {
     managedAuthMode: "full",
-    isInviteRequired: async () => false,
+    isInviteRequired: async () => invitesRequired,
     clerkVerifier: { provider: "clerk", verify: async subject => ({
       status: "verified", evidence: {
         provider: "clerk", subject, owner: { kind: "email", normalizedEmail: "clerk@example.test" }, productWalletAddress: null,
@@ -155,6 +156,22 @@ test("Clerk, Privy and Farcaster compete for the same one-use verification", asy
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...body, turnstileToken }),
   });
+  await changeSignupRate(db, 1);
+  await db.execute(sql`UPDATE signup_bucket SET balance = 0`);
+  for (const path of paths) {
+    const denied = await signup(path);
+    expect(denied.status).toBe(429);
+    expect(denied.headers.get("Retry-After")).not.toBeNull();
+    expect(await denied.json()).toMatchObject({ code: "SIGNUP_LIMIT_REACHED", nextAvailableAt: expect.any(String) });
+  }
+  await changeSignupRate(db, 25);
+  await db.execute(sql`UPDATE signup_bucket SET updated_ms = updated_ms - 86400000`);
+  for (const path of paths) {
+    const needsInvite = await signup(path);
+    expect(needsInvite.status).toBe(403);
+    expect(await needsInvite.json()).toMatchObject({ code: "INVITE_REQUIRED" });
+  }
+  invitesRequired = false;
   for (const path of paths) {
     const denied = await signup(path);
     expect(denied.status).toBe(403);

@@ -4,7 +4,12 @@ New House accounts use one PostgreSQL token bucket. The initial rate and
 capacity are 25. People → Signups sets the number of slots per 24 hours and the
 maximum balance. The bucket starts full and refills continuously. A rate
 change settles elapsed refill at the old rate before applying the new capacity.
-The signup form shows an estimated next slot. It is not a reservation.
+The signup panel checks availability before asking for email, password, or an
+invite code. When full, it shows an estimated next slot and leaves sign-in
+available. The estimate does not reserve a slot. If the last slot is taken
+during signup, the same panel shows the wait and preserves verified progress.
+The API checks availability for new accounts before requesting an invite code
+and claims the slot when account creation commits.
 
 People → Invites issues campaign links. Keep the link fragment when adding
 campaign query parameters. Links work during their scheduled window. A browser

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AccountLegalConsent } from "@/components/account-legal-consent";
+import { SignupAvailabilityGate } from "@/components/signup-availability";
 import {
   acceptCurrentLegalTermsForSession,
   ApiError,
@@ -292,7 +293,7 @@ export function E2ELayeredPasswordFlow({
             : `We couldn't find an account for ${email.trim()}. Create one with these details to continue.`}
         </p>
         {mode === "full" ? (
-          <>
+          <SignupAvailabilityGate>
             <AccountLegalConsent
               checked={acceptedLegalTerms}
               disabled={busy}
@@ -313,7 +314,7 @@ export function E2ELayeredPasswordFlow({
             >
               Create account
             </button>
-          </>
+          </SignupAvailabilityGate>
         ) : (
           <p role="alert">
             New account setup is temporarily unavailable. Existing accounts can still sign in.
