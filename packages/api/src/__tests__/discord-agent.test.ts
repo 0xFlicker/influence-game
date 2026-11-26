@@ -7,7 +7,7 @@ import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-resu
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createDiscordAgentRoutes } from "../routes/discord-agent.js";
-import { activeOffer, destination, validatedConsent, validatedReply, type DiscordMessage } from "../discord/conversation/policy.js";
+import { activeOffer, destination, safeReply, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage } from "../discord/conversation/policy.js";
 import { filterInference, mcpBridgeResponse } from "../discord/conversation/sandbox.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -202,3 +202,47 @@ test("House MCP streams a compressed catalog through a fresh Unix response", asy
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("public profile lookup resolves a House share link and a display name to the same canonical profile", async () => {
+  const origin = "https://thehouse.game";
+  const canonical = origin + "/profile/thehouse";
+  const short = origin + "/s/Lk3WEcewWi";
+  await db.update(schema.users).set({ displayName: "The House", handle: "thehouse" }).where(eq(schema.users.id, "alice"));
+  await db.insert(schema.houseShareLinks).values([
+    { code: "Lk3WEcewWi", path: "/profile/thehouse" },
+    { code: "Lk3WEcewWj", path: "/about" },
+  ]);
+  const shared = await grant("room", bob);
+  for (const player of [short, canonical, "The House", "@thehouse"]) {
+    expect(await content(await tool(shared, "read_player", { player }))).toMatchObject({
+      status: "found", profileUrl: canonical, profile: { identity: { displayName: "The House", handle: "thehouse" } },
+    });
+  }
+  for (const player of ["https://elsewhere.example/profile/thehouse", origin + "/s/Lk3WEcewWj"]) {
+    expect(await content(await tool(shared, "read_player", { player }))).toMatchObject({ status: "not_found" });
+  }
+  await db.update(schema.users).set({ displayName: "The House", handle: "anotherhouse" }).where(eq(schema.users.id, "bob"));
+  const result = await content(await tool(shared, "read_player", { player: "The House" }));
+  expect(result.status).toBe("ambiguous");
+  expect(result.candidates.map((candidate: { handle: string }) => candidate.handle).sort()).toEqual(["anotherhouse", "thehouse"]);
+  await db.update(schema.users).set({ deletedAt: new Date().toISOString() }).where(eq(schema.users.id, "alice"));
+  expect(await content(await tool(shared, "read_player", { player: short }))).toMatchObject({ status: "not_found" });
+  expect(safeReply("[The House](" + canonical + ")", origin)).toBe("[The House](" + canonical + ")");
+  expect(safeReply("See [the profile](https://elsewhere.example/profile/thehouse).", origin)).toBe("See the profile.");
+});
+
+test("turn feedback refreshes typing and removes only its own acknowledgement after delivery", async () => {
+  const calls: Array<[string | undefined, string]> = [];
+  const typing = "/channels/" + room + "/typing";
+  const reaction = "/channels/" + room + "/messages/" + message + "/reactions/" + encodeURIComponent("👀") + "/@me";
+  const reply = await withTurnFeedback(async (path, init) => {
+    calls.push([init.method, path]);
+    return new Response(null, { status: 204 });
+  }, { id: message, channel_id: room }, async () => {
+    await Bun.sleep(7100);
+    expect(calls).toEqual([["POST", typing], ["PUT", reaction], ["POST", typing]]);
+    return "replied";
+  });
+  expect(reply).toBe("replied");
+  expect(calls.at(-1)).toEqual(["DELETE", reaction]);
+}, 15000);

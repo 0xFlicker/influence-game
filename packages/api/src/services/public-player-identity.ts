@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPublicDisplayName } from "../lib/display-name.js";
@@ -99,6 +99,20 @@ export async function resolvePublicPlayer(
       peakRating: row.peakRating,
     },
   };
+}
+
+export async function findPublicPlayersByDisplayName(db: DrizzleDB, name: string) {
+  const u = schema.users;
+  const rows = await db.select({
+    id: u.id, publicId: u.publicId, handle: u.handle, walletAddress: u.walletAddress, displayName: u.displayName,
+  }).from(u).where(and(
+    isNull(u.deletedAt),
+    sql`lower(btrim(${u.displayName})) = lower(${name})`,
+  )).orderBy(u.publicId).limit(6);
+  return rows.flatMap(row => {
+    const identity = publicPlayerLinkIdentity(row);
+    return identity ? [identity] : [];
+  });
 }
 
 /**

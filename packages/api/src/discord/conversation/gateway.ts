@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
-import { activeOffer, destination, safeReply, snowflake, validatedConsent, validatedReply, type DiscordMessage, type SpoilerOffer } from "./policy.js";
+import { setTimeout as delay } from "node:timers/promises";
+import { activeOffer, destination, safeReply, snowflake, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage, type SpoilerOffer } from "./policy.js";
 import { runCodex } from "./sandbox.js";
 
 function env(name: string) {
@@ -33,14 +34,15 @@ async function discord(path: string, init: RequestInit = {}) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const headers = new Headers(init.headers);
     headers.set("authorization", "Bot " + bot);
+    const timeout = AbortSignal.timeout(8000);
     const response = await fetch("https://discord.com/api/v10" + path, {
-      ...init, headers, redirect: "error", signal: AbortSignal.timeout(8000),
+      ...init, headers, redirect: "error", signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
     });
     if (response.status !== 429 || attempt === 1) return response;
     const seconds = Number(response.headers.get("retry-after"));
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 5) return response;
     await response.body?.cancel();
-    await Bun.sleep(seconds * 1000);
+    await delay(seconds * 1000, undefined, { signal: init.signal ?? undefined });
   }
   throw new Error("Discord request failed");
 }
@@ -90,17 +92,23 @@ async function send(m: DiscordMessage, content: string, images: Array<{ mimeType
 }
 
 interface Turn { grant: string; publicId: string; lane: "room" | "owner" | "staff"; link: string }
+interface TurnBinding { discordId: string; channelId: string; messageId: string; kind: "room" | "dm" }
 interface TurnProgress {
   stage: "eligibility" | "grant" | "catalog" | "codex" | "reply" | "spoiler" | "attachment" | "revalidate" | "delivery";
 }
 async function handle(m: DiscordMessage, progress: TurnProgress) {
   const kind = destination(m, guild, room);
   if (!kind || !(await allowed(m, kind))) return "ineligible";
-  const params = { discordId: m.author.id, channelId: m.channel_id, messageId: m.id, kind };
+  const params: TurnBinding = { discordId: m.author.id, channelId: m.channel_id, messageId: m.id, kind };
   progress.stage = "grant";
   const start = await api("turn", params);
   if (!start.ok) return "unavailable";
-  let turn = await start.json() as Turn;
+  const turn = await start.json() as Turn;
+  return withTurnFeedback(discord, m, () => answer(m, progress, params, turn));
+}
+
+async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBinding, turn: Turn) {
+  const { kind } = params;
   const key = m.channel_id + ":" + m.author.id;
   const prior = history.get(key);
   const recent = prior?.link === turn.link && prior.expires > Date.now() ? prior.messages : [];
