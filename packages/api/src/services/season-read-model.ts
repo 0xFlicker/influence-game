@@ -26,12 +26,13 @@ const DEFAULT_EXPORT_LIMIT = 1_000;
 const MAX_EXPORT_LIMIT = 5_000;
 
 /** Small discovery projection: no transcripts, media, provider inputs or results spoilers. */
-export async function getPublicSeasonGames(db: DrizzleDB, idOrSlug: string) {
+export async function getPublicSeasonGames(db: DrizzleDB, idOrSlug: string, allowedGameIds?: string[]) {
   const season = await resolveSeason(db, idOrSlug);
   if (!season) return null;
   const games = await db.select({ id: schema.games.id, slug: schema.games.slug, gameKind: schema.games.gameKind,
     status: schema.games.status, createdAt: schema.games.createdAt, startedAt: schema.games.startedAt, endedAt: schema.games.endedAt })
-    .from(schema.games).where(and(eq(schema.games.seasonId, season.id), publicGameFilter()))
+    .from(schema.games).where(and(eq(schema.games.seasonId, season.id), publicGameFilter(),
+      allowedGameIds ? inArray(schema.games.id, allowedGameIds) : undefined))
     .orderBy(sql`CASE WHEN ${schema.games.status} = 'in_progress' THEN 0 WHEN ${schema.games.status} = 'completed' THEN 1 WHEN ${schema.games.status} = 'waiting' THEN 2 ELSE 3 END`, desc(schema.games.createdAt), desc(schema.games.id)).limit(24);
   return { seasonId: season.id, games };
 }
@@ -586,6 +587,11 @@ async function readPublicOpeningAgents(db: Pick<DrizzleDB, "select">): Promise<S
 async function resolveSeason(db: DrizzleDB, idOrSlug: string): Promise<SeasonRow | null> {
   return (await db.select().from(schema.seasons)
     .where(or(eq(schema.seasons.id, idOrSlug), eq(schema.seasons.slug, idOrSlug))).limit(1))[0] ?? null;
+}
+
+export async function getPublicSeasonIdentity(db: DrizzleDB, idOrSlug: string) {
+  const season = await resolveSeason(db, idOrSlug);
+  return season ? publicSeasonIdentity(season) : null;
 }
 
 function publicSeasonIdentity(row: SeasonRow): PublicSeasonIdentity {
