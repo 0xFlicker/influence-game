@@ -59,13 +59,55 @@ export function validatedConsent(value: unknown) {
 }
 
 export function safeReply(content: string, origin: string) {
-  return content.replace(/https?:\/\/[^\s<>\])]+/gi, link => {
+  return content.replace(/\[([^\[\]\r\n]+)\]\((https?:\/\/[^\s<>\])]+)\)|https?:\/\/[^\s<>\])]+/gi, (link, label?: string, destination?: string) => {
     try {
-      const u = new URL(link);
-      return u.origin === origin && /^\/(games|agents|players)\/[A-Za-z0-9_-]+(?:\/(?:replay|results))?$/.test(u.pathname)
-        && !u.search && !u.hash && !u.username && !u.password ? u.href : "[link removed]";
-    } catch { return "[link removed]"; }
+      const u = new URL(destination ?? link);
+      const path = /^\/games\/[A-Za-z0-9_-]+(?:\/(?:replay|results))?$/.test(u.pathname)
+        || /^\/(agents|profile)\/[A-Za-z0-9_-]+$/.test(u.pathname);
+      if (u.origin === origin && path && !u.search && !u.hash && !u.username && !u.password) {
+        return label === undefined ? u.href : "[" + label + "](" + u.href + ")";
+      }
+    } catch { /* Malformed URLs are removed below. */ }
+    return label?.replace(/https?:\/\/[^\s<>\])]+/gi, "") || "[link removed]";
   }).trim().slice(0, 1900);
+}
+
+export async function withTurnFeedback<T>(
+  discord: (path: string, init: RequestInit) => Promise<Response>,
+  message: Pick<DiscordMessage, "id" | "channel_id">,
+  reply: () => Promise<T>,
+) {
+  const channel = "/channels/" + message.channel_id;
+  const reaction = channel + "/messages/" + message.id + "/reactions/" + encodeURIComponent("👀") + "/@me";
+  const typing = new AbortController();
+  async function signal(path: string, method: "POST" | "PUT" | "DELETE", cancel?: AbortSignal) {
+    const deadline = AbortSignal.timeout(2500);
+    try {
+      const response = await discord(path, { method, signal: cancel ? AbortSignal.any([cancel, deadline]) : deadline });
+      if (!response.ok && response.status !== 404) {
+        console.log(JSON.stringify({ event: "discord_feedback_failed", method, status: response.status }));
+      }
+      return response.ok;
+    } catch {
+      if (!cancel?.aborted) console.log(JSON.stringify({ event: "discord_feedback_failed", method }));
+      return undefined;
+    }
+  }
+  let pending: Promise<void> | undefined;
+  const refresh = () => {
+    if (pending) return;
+    pending = signal(channel + "/typing", "POST", typing.signal).then(() => { pending = undefined; });
+  };
+  refresh();
+  const timer = setInterval(refresh, 7000);
+  const acknowledged = signal(reaction, "PUT");
+  try {
+    return await reply();
+  } finally {
+    clearInterval(timer);
+    typing.abort();
+    if (await acknowledged !== false) await signal(reaction, "DELETE");
+  }
 }
 
 export interface SpoilerOffer { game: string; channel: string; member: string; link: string; reply: string; expires: number }

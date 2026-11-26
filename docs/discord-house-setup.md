@@ -307,6 +307,18 @@ its public channel overrides and onboarding defaults predate this verification g
 
 ## Conversation worker acceptance
 
+The Discord profile read resolves House short links through the existing share
+service. It also accepts canonical profile URLs, handles, public IDs, and exact
+public display names. Confirm the same public profile and canonical
+`/profile/<handle>` link are returned when a verified member pastes a first-party
+share link or asks for that profile by name. An ambiguous name returns choices.
+
+After Discord eligibility and a current House grant, the listener posts a typing
+indicator and adds 👀 to the originating message. It refreshes typing during the
+turn and removes its own reaction when the turn ends. Typing expires on Discord's
+side. Verify both surfaces and confirm a rejected turn gets neither signal.
+`discord_feedback_failed` logs only the operation and optional HTTP status.
+
 Keep the Codex CLI pin aligned with the Overclaw runtime qualified for the
 selected model. Re-run `bash scripts/discord-agent/verify-arm.sh` after changing
 the pin. It exercises the real Linux ARM container with synthetic inference and

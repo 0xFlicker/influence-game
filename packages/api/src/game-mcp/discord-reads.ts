@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import sharp from "sharp";
+import { parseHouseShareTarget, SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
 import { replayWerewolf } from "@influence/engine/werewolf";
 import { getPermissionsForUser } from "../db/rbac.js";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -8,7 +9,9 @@ import { readHouseGame, readHouseInspectionResults } from "../services/house-gam
 import { isViewerGame, storedGameVisibility } from "../services/game-visibility.js";
 import { resolveMatchAccessContext } from "../services/match-access-context.js";
 import { loadPayloads } from "../services/payload-storage.js";
-import { getPublicPlayerProfile } from "../services/public-player-profile.js";
+import { getPublicPlayerProfile, PUBLIC_PLAYER_NOT_FOUND } from "../services/public-player-profile.js";
+import { findPublicPlayersByDisplayName, type PublicPlayerIdentityRef } from "../services/public-player-identity.js";
+import { resolveShareLink } from "../services/house-share-links.js";
 import { getPublicAgentProfile, readPublicAgentIdentity } from "../services/public-agent-profile.js";
 import { readWerewolfEvents } from "../services/werewolf-games.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
@@ -38,7 +41,9 @@ export const discordReadTools = [
   tool("read_results", "Read official settled results for an available completed game.", game, ["game"]),
   tool("read_speech", "Read accepted Influence dialogue, in pages. Werewolf speech is in read_game.", { ...game, ...range }, ["game"]),
   tool("read_thinking", "Read authorized saved gameplay thinking. For Werewolf use a replay position as after (omit it for the beginning).", { ...game, ...range }, ["game"]),
-  tool("read_player", "Read a public House player by handle or public ID.", { player: string }, ["player"]),
+  tool("read_player", "Look up a public House profile by display name, handle, public ID, or first-party profile or share link. Pass the complete link if given. Returns the canonical profile link, record, and public roster.", {
+    player: { ...string, maxLength: 2048 },
+  }, ["player"]),
   tool("list_agents", "List private agents in an owner or staff DM. Staff can specify a House public user ID.", { player: string }),
   tool("read_agent", "Read a public agent by ID; includes private fields only where authorized in DMs.", { agent: string, revision: string }, ["agent"]),
   tool("read_frozen_roster", "Read frozen public character identity and art for a game.", game, ["game"]),
@@ -207,17 +212,58 @@ async function discordAgent(db: DrizzleDB, grant: DiscordGrant, secret: string, 
   };
 }
 
+const publicOrigin = "https://thehouse.game";
+function profileUrl(identity: PublicPlayerIdentityRef) {
+  return publicOrigin + "/profile/" + encodeURIComponent(identity.handle ?? identity.publicId);
+}
+
+async function readDiscordPlayer(db: DrizzleDB, grant: DiscordGrant, reference: string) {
+  const value = reference.trim();
+  let url: URL | undefined;
+  try { url = value.startsWith("/") ? new URL(value, publicOrigin) : new URL(value); } catch { /* A name or identifier is also valid. */ }
+  let identifier = value.startsWith("@") ? value.slice(1) : value;
+  if (url) {
+    if (url.origin !== publicOrigin || url.username || url.password) return PUBLIC_PLAYER_NOT_FOUND;
+    let path = url.pathname + url.search + url.hash;
+    if (url.pathname.startsWith("/s/")) {
+      const code = url.pathname.slice(3);
+      if (!SHARE_CODE_PATTERN.test(code)) return PUBLIC_PLAYER_NOT_FOUND;
+      const resolved = await resolveShareLink(db, code);
+      if (!resolved) return PUBLIC_PLAYER_NOT_FOUND;
+      path = resolved.path;
+    }
+    try {
+      const target = parseHouseShareTarget(path);
+      if (target.kind !== "profile" || !target.identifier) return PUBLIC_PLAYER_NOT_FOUND;
+      identifier = target.identifier;
+    } catch {
+      return PUBLIC_PLAYER_NOT_FOUND;
+    }
+  }
+
+  let result = await getPublicPlayerProfile(db, identifier);
+  if (!url && result.status === "not_found" && value.length <= 128) {
+    const matches = await findPublicPlayersByDisplayName(db, value);
+    if (matches.length > 1) {
+      return { status: "ambiguous", candidates: matches.slice(0, 5).map(identity => ({ ...identity, profileUrl: profileUrl(identity) })) };
+    }
+    if (matches[0]) result = await getPublicPlayerProfile(db, matches[0].publicId);
+  }
+  if (result.status !== "found") return result;
+  const { recentResults: _recent, ...profile } = result.profile;
+  return {
+    ...result,
+    profile: withoutArt(grant.lane === "owner" ? profile : result.profile),
+    profileUrl: profileUrl(result.profile.identity),
+  };
+}
+
 export async function discordRead(db: DrizzleDB, grant: DiscordGrant, secret: string, name: string, input: Record<string, unknown>) {
   const after = typeof input.after === "number" ? input.after : 0;
   const cursor = typeof input.cursor === "string" ? input.cursor : undefined;
   const kind = input.gameKind === "werewolf" ? "werewolf" as const : "influence" as const;
   if (name === "get_rules") return getGameMcpRules(kind);
-  if (name === "read_player") {
-    const result = await getPublicPlayerProfile(db, String(input.player));
-    if (result.status !== "found" || grant.lane !== "owner") return withoutArt(result);
-    const { recentResults: _recent, ...profile } = result.profile;
-    return { ...result, profile: withoutArt(profile) };
-  }
+  if (name === "read_player") return readDiscordPlayer(db, grant, String(input.player));
   if (name === "read_account") {
     if (grant.lane !== "staff") return discordUnavailable();
     const u = schema.users, identifier = String(input.player);
