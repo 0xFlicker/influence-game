@@ -437,9 +437,13 @@ export function AgentForm({
     performanceInstructions: string;
     visualDesign: string;
   } | null>(null);
-  const [portraitEditorSource, setPortraitEditorSource] = useState<
-    string | null
-  >(null);
+  const [portraitEditor, setPortraitEditor] = useState<{
+    sourceUrl: string;
+    continueToSubmission?: boolean;
+  } | null>(null);
+  function openPortrait(sourceUrl: string | null | undefined) {
+    if (sourceUrl) setPortraitEditor({ sourceUrl });
+  }
   const [personaKey, setPersonaKey] = useState<PersonaKey | null>(
     initialSnapshot.personaKey,
   );
@@ -751,6 +755,7 @@ export function AgentForm({
     if (
       !draftStorageKey ||
       discarding ||
+      submitting ||
       unreadableDraft ||
       !draftReady ||
       pendingRestore ||
@@ -808,6 +813,7 @@ export function AgentForm({
   }, [
     setDraftStorageError,
     discarding,
+    submitting,
     unreadableDraft,
     initialGuided,
     referenceBusy,
@@ -1421,32 +1427,34 @@ export function AgentForm({
     portraitHeadRectangle(candidateImage.headSuggestion, candidateImage.portraitCrop)
     ? candidateImage : null;
 
+  function openReview() {
+    captureProductEvent("agent_editor_review_opened", { editing: isEditing });
+    setReviewOpen(true);
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (
-      profileGenerating ||
-      uploading ||
-      submitting ||
-      (headConfirmationRequired && !suggestedArtwork)
-    )
-      return;
-
     if (suggestedArtwork) {
       if (entryCandidateSaveDisabled) return;
-      if (!entryHasOtherChanges) {
-        await submitDraft(suggestedArtwork);
+      if (!hasProfileChanges) {
+        await submitDraft({ suggested: suggestedArtwork });
         return;
       }
       setSubmitting(true);
       const selected = await decideCandidate("selected", true);
       setSubmitting(false);
-      if (!selected) return;
-      captureProductEvent("agent_editor_review_opened", { editing: isEditing });
-      setReviewOpen(true);
+      if (selected) openReview();
       return;
     }
-    if (submitDisabled) return;
-    if (focusedEntry && fullBodyReferenceUrl && !entryHasOtherChanges) {
+    if (reviewDisabled) return;
+    if (headConfirmationRequired && fullBodyReferenceUrl) {
+      setPortraitEditor({
+        sourceUrl: fullBodyReferenceUrl,
+        continueToSubmission: !focusedEntry,
+      });
+      return;
+    }
+    if (artworkOnly && (!focusedEntry || fullBodyReferenceUrl)) {
       await submitDraft();
       return;
     }
@@ -1458,11 +1466,15 @@ export function AgentForm({
         setSubmitting(false);
       }
     }
-    captureProductEvent("agent_editor_review_opened", { editing: isEditing });
-    setReviewOpen(true);
+    openReview();
   }
 
-  async function submitDraft(suggested?: CharacterImageDraft) {
+  async function submitDraft(artwork?:
+    | { suggested: CharacterImageDraft }
+    | { portrait: Pick<EditorSnapshot, "explicitAvatarUrl" | "portraitCrop" | "headPosition" | "headSuggestion"> },
+  ) {
+    const suggested = artwork && "suggested" in artwork ? artwork.suggested : undefined;
+    const confirmedPortrait = artwork && "portrait" in artwork ? artwork.portrait : undefined;
     if (anonymous) {
       requestAccount();
       return;
@@ -1473,9 +1485,10 @@ export function AgentForm({
     }
     if (
       profileGenerating ||
-      uploading ||
       submitting ||
-      (headConfirmationRequired && !suggested)
+      (!suggested && (confirmedPortrait
+        ? confirmedPortrait.headPosition?.sourceUrl !== fullBodyReferenceUrl
+        : uploading || headConfirmationRequired))
     )
       return;
     const errors: Record<string, string> = {};
@@ -1514,7 +1527,9 @@ export function AgentForm({
     let completed = false;
     try {
       // The candidate decision updates React state. Save the exact selection in this request.
-      const snapshot = suggested ? selectArtwork(suggested, currentSnapshot, true) : currentSnapshot;
+      const snapshot = suggested
+        ? selectArtwork(suggested, currentSnapshot, true)
+        : { ...currentSnapshot, ...confirmedPortrait };
       if (suggested && !(await decideCandidate("selected", true))) return;
       const params: AgentProfileWriteParams = {
         ...(!isEditing || JSON.stringify(modelPreference) !== JSON.stringify(initialSnapshot.modelPreference)
@@ -1539,7 +1554,7 @@ export function AgentForm({
       const fingerprint = JSON.stringify(params);
       if (!submission.current || submission.current.fingerprint !== fingerprint)
         submission.current = { id: createRequestId(), fingerprint };
-      if (!(await saveLocalDraft(suggested ? snapshot : undefined)))
+      if (!(await saveLocalDraft(snapshot, { uploadPending: false, selectedCandidate: Boolean(suggested) })))
         throw new Error(
           "Save the recovery draft before submitting. Your changes are retained here.",
         );
@@ -1548,7 +1563,7 @@ export function AgentForm({
         { creationRequestId },
       );
       if (referenceRequest.current || (candidateImage && !suggested)) {
-        const base = { ...currentSnapshot };
+        const base = { ...snapshot };
         await persistRemote({
           version: DRAFT_VERSION,
           savedAt: new Date().toISOString(),
@@ -1558,7 +1573,7 @@ export function AgentForm({
             saved?.latestContentRevisionId ?? baseContentRevisionId,
           creationRequestId,
           referenceRequest: referenceRequest.current,
-          candidateImage,
+          candidateImage: suggested ? null : candidateImage,
           guided,
           conversation,
         });
@@ -1633,10 +1648,11 @@ export function AgentForm({
     !personality.trim() && "personality",
     !gender && "gender",
   ].filter((field): field is string => Boolean(field));
-  const entryHasOtherChanges = ([
+  const hasProfileChanges = ([
     "name", "gender", "personaKey", "personality", "backstory", "strategyStyle",
     "werewolfStrategyStyle", "performanceInstructions", "visualDesign", "modelPreference", "voiceId",
   ] as const).some((field) => JSON.stringify(currentSnapshot[field]) !== JSON.stringify(initialSnapshot[field]));
+  const artworkOnly = isEditing && !hasProfileChanges;
   const artworkBlocked = Boolean(
     referenceError && ["discard", "reload"].includes(referenceError.recovery),
   );
@@ -1644,19 +1660,20 @@ export function AgentForm({
     unreadableDraft || Boolean(pendingRestore || restoreAlternatives) ||
     draftConflicts.length > 0 || submitting || profileGenerating || referenceBusy || uploading || artworkBlocked;
   const entryCandidateSaveDisabled = entryCandidateBlocked || missingRequired.length > 0;
-  const submitDisabled =
+  const submissionBlocked =
     draftRecovering ||
-    !dirty ||
     missingRequired.length > 0 ||
     unreadableDraft ||
     Boolean(pendingRestore) ||
     draftConflicts.length > 0 ||
     submitting ||
     profileGenerating ||
-    ((referenceBusy || (isEditing && Boolean(candidateImage))) && !fullBodyReferenceUrl) ||
     uploading ||
-    headConfirmationRequired ||
     requiredStrategyChangeMissing;
+  const reviewDisabled =
+    submissionBlocked ||
+    !dirty ||
+    ((referenceBusy || (isEditing && Boolean(candidateImage))) && !fullBodyReferenceUrl);
 
   async function decideCandidate(decision: "selected" | "discarded", useSuggested = false) {
     const result = candidateImage;
@@ -1704,7 +1721,12 @@ export function AgentForm({
         setHeadSuggestion(result.headSuggestion ?? null);
         if (result.avatarUrl || useSuggested) setExplicitAvatarUrl(result.avatarUrl ?? result.fullBodyReferenceUrl);
         setPortraitCrop(result.portraitCrop ?? null);
-        if (!useSuggested) setPortraitEditorSource(result.fullBodyReferenceUrl);
+        if (!useSuggested) {
+          setPortraitEditor({
+            sourceUrl: result.fullBodyReferenceUrl,
+            continueToSubmission: isEditing && !focusedEntry,
+          });
+        }
       }
       setCandidateImage(null);
       return true;
@@ -1966,7 +1988,10 @@ export function AgentForm({
     }
   }
 
-  async function saveLocalDraft(selectedArtwork?: EditorSnapshot) {
+  async function saveLocalDraft(
+    current = currentSnapshot,
+    { uploadPending = uploading, selectedCandidate = false } = {},
+  ) {
     if (unreadableDraft) {
       setDraftStorageError("draft_unreadable");
       return false;
@@ -1975,7 +2000,7 @@ export function AgentForm({
       !dirty &&
       !generationDeadline &&
       !unfinishedReplacement &&
-      !uploading &&
+      !uploadPending &&
       !referenceBusy &&
       !referenceRequest.current &&
       !candidateImage &&
@@ -1992,15 +2017,15 @@ export function AgentForm({
       version: DRAFT_VERSION,
       savedAt: new Date().toISOString(),
       base: initialSnapshot,
-      current: selectedArtwork ?? currentSnapshot,
+      current,
       creationRequestId,
       baseContentRevisionId,
       generationDeadline,
-      uploadPending: uploading,
+      uploadPending,
       unfinishedReplacement,
       submission: submission.current,
       referenceRequest: referenceRequest.current,
-      candidateImage: selectedArtwork ? null : candidateImage,
+      candidateImage: selectedCandidate ? null : candidateImage,
       guided,
       conversation,
     };
@@ -2146,6 +2171,7 @@ export function AgentForm({
     <div className={styles.footerActions}>
       <button
         type="button"
+        className={styles.primary}
         onClick={() => void decideCandidate("selected")}
       >
         Select
@@ -2265,7 +2291,7 @@ export function AgentForm({
               {candidateImage && <div className={styles.footerActions}>
                 {suggestedArtwork && (
                   <button type="submit" className={styles.primary} disabled={entryCandidateSaveDisabled}>
-                    {entryHasOtherChanges ? "Review" : submitLabel}
+                    {hasProfileChanges ? "Review" : submitLabel}
                   </button>
                 )}
                 <button
@@ -2275,7 +2301,7 @@ export function AgentForm({
                   onClick={async () => {
                     const selected = await decideCandidate("selected", Boolean(suggestedArtwork));
                     if (selected && suggestedArtwork)
-                      setPortraitEditorSource(suggestedArtwork.fullBodyReferenceUrl);
+                      openPortrait(suggestedArtwork.fullBodyReferenceUrl);
                   }}
                 >
                   {suggestedArtwork ? "Adjust portrait" : "Set portrait"}
@@ -2284,15 +2310,15 @@ export function AgentForm({
               </div>}
               {fullBodyReferenceUrl && !candidateImage && (headConfirmationRequired ? (
                 <button type="button" className={styles.primary}
-                  onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>
+                  onClick={() => openPortrait(fullBodyReferenceUrl)}>
                   Confirm portrait
                 </button>
               ) : (
                 <div className={styles.footerActions}>
-                  <button type="submit" className={styles.primary} disabled={submitDisabled}>
-                    {entryHasOtherChanges ? "Review" : submitLabel}
+                  <button type="submit" className={styles.primary} disabled={reviewDisabled || headConfirmationRequired}>
+                    {hasProfileChanges ? "Review" : submitLabel}
                   </button>
-                  <button type="button" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>
+                  <button type="button" onClick={() => openPortrait(fullBodyReferenceUrl)}>
                     Adjust portrait
                   </button>
                 </div>
@@ -2424,9 +2450,7 @@ export function AgentForm({
                 type="button"
                 disabled={(!fullBodyReferenceUrl && !avatarUrl) || submitting}
                 onClick={() =>
-                  setPortraitEditorSource(
-                    fullBodyReferenceUrl ?? avatarUrl ?? null,
-                  )
+                  openPortrait(fullBodyReferenceUrl ?? avatarUrl)
                 }
               >
                 Portrait
@@ -2515,11 +2539,10 @@ export function AgentForm({
                 headRequired={headConfirmationRequired}
                 hasImage={Boolean(fullBodyReferenceUrl)}
                 onHeadshot={() =>
-                  setPortraitEditorSource(
+                  openPortrait(
                     fullBodyReferenceUrl ??
                       portraitCrop?.sourceUrl ??
-                      avatarUrl ??
-                      null,
+                      avatarUrl,
                   )
                 }
                 onIssue={setAiError}
@@ -3125,27 +3148,45 @@ export function AgentForm({
         </div>
         {!guided && !focusedEntry && preferences}
 
-        {portraitEditorSource && (
+        {portraitEditor && (
           <CharacterPortraitEditor
-            key={portraitEditorSource}
+            key={portraitEditor.sourceUrl}
             fullScreen={guided || focusedEntry}
-            sourceUrl={portraitEditorSource}
+            sourceUrl={portraitEditor.sourceUrl}
             initialCrop={portraitCrop}
             initialHead={headPosition ?? headSuggestion}
-            confirmHead={portraitEditorSource === fullBodyReferenceUrl}
+            confirmHead={portraitEditor.sourceUrl === fullBodyReferenceUrl}
+            actionLabel={
+              portraitEditor.continueToSubmission && artworkOnly && !submissionBlocked
+                ? "Save artwork"
+                : undefined
+            }
             name={name}
-            onClose={() => setPortraitEditorSource(null)}
+            onClose={() => setPortraitEditor(null)}
             onPendingChange={setUploading}
             onFailure={() => setUnfinishedReplacement(true)}
             onApply={(result) => {
               setExplicitAvatarUrl(result.avatarUrl);
               setPortraitCrop(result.portraitCrop);
-              if (portraitEditorSource === fullBodyReferenceUrl) {
+              if (portraitEditor.sourceUrl === fullBodyReferenceUrl) {
                 setHeadPosition(result.headPosition);
                 setHeadSuggestion(null);
               }
               setUnfinishedReplacement(false);
               setReferenceError(null);
+              if (!portraitEditor.continueToSubmission || submissionBlocked) return;
+              if (artworkOnly) {
+                void submitDraft({
+                  portrait: {
+                    explicitAvatarUrl: result.avatarUrl,
+                    portraitCrop: result.portraitCrop,
+                    headPosition: result.headPosition,
+                    headSuggestion: null,
+                  },
+                });
+              } else {
+                openReview();
+              }
             }}
           />
         )}
@@ -3201,16 +3242,7 @@ export function AgentForm({
                       startedAt={referenceStartedAt}
                     />
                   ) : headConfirmationRequired && !focusedEntry ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPortraitEditorSource(
-                          fullBodyReferenceUrl ?? avatarUrl ?? null,
-                        )
-                      }
-                    >
-                      Confirm
-                    </button>
+                    "Headshot needs confirmation"
                   ) : currentGenerationLabel ? (
                     <span>{currentGenerationLabel}</span>
                   ) : generations.loading ? (
@@ -3265,9 +3297,13 @@ export function AgentForm({
             {!focusedEntry && <button
               type="submit"
               className={styles.primary}
-              disabled={submitDisabled}
+              disabled={reviewDisabled}
             >
-              Review
+              {submitting && artworkOnly
+                ? "Saving…"
+                : artworkOnly && dirty
+                  ? headConfirmationRequired ? "Review artwork" : "Save artwork"
+                  : "Review"}
             </button>}
           </div>
         </footer>
@@ -3522,20 +3558,17 @@ export function AgentForm({
           )}
           {headConfirmationRequired && (
             <p role="status" className="text-sm text-amber-200">
-              Confirm the head and portrait before saving this new full-body
-              image.{" "}
+              The new artwork needs a confirmed headshot.{" "}
               <button
                 type="button"
                 className="underline"
-                onClick={() =>
-                  setPortraitEditorSource(
-                    fullBodyReferenceUrl ?? avatarUrl ?? null,
-                  )
-                }
+                onClick={() => {
+                  setActivityOpen(false);
+                  openPortrait(fullBodyReferenceUrl);
+                }}
               >
-                Review character images
+                Confirm headshot
               </button>
-              . Save draft keeps your work in this tab.
             </p>
           )}{" "}
           {dirty && missingRequired.length > 0 && (
@@ -3777,7 +3810,7 @@ export function AgentForm({
                 <button
                   type="button"
                   className={styles.primary}
-                  disabled={submitDisabled}
+                  disabled={reviewDisabled || headConfirmationRequired}
                   onClick={() => void submitDraft()}
                 >
                   {submitting ? "Saving…" : submitLabel ?? (isEditing ? "Save" : "Create")}

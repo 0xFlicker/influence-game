@@ -246,10 +246,68 @@ describe("agent workspace drafts",()=>{
   expect((view.getByRole("button",{name:"Review"}) as HTMLButtonElement).disabled).toBe(true);
   expect(view.queryByRole("dialog",{name:"Review changes"})).toBeNull();expect(submissions).toHaveLength(0);
  });
- test("a new selected body requires exact head confirmation before review",async()=>{
-  domWindow.sessionStorage.setItem(draftKey,JSON.stringify({version:4,savedAt:new Date().toISOString(),creationRequestId:"11111111-1111-4111-8111-111111111111",base:snapshot(proposal),current:{...snapshot(proposal),fullBodyReferenceUrl:"/new-body.webp",headSuggestion:{sourceUrl:"/new-body.webp",sourceHash:"a".repeat(64),sourceWidth:1024,sourceHeight:1536,rect:{x:.3,y:.05,width:.3,height:.2}}}}));
-  const view=await renderForm(false);fireEvent.click(view.getByRole("button",{name:"Resume"}));expect((view.getByRole("button",{name:"Review"}) as HTMLButtonElement).disabled).toBe(true);
- });
+});
+
+test.each([false, true])("headshot confirmation saves the artwork and reviews simultaneous profile edits (%s)", async (profileEdited) => {
+  const sourceUrl = "/new-body.webp";
+  const requestId = "22222222-2222-4222-8222-222222222222";
+  const base = snapshot(proposal);
+  const submissions: AgentProfileWriteParams[] = [];
+  const rect = { x: .35, y: .04, width: .3, height: .16 };
+  const headPosition = { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 1024, sourceHeight: 1536, rect };
+  domWindow.sessionStorage.setItem(draftKey, JSON.stringify({
+    version: 4,
+    savedAt: new Date().toISOString(),
+    creationRequestId: "11111111-1111-4111-8111-111111111111",
+    base,
+    current: profileEdited ? { ...base, personality: "An impatient negotiator." } : base,
+    candidateImage: { requestId, fullBodyReferenceUrl: sourceUrl, width: 1024, height: 1536, avatarUrl: null, portraitCrop: null, cropWarning: null, headSuggestion: headPosition },
+  }));
+  let cropRequests = 0;
+  globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith("/decision")) return Response.json({ status: "selected" });
+    if (path.endsWith("/portrait-crop")) {
+      const { headRectangle, ...portraitCrop } = JSON.parse(String(init?.body));
+      expect(headRectangle).toEqual(rect);
+      cropRequests++;
+      return Response.json({ avatarUrl: "/new-headshot.webp", portraitCrop, headPosition });
+    }
+    return Response.json([]);
+  }, { preconnect: originalFetch.preconnect }) as typeof fetch;
+
+  const view = await renderForm(false, async (params) => { submissions.push(params); });
+  fireEvent.click(view.getByRole("button", { name: "Resume" }));
+  fireEvent.click(view.getByRole("button", { name: "Select" }));
+  const preview = await view.findByRole("dialog", { name: "Headshot preview" });
+  const action = profileEdited ? "Confirm" : "Save artwork";
+  expect(within(preview).getByRole("button", { name: action }).closest("header")).toBeTruthy();
+  expect(submissions).toHaveLength(0);
+  fireEvent.click(within(preview).getByRole("button", { name: "Close" }));
+  expect(cropRequests).toBe(0);
+  expect(submissions).toHaveLength(0);
+  fireEvent.click(view.getByRole("button", { name: profileEdited ? "Review" : "Review artwork" }));
+
+  const reopened = await view.findByRole("dialog", { name: "Headshot preview" });
+  const image = within(reopened).getByAltText("Arden full image");
+  Object.defineProperties(image, { naturalWidth: { value: 1024 }, naturalHeight: { value: 1536 } });
+  fireEvent.load(image);
+  fireEvent.click(within(reopened).getByRole("button", { name: action }));
+  if (profileEdited) {
+    const review = await view.findByRole("dialog", { name: "Review changes" });
+    expect(review.textContent).toContain("An impatient negotiator.");
+    expect(submissions).toHaveLength(0);
+    fireEvent.click(within(review).getByRole("button", { name: "Save" }));
+  }
+  await waitFor(() => expect(submissions).toHaveLength(1));
+  expect(cropRequests).toBe(1);
+  expect(submissions[0]).toMatchObject({
+    fullBodyReferenceUrl: sourceUrl,
+    avatarUrl: "/new-headshot.webp",
+    headPosition,
+    portraitCrop: { sourceUrl },
+  });
+  expect(view.queryByRole("dialog", { name: "Review changes" })).toBeNull();
 });
 
 test("draft rebase preserves independent remote edits and treats artwork as one decision", () => {

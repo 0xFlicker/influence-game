@@ -261,14 +261,16 @@ Conversation history and approval are scoped to the open assistant; restoring
 a profile asks for approval again. The assistant never saves or enters a game
 on the model's authority; the user uses the final create button.
 
-After guided image generation, the full-screen image editor opens automatically
-with both crop and head controls available. Confirmation requires no edits.
-The Advanced editor retains its confirmation-first preview; “Adjust framing” opens two explicit
-modes: Portrait crop and Head position. Drag the active box to move it and its
-44px corner target to resize, with the same pointer controls for touch and mouse.
-The portrait remains square in source pixels. Only the active box receives
-pointer input, so overlapping boxes do not compete. The source stays visible
-while precise keyboard-accessible sliders are open. Export checks that the
+Select generated artwork to open its headshot preview. The preview fills the
+phone viewport and shows the full-body image beside the headshot. Its primary
+action stays in view while you adjust framing. Save artwork submits an
+artwork-only change to an existing agent directly from the preview.
+Portrait and Head select which box to adjust. Drag inside the active box to move
+it. Drag its 44px bottom-right corner target or pinch the image with two fingers
+to resize it. Resizing stays anchored at the top-left corner, including when
+using the keyboard-accessible size sliders. Pinching preserves the head box's
+aspect ratio and the portrait remains square in source pixels. Only the active
+box moves or resizes. Portrait export checks that the
 entire head fits inside the portrait and keeps the original full-body image.
 If the head extends outside the crop, amber stripes mark only the excluded
 area. The warning replaces the helper text in a shared reserved space, keeping

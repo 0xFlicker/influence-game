@@ -2096,9 +2096,15 @@
   pointer-events: none;
 }
 @media (max-width: 640px) {
+  .artActions {
+    order: -1;
+  }
+  .art:has(.candidateReady) > .artActions {
+    order: 1;
+  }
   .artStage {
     flex: none;
-    height: 300px;
+    height: clamp(230px, 40dvh, 300px);
   }
 }
 .fieldHint {
