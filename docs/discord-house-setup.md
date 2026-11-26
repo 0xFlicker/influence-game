@@ -304,3 +304,33 @@ roles, can access only the three entry channels. Only verification-help permits
 posting. House User unlocks community channels; existing staff access remains.
 Do not rerun the broad legacy `setup-house-discord.ts` configuration unchanged:
 its public channel overrides and onboarding defaults predate this verification gate.
+
+## Conversation worker acceptance
+
+Keep the Codex CLI pin aligned with the Overclaw runtime qualified for the
+selected model. Re-run `bash scripts/discord-agent/verify-arm.sh` after changing
+the pin. It exercises the real Linux ARM container with synthetic inference and
+checks the actual House tool catalog, image handoff, and network isolation.
+
+Use the existing scoped AWS federation relay for a synthetic paid turn on the
+production ARM launch settings. Verify both a structured greeting and a turn
+with a House MCP call, then confirm the relay still works after token expiry.
+Include the compressed production MCP catalog in that check. The bridge makes
+a fresh JSON response because Bun decodes the upstream body while retaining
+its original compression header. Forwarding that header causes the sandbox's
+MCP client to decode the bytes twice and fail before inference.
+The Discord Gateway ready event establishes connection. A successful live
+turn also requires a verified sender, a current House grant, and a Discord
+reply delivered back to its originating conversation.
+
+- Test a fresh untagged message in `#ask-the-house` and a fresh one-to-one DM
+  with a consented verified account. Check that the bot can view and send
+  messages, read history, and attach files in the designated room. Apply any
+  missing permission to the bot's overwrite in that room.
+- If Clyde rejects a DM before delivery, check the viewer's per-server
+  **Privacy Settings → Direct Messages** and membership screening.
+  [Discord DM troubleshooting](https://support.discord.com/hc/en-us/articles/360060145013).
+- Use `discord_turn` to see the failing stage, `discord_sandbox_failed` for
+  container exit status, timeouts and inference bridge counts, and
+  `discord_delivery_rejected` for Discord's HTTP and numeric error codes.
+  These events contain no message text, prompt, model reasoning, or token.
