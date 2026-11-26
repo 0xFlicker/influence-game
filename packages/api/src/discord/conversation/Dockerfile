@@ -2,7 +2,8 @@ FROM oven/bun:1.3.14 AS bun
 FROM node:24-bookworm-slim AS build
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /opt/codex
-RUN bun add --exact @openai/codex@0.154.0
+# Match Overclaw's verified Terra runtime version.
+RUN bun add --exact @openai/codex@0.164.0
 FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends socat bubblewrap ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun

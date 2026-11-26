@@ -78,15 +78,26 @@ async function send(m: DiscordMessage, content: string, images: Array<{ mimeType
     form.set("files[" + id + "]", new Blob([Buffer.from(image.data, "base64")], { type: image.mimeType }), "house-" + (id + 1) + ".png");
   });
   const response = await discord("/channels/" + m.channel_id + "/messages", { method: "POST", body: form });
-  if (!response.ok) throw new Error("Discord rejected the reply");
+  if (!response.ok) {
+    const rejection = await response.json().catch(() => null) as { code?: unknown } | null;
+    console.log(JSON.stringify({
+      event: "discord_delivery_rejected", status: response.status,
+      code: typeof rejection?.code === "number" ? rejection.code : null,
+    }));
+    throw new Error("Discord rejected the reply");
+  }
   return (await response.json() as { id: string }).id;
 }
 
 interface Turn { grant: string; publicId: string; lane: "room" | "owner" | "staff"; link: string }
-async function handle(m: DiscordMessage) {
+interface TurnProgress {
+  stage: "eligibility" | "grant" | "catalog" | "codex" | "reply" | "spoiler" | "attachment" | "revalidate" | "delivery";
+}
+async function handle(m: DiscordMessage, progress: TurnProgress) {
   const kind = destination(m, guild, room);
   if (!kind || !(await allowed(m, kind))) return "ineligible";
   const params = { discordId: m.author.id, channelId: m.channel_id, messageId: m.id, kind };
+  progress.stage = "grant";
   const start = await api("turn", params);
   if (!start.ok) return "unavailable";
   let turn = await start.json() as Turn;
@@ -97,9 +108,13 @@ async function handle(m: DiscordMessage) {
   const current = m.content.slice(0, 2500);
   const games = new Set<string>();
   const inspected = new Set<string>();
-  const finish = async () => (await api("validate", { grant: turn.grant, games: [...games] })).ok && await allowed(m, kind);
+  const finish = async () => {
+    progress.stage = "revalidate";
+    return (await api("validate", { grant: turn.grant, games: [...games] })).ok && await allowed(m, kind);
+  };
 
   const generate = async (revealed?: string) => {
+    progress.stage = "catalog";
     const tools = await api("mcp", { grant: turn.grant, method: "tools/list" });
     if (!tools.ok) throw new Error("House catalog unavailable");
     const catalog = await tools.json() as { tools: Array<{ name: string }> };
@@ -108,7 +123,8 @@ async function handle(m: DiscordMessage) {
       activeSpoilerOffer: offer?.game, authorizedSpoiler: revealed, recentMemberMessages: recent,
       currentMemberMessage: current,
     });
-    return validatedReply(await runCodex(sandbox, "reply", prompt, catalog.tools.map(tool => tool.name), async body => {
+    progress.stage = "codex";
+    const result = await runCodex(sandbox, "reply", prompt, catalog.tools.map(tool => tool.name), async body => {
       const response = await api("mcp", { ...body, grant: turn.grant });
       if (response.ok && body.method === "tools/call") {
         const args = body.args as Record<string, unknown> | undefined;
@@ -116,11 +132,14 @@ async function handle(m: DiscordMessage) {
         if (body.name === "inspect_image" && typeof args?.imageRef === "string") inspected.add(args.imageRef);
       }
       return response;
-    }));
+    });
+    progress.stage = "reply";
+    return validatedReply(result);
   };
 
   let reply = await generate();
   if (reply.spoiler.action !== "none") {
+    progress.stage = "spoiler";
     const challenge = await api("spoiler", { grant: turn.grant, game: reply.spoiler.game });
     if (!challenge.ok) return "spoiler_unavailable";
     const target = await challenge.json() as { gameId: string; slug: string; settled: boolean };
@@ -137,6 +156,7 @@ async function handle(m: DiscordMessage) {
         ? await runCodex(sandbox, "consent", consentPrompt, [], async () => new Response(null, { status: 403 })) : null;
       if (consent && validatedConsent(consent)) {
         if (!(await finish())) return "authority_changed";
+        progress.stage = "spoiler";
         const grant = await api("turn", { ...params, spoilerGame: target.gameId });
         if (!grant.ok) return "authority_changed";
         const elevated = await grant.json() as Turn;
@@ -151,6 +171,7 @@ async function handle(m: DiscordMessage) {
       } else {
         games.add(target.gameId);
         if (!(await finish())) return "authority_changed";
+        progress.stage = "delivery";
         const sent = await send(m, kind === "room"
           ? "Shall I open the Omniscient view for **" + target.slug + "**? The answer will be visible to this room."
           : "Shall I open the Omniscient view for **" + target.slug + "**?");
@@ -162,6 +183,7 @@ async function handle(m: DiscordMessage) {
   }
 
   const images: Array<{ mimeType: string; data: string }> = [];
+  progress.stage = "attachment";
   for (const imageRef of new Set(reply.imageRefs)) {
     if (!inspected.has(imageRef)) continue;
     const response = await api("mcp", { grant: turn.grant, method: "tools/call", name: "inspect_image", args: { imageRef } });
@@ -170,6 +192,7 @@ async function handle(m: DiscordMessage) {
     if (image?.mimeType === "image/png" && image.data.length <= 4_000_000) images.push(image);
   }
   if (!(await finish())) return "authority_changed";
+  progress.stage = "delivery";
   if (!await send(m, reply.text, images)) return "empty_reply";
   history.set(key, { link: turn.link, messages: [...recent, current].slice(-4), expires: Date.now() + 15 * 60_000 });
   return "replied";
@@ -193,9 +216,13 @@ async function drain() {
     const m = queue.shift()!;
     const started = Date.now();
     const ageMs = started - messageTime(m.id);
+    const progress: TurnProgress = { stage: "eligibility" };
     let result: string;
-    try { result = ageMs <= 120_000 ? await handle(m) : "expired"; } catch { result = "turn_failed"; }
-    console.log(JSON.stringify({ event: "discord_turn", result, latencyMs: Date.now() - started, queueAgeMs: ageMs, queued: queue.length }));
+    try { result = ageMs <= 120_000 ? await handle(m, progress) : "expired"; } catch { result = "turn_failed"; }
+    console.log(JSON.stringify({
+      event: "discord_turn", result, ...(result === "turn_failed" && { stage: progress.stage }),
+      latencyMs: Date.now() - started, queueAgeMs: ageMs, queued: queue.length,
+    }));
   }
   draining = false;
   if (closing) process.exit(0);

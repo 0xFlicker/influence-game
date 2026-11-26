@@ -27,14 +27,16 @@ export async function runCodex(
   const limit = AbortSignal.timeout(mode === "consent" ? 25_000 : 70_000);
   let server: ReturnType<typeof Bun.serve> | undefined;
   let child: ReturnType<typeof Bun.spawn> | undefined;
+  let toolCalls = 0;
+  let modelCalls = 0;
+  let blockedRequests = 0;
+  let upstreamStatus: number | null = null;
   try {
     await chmod(folder, 0o755);
     await Promise.all([
       writeFile(join(folder, "reply.json"), JSON.stringify(replySchema)),
       writeFile(join(folder, "consent.json"), JSON.stringify(consentSchema)),
     ]);
-    let toolCalls = 0;
-    let modelCalls = 0;
     const allowed = new Set(tools);
     server = Bun.serve({
       unix: socket, maxRequestBodySize: 8 * 1024 * 1024,
@@ -49,12 +51,16 @@ export async function runCodex(
           }
           if (url.pathname !== "/v1/responses" || url.search || ++modelCalls > maxRequests) return new Response(null, { status: 403 });
           const filtered = filterInference(body, model, allowed);
-          if (!filtered) return new Response(null, { status: 403 });
+          if (!filtered) {
+            blockedRequests++;
+            return new Response(null, { status: 403 });
+          }
           const response = await fetch("http://127.0.0.1:18790/v1/responses", {
             method: "POST",
             headers: { authorization: "Bearer " + config.inferenceToken, "content-type": "application/json" },
             body: JSON.stringify(filtered), redirect: "error", signal: limit,
           });
+          upstreamStatus = response.status;
           if (!response.ok || !response.body) return response;
           const [result, metrics] = response.body.tee();
           void recordUsage(metrics).catch(() => console.log(JSON.stringify({ event: "discord_usage_unavailable" })));
@@ -78,6 +84,12 @@ export async function runCodex(
     ]);
     if (status !== 0) throw new Error("Codex turn failed");
     return JSON.parse(result.trim()) as unknown;
+  } catch (error) {
+    console.log(JSON.stringify({
+      event: "discord_sandbox_failed", mode, toolCalls, modelCalls, blockedRequests, upstreamStatus,
+      exitCode: child?.exitCode ?? null, timedOut: limit.aborted,
+    }));
+    throw error;
   } finally {
     server?.stop(true);
     if (child && child.exitCode === null) {
