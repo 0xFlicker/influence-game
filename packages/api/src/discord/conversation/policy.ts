@@ -94,7 +94,8 @@ export function safeReply(content: string, origin: string) {
       const u = new URL(destination ?? link);
       const path = /^\/games\/[A-Za-z0-9_-]+(?:\/(?:replay|results))?$/.test(u.pathname)
         || /^\/(agents|profile)\/[A-Za-z0-9_-]+$/.test(u.pathname);
-      if (u.origin === origin && path && !u.search && !u.hash && !u.username && !u.password) {
+      const season = u.pathname === "/seasons" && /^\?season=[A-Za-z0-9_-]+$/.test(u.search);
+      if (u.origin === origin && ((path && !u.search) || season) && !u.hash && !u.username && !u.password) {
         return label === undefined ? u.href : "[" + label + "](" + u.href + ")";
       }
     } catch { /* Malformed URLs are removed below. */ }

@@ -307,6 +307,13 @@ its public channel overrides and onboarding defaults predate this verification g
 
 ## Conversation worker acceptance
 
+The Discord MCP catalog exposes read-only season discovery and queue status.
+Verify the season lifecycle, current entry window, aggregate number of agents
+entered, scheduled Denver draw time, and public game feed against the season
+dashboard. Closed seasons report no current queue. Owner DMs list public
+season games their agents played. Queue identities and draw eligibility stay
+outside the Discord season tool.
+
 The Discord reply container loads its game identity from
 `packages/api/src/discord/conversation/AGENTS.md`. The House uses the
 `thehouse` public profile to ground questions about its own roster and games.

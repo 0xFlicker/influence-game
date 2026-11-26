@@ -68,6 +68,39 @@ async function content(response: Response) {
   return JSON.parse((await response.json() as { content: [{ text: string }] }).content[0].text);
 }
 
+test("season queue exposes public counts and draw times without queue identities or hidden games", async () => {
+  await db.insert(schema.seasons).values([
+    { id: "s1", slug: "season-one", name: "Season One", status: "active" },
+    { id: "s0", slug: "season-zero", name: "Season Zero", status: "final" },
+  ]);
+  await db.insert(schema.agentProfiles).values({ id: "queued-private-agent", userId: "alice", name: "Queued Agent", personality: "private" });
+  await db.insert(schema.freeGameQueue).values({ id: "private-queue-row", userId: "alice", agentProfileId: "queued-private-agent" });
+  await db.insert(schema.games).values([
+    { id: "season-public", slug: "season-public", seasonId: "s1", config: "{}" },
+    { id: "season-hidden", slug: "season-hidden", seasonId: "s1", config: '{"visibility":"unlisted"}' },
+  ]);
+  const shared = await grant("room");
+  expect((await content(await tool(shared, "list_seasons", {}))).seasons).toHaveLength(2);
+  const open = await content(await tool(shared, "read_season", { season: "season-one" }));
+  expect(open).toMatchObject({
+    entriesOpen: true, agentsEntered: 1, nextDrawAt: expect.any(String), drawTimeZone: "America/Denver",
+    publicGames: [{ slug: "season-public" }],
+  });
+  expect(open.publicGames).toHaveLength(1);
+  expect(JSON.stringify(open)).not.toContain("queued-private-agent");
+  expect((await content(await tool(await grant("dm", bob), "read_season", { season: "s1" }))).publicGames).toEqual([]);
+  expect(await content(await tool(shared, "read_season", { season: "s0" }))).toMatchObject({
+    entriesOpen: false, agentsEntered: null, nextDrawAt: null,
+  });
+  await db.update(schema.seasons).set({ admissionStartsAt: new Date(Date.now() + 86_400_000).toISOString() }).where(eq(schema.seasons.id, "s1"));
+  expect(await content(await tool(shared, "read_season", { season: "s1" }))).toMatchObject({
+    season: { status: "active" }, entriesOpen: false, agentsEntered: null, nextDrawAt: null,
+  });
+  const link = "https://thehouse.game/seasons?season=season-one";
+  expect(safeReply(link, "https://thehouse.game")).toBe(link);
+  expect(safeReply(link + "&token=bad", "https://thehouse.game")).toBe("[link removed]");
+});
+
 test("the verified owner sees only their games and private agent details while the room is egalitarian", async () => {
   await db.insert(schema.games).values([{ id: "public-game", slug: "public-game", config: "{}" },
     { id: "mine-game", slug: "mine-game", config: '{"visibility":"unlisted"}' },
