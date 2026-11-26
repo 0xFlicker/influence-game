@@ -117,6 +117,7 @@ describe("free queue season admission", () => {
       const [queued] = await db.select().from(schema.freeGameQueue).limit(1);
       await deleteAccount(db, queued!.userId);
     }
+    await addQueuedAgents(db, "service", deleteEntrant ? 11 : 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -151,6 +152,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "provider-health-scheduler");
     await createQueuedAgent(db, "provider-health-a", "Provider Aster");
     await createQueuedAgent(db, "provider-health-b", "Provider Maris");
+    await addQueuedAgents(db, "provider-health", 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -265,10 +267,7 @@ describe("free queue season admission", () => {
   test("draw atomically binds an active season and every owned revision", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator");
-    const queued = await Promise.all([
-      createQueuedAgent(db, "alice", "Atlas Daily"),
-      createQueuedAgent(db, "bob", "Mira Daily"),
-    ]);
+    const queued = await addQueuedAgents(db, "admission", 12);
     const season = await createSeason(db, {
       slug: "daily-summer",
       name: "Daily Summer",
@@ -281,7 +280,23 @@ describe("free queue season admission", () => {
       permissions: ["schedule_free_game"],
     });
     const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const lastProfileId = queued[11]!.profileId;
+    await db.update(schema.agentProfiles).set({ archivedAt: new Date().toISOString() })
+      .where(eq(schema.agentProfiles.id, lastProfileId));
     const standingBefore = await db.select().from(schema.freeGameQueue);
+    const shortDraw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Idempotency-Key": "daily-free:test:season-admission" },
+    });
+    expect(shortDraw.status).toBe(200);
+    expect(await shortDraw.json()).toEqual({
+      drawn: false,
+      reason: "Not enough eligible players in queue (11). Need 12 eligible agents.",
+    });
+    expect(await db.select().from(schema.games)).toHaveLength(0);
+    expect(await db.select().from(schema.freeGameQueue)).toEqual(standingBefore);
+    await db.update(schema.agentProfiles).set({ archivedAt: null })
+      .where(eq(schema.agentProfiles.id, lastProfileId));
     const response = await app.request("/api/free-queue/draw", {
       method: "POST",
       headers: {
@@ -299,17 +314,17 @@ describe("free queue season admission", () => {
     expect(body).toMatchObject({
       rated: true,
       seasonId: season.id,
-      playersDrawn: 2,
+      playersDrawn: 12,
     });
 
     const game = (await db.select().from(schema.games).where(eq(schema.games.id, body.gameId)))[0];
     const seats = await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, body.gameId));
     expect(game?.seasonId).toBe(season.id);
-    expect(game?.minPlayers).toBe(6);
+    expect(game?.minPlayers).toBe(12);
     expect(game?.maxPlayers).toBe(12);
     const gameConfig = JSON.parse(game!.config);
-    expect(gameConfig.minPlayers).toBe(6);
+    expect(gameConfig.minPlayers).toBe(12);
     expect(gameConfig.empowerRevoteVersion).toBe(2);
     expect(gameConfig.decisionContractVersion).toBe(3);
     expect(gameConfig.gameSchemaVersion).toBe(3);
@@ -326,8 +341,8 @@ describe("free queue season admission", () => {
     expect(gameConfig.visualMode).toBe(false);
     expect(gameConfig).not.toHaveProperty("visualFailurePolicy");
     expect(gameConfig).not.toHaveProperty("modelTier");
-    expect(seats.filter((seat) => seat.userId === null).map((seat) => seat.modelPreference))
-      .toEqual(Array(10).fill("default"));
+    expect(seats).toHaveLength(12);
+    expect(seats.every(seat => seat.userId && seat.agentProfileId)).toBe(true);
     const statusResponse = await app.request("/api/free-queue", {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -357,6 +372,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "closing-operator");
     await createQueuedAgent(db, "closing-a", "Aster Closing");
     await createQueuedAgent(db, "closing-b", "Maris Closing");
+    await addQueuedAgents(db, "closing", 10);
     const season = await createSeason(db, {
       slug: "daily-closing",
       name: "Daily Closing",
@@ -394,7 +410,7 @@ describe("free queue season admission", () => {
       .where(eq(schema.gamePlayers.gameId, drawn.gameId));
     const snapshots = await db.select().from(schema.competitionRatingSnapshots)
       .where(eq(schema.competitionRatingSnapshots.gameId, drawn.gameId));
-    expect(snapshots).toHaveLength(2);
+    expect(snapshots).toHaveLength(12);
     expect(snapshots.every((snapshot) => seats.some((seat) => (
       seat.agentProfileId === snapshot.agentProfileId
         && seat.agentRevisionId === snapshot.agentRevisionId
@@ -408,6 +424,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "exact-start-operator");
     await createQueuedAgent(db, "exact-start-a", "Aster Exact");
     await createQueuedAgent(db, "exact-start-b", "Maris Exact");
+    await addQueuedAgents(db, "exact-start", 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -454,6 +471,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "draining-operator");
     await createQueuedAgent(db, "draining-a", "Aster Draining");
     await createQueuedAgent(db, "draining-b", "Maris Draining");
+    await addQueuedAgents(db, "draining", 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -567,6 +585,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "final-operator");
     await createQueuedAgent(db, "final-a", "Aster Final");
     await createQueuedAgent(db, "final-b", "Maris Final");
+    await addQueuedAgents(db, "final", 10);
     const season = await createSeason(db, {
       slug: "daily-final",
       name: "Daily Final",
@@ -607,6 +626,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "preflight-operator");
     await createQueuedAgent(db, "preflight-a", "Aster Preflight");
     await createQueuedAgent(db, "preflight-b", "Maris Preflight");
+    await addQueuedAgents(db, "preflight", 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -656,6 +676,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "startup-operator");
     await createQueuedAgent(db, "startup-a", "Aster Startup");
     await createQueuedAgent(db, "startup-b", "Maris Startup");
+    await addQueuedAgents(db, "startup", 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -724,6 +745,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "operator-race");
     await createQueuedAgent(db, "race-alice", "Nova Daily");
     await createQueuedAgent(db, "race-bob", "Orion Daily");
+    await addQueuedAgents(db, "race", 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -758,6 +780,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "close-race-operator");
     await createQueuedAgent(db, "close-race-a", "Race A");
     await createQueuedAgent(db, "close-race-b", "Race B");
+    await addQueuedAgents(db, "close-race", 10);
     await db.insert(schema.servicePrincipals).values({userId: operatorId});
     const token = await createSessionToken(operatorId, {roles: ["scheduler"], permissions: ["schedule_free_game"]});
     const app = new Hono().route("/", createFreeQueueRoutes(db));
@@ -805,6 +828,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "operator-distinct-requests");
     await createQueuedAgent(db, "distinct-alice", "Astra Daily");
     await createQueuedAgent(db, "distinct-bob", "Sol Daily");
+    await addQueuedAgents(db, "distinct", 10);
     await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
@@ -841,6 +865,7 @@ describe("free queue season admission", () => {
       .where(eq(schema.games.id, recoveredGame.gameId));
     await createQueuedAgent(db, "following-alice", "Lumen Daily");
     await createQueuedAgent(db, "following-bob", "Vale Daily");
+    await addQueuedAgents(db, "following", 10);
 
     const followingDraw = await app.request("/api/free-queue/draw", {
       method: "POST",
@@ -921,6 +946,7 @@ describe("free queue season admission", () => {
     const cancelled = await createQueuedAgent(db, "cancelled-owner", "Cancelled Agent");
     const eligibleA = await createQueuedAgent(db, "eligible-a", "Eligible A");
     const eligibleB = await createQueuedAgent(db, "eligible-b", "Eligible B");
+    const extras = await addQueuedAgents(db, "eligibility", 7);
     await assignOwnerToFreeGame(db, active, "in_progress");
     const suspendedGameId = await assignOwnerToFreeGame(db, suspended, "suspended");
     await db.insert(schema.gameRunOwners).values({
@@ -960,6 +986,7 @@ describe("free queue season admission", () => {
       cancelled.profileId,
       eligibleA.profileId,
       eligibleB.profileId,
+      ...extras.map(agent => agent.profileId),
     ]));
     expect((await db.select().from(schema.games)
       .where(eq(schema.games.id, suspendedGameId)))[0]).toMatchObject({
@@ -974,7 +1001,7 @@ describe("free queue season admission", () => {
       revokedAt: expect.any(String),
     });
     const entries = await db.select().from(schema.freeGameQueue);
-    expect(entries).toHaveLength(6);
+    expect(entries).toHaveLength(13);
     expect(entries.every((entry) => entry.consecutiveMisses === 0)).toBe(true);
   });
 
@@ -984,6 +1011,7 @@ describe("free queue season admission", () => {
     await createSeason(db, { slug: "settlement-season", name: "Settlement Season" });
     const pending = await createQueuedAgent(db, "pending-owner", "Pending Agent");
     const repairRequired = await createQueuedAgent(db, "repair-owner", "Repair Agent");
+    const extras = await addQueuedAgents(db, "settlement", 10);
     const pendingGameId = await assignOwnerToFreeGame(db, pending, "suspended");
     const repairGameId = await assignOwnerToFreeGame(db, repairRequired, "suspended");
     const pendingOwnerEpoch = await attachSuspendedOwner(db, pendingGameId);
@@ -1010,7 +1038,7 @@ describe("free queue season admission", () => {
     const seats = await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, body.gameId));
     expect(new Set(seats.flatMap((seat) => seat.agentProfileId ? [seat.agentProfileId] : [])))
-      .toEqual(new Set([pending.profileId, repairRequired.profileId]));
+      .toEqual(new Set([pending.profileId, repairRequired.profileId, ...extras.map(agent => agent.profileId)]));
     expect(body.supersededGameCount).toBe(0);
     expect((await db.select().from(schema.games)
       .where(eq(schema.games.id, pendingGameId)))[0]?.status).toBe("suspended");
@@ -1031,6 +1059,14 @@ async function insertUser(db: DrizzleDB, label: string): Promise<string> {
     displayName: label,
   });
   return id;
+}
+
+async function addQueuedAgents(db: DrizzleDB, label: string, count: number) {
+  const agents: Array<Awaited<ReturnType<typeof createQueuedAgent>>> = [];
+  for (let index = 1; index <= count; index += 1) {
+    agents.push(await createQueuedAgent(db, `${label}-extra-${index}`, `${label} Extra ${index}`));
+  }
+  return agents;
 }
 
 async function createQueuedAgent(

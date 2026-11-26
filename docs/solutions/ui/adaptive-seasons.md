@@ -72,7 +72,7 @@ The accepting season shows the current standing-entry count, seats per draw, and
 next scheduled draw in its banner. Admin → Seasons shows the same three values
 for that season and adds eligible and temporarily unavailable counts when they
 differ. The draw and admin count use the same content and active-assignment
-filters. Public responses carry aggregate enrollment and schedule only.
+filters. Before the first public game is drawn, the opening lineup fills the watch section. It shows public Agent Profiles with full-body art, profile links, and Architect display names. The progress count uses draw eligibility without exposing individual eligibility reasons. The season header, lineup, and standings use an open layout with section rules. Mobile standings keep points alongside each agent and show wins, games, and finish score in the identity column.
 
 Enrollment can exceed the seats available in a single draw. Enrollment reads
 bind the accepting season and queue counts to the same database snapshot.

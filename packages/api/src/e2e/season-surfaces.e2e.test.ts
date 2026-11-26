@@ -231,6 +231,7 @@ describe("E2E: Dual Crown season surfaces", () => {
   test("renders public, owner, archive, receipt, and producer views at desktop and mobile widths", async () => {
     const webUrl = servers.webUrl!;
     const publicPage = await createAnonymousPage(browser, webUrl);
+    await rejectOptionalAnalytics(publicPage);
     const ownerPage = await createAuthenticatedPage(browser, adminJwt, webUrl, {
       privateKey: admin.wallet.privateKey,
     });
@@ -243,6 +244,18 @@ describe("E2E: Dual Crown season surfaces", () => {
       await assertRoute(publicPage, `${webUrl}/games/free?season=${seasonSlug}`, [
         "Browser QA Championship", "AGENT CHAMPION", "ARCHITECT CHAMPION", "Dual Crown sweep",
       ]);
+      const standings = 'section[aria-label="Season standings"]';
+      const agentsTab = `${standings} [role="tab"][aria-selected="true"]`;
+      expect(await publicPage.$eval(`${standings} table`, table => table.scrollWidth <= table.clientWidth)).toBe(true);
+      if (viewport.width === 390) {
+        expect(await publicPage.evaluate(`document.querySelector(${JSON.stringify(standings + " table tbody")})?.innerText`)).toContain("1 win");
+      }
+      await publicPage.focus(agentsTab);
+      await publicPage.keyboard.press("ArrowRight");
+      expect(await publicPage.$eval(`${standings} [role="tab"][aria-selected="true"]`, tab => tab.textContent)).toBe("Architect Crown");
+      await publicPage.keyboard.press("ArrowLeft");
+      await publicPage.evaluate("document.activeElement?.blur()");
+      await (await publicPage.waitForSelector(standings))?.screenshot({ path: `/tmp/house-season-standings-${viewport.width}.png` });
       await assertRoute(publicPage, `${webUrl}/games/${gameSlug}/results`, [
         "Championship point receipts", "QA Champion", "Place 1 of 4", "120",
       ]);
@@ -259,11 +272,12 @@ describe("E2E: Dual Crown season surfaces", () => {
     }
   }, 120_000);
 
-  test("shows current enrollment in both views and eligibility only in Admin when it differs", async () => {
+  test("shows public opening lineup and current enrollment with detailed eligibility in Admin", async () => {
     const active = await createSeason(testDb.db, { slug: "enrollment-qa", name: "Season 1" });
     const queuedAgentId = randomUUID();
     await testDb.db.insert(schema.agentProfiles).values({
       id: queuedAgentId, userId: admin.userId, name: "Enrollment QA", personality: "Patient.",
+      fullBodyReferenceUrl: "/avatars/personas/full-body-v1/diplomat.webp",
     });
     await testDb.db.insert(schema.freeGameQueue).values({
       id: randomUUID(), userId: admin.userId, agentProfileId: queuedAgentId,
@@ -294,7 +308,15 @@ describe("E2E: Dual Crown season surfaces", () => {
       for (const width of [1440, 390]) {
         await publicPage.setViewport({ width, height: 900 });
         await adminPage.setViewport({ width, height: 900 });
-        await assertRoute(publicPage, publicUrl, ["Season enrollment", "Agents entered", "Seats per draw", "Next draw"]);
+        await assertRoute(publicPage, publicUrl, [
+          "Season enrollment", "Agents entered", "Seats per draw", "Next draw",
+          "Opening lineup", "0 / 12", "Enrollment QA", "Architect · E2E Admin", "Standings",
+        ]);
+        const card = `section[aria-labelledby="season-lineup-title"] a[href="/agents/${queuedAgentId}"]`;
+        await publicPage.$eval(card, link => link.scrollIntoView({ block: "center" }));
+        await publicPage.waitForFunction(`document.querySelector(${JSON.stringify(card + " img")})?.naturalWidth > 0`);
+        expect(await publicPage.$(card + ' img[data-portrait="false"]')).not.toBeNull();
+        expect(await publicPage.$('[aria-labelledby="season-watch-title"]')).toBeNull();
         await assertRoute(adminPage, adminUrl, ["Season enrollment", "Temporarily unavailable"]);
         expect(await publicPage.$(eligibility)).toBeNull();
         expect(await adminPage.$$eval(`${eligibility} dd`, values => values.map(value => value.textContent))).toEqual(["0", "1"]);
@@ -306,6 +328,41 @@ describe("E2E: Dual Crown season surfaces", () => {
           .toBe(await adminPage.$eval(`${enrollment} time`, time => time.getAttribute("datetime")));
       }
 
+      await publicPage.focus(`section[aria-labelledby="season-lineup-title"] a[href="/agents/${queuedAgentId}"]`);
+      await Promise.all([
+        publicPage.waitForFunction(`location.pathname === "/agents/${queuedAgentId}"`),
+        publicPage.keyboard.press("Enter"),
+      ]);
+      await publicPage.waitForFunction('document.querySelector("h1")?.textContent.includes("Enrollment QA")');
+
+      const artwork = [
+        "strategic", "observer", "social", "paranoid", "loyalist",
+        "deceptive", "honest", "aggressive", "wildcard", "contrarian",
+      ];
+      for (const [index, archetype] of artwork.entries()) {
+        const ownerId = randomUUID();
+        const profileId = randomUUID();
+        await testDb.db.insert(schema.users).values({ id: ownerId, displayName: `Architect ${index + 1}` });
+        await testDb.db.insert(schema.agentProfiles).values({
+          id: profileId, userId: ownerId, name: `Lineup Agent ${index + 1}`, personality: "Patient.",
+          fullBodyReferenceUrl: `/avatars/personas/full-body-v1/${archetype}.webp`,
+        });
+        await testDb.db.insert(schema.freeGameQueue).values({
+          id: randomUUID(), userId: ownerId, agentProfileId: profileId,
+        });
+      }
+      for (const width of [1440, 390]) {
+        await publicPage.setViewport({ width, height: 900 });
+        await assertRoute(publicPage, publicUrl, ["Opening lineup", "10 / 12"]);
+        await publicPage.$eval("#season-lineup-title", heading => heading.scrollIntoView({ block: "start" }));
+        const bodyImages = 'section[aria-labelledby="season-lineup-title"] img[data-portrait="false"]';
+        const loadedBodies = `Array.from(document.querySelectorAll('${bodyImages}')).filter(image => image.naturalWidth > 0).length`;
+        await publicPage.waitForFunction(`${loadedBodies} >= 6`);
+        await publicPage.$eval('section[aria-label="Season standings"]', standings => standings.scrollIntoView({ block: "end" }));
+        await publicPage.waitForFunction(`${loadedBodies} === 11`);
+        await publicPage.evaluate("window.scrollTo(0, 0)");
+        await publicPage.screenshot({ path: `/tmp/house-season-${width}.png`, fullPage: true });
+      }
       await publicPage.select('[aria-label="Choose a season"]', seasonSlug);
       await publicPage.waitForFunction('document.querySelector("#season-title")?.textContent === "Browser QA Championship"');
       expect(await publicPage.$(enrollment)).toBeNull();

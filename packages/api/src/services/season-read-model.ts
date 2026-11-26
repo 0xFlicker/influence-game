@@ -6,6 +6,8 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getNextDailyFreeDrawAt } from "./free-game-schedule.js";
 import { dailyFreeDrawEligibility } from "./queue-enrollment.js";
+import { publiclyVisibleAgentContent } from "./agent-content-eligibility.js";
+import { publicAgentFullBodyHref } from "./public-agent-preview.js";
 import { getActiveSeason } from "./seasons.js";
 import {
   calculateArchitectScore,
@@ -15,6 +17,7 @@ import {
 } from "./season-policy.js";
 import {
   getPublicPlayerIdentityMap,
+  isImportedSyntheticPlayer,
   publicPlayerDisplayName,
   type PublicPlayerIdentityRef,
 } from "./public-player-identity.js";
@@ -103,6 +106,17 @@ interface PrivateCompetitionReceipt extends Omit<PublicCompetitionReceipt, "owne
 
 export interface OwnedCompetitionReceipt extends PrivateCompetitionReceipt {
   revisionId: string;
+}
+
+interface SeasonOpeningQueue {
+  eligibleAgents: number;
+  agents: Array<{
+    id: string;
+    name: string;
+    architectName: string;
+    fullBodyImageUrl: string | null;
+    avatarUrl: string | null;
+  }>;
 }
 
 interface SeasonEnrollment {
@@ -514,16 +528,22 @@ export async function readSeasonEnrollment(
   db: DrizzleDB,
   season: Pick<SeasonRow, "id" | "status">,
   includeEligibility: boolean,
-): Promise<(SeasonEnrollment & { eligibleAgents?: number }) | null> {
+): Promise<(SeasonEnrollment & { eligibleAgents?: number; openingQueue?: SeasonOpeningQueue }) | null> {
   if (season.status !== "active") return null;
   const now = new Date();
   // Closeout clears the singleton queue. Bind the counts and accepting season
   // to one snapshot so a concurrent close and reopen cannot mix seasons.
   return db.transaction(async (tx) => {
     if ((await getActiveSeason(tx, now.toISOString()))?.id !== season.id) return null;
+    const opening = !includeEligibility && !(await tx.select({ id: schema.games.id })
+      .from(schema.games).where(and(
+        eq(schema.games.seasonId, season.id),
+        inArray(schema.games.status, ["waiting", "in_progress", "completed", "suspended"]),
+        publicGameFilter(),
+      )).limit(1)).length;
     const [counts] = await tx.select({
       agentsEntered: sql<number>`count(*)::int`,
-      eligibleAgents: includeEligibility
+      eligibleAgents: includeEligibility || opening
         ? sql<number | null>`(count(*) filter (where ${dailyFreeDrawEligibility(tx)}))::int`
         : sql<number | null>`null`,
     }).from(schema.freeGameQueue)
@@ -533,9 +553,35 @@ export async function readSeasonEnrollment(
       agentsEntered: counts.agentsEntered,
       seatsPerDraw: MAX_NEW_GAME_PLAYERS,
       nextDrawAt: getNextDailyFreeDrawAt(now),
-      ...(counts.eligibleAgents === null ? {} : { eligibleAgents: counts.eligibleAgents }),
+      ...(opening && counts.eligibleAgents !== null && {
+        openingQueue: { eligibleAgents: counts.eligibleAgents, agents: await readPublicOpeningAgents(tx) },
+      }),
+      ...(includeEligibility && counts.eligibleAgents !== null && { eligibleAgents: counts.eligibleAgents }),
     };
   }, { isolationLevel: "repeatable read", accessMode: "read only" });
+}
+
+async function readPublicOpeningAgents(db: Pick<DrizzleDB, "select">): Promise<SeasonOpeningQueue["agents"]> {
+  const rows = await db.select({
+    id: schema.agentProfiles.id,
+    name: schema.agentProfiles.name,
+    fullBodyReferenceUrl: schema.agentProfiles.fullBodyReferenceUrl,
+    avatarUrl: schema.agentProfiles.avatarUrl,
+    displayName: schema.users.displayName,
+    walletAddress: schema.users.walletAddress,
+  }).from(schema.freeGameQueue)
+    .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
+    .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
+    .where(publiclyVisibleAgentContent())
+    .orderBy(asc(schema.freeGameQueue.joinedAt), asc(schema.freeGameQueue.id));
+
+  return rows.filter(row => !isImportedSyntheticPlayer(row.walletAddress)).map(row => ({
+    id: row.id,
+    name: row.name,
+    architectName: publicPlayerDisplayName(row),
+    fullBodyImageUrl: publicAgentFullBodyHref(row.id, row.fullBodyReferenceUrl),
+    avatarUrl: row.avatarUrl,
+  }));
 }
 
 async function resolveSeason(db: DrizzleDB, idOrSlug: string): Promise<SeasonRow | null> {

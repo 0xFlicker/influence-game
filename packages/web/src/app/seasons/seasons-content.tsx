@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { SeasonOpeningLineup } from "./season-opening-lineup";
 import { SeasonWatch } from "./season-watch";
 import type { SeasonGame } from "./season-games";
 import { AgentVisualUpdateControl } from "./agent-visual-update";
@@ -86,6 +87,7 @@ export function SeasonsContent() {
   const season = dashboard?.season;
   const featuredEvent = events.find(event => event.slug === eventChoice) ?? events.find(event => event.status === "running") ?? events[0];
   const accepting = Boolean(season && season.id === queue?.acceptingSeasonId && season.status === "active");
+  const openingQueue = dashboard?.enrollment?.openingQueue;
   const scheduledOpening = season?.status === "active" && Boolean(season.admissionStartsAt && Date.parse(season.admissionStartsAt) > Date.now());
   const entry = accepting ? queue?.userEntry : null;
   const suggested = dashboard ? recommendedSeasonAgent(agents, dashboard.agentStandings) : undefined;
@@ -112,13 +114,12 @@ export function SeasonsContent() {
     {loading ? <div role="status" className={styles.loading}>Opening the season…</div> : !season ? <section className={styles.hero}><h1>The next season awaits.</h1><p>No season has been announced yet.</p></section> : <>
       {events.length > 1 && <label className={styles.eventSelect}>Championship<select value={featuredEvent?.slug ?? ""} onChange={event => setEventChoice(event.target.value)}>{events.map(event => <option key={event.id} value={event.slug}>{event.name}</option>)}</select></label>}
       {featuredEvent && <ChampionshipEventView key={featuredEvent.id} event={featuredEvent} />}
-      {(!events.length || accepting) && <section className={styles.seasonMasthead} aria-labelledby="season-title" data-testid="season-entry-hero" data-intake={accepting}>
+      {(!events.length || accepting) && <section className={styles.seasonMasthead} aria-labelledby="season-title" data-testid="season-entry-hero" data-intake={accepting} data-preview={accepting && authenticated}>
         <div className={styles.seasonIdentity}>
           <h1 id="season-title">{season.name}</h1>
           {!accepting && <p>{scheduledOpening ? `Entry opens ${new Date(season.admissionStartsAt!).toLocaleString()}.` : season.status === "final" ? "Final standings" : "Entries closed"}</p>}
           {accepting && <div className={styles.directEntry}>
-            <p className={styles.entryState} role="status">{entry ? "" : "Not yet joined"}</p>
-            <h2 className={styles.entryAgentName}>{agent?.name ?? "Your agent"}</h2>
+            {authenticated && agent && <h2 className={styles.entryAgentName}>{agent.name}</h2>}
             <div className={styles.entrySelection}>
               {authenticated && agents.length > 1 && <label>{entry ? "Change agent" : "Your agent"}<select aria-label="Your season agent" value={agent?.id ?? ""} onChange={event => setChoice(event.target.value)} disabled={busy}>{agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
             </div>
@@ -143,9 +144,11 @@ export function SeasonsContent() {
           </div>}
         </div>
         {accepting && dashboard.enrollment && <SeasonEnrollmentPanel enrollment={dashboard.enrollment} className={styles.mastheadEnrollment} />}
-        {accepting && <div className={styles.mastheadArt}><SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent}/></div>}
+        {accepting && authenticated && <div className={styles.mastheadArt}><SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent}/></div>}
       </section>}
-      {!events.length && <SeasonWatch key={season.id} games={games} seasonName={season.name} seasonSlug={season.slug} loading={loading} error={gamesError}/>}
+      {!events.length && (openingQueue && dashboard.enrollment
+        ? <SeasonOpeningLineup key={season.id} queue={openingQueue} enrollment={dashboard.enrollment} />
+        : <SeasonWatch key={season.id} games={games} seasonName={season.name} seasonSlug={season.slug} loading={loading} error={gamesError}/>)}
       <section className={styles.ledger} aria-label="Season standings">
         {events.length > 0 && <div className={styles.ledgerHeading}><h2>The season that brought us here</h2><p>Season points are separate from championship results.</p></div>}
         <SeasonStandings dashboard={{...dashboard, championships: []}} loading={false} seasons={[]} onSelectSeason={selectSeason} />

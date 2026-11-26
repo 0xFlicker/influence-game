@@ -439,6 +439,9 @@ export function SeasonStandings({
   const empty = tab === "agents"
     ? dashboard.agentStandings.length === 0
     : dashboard.architectStandings.length === 0;
+  const seasonStatus = dashboard.enrollment?.openingQueue ? "Awaiting first game"
+    : dashboard.season.status === "active" ? "Season live" : dashboard.season.status === "final" ? "Final" : "Closing";
+  const panelId = `season-${tab}-panel`;
   const agentChampionOwnerId = dashboard.honors?.agentChampion.owner?.publicId;
   const architectChampionOwnerId = dashboard.honors?.architectChampion.owner?.publicId;
   const isDualCrown = Boolean(
@@ -447,13 +450,11 @@ export function SeasonStandings({
     && agentChampionOwnerId === architectChampionOwnerId,
   );
   return (
-    <div className="influence-panel overflow-hidden rounded-xl">
-      <div className="flex flex-col gap-4 border-b border-border-active/60 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-phase">
-            {dashboard.season.status === "active" ? "Season live" : dashboard.season.status}
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-text-primary">{dashboard.season.name}</h2>
+    <div className="text-[#efe8dc]">
+      <div className="flex flex-col gap-4 border-b border-[#806a45]/70 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 pb-2 sm:pb-4">
+          <h2 className="break-words font-[Georgia,serif] text-[clamp(1.8rem,3vw,2.875rem)] leading-tight">{seasons.length ? dashboard.season.name : "Standings"}</h2>
+          {seasons.length > 0 && <p className="mt-1 text-sm text-[#cbbba2]">{seasonStatus}</p>}
           {dashboard.championships?.map(event => <Link key={event.slug} href={`/events/${encodeURIComponent(event.slug)}`} className="mt-3 block text-sm text-amber-200 underline underline-offset-4">{event.name} →</Link>)}
           {seasons.length > 1 && (
             <label className="mt-3 inline-flex items-center gap-2 text-xs influence-copy-muted">
@@ -461,14 +462,14 @@ export function SeasonStandings({
               <select
                 value={dashboard.season.slug}
                 onChange={(event) => onSelectSeason(event.target.value)}
-                className="rounded-md border border-border-active bg-surface-raised px-2 py-1.5 text-xs text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-phase/70"
+                className="border-b border-[#806a45] bg-transparent py-1.5 text-sm text-[#efe8dc] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f2d69a]"
               >
                 {seasons.map((season) => <option key={season.id} value={season.slug}>{season.name} · {season.status}</option>)}
               </select>
             </label>
           )}
         </div>
-        <div className="inline-flex rounded-lg border border-border-active bg-black/20 p-1" role="tablist" aria-label="Championship standings">
+        <div className="flex flex-wrap gap-x-6 sm:shrink-0" role="tablist" aria-label="Championship standings">
           {tabs.map((value, index) => (
             <button
               key={value}
@@ -484,7 +485,7 @@ export function SeasonStandings({
                 if (event.key === "ArrowLeft") { event.preventDefault(); moveTab(value, -1); }
                 if (event.key === "ArrowRight") { event.preventDefault(); moveTab(value, 1); }
               }}
-              className="rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/70 data-[active=true]:bg-white/10 data-[active=true]:text-text-primary text-text-secondary"
+              className="-mb-px min-h-11 border-b-2 border-transparent py-2 text-sm font-medium text-[#cbbba2] hover:text-[#f2d69a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f2d69a] data-[active=true]:border-[#d8b575] data-[active=true]:text-[#f2d69a]"
               data-active={tab === value}
             >
               {value === "agents" ? "Agent Crown" : "Architect Crown"}
@@ -494,7 +495,7 @@ export function SeasonStandings({
       </div>
 
       {dashboard.honors && (
-        <div className="grid gap-px border-b border-border-active/60 bg-border-active sm:grid-cols-2">
+        <div className="grid gap-6 border-b border-[#806a45]/50 py-5 sm:grid-cols-2">
           <CrownHonor
             label="Agent Champion"
             winner={<AgentProfileLink agentId={dashboard.honors.agentChampion.agentId} className="hover:underline">{dashboard.honors.agentChampion.agentName}</AgentProfileLink>}
@@ -526,21 +527,24 @@ export function SeasonStandings({
       )}
 
       {empty ? (
-        <div className="p-8 text-center text-sm influence-copy-muted">No eligible results in this season yet.</div>
+        <p id={panelId} role="tabpanel" aria-labelledby={`season-${tab}-tab`} className="py-5 text-sm text-[#cbbba2]">No eligible results in this season yet.</p>
       ) : tab === "agents" ? (
-        <div id="season-agents-panel" className="overflow-x-auto" role="tabpanel" aria-labelledby="season-agents-tab">
-          <table className="w-full min-w-[640px]">
-            <thead><tr className="border-b border-border-active/60">
-              {['Rank', 'Agent', 'Points', 'Wins', 'Games', 'Finish score'].map((label) => (
-                <th key={label} className="influence-table-header px-4 py-3 text-left text-xs font-medium">{label}</th>
-              ))}
+        <div id="season-agents-panel" role="tabpanel" aria-labelledby="season-agents-tab">
+          <table className="w-full table-fixed text-sm">
+            <thead><tr className="border-b border-[#806a45]/50 text-left text-xs font-medium text-[#cbbba2]">
+              <th scope="col" className="w-10 py-3 md:w-16">Rank</th>
+              <th scope="col" className="py-3">Agent</th>
+              <th scope="col" className="w-14 py-3 text-right md:w-24">Points</th>
+              <th scope="col" className="hidden w-20 py-3 text-right md:table-cell">Wins</th>
+              <th scope="col" className="hidden w-20 py-3 text-right md:table-cell">Games</th>
+              <th scope="col" className="hidden w-28 py-3 text-right md:table-cell">Finish score</th>
             </tr></thead>
             <tbody>{dashboard.agentStandings.map((standing) => (
-              <tr key={standing.agentId} className="influence-table-row group">
-                <td className="px-4 py-3 font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</td>
-                <td className="px-4 py-3">
+              <tr key={standing.agentId} className="border-b border-[#806a45]/30 align-top">
+                <td className="py-4 tabular-nums text-[#cbbba2]" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</td>
+                <td className="break-words py-4 pr-2">
                   <AgentProfileLink agentId={standing.agentId} className="text-sm font-medium text-text-primary hover:underline">{standing.agentName}</AgentProfileLink>
-                  <div className="influence-copy-muted text-xs">
+                  <div className="text-xs text-[#cbbba2]">
                     <PlayerProfileLink
                       player={standing.owner}
                       className="hover:text-phase hover:underline"
@@ -548,24 +552,27 @@ export function SeasonStandings({
                       {standing.ownerName ?? "Anonymous architect"}
                     </PlayerProfileLink>
                   </div>
+                  <div className="mt-1 text-xs text-[#cbbba2] md:hidden">
+                    {standing.wins} {standing.wins === 1 ? "win" : "wins"} · {standing.gamesPlayed} {standing.gamesPlayed === 1 ? "game" : "games"} · {(standing.averageNormalizedPlacement * 100).toFixed(0)}% finish score
+                  </div>
                 </td>
-                <td className="px-4 py-3 font-mono text-base font-semibold text-text-primary">{standing.totalPoints}</td>
-                <td className="px-4 py-3 text-sm influence-copy">{standing.wins}</td>
-                <td className="px-4 py-3 text-sm influence-copy-muted">{standing.gamesPlayed}</td>
-                <td className="px-4 py-3 text-sm influence-copy-muted">{(standing.averageNormalizedPlacement * 100).toFixed(0)}%</td>
+                <td className="break-words py-4 text-right font-semibold tabular-nums">{standing.totalPoints}</td>
+                <td className="hidden py-4 text-right tabular-nums text-[#cbbba2] md:table-cell">{standing.wins}</td>
+                <td className="hidden py-4 text-right tabular-nums text-[#cbbba2] md:table-cell">{standing.gamesPlayed}</td>
+                <td className="hidden py-4 text-right tabular-nums text-[#cbbba2] md:table-cell">{(standing.averageNormalizedPlacement * 100).toFixed(0)}%</td>
               </tr>
             ))}</tbody>
           </table>
         </div>
       ) : (
-        <div id="season-architects-panel" className="divide-y divide-border-active/50" role="tabpanel" aria-labelledby="season-architects-tab">
+        <div id="season-architects-panel" className="divide-y divide-[#806a45]/30 border-b border-[#806a45]/30" role="tabpanel" aria-labelledby="season-architects-tab">
           {dashboard.architectStandings.map((standing) => (
             <article
               key={standing.owner?.publicId ?? `${standing.rank}:${standing.ownerName ?? "anonymous"}`}
-              className="group grid gap-3 px-5 py-4 transition-colors hover:bg-white/[0.025] sm:grid-cols-[3rem_1fr_auto] sm:items-center"
+              className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] gap-y-2 py-4 md:grid-cols-[4rem_minmax(0,1fr)_auto]"
             >
-              <div className="font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</div>
-              <div>
+              <div className="text-sm tabular-nums text-[#cbbba2]" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</div>
+              <div className="min-w-0 break-words pr-3">
                 <h3 className="text-sm font-medium text-text-primary">
                   <PlayerProfileLink
                     player={standing.owner}
@@ -576,15 +583,15 @@ export function SeasonStandings({
                 </h3>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                   {standing.contributions.map((item) => (
-                    <span key={item.agentId} className="text-xs influence-copy-muted">
-                      {item.agentName} <span className="font-mono text-white/55">{item.sourcePoints} × {item.weightPercent}%</span>
+                    <span key={item.agentId} className="text-xs text-[#cbbba2]">
+                      {item.agentName} <span className="tabular-nums text-[#cbbba2]">{item.sourcePoints} × {item.weightPercent}%</span>
                     </span>
                   ))}
                 </div>
               </div>
-              <div className="text-left sm:text-right">
-                <div className="font-mono text-lg font-semibold text-text-primary">{(standing.totalPointsHundredths / 100).toFixed(2)}</div>
-                <div className="influence-copy-muted text-[11px] uppercase tracking-wider">weighted points</div>
+              <div className="text-right">
+                <div className="text-base font-semibold tabular-nums">{(standing.totalPointsHundredths / 100).toFixed(2)}</div>
+                <div className="text-[11px] text-[#cbbba2]">weighted points</div>
               </div>
             </article>
           ))}
@@ -604,10 +611,10 @@ function CrownHonor({
   detail: ReactNode;
 }) {
   return (
-    <div className="bg-surface px-5 py-4">
-      <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-phase">{label}</div>
+    <div className="min-w-0 break-words">
+      <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-[#d8b575]">{label}</div>
       <div className="mt-1 text-base font-semibold text-text-primary">{winner}</div>
-      <div className="influence-copy-muted mt-1 text-xs">{detail}</div>
+      <div className="mt-1 text-xs text-[#cbbba2]">{detail}</div>
     </div>
   );
 }

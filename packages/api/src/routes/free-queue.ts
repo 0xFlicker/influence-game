@@ -1,6 +1,5 @@
 import {CURRENT_INFLUENCE_GAME_SCHEMA_VERSION} from "@influence/engine/influence-game-schema";
 import { CURRENT_INFLUENCE_DECISION_CONTRACT_VERSION } from "@influence/engine/influence-decision-speech";
-import { houseFullBodyUrl } from "@influence/engine/house-character-art";
 import { CURRENT_EMPOWER_REVOTE_VERSION } from "@influence/engine/empower-revote-rules";
 import { DEFAULT_CONVERSATION_POLICY } from "@influence/engine";
 /**
@@ -40,9 +39,6 @@ import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   DEFAULT_FORMAT_MANIFEST,
   MAX_NEW_GAME_PLAYERS,
-  MIN_NEW_GAME_PLAYERS,
-  pickHouseCast,
-  getHousePortraitGender,
 } from "@influence/engine";
 import {
   validateGameStartReadiness,
@@ -255,7 +251,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     }
 
     const maxPlayers = MAX_NEW_GAME_PLAYERS;
-    const minPlayers = MIN_NEW_GAME_PLAYERS;
+    const minPlayers = maxPlayers;
 
     // Create the game
     const gameId = randomUUID();
@@ -285,8 +281,6 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     const user = c.get("user");
 
-    const addedPlayers: Array<{ playerId: string; userId: string; agentProfileId: string; agentName: string }> = [];
-    let slotsToFill = maxPlayers;
     let supersededGameCount = 0;
     const admission = await db.transaction(async (tx) => {
       await acquireDailyFreeLocks(tx);
@@ -331,10 +325,10 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       const eligibleEntries = (await tx.select({ entry: schema.freeGameQueue }).from(schema.freeGameQueue)
         .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
         .where(dailyFreeDrawEligibility(tx))).map(row => row.entry);
-      if (eligibleEntries.length < 2) {
+      if (eligibleEntries.length < minPlayers) {
         return {
           drawn: false as const,
-          reason: `Not enough eligible players in queue (${eligibleEntries.length}). Need at least 2.`,
+          reason: `Not enough eligible players in queue (${eligibleEntries.length}). Need ${minPlayers} eligible agents.`,
         };
       }
       const shuffled = [...eligibleEntries].sort(() => Math.random() - 0.5);
@@ -397,46 +391,12 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
       // Add picked players to the game.
       for (const entry of picked) {
-        const playerId = randomUUID();
-        const admitted = await admitOwnedSeatInTransaction(tx, {
-          playerId,
+        await admitOwnedSeatInTransaction(tx, {
+          playerId: randomUUID(),
           gameId,
           userId: entry.userId,
           agentProfileId: entry.agentProfileId,
         });
-
-        addedPlayers.push({
-          playerId,
-          userId: entry.userId,
-          agentProfileId: admitted.projection.profile.id,
-          agentName: admitted.projection.profile.name,
-        });
-      }
-
-      // Fill remaining slots with House agents.
-      slotsToFill = maxPlayers - addedPlayers.length;
-      if (slotsToFill > 0) {
-        const existingNames = addedPlayers.map((p) => p.agentName);
-        const cast = pickHouseCast(slotsToFill, { excludeNames: existingNames });
-
-        for (let i = 0; i < slotsToFill; i++) {
-          const { name, personality: archetype } = cast[i]!;
-          const aiPlayerId = randomUUID();
-          await tx.insert(schema.gamePlayers).values({
-              id: aiPlayerId,
-              gameId,
-              userId: null,
-              persona: JSON.stringify({
-                name,
-                gender: getHousePortraitGender(name, archetype),
-                fullBodyReferenceUrl: houseFullBodyUrl(name, archetype),
-                personality: archetype,
-                strategyHints: null,
-                personaKey: archetype,
-              }),
-              agentConfig: JSON.stringify({ temperature: 0.9 }),
-            });
-        }
       }
 
       const pickedIds = new Set(picked.map((entry) => entry.id));
@@ -466,8 +426,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       drawn: true,
       gameId,
       gameSlug: slug,
-      playersDrawn: addedPlayers.length,
-      aiPlayersFilled: slotsToFill,
+      playersDrawn: maxPlayers,
       totalPlayers: maxPlayers,
       supersededGameCount,
       rated: admission.rated,
@@ -512,9 +471,9 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       .from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, game.id));
 
-    if (currentPlayers.length < game.minPlayers) {
+    if (currentPlayers.length < MAX_NEW_GAME_PLAYERS) {
       return c.json({
-        error: `Not enough players. Need at least ${game.minPlayers}, have ${currentPlayers.length}`,
+        error: `Not enough players. Need at least ${MAX_NEW_GAME_PLAYERS}, have ${currentPlayers.length}`,
       }, 400);
     }
 

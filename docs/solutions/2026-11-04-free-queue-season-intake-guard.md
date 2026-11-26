@@ -5,7 +5,9 @@ accepting active season, and closeout clears standing entries. Draw previously
 allowed stale entries to create an unrated free game after admission stopped.
 
 New draws now check the accepting season under the same transaction lock as
-join/closeout, then bind using that exact admission timestamp. Existing draw
+join/closeout, then bind using that exact admission timestamp. A draw needs
+twelve eligible standing entries before creating a lobby. With fewer eligible
+entries, the draw returns a reason and preserves the queue and wait counters. Existing draw
 receipts and waiting-game recovery remain idempotent. The scheduler start route
 requires an assigned season, preserving start/recovery for games admitted before
 closure while closing the legacy-unassigned-lobby bypass. Custom routes are
