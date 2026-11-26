@@ -517,7 +517,9 @@ legacy metadata digest for an exact lookup.
 An aggregate PostgreSQL bucket for committed new accounts. The configured rate
 sets the capacity and the continuous refill per 24 hours. A single-use campaign
 session can bypass the bucket during its 24-hour lifetime. All new accounts
-also require human verification. See [signup admission](docs/authentication/signup-admission.md).
+also require human verification. Signup checks estimated availability before
+starting provider verification and claims the slot when the account commits.
+See [signup admission](docs/authentication/signup-admission.md).
 
 ## Public player profile
 

@@ -1,4 +1,7 @@
-type VerificationPrompt = (nextAvailableAt?: string, notice?: string) => Promise<string>;
+export type SignupStep =
+  | { kind: "availability"; nextAvailableAt?: string }
+  | { kind: "verification"; notice?: string };
+type VerificationPrompt = (step: SignupStep) => Promise<string | undefined>;
 let prompt: VerificationPrompt | null = null;
 let pending = 0;
 const listeners = new Set<() => void>();
@@ -18,10 +21,10 @@ export function installSignupPrompt(handler: VerificationPrompt) {
   return () => { if (prompt === handler) prompt = null; };
 }
 
-export function askForSignupVerification(nextAvailableAt?: string, notice?: string) {
-  if (!prompt) return Promise.reject(new Error("Human verification is unavailable. Reload and try again."));
+export function requestSignupStep(step: SignupStep) {
+  if (!prompt) return Promise.reject(new Error("Signup is temporarily unavailable. Reload and try again."));
   changePending(1);
-  return prompt(nextAvailableAt, notice).finally(() => changePending(-1));
+  return prompt(step).finally(() => changePending(-1));
 }
 
 export function registerCampaignRedemption(result: Promise<unknown>) {

@@ -13,6 +13,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { AccountLegalConsent } from "@/components/account-legal-consent";
+import { SignupAvailabilityGate } from "@/components/signup-availability";
 import {
   acceptCurrentLegalTermsForSession,
   ApiError,
@@ -1071,7 +1072,7 @@ export function ClerkPasswordFlow({
           these details to continue.
         </p>
         {mode === "full" ? (
-          <>
+          <SignupAvailabilityGate>
             <AccountLegalConsent
               checked={acceptedLegalTerms}
               disabled={busy}
@@ -1088,7 +1089,7 @@ export function ClerkPasswordFlow({
             >
               {busy ? "Please wait…" : "Create account"}
             </button>
-          </>
+          </SignupAvailabilityGate>
         ) : (
           <p role="alert" className="text-sm text-amber-300">
             New account setup is temporarily unavailable. Existing accounts

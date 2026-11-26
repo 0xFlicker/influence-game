@@ -35,6 +35,10 @@ The page had a `/games` 404, consistent with—but not proof of—that path.
   Do not start competing mutations while an old operation is unresolved. Reject
   cancelled authentication attempts before exchanging a late provider token.
 - Keep the legacy CAPTCHA mount in the flow panel across steps.
+- Check signup capacity before a visitor starts the Clerk signup form. If
+  capacity changes after verification, render the wait in the existing panel
+  and retain the verified session. Once a slot becomes available, retry account
+  creation so the API can check the invite requirement before showing Turnstile.
 
 ## Verification
 

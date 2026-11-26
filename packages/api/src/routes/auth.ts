@@ -139,14 +139,18 @@ export function createAuthRoutes(
         result = error;
       }
     }
-    return async (tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0]) => {
-      if (typeof result !== "string") {
+    type SignupTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+    return {
+      checkInviteRequired: async (tx: SignupTransaction) => {
         const status = await signupAvailability(tx, campaign);
         if (!status.available) throw new SignupAdmissionError(
           "SIGNUP_LIMIT_REACHED", "Signups are full.", 429, status.nextAvailableAt!);
-        throw result;
-      }
-      await admitSignup(tx, result, campaign);
+        return inviteIsRequired(tx);
+      },
+      commit: async (tx: SignupTransaction) => {
+        if (typeof result !== "string") throw result;
+        await admitSignup(tx, result, campaign);
+      },
     };
   }
 
@@ -246,20 +250,20 @@ export function createAuthRoutes(
     const provider = verification.status === "verified"
       ? verification.evidence.provider
       : verification.provider;
-    const admit = await prepareSignup(c, body.intent === "create_account" ? body.turnstileToken : undefined);
+    const signup = await prepareSignup(c, body.intent === "create_account" ? body.turnstileToken : undefined);
     const authentication = await resolveAccountAuthentication(db, {
       provider,
       subject,
       evidence: verification.status === "verified" ? verification.evidence : null,
       compatibilityBridgeEnabled,
       allowAccountCreation: body.intent === "create_account",
-      checkInviteRequired: (tx) => inviteIsRequired(tx),
+      checkInviteRequired: signup.checkInviteRequired,
       redeemInvite: typeof body.inviteCode === "string"
         ? (tx, userId) => redeemCode(tx, body.inviteCode!, userId)
         : undefined,
       beforeCommit: body.intent === "create_account"
         ? async (tx, userId) => {
-          await admit(tx);
+          await signup.commit(tx);
           await recordCurrentLegalAcceptance(tx, userId, "account_creation", body.deploymentSha as string);
         }
         : undefined,
@@ -352,14 +356,14 @@ export function createAuthRoutes(
       }, 503);
     }
 
-    const admit = await prepareSignup(c, body.turnstileToken);
+    const signup = await prepareSignup(c, body.turnstileToken);
     const authentication = await resolveAccountAuthentication(db, {
       provider: verification.evidence.provider,
       subject: verification.evidence.subject,
       evidence: verification.evidence,
       compatibilityBridgeEnabled: true,
-      beforeCommit: admit,
-      checkInviteRequired: (tx) => inviteIsRequired(tx),
+      beforeCommit: signup.commit,
+      checkInviteRequired: signup.checkInviteRequired,
       redeemInvite: typeof body.inviteCode === "string"
         ? (tx, userId) => redeemCode(tx, body.inviteCode as string, userId)
         : undefined,
@@ -459,12 +463,12 @@ export function createAuthRoutes(
     );
     if (!verification.ok) return verification.response;
 
-    const admit = await prepareSignup(c, request.body.turnstileToken);
+    const signup = await prepareSignup(c, request.body.turnstileToken);
     const outcome = await createManagedAccountAuthentication(
       db,
       verification.evidence,
       {
-        checkInviteRequired: (tx) => inviteIsRequired(tx),
+        checkInviteRequired: signup.checkInviteRequired,
         redeemInvite: typeof request.body.inviteCode === "string"
           ? (tx, userId) => redeemCode(
             tx,
@@ -473,7 +477,7 @@ export function createAuthRoutes(
           )
           : undefined,
         beforeCommit: async (tx, userId) => {
-          await admit(tx);
+          await signup.commit(tx);
           await recordCurrentLegalAcceptance(tx, userId, "account_creation", request.body.deploymentSha!);
         },
       },

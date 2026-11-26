@@ -352,15 +352,16 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
     <MiniAppProvider>
       <E2EAuthContext.Provider value={e2eAuth}>
         <QueryClientProvider client={queryClient}>
-          <InfluenceAuthLayer
-            managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
-            clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
-            privyAppId={privyAppId ?? ""}
-          >
-            <SignupAdmission />
-            <FarcasterMiniAppAuthBootstrap />
-            {children}
-          </InfluenceAuthLayer>
+          <SignupAdmission>
+            <InfluenceAuthLayer
+              managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
+              clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
+              privyAppId={privyAppId ?? ""}
+            >
+              <FarcasterMiniAppAuthBootstrap />
+              {children}
+            </InfluenceAuthLayer>
+          </SignupAdmission>
         </QueryClientProvider>
       </E2EAuthContext.Provider>
     </MiniAppProvider>

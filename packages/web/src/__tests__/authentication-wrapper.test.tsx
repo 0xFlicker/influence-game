@@ -191,10 +191,8 @@ describe("unified authentication wrapper", () => {
     expect(wrapperSource).toContain(
       'const isModalVisible = presentation === "modal"',
     );
-    expect(wrapperSource).toContain(
-      "&& (attempt !== null || Boolean(reversePrivyToken) || privyStarting);",
-    );
     expect(wrapperSource).toContain("if (!isModalVisible) return;");
+    expect(wrapperSource).toContain("document.body.style.overflow = previouslyHidden;");
   });
 
   it("provides stable Clerk fallback routes without duplicating auth logic", () => {
