@@ -38,7 +38,7 @@ export async function resolveHouseSpectatorGame(
     throw new HouseInspectionError("not_accessible", "Game is unavailable");
   return game;
 }
-export function houseGameIdentity(game: HouseGame) {
+export function houseGameIdentity(game: Pick<HouseGame, "id" | "slug" | "gameKind" | "status" | "createdAt">) {
   return {
     id: game.id,
     slug: game.slug,

@@ -1,0 +1,14 @@
+# The build context contains the reviewed Overclaw Cargo lock and Responses proxy.
+FROM rust:1.98-bookworm AS relay
+WORKDIR /build
+COPY overclaw/Cargo.toml overclaw/Cargo.lock ./
+COPY overclaw/src/proxy.rs ./src/proxy.rs
+COPY conversation/relay-lib.rs ./src/lib.rs
+COPY conversation/house-discord-relay.rs ./src/bin/
+RUN cargo build --locked --release --bin house-discord-relay
+
+FROM oven/bun:1.3.14
+COPY --from=relay /build/target/release/house-discord-relay /usr/local/bin/
+WORKDIR /opt/house
+COPY conversation/gateway.ts conversation/policy.ts conversation/sandbox.ts ./
+COPY conversation/gateway-entry.sh ./
