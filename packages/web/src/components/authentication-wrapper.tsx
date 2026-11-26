@@ -22,7 +22,7 @@ type AuthenticationRequestDetail = {
   email?: string;
 };
 
-type PrivyAccountHandoffState = "creation_required" | "account_exists";
+type PrivyAccountHandoffState = "unlinked" | "creating" | "account_exists";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -142,7 +142,7 @@ export function AuthenticationWrapper({
   const selectPrimaryIntent = useCallback((
     nextIntent: "sign_in" | "create_account",
   ) => {
-    if (nextIntent === (showingSignupStep ? "create_account" : intent)) return;
+    if (!privyAccountHandoff && nextIntent === (showingSignupStep ? "create_account" : intent)) return;
     if (showingSignupStep) cancelSignupStep?.();
     privySwitchGenerationRef.current += 1;
     cancelAuthenticationAttempt();
@@ -160,6 +160,7 @@ export function AuthenticationWrapper({
     beginAuthenticationAttempt,
     cancelAuthenticationAttempt,
     intent,
+    privyAccountHandoff,
     cancelSignupStep,
     showingSignupStep,
   ]);
@@ -183,7 +184,7 @@ export function AuthenticationWrapper({
       }
       if (outcome.kind === "account_creation_required") {
         setAcceptedPrivyLegalTerms(false);
-        setPrivyAccountHandoff("creation_required");
+        setPrivyAccountHandoff("unlinked");
         setAttempt(beginAuthenticationAttempt());
         return;
       }
@@ -318,7 +319,7 @@ export function AuthenticationWrapper({
       document.body.style.overflow = previouslyHidden;
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [close, isModalVisible]);
+  }, [close, isModalVisible, privyAccountHandoff]);
 
   // The invite prompt owns the pending Privy attempt and the page's focus.
   if (needsInvite || !open || (!attempt && !reversePrivyToken && !privyStarting && !signupActive)) return null;
@@ -338,7 +339,7 @@ export function AuthenticationWrapper({
       onAcceptedLegalTermsChange={setAcceptedPrivyLegalTerms}
       onContinue={() => {
         beginPrivyAuthentication(
-          privyAccountHandoff === "creation_required"
+          privyAccountHandoff === "creating"
             ? {
               intent: "create_account",
               legalAcceptance: PRESENTED_LEGAL_ACCEPTANCE,
@@ -346,6 +347,11 @@ export function AuthenticationWrapper({
             : { intent: "sign_in" },
         );
       }}
+      onStartSignup={() => {
+        setIntent("create_account");
+        setPrivyAccountHandoff("creating");
+      }}
+      onEmailSignIn={managedAuthMode === "disabled" ? undefined : () => selectPrimaryIntent("sign_in")}
       onUseDifferent={useDifferentPrivyAccount}
       switchingAccount={switchingPrivyAccount}
       switchError={privySwitchError}
@@ -484,6 +490,8 @@ function PrivyAccountHandoff({
   acceptedLegalTerms,
   onAcceptedLegalTermsChange,
   onContinue,
+  onStartSignup,
+  onEmailSignIn,
   onUseDifferent,
   switchingAccount,
   switchError,
@@ -492,58 +500,60 @@ function PrivyAccountHandoff({
   acceptedLegalTerms: boolean;
   onAcceptedLegalTermsChange: (accepted: boolean) => void;
   onContinue: () => void;
+  onStartSignup: () => void;
+  onEmailSignIn?: () => void;
   onUseDifferent: () => void;
   switchingAccount: boolean;
   switchError: string | null;
 }) {
-  if (state === "account_exists") {
-    return (
-      <div className="space-y-5">
-        <h2 tabIndex={-1} className="influence-section-title text-xl outline-none">
-          Account already exists
-        </h2>
-        <p className="influence-copy text-sm">
-          This Privy account is already connected to The House. Continue to
-          sign in.
-        </p>
-        <button type="button" disabled={switchingAccount} className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={onContinue}>
-          Continue with Privy
-        </button>
-        <button type="button" disabled={switchingAccount} className="influence-link text-sm" onClick={onUseDifferent}>
-          {switchingAccount ? "Signing out…" : "Use a different Privy account"}
-        </button>
-        {switchError ? <PrivySwitchError message={switchError} /> : null}
-      </div>
-    );
-  }
-
+  const unlinked = state === "unlinked";
+  const creating = state === "creating";
   return (
     <div className="space-y-5">
       <h2 tabIndex={-1} className="influence-section-title text-xl outline-none">
-        Create your account
+        {unlinked ? "Privy sign-in has no linked account" : creating ? "Create your account" : "Account already exists"}
       </h2>
-      <p className="influence-copy text-sm">
-        This Privy sign-in isn&apos;t connected to a House account yet. Create
-        one to continue.
-      </p>
-      <SignupAvailabilityGate>
-        <AccountLegalConsent
-          checked={acceptedLegalTerms}
-          disabled={switchingAccount}
-          onChange={onAcceptedLegalTermsChange}
-        />
-        <button
-          type="button"
-          disabled={switchingAccount || !acceptedLegalTerms}
-          className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
-          onClick={onContinue}
-        >
+      {unlinked ? (
+        <p className="influence-copy text-sm">Use the sign-in method you originally used for The House.</p>
+      ) : creating ? (
+        <SignupAvailabilityGate>
+          <AccountLegalConsent
+            checked={acceptedLegalTerms}
+            disabled={switchingAccount}
+            onChange={onAcceptedLegalTermsChange}
+          />
+          <button type="button" disabled={switchingAccount || !acceptedLegalTerms}
+            className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={onContinue}>
+            Continue with Privy
+          </button>
+        </SignupAvailabilityGate>
+      ) : (
+        <button type="button" disabled={switchingAccount}
+          className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={onContinue}>
           Continue with Privy
         </button>
-      </SignupAvailabilityGate>
-      <button type="button" disabled={switchingAccount} className="influence-link text-sm" onClick={onUseDifferent}>
-        {switchingAccount ? "Signing out…" : "Use a different Privy account"}
-      </button>
+      )}
+      {unlinked && onEmailSignIn && (
+        <button type="button" disabled={switchingAccount}
+          className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={onEmailSignIn}>
+          Sign in with email
+        </button>
+      )}
+      <div className="flex flex-wrap items-center gap-x-5">
+        {creating && onEmailSignIn && (
+          <button type="button" disabled={switchingAccount} className="influence-link min-h-11 text-sm" onClick={onEmailSignIn}>
+            Back to sign in
+          </button>
+        )}
+        <button type="button" disabled={switchingAccount} className="influence-link min-h-11 text-sm" onClick={onUseDifferent}>
+          {switchingAccount ? "Signing out…" : "Use a different Privy account"}
+        </button>
+        {unlinked && (
+          <button type="button" disabled={switchingAccount} className="influence-link min-h-11 text-sm" onClick={onStartSignup}>
+            Create account
+          </button>
+        )}
+      </div>
       {switchError ? <PrivySwitchError message={switchError} /> : null}
     </div>
   );
