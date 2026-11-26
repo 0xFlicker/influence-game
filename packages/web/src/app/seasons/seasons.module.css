@@ -16,125 +16,47 @@
 
 .playerCaption[data-playing="false"]{visibility:hidden;pointer-events:none}
 
-/* The title, entry controls, and enrollment facts sit on the page itself. */
-.navigation { margin-bottom: clamp(36px, 5vw, 68px); }
-.navigation select,
-.eventSelect select,
-.entrySelection select {
-  border: 0;
-  border-bottom: 1px solid #806a45;
-  border-radius: 0;
-  background: transparent;
-  color: #f2e5cf;
-  color-scheme: dark;
-}
-.navigation select { padding: 8px 22px 8px 0; }
-.seasonMasthead {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 22px 40px;
-  min-height: 0;
-  padding: 0;
-  background: none;
-  border: 0;
-  overflow: visible;
-}
-.seasonMasthead[data-preview="true"] {
-  grid-template-columns: minmax(0, 1fr) minmax(130px, .8fr);
-}
-.seasonIdentity { min-width: 0; max-width: none; }
-.seasonIdentity h1 {
-  margin: 0;
-  font-size: clamp(42px, 6.5vw, 88px);
-  line-height: 1;
-  overflow-wrap: anywhere;
-}
-.seasonIdentity > p:not(.entryStatus) { margin-top: 12px; }
-.directEntry { display: grid; justify-items: start; gap: 13px; margin-top: 20px; }
-.entryAgentName {
-  font: 500 clamp(22px, 3vw, 34px)/1.1 Georgia,serif;
-  overflow-wrap: anywhere;
-}
-.entrySelection { width: min(100%, 290px); }
-.entrySelection:empty, .entryUtilities:empty, .entryNotice:empty { display: none; }
-.entrySelection label { display: grid; gap: 3px; font-size: 13px; color: #cbbba2; }
-.entrySelection select {
-  width: 100%;
-  min-height: 44px;
-  padding: 6px 17px 6px 0;
-  font-size: 16px;
-}
-.entryPrimary .joinAction {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #f2d69a;
-  font-weight: 600;
-  text-align: left;
-  text-decoration: underline;
-  text-underline-offset: .3em;
-}
-.entryPrimary .joinAction:hover { color: #fff0d1; }
-.entryPrimary .joinAction:disabled { opacity: .65; }
-.entryConfirmed { display: inline-flex; min-height: 44px; align-items: center; color: #f2d69a; }
-.entryUtilities { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: #cbbba2; }
-.entryUtilities button, .entryUtilities a { text-decoration: underline; text-underline-offset: 4px; }
-.entryNotice { color: #cbbba2; font-size: 13px; line-height: 1.5; }
-.mastheadArt {
-  position: relative;
-  inset: auto;
-  grid-column: 2;
-  grid-row: 1 / 3;
-  min-width: 0;
-  opacity: 1;
-  overflow: visible;
-  mask-image: none;
-  background: radial-gradient(ellipse at 50% 50%, #5237225c, transparent 65%);
-}
-.mastheadArt .agentArt {
-  display: grid;
-  height: 100%;
-  max-height: 420px;
-  min-height: 170px;
-}
-.mastheadArt .fullBody {
-  width: 100%;
-  height: 100%;
-  max-height: 420px;
-  object-fit: contain;
-  object-position: center;
-}
-.mastheadArt .headshot {
-  width: min(70%, 260px);
-  height: auto;
-  border-radius: 50%;
-  mask-image: none;
-}
-.mastheadArt .emptyPortrait {
-  margin: auto;
-  width: min(70%, 170px);
-  background: transparent;
-  border: 0;
-}
-.ledger { margin-top: clamp(54px, 7vw, 96px); }
-.seasonWatch { margin-top: clamp(52px, 7vw, 96px); }
-.watchBadge { border: 0; border-radius: 0; }
-.watchAction { border: 0; background: none; text-decoration: underline; text-underline-offset: .3em; }
-@media (max-width: 600px) {
-  .navigation { gap: 22px; }
-  .navigation select { width: auto; max-width: 100%; justify-self: start; }
-  .seasonMasthead[data-preview="true"] {
-    grid-template-columns: minmax(0, 1.2fr) minmax(105px, 1fr);
-    gap: 22px 14px;
-  }
-  .mastheadArt { grid-row: 1; }
-  .mastheadArt .agentArt { max-height: 250px; }
-  .mastheadArt .fullBody { max-height: 250px; }
-}
+/* Entry actions stay in the hero; only artwork crosses its upper boundary. */
+.seasonMasthead{margin-top:80px;min-height:480px;overflow:visible;background:none;padding:30px clamp(20px,3vw,52px);align-items:flex-start}
+.seasonMasthead::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#080807ed,#17100a55 60%,#080807aa),url('/agent-creation-hall.webp') center 48%/cover}
+.seasonIdentity{width:46%;max-width:560px;min-width:0}
+.seasonIdentity h1{font-size:clamp(32px,3.4vw,56px);margin-bottom:14px}
+.directEntry{display:grid;grid-template-rows:24px 50px 74px 62px minmax(32px,auto) 28px;align-items:start}
+.entryState{color:#dfc593;font-size:15px;margin:0}
+.entryAgentName{font:500 clamp(23px,2vw,32px)/1.2 Georgia,serif;overflow-wrap:anywhere;margin:0}
+.entrySelection{min-width:0;max-width:320px;width:100%}
+.entrySelection label{display:grid;gap:6px;font-size:13px;color:#c6b59b}
+.entrySelection select{width:100%;min-height:42px;border:1px solid #8d7650;border-radius:3px;background:#15120fee;color:#f2e5cf;padding:8px 32px 8px 12px;font-size:16px}
+.entryPrimary{display:flex;align-items:flex-start}
+.entryPrimary .joinAction{margin:0;min-width:180px;text-align:center;font-size:17px;padding:13px 24px}
+.entryConfirmed{display:inline-flex;align-items:center;min-height:51px;color:#e2c595;font-size:20px}
+.entryUtilities{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px 24px;font-size:13px;color:#c8b99d}
+.entryUtilities button,.entryUtilities a{text-decoration:underline;text-underline-offset:4px}
+.entryNotice{margin:0;color:#c8b99d;font-size:12px;line-height:1.5}
+.mastheadArt{inset:-70px 1% 0 48%;overflow:hidden;mask-image:linear-gradient(to bottom,#000 93%,transparent);z-index:1}
+.mastheadArt .agentArt{height:980px;display:block}
+.mastheadArt .fullBody{height:980px;max-height:none;width:100%;object-fit:contain;object-position:center top}
+.mastheadArt .headshot{width:min(100%,440px);height:500px;margin:0 auto;object-fit:cover;object-position:top;border-radius:180px 180px 0 0;mask-image:linear-gradient(to bottom,#000 75%,transparent)}
+.mastheadArt .emptyPortrait{margin:100px auto 0;width:min(80%,250px)}
+.entrySelection select:focus-visible,.entryUtilities button:focus-visible,.entryPrimary a:focus-visible,.entryPrimary button:focus-visible{outline:2px solid #f3d396;outline-offset:4px}
+@media(max-width:600px){.seasonMasthead{margin-top:70px;min-height:470px;padding:25px 18px}.seasonIdentity{width:65%;max-width:none}.seasonIdentity h1{font-size:34px}.directEntry{grid-template-rows:24px 64px 74px 62px minmax(32px,auto) 38px}.entryAgentName{font-size:24px}.entrySelection{max-width:220px}.entryPrimary .joinAction{min-width:0;font-size:16px;padding:13px 18px}.mastheadArt{inset:-60px -12px 0 52%;opacity:1}.mastheadArt .agentArt,.mastheadArt .fullBody{height:700px;width:350px;max-width:none}.mastheadArt .fullBody{object-position:left top}.mastheadArt .headshot{width:230px;max-width:none;height:330px;object-fit:cover;margin:0}.mastheadArt .emptyPortrait{width:130px;margin-top:80px}.seasonIdentity{z-index:2}.entryUtilities{gap:8px 16px}}
+/* Reserved row gaps keep fields readable without expanding on selection. */
+.directEntry{grid-template-rows:24px 50px 74px 62px minmax(32px,auto) 28px;row-gap:10px}
+.seasonMasthead{min-height:520px}
+.mastheadArt .fullBody{transform:translateY(-55px)}
+@media(max-width:600px){.seasonMasthead{min-height:520px}.directEntry{grid-template-rows:24px 64px 74px 62px minmax(32px,auto) 38px;row-gap:8px}.mastheadArt .fullBody{transform:translateY(-35px)}}
+@media(max-width:600px){.mastheadArt .agentArt,.mastheadArt .fullBody{width:280px}.mastheadArt .fullBody{transform:translate(-25px,-35px)}}
+/* Preserve the entire image top even when a cutout has no transparent padding. */
+.seasonMasthead{margin-top:150px}
+.mastheadArt{top:-140px}
+.mastheadArt .fullBody{transform:translateY(15px)}
+.mastheadArt .headshot{margin-top:15px}
+@media(max-width:600px){.seasonMasthead{margin-top:130px}.mastheadArt{top:-120px}.mastheadArt .fullBody{transform:translate(-25px,15px)}}
+
+/* Closed and future seasons have no overlapping agent art to reserve space for. */
+.seasonMasthead[data-intake="false"]{margin-top:0;min-height:180px}
+.seasonMasthead[data-intake="false"] .seasonIdentity{width:100%;max-width:none}
+@media(max-width:600px){.seasonMasthead[data-intake="false"]{min-height:150px}}
 
 .enrollmentPanel > h2 {
   margin: 0 0 12px;
@@ -165,30 +87,41 @@
   border-top: 1px solid rgb(var(--border-active) / .6);
 }
 .mastheadEnrollment {
-  grid-column: 1;
-  min-width: 0;
-  padding: 12px 0 0;
+  position: absolute;
+  z-index: 2;
+  top: 112px;
+  left: max(28%, calc(clamp(20px, 3vw, 52px) + 350px));
+  width: min(23%, 280px);
+  padding: 16px 20px;
+  border-block: 1px solid #806a45;
+  background: #15120f;
   color: #efe8dc;
 }
 .mastheadEnrollment > h2 {
-  margin-bottom: 9px;
-  color: #e7d7b7;
+  font: 400 1.25rem/1.2 Georgia, serif;
 }
-.mastheadEnrollment .enrollmentFacts { gap: 10px 24px; }
-.mastheadEnrollment .enrollmentFacts dt { opacity: 1; color: #cbbba2; }
-@media (min-width: 960px) {
-  .seasonMasthead[data-intake="true"][data-preview="false"] {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
+.mastheadEnrollment .enrollmentFacts {
+  gap: 12px 20px;
+}
+.mastheadEnrollment .enrollmentFacts dt {
+  opacity: 1;
+  color: #c4b390;
+}
+@media (max-width: 1000px) {
+  .seasonMasthead { display: block; }
+  .mastheadEnrollment {
+    position: relative;
+    top: auto;
+    left: auto;
+    margin-top: 12px;
+    width: min(100%, 320px);
   }
-  .seasonMasthead[data-preview="false"] .mastheadEnrollment {
-    grid-column: 2;
-    padding: 0 0 8px;
-  }
 }
-@media (max-width: 600px) {
-  .mastheadEnrollment { grid-column: 1 / -1; }
-}
+
+.ledger { margin-top: clamp(54px, 7vw, 96px); }
+.seasonWatch { margin-top: clamp(52px, 7vw, 96px); }
+.watchBadge { border: 0; border-radius: 0; }
+.watchAction { border: 0; background: none; text-decoration: underline; text-underline-offset: .3em; }
 
 .openingHeading {
   flex-wrap: wrap;

@@ -312,6 +312,12 @@ describe("E2E: Dual Crown season surfaces", () => {
           "Season enrollment", "Agents entered", "Seats per draw", "Next draw",
           "Opening lineup", "0 / 12", "Enrollment QA", "Architect · E2E Admin", "Standings",
         ]);
+        const hero = '[data-testid="season-entry-hero"]';
+        expect(await publicPage.evaluate(
+          `getComputedStyle(document.querySelector(${JSON.stringify(hero)}), "::before").backgroundImage`,
+        ))
+          .toContain("/agent-creation-hall.webp");
+        expect(await publicPage.$(`${hero} [role="img"][aria-label="Choose your first agent"]`)).not.toBeNull();
         const card = `section[aria-labelledby="season-lineup-title"] a[href="/agents/${queuedAgentId}"]`;
         await publicPage.$eval(card, link => link.scrollIntoView({ block: "center" }));
         await publicPage.waitForFunction(`document.querySelector(${JSON.stringify(card + " img")})?.naturalWidth > 0`);
