@@ -114,12 +114,13 @@ export function SeasonsContent() {
     {loading ? <div role="status" className={styles.loading}>Opening the season…</div> : !season ? <section className={styles.hero}><h1>The next season awaits.</h1><p>No season has been announced yet.</p></section> : <>
       {events.length > 1 && <label className={styles.eventSelect}>Championship<select value={featuredEvent?.slug ?? ""} onChange={event => setEventChoice(event.target.value)}>{events.map(event => <option key={event.id} value={event.slug}>{event.name}</option>)}</select></label>}
       {featuredEvent && <ChampionshipEventView key={featuredEvent.id} event={featuredEvent} />}
-      {(!events.length || accepting) && <section className={styles.seasonMasthead} aria-labelledby="season-title" data-testid="season-entry-hero" data-intake={accepting} data-preview={accepting && authenticated}>
+      {(!events.length || accepting) && <section className={styles.seasonMasthead} aria-labelledby="season-title" data-testid="season-entry-hero" data-intake={accepting}>
         <div className={styles.seasonIdentity}>
           <h1 id="season-title">{season.name}</h1>
           {!accepting && <p>{scheduledOpening ? `Entry opens ${new Date(season.admissionStartsAt!).toLocaleString()}.` : season.status === "final" ? "Final standings" : "Entries closed"}</p>}
           {accepting && <div className={styles.directEntry}>
-            {authenticated && agent && <h2 className={styles.entryAgentName}>{agent.name}</h2>}
+            <p className={styles.entryState} role="status">{entry ? "" : "Not yet joined"}</p>
+            <h2 className={styles.entryAgentName}>{agent?.name ?? "Your agent"}</h2>
             <div className={styles.entrySelection}>
               {authenticated && agents.length > 1 && <label>{entry ? "Change agent" : "Your agent"}<select aria-label="Your season agent" value={agent?.id ?? ""} onChange={event => setChoice(event.target.value)} disabled={busy}>{agents.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
             </div>
@@ -144,7 +145,7 @@ export function SeasonsContent() {
           </div>}
         </div>
         {accepting && dashboard.enrollment && <SeasonEnrollmentPanel enrollment={dashboard.enrollment} className={styles.mastheadEnrollment} />}
-        {accepting && authenticated && <div className={styles.mastheadArt}><SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent}/></div>}
+        {accepting && <div className={styles.mastheadArt}><SeasonAgentPreview key={`${agent?.id}:${agent?.avatarUrl}:${agent?.transparentBodyUrl}`} agent={agent}/></div>}
       </section>}
       {!events.length && (openingQueue && dashboard.enrollment
         ? <SeasonOpeningLineup key={season.id} queue={openingQueue} enrollment={dashboard.enrollment} />
