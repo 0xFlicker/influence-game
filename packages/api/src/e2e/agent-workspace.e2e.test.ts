@@ -1685,6 +1685,154 @@ test("pending requests are visible before generation and cancellation keeps edit
   }
 }, 120000);
 
+test("generates and saves replacement artwork with touch on an iPhone viewport", async () => {
+  const { profile } = await createOwnedAgentProfile(
+    database.db,
+    { userId: owner.userId },
+    {
+      name: "Mobile Artwork",
+      gender: "female",
+      personaKey: "diplomat",
+      personality: "A patient negotiator.",
+      avatarUrl: "/avatars/personas/diplomat.png",
+    },
+  );
+  const page = await createAuthenticatedPage(
+    browser,
+    owner.jwt,
+    servers.webUrl + `/dashboard/agents/${profile.id}/edit`,
+    { privateKey: owner.wallet.privateKey },
+  );
+  try {
+    await page.setViewport({ width: 375, height: 667, isMobile: true, hasTouch: true });
+    async function visibleAction(label: string) {
+      const selector = `Array.from((document.querySelector('dialog[open]') ?? document).querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled && button.checkVisibility())`;
+      await page.waitForFunction(selector);
+      const bounds = await page.evaluate(`(() => {
+        const action = ${selector};
+        const { x, y, width, height } = action.getBoundingClientRect();
+        const center = document.elementFromPoint(x + width / 2, y + height / 2);
+        const footer = action.closest("dialog") ? null : document.querySelector('[aria-label="Editor actions"]');
+        return { x, y, width, height, hit: action.contains(center), visibleBottom: footer?.getBoundingClientRect().top ?? innerHeight };
+      })()`) as { x: number; y: number; width: number; height: number; hit: boolean; visibleBottom: number };
+      expect(bounds.y).toBeGreaterThanOrEqual(0);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(bounds.visibleBottom);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+      expect(bounds.hit).toBe(true);
+      return bounds;
+    }
+    async function tap(label: string) {
+      const bounds = await visibleAction(label);
+      await page.touchscreen.tap(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    }
+    const requested = page.waitForResponse(response =>
+      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/agent-profiles/visual-reference",
+    );
+    await tap("Generate");
+    const request = await requested;
+    expect({ status: request.status(), body: await request.json() }).toMatchObject({ status: 202 });
+    const art = await Bun.file(
+      new URL("../../../web/public/avatars/personas/full-body-v1/strategic.webp", import.meta.url),
+    ).bytes();
+    expect(await processMockCharacterReference(database.db, art)).toBe(1);
+    await page.waitForFunction('document.body.innerText.includes("Artwork ready")');
+    await visibleAction("Select");
+    await page.screenshot({ path: proof + "iphone-artwork-ready.png" });
+    await tap("Select");
+    await page.waitForSelector('dialog[open] img[alt="Mobile Artwork portrait preview"]', { visible: true });
+    for (const [width, height] of [[375, 667], [390, 844]] as const) {
+      await page.setViewport({ width, height, isMobile: true, hasTouch: true });
+      const bounds = await visibleAction("Save artwork");
+      const headshot = await page.$eval('dialog[open] figure', element => {
+        const { top, bottom, right } = element.getBoundingClientRect();
+        return { top, bottom, right };
+      });
+      expect(headshot.top).toBeGreaterThan(bounds.y);
+      expect(headshot.bottom).toBeLessThanOrEqual(height);
+      expect(headshot.right).toBeLessThanOrEqual(width);
+      await page.screenshot({ path: proof + `iphone-headshot-${width}.png` });
+      if (width === 375) {
+        expect(await page.evaluate(`(() => {
+          const details = document.querySelector("dialog[open] details");
+          details.open = true;
+          details.scrollIntoView({ block: "end" });
+          return details.closest(".overflow-y-auto").scrollTop > 0;
+        })()`)).toBe(true);
+        const whileScrolling = await visibleAction("Save artwork");
+        expect(whileScrolling.y).toBe(bounds.y);
+        await page.screenshot({ path: proof + "iphone-headshot-adjustments-375.png" });
+        await page.evaluate(`(() => {
+          const details = document.querySelector("dialog[open] details");
+          details.open = false;
+          details.closest(".overflow-y-auto").scrollTop = 0;
+        })()`);
+      }
+    }
+    async function boxBounds(label: string) {
+      const box = await page.waitForSelector(`dialog[open] :is([aria-label="${label}"], [alt="${label}"])`);
+      const bounds = await box?.boundingBox();
+      await box?.dispose();
+      if (!bounds) throw new Error(`No visible geometry for ${label}`);
+      return bounds;
+    }
+    async function drag(label: string, dx: number, dy: number) {
+      const rect = await boxBounds(label);
+      const x = rect.x + rect.width / 2;
+      const y = rect.y + rect.height / 2;
+      const touch = await page.touchscreen.touchStart(x, y);
+      await touch.move(x + dx, y + dy);
+      await touch.end();
+    }
+    async function pinch(dx: number) {
+      const preview = await boxBounds("Mobile Artwork full image");
+      const x = preview.x + preview.width / 2;
+      const y = preview.y + preview.height * 0.55;
+      const first = await page.touchscreen.touchStart(x - 25, y);
+      const second = await page.touchscreen.touchStart(x + 25, y);
+      await second.move(x + 25 + dx, y);
+      await second.end();
+      await first.move(x - 40, y - 10);
+      await first.end();
+    }
+    const portrait = "Portrait box; drag to move";
+    const head = "Head box; drag to move";
+    await tap("Portrait");
+    const original = await boxBounds(portrait);
+    await drag(portrait, 5, 0);
+    const moved = await boxBounds(portrait);
+    expect(moved.x).toBeGreaterThan(original.x + 2);
+    for (const { label, corner, distance } of [
+      { label: portrait, corner: "Resize portrait box", distance: 5 },
+      { label: head, corner: "Resize head box", distance: -5 },
+    ]) {
+      if (label === head) await tap("Head");
+      const beforeCorner = await boxBounds(label);
+      await drag(corner, distance, distance);
+      const afterCorner = await boxBounds(label);
+      expect(afterCorner.x).toBe(beforeCorner.x);
+      expect(afterCorner.y).toBe(beforeCorner.y);
+      expect(Math.sign(afterCorner.width - beforeCorner.width)).toBe(Math.sign(distance));
+      await pinch(distance);
+      const afterPinch = await boxBounds(label);
+      expect(afterPinch.x).toBe(beforeCorner.x);
+      expect(afterPinch.y).toBe(beforeCorner.y);
+      expect(Math.sign(afterPinch.width - afterCorner.width)).toBe(Math.sign(distance));
+      expect(afterPinch.width / afterPinch.height).toBeCloseTo(afterCorner.width / afterCorner.height, 1);
+    }
+    await tap("Save artwork");
+    await page.waitForFunction('location.pathname === "/dashboard/agents"');
+    const [saved] = await database.db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, profile.id));
+    expect(saved!.latestContentRevisionId).not.toBe(profile.latestContentRevisionId);
+    const { readAgentDraft } = await import("../services/agent-editor-drafts.js");
+    expect(await readAgentDraft(database.db, owner.userId, `edit:${profile.id}`)).toBeNull();
+  } catch (error) {
+    await page.screenshot({ path: proof + "iphone-artwork-failure.png" });
+    throw error;
+  } finally {
+    await page.close();
+  }
+}, 120000);
+
 test("clearing old artwork then revising appearance also completes missing game notes", async () => {
   const [baseline] = await database.db
     .select()
