@@ -86,12 +86,44 @@ test.describe("deterministic layered authentication", () => {
       ` }));
   });
 
+  test("shows an exhausted bucket in the signup panel before asking for credentials", async ({ page }, testInfo) => {
+    let nextAvailableAt: string | null = new Date(Date.now() + 86_400_000).toISOString();
+    await page.route("**/api/auth/signup-availability", async route => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { available: !nextAvailableAt, rate: 1, nextAvailableAt } });
+    });
+    await page.goto(`${harness.webUrl}/sign-up`);
+    const panel = page.getByRole("dialog", { name: "Influence authentication" });
+    await expect(panel.getByRole("status")).toHaveText("Signups are full. Try again in about 24 hours.");
+    await expect(panel.getByLabel("Email", { exact: true })).toHaveCount(0);
+    await expect(panel.getByLabel("Password", { exact: true })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Continue with Privy" })).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: testInfo.outputPath("signup-preflight-full-mobile.png") });
+    await panel.getByRole("tab", { name: "Sign in" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(panel.getByLabel("Email", { exact: true })).toBeVisible();
+    await panel.getByRole("tab", { name: "Create account" }).click();
+    await expect(panel.getByRole("status")).toHaveText(/Signups are full/);
+    nextAvailableAt = null;
+    await panel.getByRole("button", { name: "Check again" }).click();
+    await expect(panel.getByLabel("Email", { exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Continue with Privy" })).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.screenshot({ path: testInfo.outputPath("signup-preflight-available.png") });
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect.poll(() => page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
+  });
+
   test("recovers account creation from sign in and keeps creation consent explicit", async ({
     page,
   }, testInfo) => {
     await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
       route => route.abort("failed"), { times: 1 });
-    let signupFull = true;
+    let signupFull = false;
     await page.route("**/api/auth/signup-availability", async route => {
       const response = await route.fetch();
       if (signupFull) {
@@ -102,12 +134,20 @@ test.describe("deterministic layered authentication", () => {
     });
     let transientFailure = true;
     await page.route("**/api/auth/managed/create", async route => {
-      if (route.request().method() === "POST" && route.request().postDataJSON()?.turnstileToken && transientFailure) {
+      const headers = {
+        "access-control-allow-origin": new URL(harness.webUrl).origin,
+        "access-control-allow-credentials": "true",
+      };
+      if (route.request().method() === "POST" && signupFull) {
+        await route.fulfill({ status: 429, headers, json: {
+          code: "SIGNUP_LIMIT_REACHED", error: "Signups are full.",
+          nextAvailableAt: new Date(Date.now() + 12 * 60_000).toISOString(),
+        } });
+      } else if (route.request().method() === "POST" && route.request().postDataJSON()?.turnstileToken && transientFailure) {
         transientFailure = false;
-        await route.fulfill({ status: 503, headers: {
-          "access-control-allow-origin": new URL(harness.webUrl).origin,
-          "access-control-allow-credentials": "true",
-        }, json: { code: "SIGNUP_VERIFICATION_UNAVAILABLE", error: "Human verification is temporarily unavailable. Try again." } });
+        await route.fulfill({ status: 503, headers, json: {
+          code: "SIGNUP_VERIFICATION_UNAVAILABLE", error: "Human verification is temporarily unavailable. Try again.",
+        } });
       } else await route.continue();
     });
     await page.addInitScript((token) => {
@@ -137,17 +177,21 @@ test.describe("deterministic layered authentication", () => {
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page.getByRole("heading", { name: "Verify your email" }))
       .toBeVisible();
+    signupFull = true;
     await page.getByLabel("Verification code").fill("424242");
     await page.getByRole("button", { name: "Verify code" }).click();
-    const waiting = page.getByRole("dialog", { name: "Signup availability" });
+    const waiting = page.getByRole("region", { name: "Signup availability" });
     await expect(waiting.getByText(/Signups are full/)).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(page.getByLabel("Verification code")).toBeHidden();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: testInfo.outputPath("signup-full-mobile.png") });
     await page.setViewportSize({ width: 1280, height: 720 });
     signupFull = false;
     await waiting.getByRole("button", { name: "Check again" }).click();
-    const challenge = page.getByRole("dialog", { name: "Verify to create your account" });
+    const challenge = page.getByRole("region", { name: "Verify to create your account" });
     await expect(challenge.getByRole("alert")).toHaveText("Verification could not load. Try again.");
+    await expect(page.getByRole("dialog")).toHaveCount(1);
     await challenge.getByRole("button", { name: "Try again" }).click();
     await expect(challenge.getByRole("button", { name: "Create account" })).toBeEnabled();
     await page.screenshot({ path: testInfo.outputPath("signup-available.png") });
@@ -311,15 +355,20 @@ test.describe("deterministic layered authentication", () => {
     await page.addInitScript((token) => {
       window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
     }, harness.tokens.uiNewPrivy);
-    const attempts: Array<{ intent: string; inviteCode?: string }> = [];
+    const attempts: Array<{ intent: string; inviteCode?: string; verified: boolean }> = [];
     await page.route("**/api/auth/login", async (route) => {
       const request = route.request().postDataJSON();
-      attempts.push({ intent: request.intent, inviteCode: request.inviteCode });
+      attempts.push({ intent: request.intent, inviteCode: request.inviteCode, verified: Boolean(request.turnstileToken) });
       if (request.intent === "sign_in") {
         return route.fulfill({ status: 409, json: { error: "Account creation required", code: "ACCOUNT_CREATION_REQUIRED" } });
       }
       if (request.inviteCode !== "VALID123") {
         return route.fulfill({ status: 403, json: { error: "Invite code required", code: "INVITE_REQUIRED" } });
+      }
+      if (!request.turnstileToken) {
+        return route.fulfill({ status: 403, json: {
+          error: "Complete human verification to create an account.", code: "SIGNUP_VERIFICATION_REQUIRED",
+        } });
       }
       const token = harness.sessions.walletless;
       const response = await fetch(`${harness.apiUrl}/api/auth/me`, {
@@ -341,11 +390,19 @@ test.describe("deterministic layered authentication", () => {
     await expect(page.getByText("Opening Privy…", { exact: true })).toHaveCount(0);
     await page.getByPlaceholder("e.g. ABC12345").fill("VALID123");
     await page.getByRole("button", { name: "Submit", exact: true }).click();
+    const verification = page.getByRole("region", { name: "Verify to create your account" });
+    await expect(page.getByRole("dialog", { name: "Signup invite" }).getByRole("region", {
+      name: "Verify to create your account",
+    })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(page.getByLabel("Invite code", { exact: true })).toBeHidden();
+    await verification.getByRole("button", { name: "Create account", exact: true }).click();
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     expect(attempts).toEqual([
-      { intent: "sign_in", inviteCode: undefined },
-      { intent: "create_account", inviteCode: undefined },
-      { intent: "create_account", inviteCode: "VALID123" },
+      { intent: "sign_in", inviteCode: undefined, verified: false },
+      { intent: "create_account", inviteCode: undefined, verified: false },
+      { intent: "create_account", inviteCode: "VALID123", verified: false },
+      { intent: "create_account", inviteCode: "VALID123", verified: true },
     ]);
   });
 
@@ -1010,7 +1067,7 @@ function pkceS256(verifier: string): string {
 }
 
 async function finishHumanVerification(page: import("@playwright/test").Page) {
-  await page.getByRole("dialog", { name: "Verify to create your account" })
+  await page.getByRole("region", { name: "Verify to create your account" })
     .getByRole("button", { name: "Create account" }).click();
 }
 

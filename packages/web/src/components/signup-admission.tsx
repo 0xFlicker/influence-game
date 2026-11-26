@@ -1,28 +1,60 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { getSignupAvailability, providerAuthFetch, type SignupAvailability } from "@/lib/api";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { providerAuthFetch } from "@/lib/api";
 import { useRuntimeConfig } from "@/lib/runtime-config";
-import { installSignupPrompt, registerCampaignRedemption } from "@/lib/signup-verification";
-import { ConfirmActionDialog } from "./confirm-action-dialog";
+import { installSignupPrompt, registerCampaignRedemption, type SignupStep } from "@/lib/signup-verification";
+import { SignupAvailabilityNotice, useSignupAvailability } from "./signup-availability";
 
 type Turnstile = {
   render(element: HTMLElement, options: Record<string, unknown>): string;
   remove(id: string): void;
 };
-type Prompt = { id: number; resolve: (token: string) => void; reject: (reason: Error) => void; next?: string; notice?: string };
+type Prompt = {
+  id: number;
+  step: SignupStep;
+  resolve: (token?: string) => void;
+  reject: (reason: Error) => void;
+};
 const cancellation = () => new Error("Signup verification was cancelled.");
 
-export function SignupAdmission() {
+type Outlet = "inline" | "modal" | "invite";
+const SignupPresentationContext = createContext<{
+  active: boolean;
+  showing: Outlet | undefined;
+  setOutlet: (outlet: Outlet, element: HTMLDivElement | null) => void;
+  cancel: () => void;
+} | null>(null);
+
+export function useSignupPromptOutlet(outlet: Outlet) {
+  const context = useContext(SignupPresentationContext);
+  const setOutlet = context?.setOutlet;
+  const ref = useCallback((element: HTMLDivElement | null) => {
+    setOutlet?.(outlet, element);
+  }, [outlet, setOutlet]);
+  return { outletRef: ref, active: context?.active ?? false, showing: context?.showing === outlet, cancel: context?.cancel };
+}
+
+export function SignupAdmission({ children }: { children: ReactNode }) {
   const { TURNSTILE_SITE_KEY: siteKey } = useRuntimeConfig();
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const [outlets, setOutlets] = useState<Partial<Record<Outlet, HTMLDivElement | null>>>({});
   const active = useRef<Prompt | null>(null);
   const sequence = useRef(0);
+  const setOutlet = useCallback((outlet: Outlet, element: HTMLDivElement | null) => {
+    setOutlets(previous => previous[outlet] === element ? previous : { ...previous, [outlet]: element });
+  }, []);
+  const cancel = useCallback(() => {
+    active.current?.reject(cancellation());
+    active.current = null;
+    setPrompt(null);
+  }, []);
 
   useEffect(() => {
-    const uninstall = installSignupPrompt((next, notice) => new Promise((resolve, reject) => {
+    const uninstall = installSignupPrompt(step => new Promise((resolve, reject) => {
       active.current?.reject(cancellation());
-      const request = { id: ++sequence.current, resolve, reject, next, notice };
+      const request = { id: ++sequence.current, resolve, reject, step };
       active.current = request;
       setPrompt(request);
     }));
@@ -38,116 +70,139 @@ export function SignupAdmission() {
     }));
   }, []);
 
-  if (!prompt) return null;
+  const outlet = outlets.invite ? "invite" : outlets.modal ? "modal" : outlets.inline ? "inline" : undefined;
   function finish(token?: string) {
     const request = active.current;
-    if (request?.id !== prompt?.id) return;
+    if (!request || request.id !== prompt?.id) return;
     active.current = null;
     setPrompt(null);
-    if (token) request?.resolve(token);
-    else request?.reject(cancellation());
+    request.resolve(token);
   }
-  return <SignupPrompt key={prompt.id} next={prompt.next} siteKey={siteKey} initialNotice={prompt.notice} finish={finish} />;
+  return (
+    <SignupPresentationContext.Provider value={{ active: Boolean(prompt), showing: prompt ? outlet : undefined, setOutlet, cancel }}>
+      {children}
+      {prompt && <SignupPrompt key={prompt.id} step={prompt.step} siteKey={siteKey}
+        cancel={cancel} finish={finish} target={outlet ? outlets[outlet] : null}
+        showSignIn={!outlet || outlet === "invite"} />}
+    </SignupPresentationContext.Provider>
+  );
 }
 
-function SignupPrompt({ next, siteKey, initialNotice, finish }: { next?: string; siteKey?: string; initialNotice?: string; finish: (token?: string) => void }) {
-  const [status, setStatus] = useState<SignupAvailability | null>(next ? { available: false, nextAvailableAt: next, rate: 0 } : null);
-  const [notice, setNotice] = useState(initialNotice ?? "");
-  const [checking, setChecking] = useState(false);
-  const [availabilityFailed, setAvailabilityFailed] = useState(false);
-  const [scriptReady, setScriptReady] = useState(false);
-  const [scriptFailed, setScriptFailed] = useState(false);
+function SignupPrompt({ step, siteKey, cancel, finish, target, showSignIn }: {
+  step: SignupStep; siteKey?: string; cancel: () => void; finish: (token?: string) => void;
+  target?: HTMLDivElement | null;
+  showSignIn: boolean;
+}) {
+  const availability = useSignupAvailability(step.kind === "availability" ? step.nextAvailableAt : undefined);
+  const [notice, setNotice] = useState(step.kind === "verification" ? step.notice ?? "" : "");
   const [challenge, setChallenge] = useState(0);
   const [token, setToken] = useState("");
   const element = useRef<HTMLDivElement>(null);
-  const turnstile = () => (window as Window & { turnstile?: Turnstile }).turnstile;
-  const available = status?.available ?? false;
-
-  async function check(signal?: AbortSignal) {
-    setChecking(true);
-    try {
-      const result = await getSignupAvailability(signal);
-      if (signal?.aborted) return;
-      setStatus(result);
-      setAvailabilityFailed(false);
-    } catch {
-      if (!signal?.aborted) setAvailabilityFailed(true);
-    } finally {
-      if (!signal?.aborted) setChecking(false);
-    }
-  }
+  const heading = useRef<HTMLHeadingElement>(null);
+  const headingId = useId();
+  const dialog = useRef<HTMLDialogElement>(null);
+  const available = availability.status?.available ?? false;
+  const verify = available && step.kind === "verification";
+  const title = verify ? "Verify to create your account" : "Signup availability";
 
   useEffect(() => {
-    const controller = new AbortController();
-    void check(controller.signal);
-    return () => controller.abort();
-  }, []);
+    if (available && step.kind === "availability") finish();
+  }, [available, finish, step.kind]);
 
   useEffect(() => {
-    if (available || !status?.nextAvailableAt) return;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => void check(controller.signal), Math.max(1000, Date.parse(status.nextAvailableAt) - Date.now()));
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [available, status?.nextAvailableAt]);
-
-  useEffect(() => {
-    if (!available || !siteKey) return;
-    if (turnstile()) {
-      setScriptReady(true);
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-    script.async = true;
-    function unavailable() {
-      setScriptFailed(true);
-      setNotice("Verification could not load. Try again.");
-    }
-    script.onload = () => {
-      if (turnstile()) setScriptReady(true);
-      else unavailable();
-    };
-    script.onerror = unavailable;
-    document.head.appendChild(script);
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const standalone = dialog.current;
+    standalone?.showModal();
+    heading.current?.focus();
     return () => {
-      script.onload = script.onerror = null;
-      script.remove();
+      standalone?.close();
+      window.requestAnimationFrame(() => {
+        if (previous?.isConnected && !previous.closest("[hidden]")) previous.focus();
+      });
     };
-  }, [available, siteKey, challenge]);
+  }, [target]);
 
   useEffect(() => {
-    if (!available || !siteKey || !scriptReady || !element.current) return;
-    const widget = turnstile();
-    if (!widget) return;
-    const id = widget.render(element.current, {
-      sitekey: siteKey, action: "house_signup", size: "flexible", theme: "dark",
-      callback: (value: string) => { setToken(value); },
-      "expired-callback": () => { setToken(""); setNotice("Verification expired. Try again."); },
-      "error-callback": () => { setToken(""); setNotice("Verification could not load. Try again."); },
-    });
-    return () => { if (id) widget.remove(id); };
-  }, [available, siteKey, scriptReady, challenge]);
+    const container = element.current;
+    if (!verify || !siteKey || !container) return;
+    const turnstileWindow = window as Window & { turnstile?: Turnstile };
+    let disposed = false;
+    let removeWidget: (() => void) | undefined;
+    let script: HTMLScriptElement | undefined;
+    function unavailable() {
+      if (!disposed) setNotice("Verification could not load. Try again.");
+    }
 
-  const minutes = status?.nextAvailableAt
-    ? Math.max(1, Math.ceil((Date.parse(status.nextAvailableAt) - Date.now()) / 60_000))
-    : null;
-  return (
-    <ConfirmActionDialog title={available ? "Verify to create your account" : "Signup availability"}
-      confirmLabel="Create account" showConfirm={available} disabled={!available || !token} onConfirm={() => finish(token)} onClose={() => finish()}>
-      {!available && <p role="status">{minutes !== null
-        ? `Signups are full. Try again in about ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`
-        : checking ? "Checking signup availability…" : "Check whether a signup slot is available."}</p>}
-      {available && siteKey && <div ref={element} data-analytics-private />}
-      {available && !siteKey && <p role="alert">Human verification is temporarily unavailable.</p>}
-      {availabilityFailed && <p role="alert">Signup availability is temporarily unavailable.</p>}
+    const showWidget = (widget: Turnstile | undefined) => {
+      if (disposed) return;
+      if (!widget) {
+        unavailable();
+        return;
+      }
+      const reset = (message: string) => {
+        if (disposed) return;
+        setToken("");
+        setNotice(message);
+      };
+      try {
+        const id = widget.render(container, {
+          sitekey: siteKey, action: "house_signup", size: "flexible", theme: "dark",
+          callback: (value: string) => { if (!disposed) setToken(value); },
+          "expired-callback": () => reset("Verification expired. Try again."),
+          "timeout-callback": () => reset("Verification timed out. Try again."),
+          "error-callback": () => reset("Verification failed. Try again."),
+        });
+        if (id) removeWidget = () => widget.remove(id);
+      } catch {
+        unavailable();
+      }
+    };
+
+    if (turnstileWindow.turnstile) {
+      queueMicrotask(() => showWidget(turnstileWindow.turnstile));
+    } else {
+      script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.onload = () => showWidget(turnstileWindow.turnstile);
+      script.onerror = unavailable;
+      document.head.appendChild(script);
+    }
+    return () => {
+      disposed = true;
+      removeWidget?.();
+      if (script) {
+        script.onload = script.onerror = null;
+        script.remove();
+      }
+    };
+  }, [verify, siteKey, challenge, target]);
+
+  const content = (
+    <section aria-labelledby={headingId} className="influence-copy space-y-4 text-sm">
+      <h2 id={headingId} ref={heading} tabIndex={-1} className="influence-section-title text-xl outline-none">{title}</h2>
+      {!available && <SignupAvailabilityNotice {...availability} />}
+      {verify && siteKey && <div ref={element} data-analytics-private />}
+      {verify && !siteKey && <p role="alert">Human verification is temporarily unavailable.</p>}
       {notice && <p role="alert">{notice}</p>}
-      <div className="flex flex-wrap gap-4">
-        {!available && <button type="button" disabled={checking} className="influence-link" onClick={() => void check()}>Check again</button>}
-        {available && (scriptReady || scriptFailed) && notice && <button type="button" className="influence-link" onClick={() => {
-          setToken(""); setNotice(""); setScriptFailed(false); setChallenge(value => value + 1);
+      <div className="flex flex-wrap items-center gap-4">
+        {verify && <button type="button" disabled={!token} onClick={() => finish(token)}
+          className="influence-button-primary min-h-11 rounded-lg px-4 py-2 text-sm">Create account</button>}
+        {verify && notice && <button type="button" className="influence-link min-h-11 py-2" onClick={() => {
+          setToken(""); setNotice(""); setChallenge(value => value + 1);
         }}>Try again</button>}
-        <a href="/sign-in" className="influence-link" onClick={() => finish()}>Sign in</a>
+        <button type="button" className="influence-link min-h-11 py-2" onClick={cancel}>Cancel</button>
+        {showSignIn && <a href="/sign-in" className="influence-link inline-flex min-h-11 items-center" onClick={cancel}>Sign in</a>}
       </div>
-    </ConfirmActionDialog>
+    </section>
+  );
+  if (target) return createPortal(content, target);
+
+  return (
+    <dialog ref={dialog} aria-label={title}
+      className="house-auth-panel fixed inset-0 m-auto w-[min(32rem,calc(100%-2rem))] rounded-3xl p-6 text-white backdrop:bg-black/75"
+      onCancel={event => { event.preventDefault(); cancel(); }}>
+      {content}
+    </dialog>
   );
 }

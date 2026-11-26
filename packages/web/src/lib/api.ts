@@ -1,4 +1,4 @@
-import { askForSignupVerification, waitForCampaignRedemption } from "./signup-verification";
+import { requestSignupStep, waitForCampaignRedemption } from "./signup-verification";
 import { getAnalyticsConsent } from "./analytics-consent";
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
@@ -1822,15 +1822,18 @@ async function signupFetch<T>(
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       if (!["SIGNUP_VERIFICATION_REQUIRED", "SIGNUP_VERIFICATION_UNAVAILABLE", "SIGNUP_LIMIT_REACHED"].includes(error.code ?? "")) throw error;
-      const next = error.payload?.nextAvailableAt;
-      turnstileToken = await askForSignupVerification(
-        typeof next === "string" ? next : undefined,
-        error.code === "SIGNUP_VERIFICATION_UNAVAILABLE"
-          ? "Human verification is temporarily unavailable. Try again."
-          : turnstileToken && error.code === "SIGNUP_VERIFICATION_REQUIRED"
-            ? "Complete a fresh human verification."
-            : undefined,
-      );
+      if (error.code === "SIGNUP_LIMIT_REACHED") {
+        const next = error.payload?.nextAvailableAt;
+        await requestSignupStep({ kind: "availability", nextAvailableAt: typeof next === "string" ? next : undefined });
+        turnstileToken = undefined;
+      } else {
+        turnstileToken = await requestSignupStep({
+          kind: "verification",
+          notice: error.code === "SIGNUP_VERIFICATION_UNAVAILABLE"
+            ? "Human verification is temporarily unavailable. Try again."
+            : turnstileToken ? "Complete a fresh human verification." : undefined,
+        });
+      }
       if (refreshToken) refreshedToken = await refreshToken();
     }
   }
