@@ -9,7 +9,37 @@ export interface DiscordMessage {
   type: number;
   content: string;
   author: { id: string; username?: string; bot?: boolean; system?: boolean };
-  message_reference?: { message_id?: string };
+  message_reference?: { message_id?: string; channel_id?: string; type?: number };
+}
+
+export function roomContext(current: DiscordMessage, messages: DiscordMessage[], botId: string | undefined) {
+  const cutoff = discordMessageTime(current.id) - 30 * 60_000;
+  const seen = new Set<string>();
+  const context = messages.flatMap(message => {
+    if (!message || message.channel_id !== current.channel_id || message.webhook_id
+      || (message.type !== 0 && message.type !== 19) || !message.author || message.author.system
+      || !snowflake.test(message.id) || BigInt(message.id) >= BigInt(current.id)
+      || discordMessageTime(message.id) < cutoff || seen.has(message.id)
+      || typeof message.content !== "string" || !message.content.trim()) return [];
+    const house = message.author.id === botId;
+    if (message.author.bot && !house) return [];
+    seen.add(message.id);
+    return [{ id: message.id,
+      speaker: house ? "house" : message.author.id === current.author.id ? "requesting_member" : "room_member",
+      text: message.content.slice(0, 1200) }];
+  }).sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
+  return { recent: context.slice(-12), repliedTo: context.find(message => message.id === roomReplyId(current)) };
+}
+
+export function roomReplyId(message: DiscordMessage) {
+  const ref = message.message_reference;
+  if (!ref || ref.channel_id !== message.channel_id || (ref.type !== undefined && ref.type !== 0)
+    || !ref.message_id || !snowflake.test(ref.message_id) || BigInt(ref.message_id) >= BigInt(message.id)) return undefined;
+  return ref.message_id;
+}
+
+export function discordMessageTime(id: string) {
+  return Number((BigInt(id) >> 22n) + 1420070400000n);
 }
 
 export function destination(m: DiscordMessage, guild: string, room: string) {

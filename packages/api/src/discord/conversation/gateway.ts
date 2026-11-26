@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
-import { activeOffer, destination, safeReply, snowflake, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage, type SpoilerOffer } from "./policy.js";
+import { activeOffer, destination, discordMessageTime, roomContext, roomReplyId, safeReply, snowflake, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage, type SpoilerOffer } from "./policy.js";
 import { runCodex } from "./sandbox.js";
 
 function env(name: string) {
@@ -29,6 +29,7 @@ const queue: DiscordMessage[] = [];
 let draining = false;
 let closing = false;
 let activeSocket: WebSocket | undefined;
+let botId: string | undefined;
 
 async function discord(path: string, init: RequestInit = {}) {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -64,6 +65,27 @@ async function api(action: string, body: object) {
     method: "POST", redirect: "error", signal: AbortSignal.timeout(22_000),
     headers: { "content-type": "application/json", authorization: "Bearer " + controller }, body: JSON.stringify(body),
   });
+}
+
+async function readRoomContext(m: DiscordMessage) {
+  const path = "/channels/" + room + "/messages";
+  const read = async (suffix: string) => {
+    try {
+      const response = await discord(path + suffix, { signal: AbortSignal.timeout(3000) });
+      if (response.ok) return await response.json() as unknown;
+    } catch {
+      console.log(JSON.stringify({ event: "discord_room_context_unavailable" }));
+    }
+    return null;
+  };
+  const reference = roomReplyId(m);
+  const [page, parent] = await Promise.all([
+    read("?limit=20&before=" + m.id),
+    reference ? read("/" + reference) : null,
+  ]);
+  const messages = Array.isArray(page) ? page : [];
+  if (parent && typeof parent === "object" && "id" in parent && parent.id === reference) messages.push(parent);
+  return roomContext(m, messages, botId);
 }
 
 async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }> = []) {
@@ -111,7 +133,10 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   const { kind } = params;
   const key = m.channel_id + ":" + m.author.id;
   const prior = history.get(key);
-  const recent = prior?.link === turn.link && prior.expires > Date.now() ? prior.messages : [];
+  const context = kind === "room" ? await readRoomContext(m) : undefined;
+  const recent = context
+    ? context.recent.filter(message => message.speaker === "requesting_member").map(message => message.text).slice(-4)
+    : prior?.link === turn.link && prior.expires > Date.now() ? prior.messages : [];
   const offer = activeOffer(offers.get(key), m, turn.link);
   const current = m.content.slice(0, 2500);
   const games = new Set<string>();
@@ -129,6 +154,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     const prompt = JSON.stringify({
       conversation: kind, access: turn.lane, memberPublicId: turn.publicId, houseOrigin: house.origin,
       activeSpoilerOffer: offer?.game, authorizedSpoiler: revealed, recentMemberMessages: recent,
+      recentRoomMessages: context?.recent, repliedToRoomMessage: context?.repliedTo,
       currentMemberMessage: current,
     });
     progress.stage = "codex";
@@ -202,17 +228,14 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   if (!(await finish())) return "authority_changed";
   progress.stage = "delivery";
   if (!await send(m, reply.text, images)) return "empty_reply";
-  history.set(key, { link: turn.link, messages: [...recent, current].slice(-4), expires: Date.now() + 15 * 60_000 });
+  if (kind === "dm") history.set(key, { link: turn.link, messages: [...recent, current].slice(-4), expires: Date.now() + 15 * 60_000 });
   return "replied";
 }
 
-function messageTime(id: string) {
-  return Number((BigInt(id) >> 22n) + 1420070400000n);
-}
 function accept(m: DiscordMessage) {
   if (closing || queue.length >= 12 || !destination(m, guild, room)) return;
   const now = Date.now();
-  const posted = messageTime(m.id);
+  const posted = discordMessageTime(m.id);
   if (now - posted > 120_000 || now < posted - 5000 || !seen.run(m.id, now).changes) return;
   queue.push(m);
   if (!draining) void drain();
@@ -223,7 +246,7 @@ async function drain() {
   while (queue.length && !closing) {
     const m = queue.shift()!;
     const started = Date.now();
-    const ageMs = started - messageTime(m.id);
+    const ageMs = started - discordMessageTime(m.id);
     const progress: TurnProgress = { stage: "eligibility" };
     let result: string;
     try { result = ageMs <= 120_000 ? await handle(m, progress) : "expired"; } catch { result = "turn_failed"; }
@@ -272,6 +295,7 @@ function connect() {
         reconnectDelay = 5000;
         socket.close(4000, "Invalid session");
       } else if (packet.op === 0 && packet.t === "READY") {
+        if (typeof packet.d.user?.id === "string" && snowflake.test(packet.d.user.id)) botId = packet.d.user.id;
         session = packet.d.session_id;
         const url = new URL(packet.d.resume_gateway_url);
         if (url.protocol === "wss:" && url.hostname === "gateway.discord.gg") resumeOrigin = url.origin;
