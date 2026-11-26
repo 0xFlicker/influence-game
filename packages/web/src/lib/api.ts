@@ -3660,7 +3660,6 @@ export type FreeQueueDrawResult = {
   gameId: string;
   gameSlug: string;
   playersDrawn: number;
-  aiPlayersFilled: number;
   totalPlayers: number;
   supersededGameCount: number;
   rated: boolean;
@@ -3729,11 +3728,22 @@ export interface SeasonEnrollment {
   nextDrawAt: string;
 }
 
+export interface SeasonOpeningQueue {
+  eligibleAgents: number;
+  agents: Array<{
+    id: string;
+    name: string;
+    architectName: string;
+    fullBodyImageUrl: string | null;
+    avatarUrl: string | null;
+  }>;
+}
+
 export interface SeasonDashboard {
   championships?: Array<{ slug: string; name: string; status: string }>;
   schemaVersion: 1 | 2;
   season: SeasonIdentity;
-  enrollment: SeasonEnrollment | null;
+  enrollment: (SeasonEnrollment & { openingQueue?: SeasonOpeningQueue }) | null;
   agentStandings: AgentSeasonStanding[];
   architectStandings: ArchitectSeasonStanding[];
   honors: null | {

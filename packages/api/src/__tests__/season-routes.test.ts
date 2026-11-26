@@ -148,6 +148,48 @@ describe("season routes", () => {
     expect(await adminEnrollmentRead()).toBeNull();
   });
 
+  test("shows public queued agents before the first draw and switches to watching after it", async () => {
+    const db = await setupTestDB();
+    const ownerId = await insertUser(db, "Opening Architect");
+    const hiddenOwnerId = await insertUser(db, "Hidden Architect");
+    const season = await createSeason(db, { slug: "opening-lineup", name: "Opening Lineup" });
+    const profile = (await createOwnedAgentProfile(db, { userId: ownerId }, {
+      name: "Opening Agent", personality: "Steady",
+    })).profile;
+    const hidden = (await createOwnedAgentProfile(db, { userId: hiddenOwnerId }, {
+      name: "Hidden Agent", personality: "Patient",
+    })).profile;
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: "/opening-agent.webp" })
+      .where(eq(schema.agentProfiles.id, profile.id));
+    await db.update(schema.agentProfiles).set({ archivedAt: new Date().toISOString() })
+      .where(eq(schema.agentProfiles.id, hidden.id));
+    const app = new Hono().route("/", createSeasonRoutes(db));
+    const read = async () => (await app.request(`/api/seasons/${season.slug}`)).json();
+
+    expect(await read()).toMatchObject({ enrollment: { openingQueue: { eligibleAgents: 0, agents: [] } } });
+    await db.insert(schema.freeGameQueue).values([
+      { id: randomUUID(), userId: ownerId, agentProfileId: profile.id },
+      { id: randomUUID(), userId: hiddenOwnerId, agentProfileId: hidden.id },
+    ]);
+    const filling = await read() as { enrollment: { openingQueue: unknown } };
+    expect(filling.enrollment.openingQueue).toEqual({
+      eligibleAgents: 1,
+      agents: [{
+        id: profile.id,
+        name: "Opening Agent",
+        architectName: "Opening Architect",
+        fullBodyImageUrl: `/api/public/agents/${profile.id}/art?kind=full-body`,
+        avatarUrl: profile.avatarUrl,
+      }],
+    });
+
+    const gameId = randomUUID();
+    await db.insert(schema.games).values({
+      id: gameId, slug: gameId, seasonId: season.id, trackType: "free", status: "waiting", config: "{}",
+    });
+    expect(await read()).not.toHaveProperty("enrollment.openingQueue");
+  });
+
   test("separates season observation from lifecycle management and creates an active season", async () => {
     const db = await setupTestDB();
     const userId = await insertUser(db, "operator");

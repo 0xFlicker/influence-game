@@ -30,6 +30,7 @@ export function createSeasonRoutes(db: DrizzleDB) {
   }));
 
   app.get("/api/seasons/:seasonIdOrSlug", async (c) => {
+    c.header("Cache-Control", "private, no-store");
     const dashboard = await getPublicSeasonDashboard(db, c.req.param("seasonIdOrSlug"));
     if (!dashboard) return c.json({ error: "Season not found" }, 404);
     const enrollment = await readSeasonEnrollment(db, dashboard.season, false);
