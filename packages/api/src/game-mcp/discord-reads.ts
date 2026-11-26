@@ -12,6 +12,7 @@ import { loadPayloads } from "../services/payload-storage.js";
 import { getPublicPlayerProfile, PUBLIC_PLAYER_NOT_FOUND } from "../services/public-player-profile.js";
 import { findPublicPlayersByDisplayName, type PublicPlayerIdentityRef } from "../services/public-player-identity.js";
 import { resolveShareLink } from "../services/house-share-links.js";
+import { getPublicSeasonGames, getPublicSeasonIdentity, listPublicSeasons, readSeasonEnrollment } from "../services/season-read-model.js";
 import { getPublicAgentProfile, readPublicAgentIdentity } from "../services/public-agent-profile.js";
 import { readWerewolfEvents } from "../services/werewolf-games.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
@@ -35,6 +36,8 @@ function tool(name: string, description: string, properties: object = {}, requir
 }
 
 export const discordReadTools = [
+  tool("list_seasons", "Discover House seasons and their lifecycle status. Use the returned slug with read_season for queue and entry status."),
+  tool("read_season", "Read a season's entry status, public queue count, next scheduled draw, and up to 24 public games. Pass an exact season slug or ID from list_seasons.", { season: string }, ["season"]),
   tool("get_rules", "Read House rules for Influence or Werewolf.", { gameKind }, ["gameKind"]),
   tool("list_games", "List games available in this conversation, most recent first. Use nextAfter to continue.", { gameKind, ...range }),
   tool("read_game", "Read canonical board and replay. Use the returned game ID for follow-ups; Werewolf audience is assigned by the House.", { ...game, ...page }, ["game"]),
@@ -263,6 +266,32 @@ export async function discordRead(db: DrizzleDB, grant: DiscordGrant, secret: st
   const cursor = typeof input.cursor === "string" ? input.cursor : undefined;
   const kind = input.gameKind === "werewolf" ? "werewolf" as const : "influence" as const;
   if (name === "get_rules") return getGameMcpRules(kind);
+  if (name === "list_seasons") return { seasons: (await listPublicSeasons(db)).slice(0, 24) };
+  if (name === "read_season") {
+    const season = await getPublicSeasonIdentity(db, String(input.season));
+    if (!season) return { status: "not_found" };
+    const [enrollment, feed] = await Promise.all([
+      readSeasonEnrollment(db, season, false),
+      grant.lane === "owner"
+        ? houseOwnedGameIds(db, grant.userId, false).then(ids => getPublicSeasonGames(db, season.id, [...ids]))
+        : getPublicSeasonGames(db, season.id),
+    ]);
+    const nextDrawAt = enrollment && (!season.admissionClosesAt
+      || Date.parse(enrollment.nextDrawAt) < Date.parse(season.admissionClosesAt))
+      ? enrollment.nextDrawAt : null;
+    return {
+      season,
+      seasonUrl: publicOrigin + "/seasons?season=" + encodeURIComponent(season.slug),
+      entriesOpen: enrollment !== null,
+      agentsEntered: enrollment?.agentsEntered ?? null,
+      seatsPerDraw: enrollment?.seatsPerDraw ?? null,
+      nextDrawAt,
+      drawTimeZone: "America/Denver",
+      gameScope: grant.lane === "owner" ? "public_games_your_agents_played" : "public",
+      publicGames: (feed?.games ?? []).map(game => ({ ...game, gameUrl: publicOrigin + "/games/" + encodeURIComponent(game.slug) })),
+      publicGameLimit: 24,
+    };
+  }
   if (name === "read_player") return readDiscordPlayer(db, grant, String(input.player));
   if (name === "read_account") {
     if (grant.lane !== "staff") return discordUnavailable();
