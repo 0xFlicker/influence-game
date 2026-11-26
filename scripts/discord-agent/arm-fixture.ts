@@ -26,6 +26,8 @@ Bun.serve({ unix: "/bridge/turn.sock", async fetch(req) {
   const model = consent ? consentModel : "gpt-6.1-terra";
   const filtered = filterInference(incoming, model, new Set(consent ? [] : ["inspect_image"]));
   if (!filtered) return new Response("Unexpected tool catalog", { status: 403 });
+  const hasHouseIdentity = JSON.stringify(filtered.input).includes("https://thehouse.game/profile/thehouse");
+  if (hasHouseIdentity === consent) return new Response("Unexpected House identity instructions", { status: 400 });
   console.log("PROVIDER TOOLS", JSON.stringify(filtered.tools.map(t => ({ name: t.name, tools: t.tools }))));
   const message = (content: object) => sse({ id: "msg1", type: "message", role: "assistant", status: "completed",
     content: [{ type: "output_text", annotations: [], text: JSON.stringify(content) }] }, model);
