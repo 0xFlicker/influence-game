@@ -1376,6 +1376,10 @@ test.describe("local public player identity", () => {
     const carousel = page.getByRole("region", { name: "Agents in the spotlight" });
     await expect(carousel.getByRole("heading", { name: "Vesper E2E" })).toBeVisible();
     await expect(carousel.getByRole("heading", { name: "Quartz E2E" })).toBeVisible({ timeout: 12000 });
+    const currentSlide = carousel.locator('[data-position="current"]');
+    await expect.poll(() => currentSlide.evaluate(element => element.getAnimations().some(animation =>
+      animation instanceof CSSTransition && animation.transitionProperty === "transform",
+    )), { timeout: 1000 }).toBe(true);
     await carousel.getByRole("button", { name: "Pause carousel" }).click();
     await carousel.getByRole("button", { name: "Previous agent" }).click();
     await expect(carousel.getByRole("heading", { name: "Vesper E2E" })).toBeVisible();
@@ -1390,6 +1394,7 @@ test.describe("local public player identity", () => {
     const before = await recordTop();
     await carousel.getByRole("button", { name: "Next agent" }).click();
     await expect(carousel.getByRole("heading", { name: "Quartz E2E" })).toBeVisible();
+    await expect(currentSlide).toHaveCSS("transition-duration", "0s");
     expect(await recordTop()).toBeCloseTo(before);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   });
@@ -1397,12 +1402,17 @@ test.describe("local public player identity", () => {
   test("touch carousel swipes through the whole roster with one artwork per onstage agent", async ({ browser }) => {
     test.setTimeout(60_000);
     const context = await identityContext(browser, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "no-preference" });
+    const birchArtwork = Promise.withResolvers<void>();
     try {
       const page = await context.newPage();
       const client = await context.newCDPSession(page);
       const requests: string[] = [];
       page.on("request", request => requests.push(new URL(request.url()).pathname));
-      await page.goto(`${servers.webUrl}/profile/e2e-carousel`);
+      await page.route(url => url.pathname === "/api/public/agents/carousel-birch/art", async route => {
+        await birchArtwork.promise;
+        await route.continue();
+      });
+      await page.goto(`${servers.webUrl}/profile/e2e-carousel`, { waitUntil: "domcontentloaded" });
       const carousel = page.getByRole("region", { name: "Agents in the spotlight" });
       await carousel.getByRole("button", { name: "Pause carousel" }).tap();
       const stage = carousel.getByRole("button", { name: "Play carousel" });
@@ -1413,6 +1423,12 @@ test.describe("local public player identity", () => {
       await expect(slide("current").locator("img")).toHaveAttribute("src", /\/api\/public\/agents\/carousel-atlas\/art/);
       await expect(slide("previous").locator("img")).toHaveAttribute("src", /\/avatars\/personas\/wildcard\.png$/);
       await expect(slide("next").locator("img")).toHaveAttribute("src", /\/api\/public\/agents\/carousel-birch\/art/);
+      await expect(slide("next").locator("img[data-artwork-settled]")).toHaveCount(0);
+      await expect(slide("ahead").locator("img[data-artwork-settled]")).toHaveAttribute("src", /\/observer\.png$/);
+      await expect(slide("behind").locator("img[data-artwork-settled]")).toHaveAttribute("src", /\/social\.png$/);
+      await expect(slide("ahead")).toHaveCSS("opacity", "0");
+      await expect(slide("behind")).toHaveCSS("opacity", "0");
+      await expect(carousel.locator("[data-position] img")).toHaveCount(5);
       await expect.poll(() => requests.filter(path => path.endsWith("/art")).sort()).toEqual([
         "/api/public/agents/carousel-atlas/art", "/api/public/agents/carousel-birch/art",
       ]);
@@ -1428,12 +1444,16 @@ test.describe("local public player identity", () => {
         await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       };
 
-      for (const [name, source] of [
+      await gesture(-110, 0);
+      await expect(carousel.getByRole("heading")).toHaveText("Atlas E2E");
+      birchArtwork.resolve();
+
+      for (const [index, [name, source]] of [
         ["Birch E2E", /\/api\/public\/agents\/carousel-birch\/art/], ["Cedar E2E", /\/observer\.png$/],
         ["Dune E2E", /\/loyalist\.png$/], ["Elm E2E", /\/social\.png$/], ["Fern E2E", /\/wildcard\.png$/],
         ["Atlas E2E", /\/api\/public\/agents\/carousel-atlas\/art/],
-      ] as const) {
-        await gesture(-110, 0);
+      ].entries()) {
+        if (index > 0) await gesture(-110, 0);
         await expect(carousel.getByRole("heading")).toHaveText(name);
         await expect(slide("current").locator("img")).toHaveAttribute("src", source);
         await expect.poll(() => carousel.locator("[data-position]").evaluateAll(elements =>
@@ -1441,8 +1461,8 @@ test.describe("local public player identity", () => {
         )).toBe(true);
         await expect(slide("current").locator("img")).toHaveAttribute("src", source);
         const images = await carousel.locator("[data-position] img").evaluateAll(elements => elements.map(element => element.getAttribute("src")));
-        expect(images).toHaveLength(3);
-        expect(new Set(images).size).toBe(3);
+        expect(images).toHaveLength(5);
+        expect(new Set(images).size).toBe(5);
       }
 
       await gesture(110, 0);
@@ -1452,6 +1472,7 @@ test.describe("local public player identity", () => {
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
       await expect(carousel.getByRole("heading")).toHaveText("Fern E2E");
     } finally {
+      birchArtwork.resolve();
       await context.close();
     }
   });
