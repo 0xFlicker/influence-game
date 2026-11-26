@@ -42,6 +42,7 @@ import {
   assertRuntimeDeploymentSha,
   recordCurrentLegalAcceptance,
 } from "../services/legal-acceptance.js";
+import { changeSignupRate, signupAvailability } from "../services/signup-admission.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -699,8 +700,9 @@ describe("authenticated public identity session projection", () => {
     expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
   });
 
-  test("wallet-free Privy email signup requires consent and supports re-login, profile and agent creation", async () => {
+  test("wallet-free Privy signup requires consent and supports re-login when signup capacity is exhausted", async () => {
     let inviteChecks = 0;
+    await changeSignupRate(db, 1);
     const app = new Hono();
     app.route("/", createProfileRoutes(db));
     app.route("/", createAgentProfileRoutes(db));
@@ -756,11 +758,13 @@ describe("authenticated public identity session projection", () => {
       user: { id: string; walletAddress: string | null };
     };
     expect(createdBody.user.walletAddress).toBeNull();
+    expect(await signupAvailability(db)).toMatchObject({ rate: 1, available: false });
     const login = await app.request("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ token: "verified-token", intent: "sign_in" }),
     });
     expect(login.status).toBe(200);
+    expect(inviteChecks).toBe(1);
     const session = await login.json() as { token: string; user: { id: string } };
     expect(session.user.id).toBe(createdBody.user.id);
     const headers = { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" };

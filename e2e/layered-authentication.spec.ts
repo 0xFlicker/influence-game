@@ -115,7 +115,9 @@ test.describe("deterministic layered authentication", () => {
     await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
       route => route.abort("failed"), { times: 1 });
     let signupFull = false;
+    let signupAvailabilityChecks = 0;
     await page.route("**/api/auth/signup-availability", async route => {
+      signupAvailabilityChecks += 1;
       const response = await route.fetch();
       if (signupFull) {
         await route.fulfill({ response, json: {
@@ -199,14 +201,24 @@ test.describe("deterministic layered authentication", () => {
     })).toBeHidden();
     await page.getByRole("button", { name: "Sign out" }).click();
 
+    signupFull = true;
+    const checksBeforePrivySignIn = signupAvailabilityChecks;
     await clickNavigationSignIn(page);
-    await page.getByRole("button", { name: "Continue with Privy" }).click();
-    await expect(page.getByRole("heading", { name: "Create your account" }))
-      .toBeVisible();
-    await expect(page.getByText(
-      "This Privy sign-in isn't connected to a House account yet. Create one to continue.",
-      { exact: true },
-    )).toBeVisible();
+    const privyPanel = page.getByRole("dialog", { name: "Influence authentication" });
+    const unlinked = privyPanel.getByRole("heading", { name: "Privy sign-in has no linked account" });
+    await privyPanel.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(unlinked).toBeFocused();
+    await expect(privyPanel.getByText(/Signups are full/)).toHaveCount(0);
+    expect(signupAvailabilityChecks).toBe(checksBeforePrivySignIn);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: testInfo.outputPath("privy-unlinked-mobile.png") });
+    const emailSignIn = privyPanel.getByRole("button", { name: "Sign in with email" });
+    await emailSignIn.focus();
+    await page.keyboard.press("Enter");
+    await expect(privyPanel.getByLabel("Email", { exact: true })).toBeVisible();
+    await expect(privyPanel.getByText(/Signups are full/)).toHaveCount(0);
+    await privyPanel.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(unlinked).toBeVisible();
     await page.getByRole("button", {
       name: "Use a different Privy account",
     }).click();
@@ -218,8 +230,16 @@ test.describe("deterministic layered authentication", () => {
       window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
     }, harness.tokens.uiNewPrivy);
     await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(unlinked).toBeVisible();
+    await privyPanel.getByRole("button", { name: "Create account", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Create your account" }))
       .toBeVisible();
+    await expect(privyPanel.getByText(/Signups are full/)).toBeVisible();
+    await expect(privyPanel.getByRole("button", { name: "Back to sign in" })).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.screenshot({ path: testInfo.outputPath("privy-explicit-signup-full.png") });
+    signupFull = false;
+    await privyPanel.getByRole("button", { name: "Check again" }).click();
     const privyConsent = page.getByRole("dialog", {
       name: "Influence authentication",
     }).getByRole("checkbox");
@@ -237,6 +257,15 @@ test.describe("deterministic layered authentication", () => {
       name: "Choose how players know you",
     })).toBeHidden();
     await page.getByRole("button", { name: "Sign out" }).click();
+
+    signupFull = true;
+    const checksBeforeLinkedPrivySignIn = signupAvailabilityChecks;
+    await clickNavigationSignIn(page);
+    await privyPanel.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    expect(signupAvailabilityChecks).toBe(checksBeforeLinkedPrivySignIn);
+    await page.getByRole("button", { name: "Sign out" }).click();
+    signupFull = false;
 
     await clickNavigationSignIn(page);
     await page.getByRole("tab", { name: "Create account" }).click();
@@ -372,6 +401,7 @@ test.describe("deterministic layered authentication", () => {
     await clickNavigationSignIn(page);
     await page.getByRole("button", { name: "Continue with Privy", exact: true }).click();
     const authentication = page.getByRole("dialog", { name: "Influence authentication" });
+    await authentication.getByRole("button", { name: "Create account", exact: true }).click();
     await expect(authentication.getByRole("heading", { name: "Create your account", exact: true })).toBeVisible();
     await authentication.getByRole("checkbox").check();
     await authentication.getByRole("button", { name: "Continue with Privy", exact: true }).click();
@@ -437,6 +467,7 @@ test.describe("deterministic layered authentication", () => {
       });
       await clickNavigationSignIn(page);
       await page.getByRole("button", { name: "Continue with Privy" }).click();
+      await page.getByRole("button", { name: "Create account", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Create your account" }))
         .toBeVisible();
       const consent = page.getByRole("dialog", {

@@ -11,6 +11,11 @@ during signup, the same panel shows the wait and preserves verified progress.
 The API checks availability for new accounts before requesting an invite code
 and claims the slot when account creation commits.
 
+A Privy sign-in without a House account offers the visitor email sign-in or a
+different Privy account. The signup availability check begins after they choose
+Create account. Existing linked Privy accounts sign in directly even when the
+bucket is empty.
+
 People → Invites issues campaign links. Keep the link fragment when adding
 campaign query parameters. Links work during their scheduled window. A browser
 session issued during that window can bypass the bucket once in the following
