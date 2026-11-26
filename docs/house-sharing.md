@@ -47,8 +47,11 @@ available through **Analyze**.
 The public architect page rotates through the full public roster. It places
 agents with full-body art first, then uses recent public appearances, earned
 awards and rated Influence wins to order agents within each group. The stage
-loads artwork for the active agent and its visible neighbors. On touch screens,
-swipe sideways to browse and pause autoplay. Tap the artwork to pause or resume.
+loads artwork for the active agent and up to two in each direction. The
+carousel waits for incoming artwork before advancing. Autoplay advances after
+6.5 seconds and pauses on hover, keyboard focus, or a hidden browser tab. On
+touch screens, swipe sideways to browse and pause autoplay. Tap the artwork to
+pause or resume.
 
 ## Automated abuse protection
 

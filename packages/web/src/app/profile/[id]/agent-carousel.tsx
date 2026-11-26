@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { ProfileArtwork } from "@/app/agents/[id]/profile-artwork";
 import { AgentProfileLink } from "@/components/agent-profile-link";
 import type { PublicRosterAgent } from "@/lib/api";
@@ -18,12 +18,26 @@ export function AgentCarousel({ agents }: { agents: PublicRosterAgent[] }) {
   const [focused, setFocused] = useState(false);
   const [visible, setVisible] = useState(true);
   const [touching, setTouching] = useState(false);
+  const pendingMove = useRef<{ index: number; automatic: boolean } | null>(null);
+  const stage = useRef<HTMLDivElement>(null);
   const touch = useRef<{ id: number; x: number; y: number } | null>(null);
   const suppressTap = useRef(false);
   const count = agents.length;
   const activeIndex = count ? active % count : 0;
   const agent = agents[activeIndex];
+  const previous = (activeIndex + count - 1) % count;
+  const next = (activeIndex + 1) % count;
   const rotating = autoplay && visible && !hovered && !focused && !touching && count > 1;
+
+  const requestMove = useCallback((index: number, automatic: boolean) => {
+    // Read readiness from the mounted image so a remounted slide waits for its own decode.
+    if (stage.current?.querySelector(`[data-slide-index="${index}"] img[data-artwork-settled]`)) {
+      pendingMove.current = null;
+      setActive(index);
+    } else {
+      pendingMove.current = { index, automatic };
+    }
+  }, []);
 
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -42,25 +56,27 @@ export function AgentCarousel({ agents }: { agents: PublicRosterAgent[] }) {
   useEffect(() => {
     if (!rotating) return;
     const timer = window.setTimeout(() => {
-      if (!touch.current) setActive((activeIndex + 1) % count);
+      if (!touch.current && !pendingMove.current) requestMove(next, true);
     }, SLIDE_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [activeIndex, count, rotating]);
+    return () => {
+      window.clearTimeout(timer);
+      if (pendingMove.current?.automatic) pendingMove.current = null;
+    };
+  }, [next, requestMove, rotating]);
 
   if (!agent) return null;
   const { competition, werewolfRecord } = agent;
   const werewolfGames = werewolfRecord.wins + werewolfRecord.losses + werewolfRecord.draws;
-  const previous = (activeIndex + count - 1) % count;
-  const next = (activeIndex + 1) % count;
   // Keep each visible agent on one keyed element as their position changes.
-  // The rest of the roster has no stage artwork to fetch or paint.
   const slides = [{ index: activeIndex, position: "current" }];
   if (count > 1) slides.push({ index: next, position: "next" });
   if (count > 2) slides.push({ index: previous, position: "previous" });
+  if (count > 3) slides.push({ index: (activeIndex + 2) % count, position: count === 4 ? "parked" : "ahead" });
+  if (count > 4) slides.push({ index: (activeIndex + count - 2) % count, position: "behind" });
   slides.sort((left, right) => left.index - right.index);
 
   function move(direction: number) {
-    setActive(index => (index + direction + count) % count);
+    requestMove(direction < 0 ? previous : next, false);
   }
 
   function toggleAutoplay() {
@@ -112,6 +128,7 @@ export function AgentCarousel({ agents }: { agents: PublicRosterAgent[] }) {
       }}
     >
       <div
+        ref={stage}
         className={`${profileStyles.stage} ${styles.stage}`}
         onPointerDown={startTouch}
         onPointerUp={finishTouch}
@@ -119,9 +136,17 @@ export function AgentCarousel({ agents }: { agents: PublicRosterAgent[] }) {
       >
         {slides.map(({ index, position }) => {
           const entry = agents[index]!;
+          const neighbor = position === "next" || position === "previous";
           return (
-            <div key={entry.profileHref ?? entry.name} className={styles.slide} data-position={position} aria-hidden="true">
-              <ProfileArtwork {...entry} decorative prioritize={position === "current"} />
+            <div key={entry.profileHref ?? entry.name} className={styles.slide} data-position={position} data-slide-index={index} aria-hidden="true">
+              <ProfileArtwork {...entry} decorative fetchPriority={position === "current" ? "high" : neighbor ? "auto" : "low"} onSettled={image => {
+                image.dataset.artworkSettled = "";
+                const pending = pendingMove.current;
+                if (pending?.index === index && (!pending.automatic || (rotating && !touch.current))) {
+                  pendingMove.current = null;
+                  setActive(index);
+                }
+              }} />
             </div>
           );
         })}

@@ -38,6 +38,25 @@
   transform: translateX(37%) scale(.74);
 }
 
+.slide[data-position="behind"],
+.slide[data-position="ahead"],
+.slide[data-position="parked"],
+.slide:not([data-position="current"]):not(:has(img[data-artwork-settled])) {
+  opacity: 0;
+}
+
+.slide[data-position="behind"] {
+  transform: translateX(-49%) scale(.65);
+}
+
+.slide[data-position="ahead"] {
+  transform: translateX(49%) scale(.65);
+}
+
+.slide[data-position="parked"] {
+  transform: scale(.65);
+}
+
 /* Clip the image directly so the moving slide never composites a second mask layer. */
 .slide [data-profile-portrait] {
   mask-image: none;
