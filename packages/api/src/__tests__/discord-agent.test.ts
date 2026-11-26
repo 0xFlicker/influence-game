@@ -7,7 +7,7 @@ import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-resu
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createDiscordAgentRoutes } from "../routes/discord-agent.js";
-import { activeOffer, destination, safeReply, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage } from "../discord/conversation/policy.js";
+import { activeOffer, destination, roomContext, safeReply, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage } from "../discord/conversation/policy.js";
 import { filterInference, mcpBridgeResponse } from "../discord/conversation/sandbox.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -246,3 +246,25 @@ test("turn feedback refreshes typing and removes only its own acknowledgement af
   expect(reply).toBe("replied");
   expect(calls.at(-1)).toEqual(["DELETE", reaction]);
 }, 15000);
+
+test("room follow-ups receive prior House replies and an explicit same-room parent", () => {
+  const id = (minutes: number) => ((BigInt(1764150000000 + minutes * 60_000) - 1420070400000n) << 22n).toString();
+  const house = "1521918515752472606";
+  const original: DiscordMessage = { id: id(0), channel_id: room, guild_id: guild, type: 0,
+    content: "The House profile https://thehouse.game/s/Lk3WEcewWi", author: { id: alice } };
+  const current: DiscordMessage = { ...original, id: id(8), type: 19, content: "Can you post it again?",
+    message_reference: { channel_id: room, message_id: original.id } };
+  const reply = { ...original, id: id(2), content: "The House profile is @thehouse", author: { id: house, bot: true } };
+  const context = roomContext(current, [
+    current, reply, original, original,
+    { ...reply, id: id(1), author: { id: bob, bot: true } },
+    { ...original, id: id(3), channel_id: dm },
+    { ...original, id: id(9) },
+    { ...original, id: id(-40) },
+  ], house);
+  expect(context.recent.map(({ speaker, text }) => [speaker, text])).toEqual([
+    ["requesting_member", original.content], ["house", reply.content],
+  ]);
+  expect(context.repliedTo?.id).toBe(original.id);
+  expect(roomContext({ ...current, message_reference: { channel_id: dm, message_id: original.id } }, [original], house).repliedTo).toBeUndefined();
+});

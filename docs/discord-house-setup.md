@@ -307,6 +307,19 @@ its public channel overrides and onboarding defaults predate this verification g
 
 ## Conversation worker acceptance
 
+The Discord reply container loads its game identity from
+`packages/api/src/discord/conversation/AGENTS.md`. The House uses the
+`thehouse` public profile to ground questions about its own roster and games.
+Use the public profile and shared game views for those questions, alongside
+the current conversation's access and spoiler rules.
+
+Room replies use up to 12 messages from the last 30 minutes of the same
+channel, plus an explicit reply target in that window. This includes prior
+House replies and survives worker replacement. DMs use the requesting
+member's recent messages from the current verified link. Historical messages
+provide conversational context. House reads and spoiler consent retain their
+own current authorization checks.
+
 The Discord profile read resolves House short links through the existing share
 service. It also accepts canonical profile URLs, handles, public IDs, and exact
 public display names. Confirm the same public profile and canonical
