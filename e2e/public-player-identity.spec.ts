@@ -1391,6 +1391,68 @@ test.describe("local public player identity", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   });
 
+  test("touch carousel swipes through the whole roster with one artwork per onstage agent", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const context = await identityContext(browser, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: "no-preference" });
+    try {
+      const page = await context.newPage();
+      const client = await context.newCDPSession(page);
+      const requests: string[] = [];
+      page.on("request", request => requests.push(new URL(request.url()).pathname));
+      await page.goto(`${servers.webUrl}/profile/e2e-carousel`);
+      const carousel = page.getByRole("region", { name: "Agents in the spotlight" });
+      await carousel.getByRole("button", { name: "Pause carousel" }).tap();
+      const stage = carousel.getByRole("button", { name: "Play carousel" });
+      const slide = (position: string) => carousel.locator(`[data-position="${position}"]`);
+      await expect(carousel.getByRole("heading")).toHaveText("Atlas E2E");
+      await expect(carousel.getByRole("button", { name: "Next agent" })).toHaveCSS("clip-path", "inset(50%)");
+      await expect(stage).toBeVisible();
+      await expect(slide("current").locator("img")).toHaveAttribute("src", /\/api\/public\/agents\/carousel-atlas\/art/);
+      await expect(slide("previous").locator("img")).toHaveAttribute("src", /\/avatars\/personas\/wildcard\.png$/);
+      await expect(slide("next").locator("img")).toHaveAttribute("src", /\/api\/public\/agents\/carousel-birch\/art/);
+      await expect.poll(() => requests.filter(path => path.endsWith("/art")).sort()).toEqual([
+        "/api/public/agents/carousel-atlas/art", "/api/public/agents/carousel-birch/art",
+      ]);
+
+      const stageBox = (await stage.boundingBox())!;
+      const gesture = async (dx: number, dy: number) => {
+        const x = stageBox.x + stageBox.width * (dx < 0 ? .75 : .25);
+        const y = stageBox.y + stageBox.height * .65;
+        await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+        for (let step = 1; step <= 5; step++) {
+          await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x + dx * step / 5, y: y + dy * step / 5 }] });
+        }
+        await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      };
+
+      for (const [name, source] of [
+        ["Birch E2E", /\/api\/public\/agents\/carousel-birch\/art/], ["Cedar E2E", /\/observer\.png$/],
+        ["Dune E2E", /\/loyalist\.png$/], ["Elm E2E", /\/social\.png$/], ["Fern E2E", /\/wildcard\.png$/],
+        ["Atlas E2E", /\/api\/public\/agents\/carousel-atlas\/art/],
+      ] as const) {
+        await gesture(-110, 0);
+        await expect(carousel.getByRole("heading")).toHaveText(name);
+        await expect(slide("current").locator("img")).toHaveAttribute("src", source);
+        await expect.poll(() => carousel.locator("[data-position]").evaluateAll(elements =>
+          elements.every(element => element.getAnimations().length === 0),
+        )).toBe(true);
+        await expect(slide("current").locator("img")).toHaveAttribute("src", source);
+        const images = await carousel.locator("[data-position] img").evaluateAll(elements => elements.map(element => element.getAttribute("src")));
+        expect(images).toHaveLength(3);
+        expect(new Set(images).size).toBe(3);
+      }
+
+      await gesture(110, 0);
+      await expect(carousel.getByRole("heading")).toHaveText("Fern E2E");
+      await expect(slide("current").locator("img")).toHaveCSS("mask-image", "none");
+      await gesture(0, -105);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+      await expect(carousel.getByRole("heading")).toHaveText("Fern E2E");
+    } finally {
+      await context.close();
+    }
+  });
+
   test("dashboard and owned agent profile lead to one assistant request", async ({ browser }) => {
     test.setTimeout(120_000);
     const context = await authenticatedContext(browser, fixture.completeJwt);

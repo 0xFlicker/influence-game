@@ -22,12 +22,12 @@ export function PublicPlayerProfileView({ profile }: { profile: PublicPlayerProf
     const href = `/agents/${encodeURIComponent(entry.agentProfileId ?? "")}`;
     if (!activity.has(href)) activity.set(href, recentResults.length - index);
   }
-  const featured = [...agents].sort((left, right) =>
+  const carouselAgents = [...agents].sort((left, right) =>
     Number(Boolean(right.fullBodyImageUrl)) - Number(Boolean(left.fullBodyImageUrl))
     || (activity.get(right.profileHref ?? "") ?? 0) - (activity.get(left.profileHref ?? "") ?? 0)
     || (right.awards?.length ?? 0) - (left.awards?.length ?? 0)
     || right.competition.wins - left.competition.wins,
-  ).slice(0, 4);
+  );
 
   return (
     <div className={profileStyles.page}>
@@ -42,7 +42,7 @@ export function PublicPlayerProfileView({ profile }: { profile: PublicPlayerProf
               <PublicProfileShareButton identity={identity} />
             </div>
           </div>
-          {featured.length > 0 && <AgentCarousel agents={featured} />}
+          {carouselAgents.length > 0 && <AgentCarousel key={identity.publicId} agents={carouselAgents} />}
         </div>
       </header>
 
