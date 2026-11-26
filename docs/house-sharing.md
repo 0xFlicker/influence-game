@@ -44,6 +44,12 @@ Dashboard activity list opens the editor to show submission status. Owners
 can also edit from the public profile, and account-scoped analysis remains
 available through **Analyze**.
 
+The public architect page rotates through the full public roster. It places
+agents with full-body art first, then uses recent public appearances, earned
+awards and rated Influence wins to order agents within each group. The stage
+loads artwork for the active agent and its visible neighbors. On touch screens,
+swipe sideways to browse and pause autoplay. Tap the artwork to pause or resume.
+
 ## Automated abuse protection
 
 Creation uses PostgreSQL transactions and row locks, shared across API instances:

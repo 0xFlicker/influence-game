@@ -159,6 +159,27 @@ async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
     earnedAt: "2026-06-20T00:00:00.000Z",
   });
 
+  const carouselOwner = await createPlayerUser(db, 5, {
+    id: "e2e-carousel-player",
+    publicId: randomUUID(),
+    displayName: "Carousel Architect",
+    handle: "e2e-carousel",
+    createdAt: "2026-06-01T00:00:00.000Z",
+  });
+  const carouselRoster = [
+    ["Atlas", "strategic"], ["Birch", "diplomat"], ["Cedar", "observer"],
+    ["Dune", "loyalist"], ["Elm", "social"], ["Fern", "wildcard"],
+  ] as const;
+  await db.insert(schema.agentProfiles).values(carouselRoster.map(([name, personaKey], index) => ({
+    id: `carousel-${name.toLowerCase()}`,
+    userId: carouselOwner.userId,
+    name: `${name} E2E`,
+    personality: "Synthetic browser fixture.",
+    personaKey,
+    avatarUrl: `/avatars/personas/${personaKey}.png`,
+    fullBodyReferenceUrl: index < 2 ? `/avatars/personas/full-body-v1/${personaKey}.webp` : null,
+  })));
+
   const required = await createPlayerUser(db, 1, {
     id: "e2e-required-player",
     publicId: randomUUID(),

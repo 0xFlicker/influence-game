@@ -6,6 +6,11 @@
 
 .stage {
   margin-inline: -1rem;
+  touch-action: pan-y pinch-zoom;
+}
+
+.touchSurface {
+  display: none;
 }
 
 .slide {
@@ -22,8 +27,7 @@
 .slide[data-position="previous"],
 .slide[data-position="next"] {
   z-index: 1;
-  opacity: .48;
-  filter: saturate(.45) brightness(.72);
+  opacity: .43;
 }
 
 .slide[data-position="previous"] {
@@ -34,10 +38,9 @@
   transform: translateX(37%) scale(.74);
 }
 
-.slide[data-position="offstage"] {
-  visibility: hidden;
-  opacity: 0;
-  transform: scale(.55);
+/* Clip the image directly so the moving slide never composites a second mask layer. */
+.slide [data-profile-portrait] {
+  mask-image: none;
 }
 
 .caption {
@@ -126,6 +129,40 @@
   }
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .touchSurface {
+    position: absolute;
+    z-index: 3;
+    inset: 0;
+    display: block;
+  }
+
+  .touchSurface:focus-visible {
+    outline-offset: -4px;
+  }
+
+  .controls .playbackButton {
+    display: none;
+  }
+
+  .controls button:not(.playbackButton):not(:focus-visible) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .caption:has(.controls) {
+    min-block-size: 6.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .controls {
+    align-self: start;
+  }
+}
+
 @media (min-width: 800px) {
   .carousel {
     padding-block: 1.5rem;
@@ -147,7 +184,14 @@
   }
 
   .slide {
-    transition: opacity 580ms ease, transform 760ms cubic-bezier(.22, .8, .28, 1), filter 580ms ease, visibility 580ms;
+    transition: opacity 580ms ease, transform 760ms cubic-bezier(.22, .8, .28, 1);
+  }
+
+  @starting-style {
+    .slide[data-position="previous"],
+    .slide[data-position="next"] {
+      opacity: 0;
+    }
   }
 
   @keyframes cast-enter {
