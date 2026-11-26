@@ -1,11 +1,14 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createDiscordAgentRoutes } from "../routes/discord-agent.js";
 import { activeOffer, destination, validatedConsent, validatedReply, type DiscordMessage } from "../discord/conversation/policy.js";
-import { filterInference } from "../discord/conversation/sandbox.js";
+import { filterInference, mcpBridgeResponse } from "../discord/conversation/sandbox.js";
 import { setupTestDB } from "./test-utils.js";
 
 const guild = "1521918107554152468";
@@ -167,4 +170,35 @@ test("structured consent rejects malformed output and cannot borrow another memb
   ] });
   expect(filterInference(imageInput("https://elsewhere.example/private"), "model", new Set())).toBeNull();
   expect(filterInference(imageInput("data:image/png;base64,aGVsbG8="), "model", new Set())).not.toBeNull();
+});
+
+test("House MCP streams a compressed catalog through a fresh Unix response", async () => {
+  const catalog = { tools: [{ name: "list_games" }] };
+  const directory = await mkdtemp(join(tmpdir(), "house-mcp-test-"));
+  const socket = join(directory, "mcp.sock");
+  const upstream = Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    fetch: () => new Response(Bun.zstdCompressSync(JSON.stringify(catalog)), {
+      headers: { "content-type": "application/json", "content-encoding": "zstd" },
+    }),
+  });
+  let bridge: ReturnType<typeof Bun.serve> | undefined;
+  try {
+    bridge = Bun.serve({
+      unix: socket,
+      async fetch() {
+        const response = await fetch(upstream.url);
+        expect(response.headers.get("content-encoding")).toBe("zstd");
+        return mcpBridgeResponse(response);
+      },
+    });
+    const response = await fetch("http://house/mcp", { unix: socket });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-encoding")).toBeNull();
+    expect(await response.json()).toEqual(catalog);
+  } finally {
+    bridge?.stop(true);
+    upstream.stop(true);
+    await rm(directory, { recursive: true, force: true });
+  }
 });

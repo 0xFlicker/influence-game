@@ -315,6 +315,10 @@ checks the actual House tool catalog, image handoff, and network isolation.
 Use the existing scoped AWS federation relay for a synthetic paid turn on the
 production ARM launch settings. Verify both a structured greeting and a turn
 with a House MCP call, then confirm the relay still works after token expiry.
+Include the compressed production MCP catalog in that check. The bridge makes
+a fresh JSON response because Bun decodes the upstream body while retaining
+its original compression header. Forwarding that header causes the sandbox's
+MCP client to decode the bytes twice and fail before inference.
 The Discord Gateway ready event establishes connection. A successful live
 turn also requires a verified sender, a current House grant, and a Discord
 reply delivered back to its originating conversation.

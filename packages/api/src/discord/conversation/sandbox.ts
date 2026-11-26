@@ -47,7 +47,7 @@ export async function runCodex(
           const body = await request.json() as Record<string, unknown>;
           if (url.pathname === "/mcp" && mode === "reply" && !url.search) {
             if (body.method === "tools/call" && ++toolCalls > maxRequests) return new Response(null, { status: 429 });
-            return mcp(body);
+            return mcpBridgeResponse(await mcp(body));
           }
           if (url.pathname !== "/v1/responses" || url.search || ++modelCalls > maxRequests) return new Response(null, { status: 403 });
           const filtered = filterInference(body, model, allowed);
@@ -101,6 +101,14 @@ export async function runCodex(
     }
     await rm(folder, { recursive: true, force: true });
   }
+}
+
+export function mcpBridgeResponse(upstream: Response) {
+  // Fetch has already decoded this body. The Unix hop has its own HTTP framing.
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 export function filterInference(body: Record<string, unknown>, model: string, allowed: Set<string>) {
