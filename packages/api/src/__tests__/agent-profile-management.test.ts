@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
@@ -458,7 +459,7 @@ async function seedUsers(db: DrizzleDB): Promise<void> {
   await db.insert(schema.users).values([
     {
       id: USER_A_ID,
-      email: "agent-a@test.example",
+      legacyEmailHash: hashAccountEmail("agent-a@test.example"),
       displayName: "Agent A",
       rating: 1388,
       peakRating: 1440,
@@ -467,7 +468,7 @@ async function seedUsers(db: DrizzleDB): Promise<void> {
     },
     {
       id: USER_B_ID,
-      email: "agent-b@test.example",
+      legacyEmailHash: hashAccountEmail("agent-b@test.example"),
       displayName: "Agent B",
       rating: 1210,
       peakRating: 1300,

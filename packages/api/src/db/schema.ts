@@ -18,6 +18,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   serial,
@@ -223,7 +224,8 @@ export const users = pgTable("users", {
   publicId: uuid("public_id").defaultRandom().notNull(),
   handle: text("handle"),
   walletAddress: text("wallet_address").unique(),
-  email: text("email"),
+  legacyEmailHash: text("legacy_email_hash"),
+  deletedByUserId: text("deleted_by_user_id").references((): AnyPgColumn => users.id),
   displayName: text("display_name"),
   rating: integer("rating").notNull().default(1200),
   gamesPlayed: integer("games_played").notNull().default(0),
@@ -234,6 +236,8 @@ export const users = pgTable("users", {
     .notNull()
     .default(sql`now()::text`),
 }, (table) => [
+  index("users_legacy_email_hash_idx").on(table.legacyEmailHash),
+  check("users_legacy_email_hash_check", sql`${table.legacyEmailHash} ~ '^[a-f0-9]{64}$'`),
   uniqueIndex("users_public_id_unique").on(table.publicId),
   uniqueIndex("users_handle_lower_unique").on(sql`lower(${table.handle})`),
   check(
@@ -464,7 +468,7 @@ export const authenticationCredentials = pgTable("authentication_credentials", {
 export type VerifiedEmailClaimState = "active" | "conflict";
 
 export const verifiedEmailClaims = pgTable("verified_email_claims", {
-  normalizedEmail: text("normalized_email").primaryKey(),
+  emailHash: text("email_hash").primaryKey(),
   userId: text("user_id")
     .references(() => users.id, { onDelete: "restrict" }),
   state: text("state").notNull().$type<VerifiedEmailClaimState>(),
@@ -490,10 +494,41 @@ export const verifiedEmailClaims = pgTable("verified_email_claims", {
     )`,
   ),
   check(
-    "verified_email_claims_normalized_email_canonical_check",
-    sql`lower(btrim(${table.normalizedEmail})) = ${table.normalizedEmail}`,
+    "verified_email_claims_email_hash_check",
+    sql`${table.emailHash} ~ '^[a-f0-9]{64}$'`,
   ),
 ]);
+
+export const signupBucket = pgTable("signup_bucket", {
+  id: boolean("id").primaryKey().default(true),
+  rate: bigint("rate", { mode: "number" }).notNull(),
+  balance: numeric("balance", { precision: 24, scale: 0 }).notNull(),
+  updatedMs: bigint("updated_ms", { mode: "bigint" }).notNull(),
+}, table => [
+  check("signup_bucket_id_check", sql`${table.id}`),
+  check("signup_bucket_rate_check", sql`${table.rate} BETWEEN 1 AND 9007199254740991`),
+  check("signup_bucket_balance_check", sql`${table.balance} >= 0`),
+]);
+
+export const signupCampaigns = pgTable("signup_campaigns", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  label: text("label").notNull(),
+  linkDigest: text("link_digest").notNull().unique(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+}, table => [check("signup_campaigns_check", sql`${table.startsAt} < ${table.endsAt}`)]);
+
+export const signupCampaignSessions = pgTable("signup_campaign_sessions", {
+  digest: text("digest").primaryKey(),
+  campaignId: uuid("campaign_id").notNull().references(() => signupCampaigns.id),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [index("signup_campaign_sessions_expiry").on(table.expiresAt)]);
+
+export const signupHumanProofs = pgTable("signup_human_proofs", {
+  digest: text("digest").primaryKey(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, table => [index("signup_human_proofs_expiry").on(table.expiresAt)]);
 
 // ---------------------------------------------------------------------------
 // Games

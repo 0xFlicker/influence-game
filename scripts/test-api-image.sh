@@ -38,7 +38,9 @@ docker exec "$db" pg_isready -h 127.0.0.1 -U influence -d image_check
 # isolated database. Migrations install the lookup functions; the index build
 # must run outside their transaction. The check must fail closed before build.
 fixture_database_url="postgresql://influence:fixture-only@${db}:5432/image_check"
+fixture_email_key="$(printf '%032d' 0 | base64 | tr -d '\n')"
 docker run --rm --network "$scope" -e DATABASE_URL="$fixture_database_url" \
+  -e ACCOUNT_EMAIL_HMAC_KEY="$fixture_email_key" \
   --entrypoint bun "$image" dist/migrate.js
 if check_output="$(docker run --rm --network "$scope" -e DATABASE_URL="$fixture_database_url" \
   --entrypoint bun "$image" dist/public-browse-indexes.js --check 2>&1)"; then
@@ -68,6 +70,7 @@ echo "Packaged browse indexes built and verified against the isolated database"
 for role in gateway game-worker; do
   docker run -d --name "$api" --network "$scope" \
     -e DATABASE_URL="$fixture_database_url" \
+    -e ACCOUNT_EMAIL_HMAC_KEY="$fixture_email_key" \
     -e GIT_SHA=1111111111111111111111111111111111111111 \
     -e PRIVY_APP_ID=image-check -e PRIVY_APP_SECRET=fixture-only \
     -e JWT_SECRET=provider-free-image-check-secret-only \

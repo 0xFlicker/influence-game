@@ -1,3 +1,4 @@
+import { pruneSignupCredentials } from "./services/signup-admission.js";
 import { processAccountDeletionTask } from "./services/account-deletion-worker.js";
 import {
   conversionDeliveryEnvFromProcess,
@@ -550,7 +551,7 @@ async function finishBackgroundRuntimeStartup(
   let accountDeletionWork: Promise<unknown> | null = null;
   const accountDeletionTimer = gameExecutionWorker && !localEvaluation && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true" ? setInterval(() => {
     if (stopping || accountDeletionWork || !runtimeActivation.canClaimWork()) return;
-    accountDeletionWork = processAccountDeletionTask(db)
+    accountDeletionWork = Promise.all([processAccountDeletionTask(db), pruneSignupCredentials(db)])
       .catch(() => console.warn("[account-deletion] Cleanup deferred"))
       .finally(() => { accountDeletionWork = null; });
   }, 10_000) : null;

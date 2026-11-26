@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -16,7 +17,7 @@ type FoundProfile = Extract<Awaited<ReturnType<typeof import("../services/public
 
 async function fixture() {
   const db = await setupTestDB(), owner = randomUUID(), agent = randomUUID(), other = randomUUID();
-  await db.insert(schema.users).values({ id: owner, handle: "public-architect", displayName: "Public Architect", email: "PRIVATE_EMAIL@example.test", walletAddress: "0x1234567890abcdef1234567890abcdef12345678" });
+  await db.insert(schema.users).values({ id: owner, handle: "public-architect", displayName: "Public Architect", legacyEmailHash: hashAccountEmail("PRIVATE_EMAIL@example.test"), walletAddress: "0x1234567890abcdef1234567890abcdef12345678" });
   await db.insert(schema.agentProfiles).values([
     { id: agent, userId: owner, name: "Public Agent", personaKey: "strategic", personality: "PRIVATE_PERSONALITY", strategyStyle: "PRIVATE_INFLUENCE", werewolfStrategyStyle: "PRIVATE_WEREWOLF", backstory: "PRIVATE_BACKSTORY" },
     { id: other, userId: owner, name: "Other Owned Agent", personality: "PRIVATE_OTHER" },

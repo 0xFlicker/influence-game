@@ -14,6 +14,7 @@ describe("admin section routes", () => {
       "/admin/free-queue",
       "/admin/agents",
       "/admin/users",
+      "/admin/signups",
       "/admin/invites",
     ]);
   });

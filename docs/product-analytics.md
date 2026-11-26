@@ -158,7 +158,7 @@ Historical account recovery is not a new paid conversion.
 The server outbox supports Meta, Google Ads Data Manager, TikTok Events API,
 and X Conversion API. Configuration is per destination. The adapters are deployed; live provider
 acceptance must be verified separately after credentials are configured.
-No browser ad pixel is added. The signup flow stays unchanged.
+The browser sends no ad pixel. Turnstile and signup capacity are enforced independently of tracking consent and campaign attribution.
 
 Only three authoritative outcomes are sent: `signup_completed`, `agent_ready`,
 and `season_entry`. Agent readiness and free season enrollment are never

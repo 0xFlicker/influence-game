@@ -6,10 +6,10 @@ import {
   randomBytes,
 } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { normalizeVerifiedEmail } from "../lib/verified-email.js";
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { isImportedSyntheticPlayer } from "./public-player-identity.js";
 import {
   classifyPrivyUser,
@@ -341,7 +341,7 @@ async function inventoryIdentity(
 
   const subjectUser = (await tx.select({
     id: schema.users.id,
-    email: schema.users.email,
+    email: schema.users.legacyEmailHash,
   })
     .from(schema.users)
     .where(eq(schema.users.id, evidence.subject)))[0];
@@ -383,7 +383,7 @@ async function inventoryIdentity(
 
   const mappedUser = (await tx.select({
     id: schema.users.id,
-    email: schema.users.email,
+    email: schema.users.legacyEmailHash,
   }).from(schema.users).where(eq(schema.users.id, userId)))[0];
   if (!mappedUser) {
     throw new InventoryBatchBlockedError([
@@ -393,8 +393,7 @@ async function inventoryIdentity(
   if (
     evidence.owner.kind === "email"
     && mappedUser.email
-    && normalizeVerifiedEmail(mappedUser.email)
-      !== evidence.owner.normalizedEmail
+    && mappedUser.email !== hashAccountEmail(evidence.owner.normalizedEmail)
   ) {
     throw new InventoryBatchBlockedError([
       issue("user_email_metadata_mismatch", evidence.subject, hmacKey),
@@ -451,12 +450,12 @@ async function hasEmailOverlap(
   const [user, claim] = await Promise.all([
     tx.select({ id: schema.users.id })
       .from(schema.users)
-      .where(sql`lower(btrim(${schema.users.email})) = ${normalizedEmail}`)
+      .where(eq(schema.users.legacyEmailHash, hashAccountEmail(normalizedEmail)))
       .limit(1)
       .then((rows) => rows[0]),
-    tx.select({ normalizedEmail: schema.verifiedEmailClaims.normalizedEmail })
+    tx.select({ normalizedEmail: schema.verifiedEmailClaims.emailHash })
       .from(schema.verifiedEmailClaims)
-      .where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail))
+      .where(eq(schema.verifiedEmailClaims.emailHash, hashAccountEmail(normalizedEmail)))
       .limit(1)
       .then((rows) => rows[0]),
   ]);
@@ -475,7 +474,7 @@ async function inventoryEmailClaim(
   const [databaseClaim, databaseActiveForUser] = await Promise.all([
     tx.select()
       .from(schema.verifiedEmailClaims)
-      .where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail))
+      .where(eq(schema.verifiedEmailClaims.emailHash, hashAccountEmail(normalizedEmail)))
       .then((rows) => rows[0]),
     tx.select()
       .from(schema.verifiedEmailClaims)
@@ -494,7 +493,7 @@ async function inventoryEmailClaim(
     : databaseClaim;
   const simulatedActiveEmail = simulated.activeEmailByUser.get(userId);
   const activeForUser = simulatedActiveEmail
-    ? { normalizedEmail: simulatedActiveEmail }
+    ? { emailHash: hashAccountEmail(simulatedActiveEmail) }
     : databaseActiveForUser;
 
   if (claim?.state === "conflict") {
@@ -509,7 +508,7 @@ async function inventoryEmailClaim(
         state: "conflict",
         userId: null,
         updatedAt: new Date().toISOString(),
-      }).where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail));
+      }).where(eq(schema.verifiedEmailClaims.emailHash, hashAccountEmail(normalizedEmail)));
     } else {
       simulated.emailOwners.set(normalizedEmail, null);
       if (typeof claim.userId === "string") {
@@ -518,7 +517,7 @@ async function inventoryEmailClaim(
     }
     return;
   }
-  if (activeForUser && activeForUser.normalizedEmail !== normalizedEmail) {
+  if (activeForUser && activeForUser.emailHash !== hashAccountEmail(normalizedEmail)) {
     throw new InventoryBatchBlockedError([
       issue("multiple_active_email_claims", userId, hmacKey),
     ]);
@@ -526,18 +525,18 @@ async function inventoryEmailClaim(
 
   if (write) {
     const inserted = await tx.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail,
+      emailHash: hashAccountEmail(normalizedEmail),
       userId,
       state: "active",
     }).onConflictDoNothing().returning({
-      normalizedEmail: schema.verifiedEmailClaims.normalizedEmail,
+      normalizedEmail: schema.verifiedEmailClaims.emailHash,
     });
     if (inserted.length === 1) {
       counts.activeClaimsInserted += 1;
     } else {
       const winner = (await tx.select()
         .from(schema.verifiedEmailClaims)
-        .where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail)))[0];
+        .where(eq(schema.verifiedEmailClaims.emailHash, hashAccountEmail(normalizedEmail))))[0];
       if (winner?.state === "active" && winner.userId === userId) return;
       if (winner?.state === "conflict") {
         counts.conflictClaimsRetained += 1;
@@ -548,7 +547,7 @@ async function inventoryEmailClaim(
           state: "conflict",
           userId: null,
           updatedAt: new Date().toISOString(),
-        }).where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail));
+        }).where(eq(schema.verifiedEmailClaims.emailHash, hashAccountEmail(normalizedEmail)));
         counts.claimsConvertedToConflict += 1;
         return;
       }
@@ -574,7 +573,7 @@ async function addDatabaseReadiness(
     db.select({
       id: schema.users.id,
       walletAddress: schema.users.walletAddress,
-      email: schema.users.email,
+      email: schema.users.legacyEmailHash,
     }).from(schema.users),
     db.select({ userId: schema.authenticationCredentials.userId })
       .from(schema.authenticationCredentials)

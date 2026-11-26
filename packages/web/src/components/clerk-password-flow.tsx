@@ -1,5 +1,6 @@
 "use client";
 
+import { signupProofPending, subscribeSignupProof } from "@/lib/signup-verification";
 import { useClerk, useSession, useSignIn, useSignUp } from "@clerk/react";
 import { isClerkAPIResponseError } from "@clerk/react/errors";
 import { executeProtectCheck } from "@clerk/shared/internal/clerk-js/protectCheck";
@@ -8,6 +9,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import Link from "next/link";
 import { AccountLegalConsent } from "@/components/account-legal-consent";
@@ -399,17 +401,19 @@ export function ClerkPasswordFlow({
   const providerBusy =
     signInFetchStatus === "fetching" || signUpFetchStatus === "fetching";
   const busy = localBusy || providerBusy;
+  const challengePending = useSyncExternalStore(subscribeSignupProof, signupProofPending, () => false);
   const recoveryEmail = verifiedSessionEmail(clerkSession);
 
   // Do not race a second authentication against an unresolved provider operation.
   // Offer a page reload, which discards the old operation before recovery.
   useEffect(() => {
-    if (!busy) return;
+    if (!busy || challengePending) return;
     const timer = setTimeout(() => setOperationStalled(true), 30_000);
     return () => clearTimeout(timer);
-  }, [busy]);
+  }, [busy, challengePending]);
   const getActiveClerkToken = useCallback(async (): Promise<string> => {
     await Promise.resolve();
+    if (!isAuthenticationAttemptCurrent(attempt)) throw new Error("Signup verification was cancelled.");
     const token = await clerk.session?.getToken();
     if (!token) {
       throw new Error(
@@ -417,7 +421,7 @@ export function ClerkPasswordFlow({
       );
     }
     return token;
-  }, [clerk]);
+  }, [attempt, clerk, isAuthenticationAttemptCurrent]);
 
   useEffect(() => {
     if (presentation !== "inline" && !operationStalled) return;
@@ -566,7 +570,7 @@ export function ClerkPasswordFlow({
         )
       ) {
         await completeInfluenceSession(
-          () => createManagedAuthentication(token, correlationId),
+          () => createManagedAuthentication(token, correlationId, undefined, getActiveClerkToken),
         );
       } else {
         await completeInfluenceSession(
@@ -962,7 +966,7 @@ export function ClerkPasswordFlow({
     await run(async () => {
       try {
         await completeInfluenceSession(
-          () => createManagedAuthentication(managedToken, correlationId),
+          () => createManagedAuthentication(managedToken, correlationId, undefined, getActiveClerkToken),
         );
       } catch (caught) {
         if (caught instanceof ApiError && handleApiState(caught, managedToken)) {
@@ -982,6 +986,7 @@ export function ClerkPasswordFlow({
             managedToken,
             correlationId,
             inviteCode.trim(),
+            getActiveClerkToken,
           ),
         );
       } catch (caught) {

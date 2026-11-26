@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { houseContent } from "../game-mcp/house-contracts.js";
 import { assertMcpOutputSchema } from "../game-mcp/output-validation.js";
 import Ajv from "ajv";
@@ -2176,14 +2177,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     await db.insert(schema.users).values([
       {
         id: GAMES_AUTH.userId,
-        email: "games-user@test.example",
+        legacyEmailHash: hashAccountEmail("games-user@test.example"),
         displayName: "Games User",
         rating: 1377,
         peakRating: 1401,
       },
       {
         id: "other-user",
-        email: "other-user@test.example",
+        legacyEmailHash: hashAccountEmail("other-user@test.example"),
         displayName: "Other User",
       },
     ]);
@@ -2229,7 +2230,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values({
       id: GAMES_AUTH.userId,
-      email: "games-user@test.example",
+      legacyEmailHash: hashAccountEmail("games-user@test.example"),
       displayName: "Games User",
     });
     const server = createProductionGameMcpServer(db);
@@ -2396,8 +2397,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
   test("returns owner-safe structured name-taken data for duplicate names", async () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values([
-      { id: GAMES_AUTH.userId, email: "games-user@test.example" },
-      { id: "other-owner", email: "other-owner@test.example" },
+      { id: GAMES_AUTH.userId, legacyEmailHash: hashAccountEmail("games-user@test.example") },
+      { id: "other-owner", legacyEmailHash: hashAccountEmail("other-owner@test.example") },
     ]);
     await db.insert(schema.agentProfiles).values({
       id: "private-conflict-agent",
@@ -2441,7 +2442,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values({
       id: GAMES_AUTH.userId,
-      email: "games-user@test.example",
+      legacyEmailHash: hashAccountEmail("games-user@test.example"),
       displayName: "Games User",
     });
     const server = createProductionGameMcpServer(db);
@@ -2479,7 +2480,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values({
       id: GAMES_AUTH.userId,
-      email: "games-user@test.example",
+      legacyEmailHash: hashAccountEmail("games-user@test.example"),
       displayName: "Games User",
     });
     const server = createProductionGameMcpServer(db);
@@ -2512,7 +2513,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values({
       id: GAMES_AUTH.userId,
-      email: "games-user@test.example",
+      legacyEmailHash: hashAccountEmail("games-user@test.example"),
       displayName: "Games User",
     });
     const server = createProductionGameMcpServer(db);

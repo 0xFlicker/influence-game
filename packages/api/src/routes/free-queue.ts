@@ -214,7 +214,6 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       .select({
         id: schema.users.id,
         displayName: schema.users.displayName,
-        email: schema.users.email,
         walletAddress: schema.users.walletAddress,
         rating: schema.users.rating,
         gamesPlayed: schema.users.gamesPlayed,

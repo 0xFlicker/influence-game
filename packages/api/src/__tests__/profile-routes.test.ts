@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { grantAward, revokeAward } from "../services/awards.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
@@ -28,7 +29,7 @@ describe("public profile surfaces", () => {
     await db.insert(schema.users).values([
       {
         id: "email-user",
-        email: "player@example.com",
+        legacyEmailHash: hashAccountEmail("player@example.com"),
         displayName: "player@example.com",
         createdAt: PUBLIC_IDENTITY_LAUNCH_CUTOFF,
         rating: 1540,
@@ -39,7 +40,7 @@ describe("public profile surfaces", () => {
       {
         id: "named-user",
         walletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        email: "named@example.com",
+        legacyEmailHash: hashAccountEmail("named@example.com"),
         displayName: "Named Player",
         handle: "named-player",
         rating: 1490,
@@ -134,7 +135,7 @@ describe("public profile surfaces", () => {
       displayName: string;
       publicIdentityOnboarding: { state: string };
     };
-    expect(body.email).toBe("player@example.com");
+    expect(body).not.toHaveProperty("email");
     expect(body.publicId).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.displayName).toBe("Anonymous");
     expect(body.handle).toBeNull();

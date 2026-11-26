@@ -73,12 +73,10 @@ import {
   allocateImportedAgentProfileName,
   lockAndLoadImportedAgentProfileNameNamespace,
 } from "../services/imported-agent-profile-names.js";
-import {
-  userDisplayNameForEmailPolicy,
-  userDisplayNameContainsEmailProjection,
-  userEmailAccessProjection,
-  userEmailProjection,
-} from "../services/user-email-policy.js";
+import { createAdminAccountRoutes } from "./admin-accounts.js";
+import { containsEmailLike } from "../lib/display-name.js";
+import { requireRole } from "../middleware/auth.js";
+
 import {
   resolveProviderManifestFromGameConfig,
 } from "@influence/engine";
@@ -244,6 +242,7 @@ export function createAdminRoutes(
 
   // All admin routes require authentication. Permissions are applied per-route.
   app.use("/api/admin/*", requireAuth(db));
+  app.route("/", createAdminAccountRoutes(db));
 
   app.get("/api/admin/model-lifecycle", async c => {
     c.header("Cache-Control", "private, no-store");
@@ -463,27 +462,21 @@ export function createAdminRoutes(
   // GET /api/admin/users — list all users with their resolved roles
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/users", requireRoleManagement, async (c) => {
-    const requester = c.get("user");
-    const emailAccessInput = {
-      requesterUserId: requester.id,
-      requesterWalletAddress: requester.walletAddress,
-    };
+  app.get("/api/admin/users", (c, next) =>
+    c.get("userPermissions").includes("manage_roles") ? next() : requireRole("admin", "sysop")(c, next), async (c) => {
+    c.header("Cache-Control", "private, no-store");
     const allUsers = await db.select({
       id: schema.users.id,
       publicId: schema.users.publicId,
+      handle: schema.users.handle,
+      deletedAt: schema.users.deletedAt,
       walletAddress: schema.users.walletAddress,
-      email: userEmailProjection(emailAccessInput),
-      canReadEmail: userEmailAccessProjection(emailAccessInput),
-      displayNameContainsEmail: userDisplayNameContainsEmailProjection(),
       displayName: schema.users.displayName,
       createdAt: schema.users.createdAt,
     }).from(schema.users);
 
     const usersWithRoles = await Promise.all(allUsers.map(async (user) => {
       const {
-        canReadEmail,
-        displayNameContainsEmail,
         publicId,
         ...serializedUser
       } = user;
@@ -491,13 +484,9 @@ export function createAdminRoutes(
 
       return {
         ...serializedUser,
+        publicId,
         publicProfileId: isImportedSyntheticPlayer(user.walletAddress) ? null : publicId,
-        displayName: userDisplayNameForEmailPolicy({
-          canReadEmail,
-          displayNameContainsEmail,
-          displayName: user.displayName,
-          walletAddress: user.walletAddress,
-        }),
+        displayName: containsEmailLike(user.displayName) ? "Anonymous" : user.displayName,
         roles: resolved.roles,
         permissions: resolved.permissions,
       };
@@ -511,11 +500,6 @@ export function createAdminRoutes(
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/agents", requireAdminRead, async (c) => {
-    const requester = c.get("user");
-    const emailAccessInput = {
-      requesterUserId: requester.id,
-      requesterWalletAddress: requester.walletAddress,
-    };
     const profiles = await db
       .select({
         id: schema.agentProfiles.id,
@@ -533,9 +517,6 @@ export function createAdminRoutes(
         updatedAt: schema.agentProfiles.updatedAt,
         ownerWallet: schema.users.walletAddress,
         ownerDisplayName: schema.users.displayName,
-        ownerEmail: userEmailProjection(emailAccessInput),
-        canReadOwnerEmail: userEmailAccessProjection(emailAccessInput),
-        ownerDisplayNameContainsEmail: userDisplayNameContainsEmailProjection(),
         archivedAt: schema.agentProfiles.archivedAt,
         latestContentRevisionId: schema.agentProfiles.latestContentRevisionId,
         moderationRequired: schema.agentProfiles.moderationRequired,
@@ -546,8 +527,6 @@ export function createAdminRoutes(
 
     return c.json(profiles.map((profile) => {
       const {
-        canReadOwnerEmail,
-        ownerDisplayNameContainsEmail,
         archivedAt,
         moderationRequired,
         latestContentRevisionId,
@@ -558,12 +537,7 @@ export function createAdminRoutes(
         ...serializedProfile,
         publicProfileAvailable: hasEligibleAgentContent({ archivedAt, moderationRequired, contentRevisionId,latestContentRevisionId })
           && !isImportedSyntheticPlayer(profile.ownerWallet),
-        ownerDisplayName: userDisplayNameForEmailPolicy({
-          canReadEmail: canReadOwnerEmail,
-          displayNameContainsEmail: ownerDisplayNameContainsEmail,
-          displayName: profile.ownerDisplayName,
-          walletAddress: profile.ownerWallet,
-        }),
+        ownerDisplayName: containsEmailLike(profile.ownerDisplayName) ? "Anonymous" : profile.ownerDisplayName,
       };
     }));
   });
@@ -642,7 +616,6 @@ export function createAdminRoutes(
       joinedAt: schema.freeGameQueue.joinedAt,
       consecutiveMisses: schema.freeGameQueue.consecutiveMisses,
       displayName: schema.users.displayName,
-      email: schema.users.email,
       walletAddress: schema.users.walletAddress,
     }).from(schema.freeGameQueue)
       .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
@@ -1216,11 +1189,6 @@ export function createAdminRoutes(
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/invite-codes", requirePermission("manage_invites"), async (c) => {
-    const requester = c.get("user");
-    const emailAccessInput = {
-      requesterUserId: requester.id,
-      requesterWalletAddress: requester.walletAddress,
-    };
     const userId = c.req.query("userId");
     const status = c.req.query("status"); // "available" | "used" | undefined (all)
 
@@ -1234,8 +1202,6 @@ export function createAdminRoutes(
         createdAt: schema.inviteCodes.createdAt,
         ownerDisplayName: schema.users.displayName,
         ownerWalletAddress: schema.users.walletAddress,
-        canReadOwnerEmail: userEmailAccessProjection(emailAccessInput),
-        ownerDisplayNameContainsEmail: userDisplayNameContainsEmailProjection(),
       })
       .from(schema.inviteCodes)
       .innerJoin(schema.users, eq(schema.inviteCodes.ownerId, schema.users.id))
@@ -1250,19 +1216,11 @@ export function createAdminRoutes(
     const rows = await query;
     return c.json(rows.map((row) => {
       const {
-        canReadOwnerEmail,
-        ownerDisplayNameContainsEmail,
-        ownerWalletAddress,
         ...serializedRow
       } = row;
       return {
         ...serializedRow,
-        ownerDisplayName: userDisplayNameForEmailPolicy({
-          canReadEmail: canReadOwnerEmail,
-          displayNameContainsEmail: ownerDisplayNameContainsEmail,
-          displayName: row.ownerDisplayName,
-          walletAddress: ownerWalletAddress,
-        }),
+        ownerDisplayName: containsEmailLike(row.ownerDisplayName) ? "Anonymous" : row.ownerDisplayName,
       };
     }));
   });
@@ -1582,7 +1540,7 @@ export function createAdminRoutes(
           let displayName = "Imported Player";
           try {
             const persona = JSON.parse(player.persona as string);
-            if (persona.name) displayName = persona.name;
+            if (typeof persona.name === "string" && !containsEmailLike(persona.name)) displayName = persona.name;
           } catch { /* ignore parse errors */ }
 
           await tx.insert(schema.users).values({

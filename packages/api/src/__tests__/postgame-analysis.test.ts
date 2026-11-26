@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -233,7 +234,7 @@ async function insertEdgeSmokeDusk(db: DrizzleDB): Promise<void> {
   const agentProfileId = "agent-lilith";
   await db.insert(schema.users).values({
     id: userId,
-    email: "lilith@test.example",
+    legacyEmailHash: hashAccountEmail("lilith@test.example"),
     displayName: "Lilith Owner",
   });
   await db.insert(schema.agentProfiles).values({

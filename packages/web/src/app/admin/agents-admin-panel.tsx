@@ -15,7 +15,7 @@ function agentSortValue(agent: AdminAgent, key: AgentSortKey): string | number |
   switch (key) {
     case "name": return agent.name;
     case "archetype": return getPersonaInfo(agent.personaKey)?.name ?? null;
-    case "owner": return agent.ownerDisplayName ?? agent.ownerEmail ?? agent.ownerWallet;
+    case "owner": return agent.ownerDisplayName ?? agent.ownerWallet;
     case "games": return agent.gamesPlayed;
     case "wins": return agent.gamesWon;
     case "winRate": return agent.gamesPlayed > 0 ? agent.gamesWon / agent.gamesPlayed : null;
@@ -158,9 +158,6 @@ function AgentDetailModal({
                   />
                 </div>
               )}
-              {agent.ownerEmail && (
-                <div className="text-white/40 text-xs">{agent.ownerEmail}</div>
-              )}
             </div>
           </div>
 
@@ -232,9 +229,9 @@ export function AgentRow({
         <AgentModelLabel preference={agent.modelPreference} className="mt-1 block text-sm text-text-secondary" />
       </td>
       <td className="py-3 px-4 text-white/50 text-sm">
-        {agent.ownerDisplayName || agent.ownerEmail ? (
+        {agent.ownerDisplayName ? (
           <div className="flex flex-col">
-            <span className="text-white/70">{agent.ownerDisplayName ?? agent.ownerEmail}</span>
+            <span className="text-white/70">{agent.ownerDisplayName}</span>
             {agent.ownerWallet && (
               <span className="text-white/25 text-xs font-mono">
                 <TruncatedAddress address={agent.ownerWallet} maxWidth="10ch" />

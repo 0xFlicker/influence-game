@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { storeFields, loadPayloads } from "../services/payload-storage.js";
 /**
  * Database schema and operations tests.
@@ -52,7 +53,7 @@ describe("Database Schema", () => {
         .values({
           id,
           walletAddress: "0xABC123",
-          email: "test@example.com",
+          legacyEmailHash: hashAccountEmail("test@example.com"),
           displayName: "Test User",
         });
 
@@ -63,7 +64,7 @@ describe("Database Schema", () => {
 
       expect(rows).toHaveLength(1);
       expect(rows[0]!.walletAddress).toBe("0xABC123");
-      expect(rows[0]!.email).toBe("test@example.com");
+      expect(rows[0]!.legacyEmailHash).toBe(hashAccountEmail("test@example.com"));
       expect(rows[0]!.displayName).toBe("Test User");
       expect(rows[0]!.createdAt).toBeTruthy();
     });
@@ -94,7 +95,7 @@ describe("Database Schema", () => {
         .where(eq(schema.users.id, id));
 
       expect(rows[0]!.walletAddress).toBeNull();
-      expect(rows[0]!.email).toBeNull();
+      expect(rows[0]!.legacyEmailHash).toBeNull();
     });
   });
 

@@ -10,6 +10,8 @@ import { mutateRenderRelease, dispatchRenderWakes, claimRemotePostgameMedia } fr
 import { heartbeatPostgameMedia } from "../services/postgame-media-worker.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 
+process.env.ACCOUNT_EMAIL_HMAC_KEY ??= Buffer.alloc(32, 7).toString("base64");
+
 function manifestFixture(gameId: string): InfluenceTrailerManifest {
   const winner = {
     id: "winner",

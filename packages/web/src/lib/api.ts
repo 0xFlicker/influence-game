@@ -1,3 +1,4 @@
+import { askForSignupVerification, waitForCampaignRedemption } from "./signup-verification";
 import { getAnalyticsConsent } from "./analytics-consent";
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
@@ -148,7 +149,6 @@ async function unmeasuredApiFetch<T>(
     headers['Idempotency-Key']=id;
   }
   const url = resolveApiUrl(path);
-  console.log(`API ${options?.method ?? "GET"} ${url}`);
   const res = await fetch(url, {
     ...options,
     ...(path === "/api/agent-profiles/anonymous" ? { credentials: "include" as const } : {}),
@@ -1770,7 +1770,6 @@ export interface AuthenticatedPublicIdentity {
 export interface AuthMe extends AuthenticatedPublicIdentity {
   id: string;
   walletAddress: string | null;
-  email: string | null;
   isAdmin: boolean;
   roles: string[];
   permissions: string[];
@@ -1796,6 +1795,47 @@ export const PRESENTED_LEGAL_ACCEPTANCE = {
 
 export type PresentedLegalAcceptance = typeof PRESENTED_LEGAL_ACCEPTANCE;
 
+export type SignupAvailability = { available: boolean; nextAvailableAt: string | null; rate: number };
+
+export async function getSignupAvailability(signal?: AbortSignal): Promise<SignupAvailability> {
+  await waitForCampaignRedemption();
+  return providerAuthFetch("/api/auth/signup-availability", { credentials: "include", cache: "no-store", signal });
+}
+
+async function signupFetch<T>(
+  path: string,
+  body: () => { token: string } & Record<string, unknown>,
+  headers?: Record<string, string>,
+  refreshToken?: () => Promise<string>,
+): Promise<T> {
+  await waitForCampaignRedemption();
+  let turnstileToken: string | undefined;
+  let refreshedToken: string | undefined;
+  for (;;) {
+    try {
+      // A visitor can change tracking choices in another tab while waiting.
+      const current = body();
+      return await providerAuthFetch<T>(path, {
+        method: "POST", credentials: "include", headers,
+        body: JSON.stringify({ ...current, token: refreshedToken ?? current.token, turnstileToken }),
+      });
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      if (!["SIGNUP_VERIFICATION_REQUIRED", "SIGNUP_VERIFICATION_UNAVAILABLE", "SIGNUP_LIMIT_REACHED"].includes(error.code ?? "")) throw error;
+      const next = error.payload?.nextAvailableAt;
+      turnstileToken = await askForSignupVerification(
+        typeof next === "string" ? next : undefined,
+        error.code === "SIGNUP_VERIFICATION_UNAVAILABLE"
+          ? "Human verification is temporarily unavailable. Try again."
+          : turnstileToken && error.code === "SIGNUP_VERIFICATION_REQUIRED"
+            ? "Complete a fresh human verification."
+            : undefined,
+      );
+      if (refreshToken) refreshedToken = await refreshToken();
+    }
+  }
+}
+
 export type PrivyAuthenticationRequest =
   | { intent: "sign_in" }
   | {
@@ -1811,48 +1851,44 @@ export async function getMe(): Promise<AuthMe> {
 export async function loginWithPrivyToken(
   privyToken: string,
   request: PrivyAuthenticationRequest,
+  refreshToken?: () => Promise<string>,
 ): Promise<{
   token: string;
   user: Omit<AuthMe, "isAdmin">;
 }> {
-  return providerAuthFetch("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({
-      token: privyToken,
-      intent: request.intent,
-      analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
-      advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
-      advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
-      analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
-      ...(request.intent === "create_account"
-        ? {
-          ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
-          ...request.legalAcceptance,
-          // First-touch campaign attribution (identities only, never prompt
-          // text). The server re-validates every field; absent stays unknown.
-          ...(permittedCampaignAttribution().firstTouch
-            ? { attribution: permittedCampaignAttribution().firstTouch }
-            : {}),
-        }
-        : {}),
-    }),
+  const body = () => ({
+    token: privyToken,
+    intent: request.intent,
+    analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+    advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
+    advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
+    analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
+    ...(request.intent === "create_account"
+      ? {
+        ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
+        ...request.legalAcceptance,
+        // First-touch campaign attribution (identities only, never prompt
+        // text). The server re-validates every field; absent stays unknown.
+        ...(permittedCampaignAttribution().firstTouch
+          ? { attribution: permittedCampaignAttribution().firstTouch }
+          : {}),
+      }
+      : {}),
   });
+  return request.intent === "create_account"
+    ? signupFetch("/api/auth/login", body, undefined, refreshToken)
+    : providerAuthFetch("/api/auth/login", { method: "POST", body: JSON.stringify(body()) });
 }
 
 export async function loginWithFarcasterToken(
   farcasterToken: string,
   inviteCode?: string,
+  refreshToken?: () => Promise<string>,
 ): Promise<{
   token: string;
   user: Omit<AuthMe, "isAdmin">;
 }> {
-  return providerAuthFetch("/api/auth/farcaster/login", {
-    method: "POST",
-    body: JSON.stringify({
-      token: farcasterToken,
-      ...(inviteCode ? { inviteCode } : {}),
-    }),
-  });
+  return signupFetch("/api/auth/farcaster/login", () => ({ token: farcasterToken, inviteCode }), undefined, refreshToken);
 }
 
 export type InfluenceSessionResult = {
@@ -1875,23 +1911,20 @@ export async function createManagedAuthentication(
   token: string,
   correlationId?: string,
   inviteCode?: string,
+  refreshToken?: () => Promise<string>,
 ): Promise<InfluenceSessionResult> {
-  return providerAuthFetch("/api/auth/managed/create", {
-    method: "POST",
-    headers: correlationId ? { "x-correlation-id": correlationId } : undefined,
-    body: JSON.stringify({
-      token,
-      ...(inviteCode ? { inviteCode } : {}),
-      ...PRESENTED_LEGAL_ACCEPTANCE,
-      analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
-      advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
-      advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
-      analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
-      ...(permittedCampaignAttribution().firstTouch
-        ? { attribution: permittedCampaignAttribution().firstTouch }
-        : {}),
-    }),
-  });
+  return signupFetch("/api/auth/managed/create", () => ({
+    token,
+    ...(inviteCode ? { inviteCode } : {}),
+    ...PRESENTED_LEGAL_ACCEPTANCE,
+    analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
+    advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
+    advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
+    analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
+    ...(permittedCampaignAttribution().firstTouch
+      ? { attribution: permittedCampaignAttribution().firstTouch }
+      : {}),
+  }), correlationId ? { "x-correlation-id": correlationId } : undefined, refreshToken);
 }
 
 function permittedCampaignAttribution() {
@@ -3348,7 +3381,6 @@ export interface AdminAgent {
   gamesWon: number;
   ownerWallet: string | null;
   ownerDisplayName: string | null;
-  ownerEmail: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -3384,9 +3416,11 @@ export interface UserRoleAssignment {
 
 export interface AdminUser {
   id: string;
+  publicId: string;
+  handle: string | null;
+  deletedAt: string | null;
   publicProfileId: string | null;
   walletAddress: string | null;
-  email: string | null;
   displayName: string | null;
   roles: string[];
   permissions: string[];
@@ -3841,7 +3875,6 @@ export interface PlayerProfile extends AuthenticatedPublicIdentity {
   awards?: import("./championship").PublicAward[];
   id: string;
   walletAddress: string | null;
-  email: string | null;
   rating: number;
   gamesPlayed: number;
   gamesWon: number;

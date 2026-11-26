@@ -358,7 +358,10 @@ export function InfluenceAuthProvider({
       const token = verifiedProviderToken;
       const completed = await completeAuthenticationAttempt(
         attempt,
-        () => loginWithPrivyToken(token, request),
+        () => loginWithPrivyToken(token, request, async () => {
+          if (!isCurrentAuthenticationAttempt()) throw new Error("Signup verification was cancelled.");
+          return isLayeredAuthE2EAdapterEnabled() ? token : await getAccessToken() ?? token;
+        }),
       );
       if (!isCurrentAuthenticationAttempt()) return;
       if (completed) {
@@ -502,7 +505,7 @@ export function InfluenceAuthProvider({
       pendingFarcasterToken.current = token;
       const completed = await completeAuthenticationAttempt(
         attempt,
-        () => loginWithFarcasterToken(token),
+        () => loginWithFarcasterToken(token, undefined, async () => (await mod.sdk.quickAuth.getToken()).token),
       );
       if (completed) {
         pendingFarcasterAttempt.current = null;
@@ -745,7 +748,7 @@ export function InfluenceAuthProvider({
       try {
         const completed = await completeAuthenticationAttempt(
           farcasterAttempt,
-          () => loginWithFarcasterToken(farcasterToken, code),
+          () => loginWithFarcasterToken(farcasterToken, code, async () => (await (await import("@farcaster/miniapp-sdk")).sdk.quickAuth.getToken()).token),
         );
         if (!isCurrentFarcasterInvite()) return;
         if (completed) {
@@ -784,6 +787,10 @@ export function InfluenceAuthProvider({
         () => loginWithPrivyToken(
           providerToken,
           { ...request, inviteCode: code },
+          async () => {
+            if (!isCurrentInviteAttempt()) throw new Error("Signup verification was cancelled.");
+            return isLayeredAuthE2EAdapterEnabled() ? providerToken : await getAccessToken() ?? providerToken;
+          },
         ),
       );
       if (!isCurrentInviteAttempt()) return;
@@ -825,6 +832,7 @@ export function InfluenceAuthProvider({
   }, [
     completeAuthenticationAttempt,
     coordinator,
+    getAccessToken,
     privyAuthenticationSettlement,
   ]);
 

@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -16,7 +17,6 @@ type AuthenticationTransaction =
 export interface AuthenticatedAccount {
   id: string;
   walletAddress: string | null;
-  email: string | null;
   displayName: string | null;
   publicId: string;
   handle: string | null;
@@ -396,9 +396,6 @@ async function resolveInTransaction(
 
   const userId = randomUUID();
   const projectedWalletAddress = getProjectedWalletAddress(input.evidence);
-  const email = input.evidence.owner.kind === "email"
-    ? input.evidence.owner.normalizedEmail
-    : null;
   // Concurrent create can commit a wallet owner between legacy lookup and insert.
   // Attach to that row instead of inventing a second career or fail-closing.
   if (projectedWalletAddress) {
@@ -420,7 +417,6 @@ async function resolveInTransaction(
   const [createdUser] = await tx.insert(schema.users).values({
     id: userId,
     walletAddress: projectedWalletAddress,
-    email,
     displayName: getSafeDefaultDisplayName({ walletAddress: projectedWalletAddress }),
   }).returning();
 
@@ -464,7 +460,7 @@ async function findEmailClaim(
   return (await tx
     .select()
     .from(schema.verifiedEmailClaims)
-    .where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail)))[0];
+    .where(eq(schema.verifiedEmailClaims.emailHash, hashAccountEmail(normalizedEmail))))[0];
 }
 
 async function authenticateKnownCredential(
@@ -528,8 +524,8 @@ async function knownEvidenceIsConsistent(
       .select()
       .from(schema.verifiedEmailClaims)
       .where(eq(
-        schema.verifiedEmailClaims.normalizedEmail,
-        evidence.owner.normalizedEmail,
+        schema.verifiedEmailClaims.emailHash,
+        hashAccountEmail(evidence.owner.normalizedEmail),
       )))[0];
     if (!claim || claim.state !== "active" || claim.userId !== user.id) return false;
   }
@@ -573,8 +569,8 @@ async function validateClaimAttachment(
     tx.select()
       .from(schema.verifiedEmailClaims)
       .where(eq(
-        schema.verifiedEmailClaims.normalizedEmail,
-        evidence.owner.normalizedEmail,
+        schema.verifiedEmailClaims.emailHash,
+        hashAccountEmail(evidence.owner.normalizedEmail),
       ))
       .then((rows) => rows[0]),
     tx.select()
@@ -591,7 +587,7 @@ async function validateClaimAttachment(
   }
   if (
     existingUserClaim
-    && existingUserClaim.normalizedEmail !== evidence.owner.normalizedEmail
+    && existingUserClaim.emailHash !== hashAccountEmail(evidence.owner.normalizedEmail)
   ) {
     return "support_blocked";
   }
@@ -607,8 +603,8 @@ async function validateNewAccount(
     .select()
     .from(schema.verifiedEmailClaims)
     .where(eq(
-      schema.verifiedEmailClaims.normalizedEmail,
-      evidence.owner.normalizedEmail,
+      schema.verifiedEmailClaims.emailHash,
+      hashAccountEmail(evidence.owner.normalizedEmail),
     )))[0];
   if (!claim) return "ok";
   return claim.state === "active" ? "link_required" : "support_blocked";
@@ -630,8 +626,8 @@ async function insertCredentialAndClaim(
       .select()
       .from(schema.verifiedEmailClaims)
       .where(eq(
-        schema.verifiedEmailClaims.normalizedEmail,
-        evidence.owner.normalizedEmail,
+        schema.verifiedEmailClaims.emailHash,
+        hashAccountEmail(evidence.owner.normalizedEmail),
       )))[0];
     if (
       existingClaim?.state === "active"
@@ -640,7 +636,7 @@ async function insertCredentialAndClaim(
       return;
     }
     await tx.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: evidence.owner.normalizedEmail,
+      emailHash: hashAccountEmail(evidence.owner.normalizedEmail),
       userId,
       state: "active",
     });

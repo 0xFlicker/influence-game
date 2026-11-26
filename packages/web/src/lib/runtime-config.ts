@@ -21,6 +21,7 @@ export type ManagedAuthMode = "disabled" | "existing-only" | "full";
 export interface RuntimeConfig {
   PUBLIC_MEDIA_DELIVERY?: PublicMediaDelivery | null;
   POSTHOG_PROJECT_TOKEN?: string;
+  TURNSTILE_SITE_KEY?: string;
   PRIVY_APP_ID: string;
   CLERK_PUBLISHABLE_KEY: string;
   MANAGED_AUTH_MODE: ManagedAuthMode;

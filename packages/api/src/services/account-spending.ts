@@ -61,7 +61,7 @@ export async function readAccountSpending(db: DrizzleDB, actor: string, query: R
   const rows = await db.execute(sql`${sources}, totals AS (SELECT user_id, ${totals} FROM usage WHERE ${filter} GROUP BY user_id)
  SELECT u.id, coalesce(p.name,'Free') AS plan_name, coalesce(a.paused,false) AS generation_paused,
  coalesce(r.pending_generations,0) AS pending_generations, coalesce(r.uncertain_generations,0) AS uncertain_generations,
- coalesce(u.display_name,u.handle,u.email,u.wallet_address,u.id) AS label,
+ coalesce(u.display_name,u.handle,u.wallet_address,u.id) AS label,
  coalesce(t.text_requests,0) AS text_requests, coalesce(t.images,0) AS images, coalesce(t.attempts,0) AS attempts,
  coalesce(t.actual_cost_records,0) AS actual_cost_records, coalesce(t.failures,0) AS failures, coalesce(t.actual_microusd,0) AS actual_microusd, coalesce(t.estimated_microusd,0) AS estimated_microusd,
  coalesce(t.unpriced,0) AS unpriced, t.last_activity
@@ -70,7 +70,7 @@ export async function readAccountSpending(db: DrizzleDB, actor: string, query: R
  LEFT JOIN inference_plans p ON p.id = a.plan_id
  LEFT JOIN (SELECT user_id, count(*)::int AS pending_generations, count(*) FILTER (WHERE state = 'uncertain')::int AS uncertain_generations
  FROM inference_reservations WHERE state IN ('reserved','dispatched','uncertain') GROUP BY user_id) r ON r.user_id = u.id
- WHERE (${query.search ?? ''} = '' OR concat_ws(' ',u.id,u.display_name,u.handle,u.email,u.wallet_address) ILIKE ${'%' + (query.search ?? '') + '%'})
+ WHERE (${query.search ?? ''} = '' OR concat_ws(' ',u.id,u.display_name,u.handle,u.wallet_address) ILIKE ${'%' + (query.search ?? '') + '%'})
  AND (${status} = 'all' OR (${status} = 'paused' AND a.paused) OR (${status} = 'pending' AND r.pending_generations > 0))
  ORDER BY ${sorts[sort]} DESC NULLS LAST, u.id LIMIT 26 OFFSET ${offset}`);
   const anonymous = await db.execute(sql`

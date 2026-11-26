@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
@@ -91,7 +92,7 @@ async function createUser(
     id: userId,
     walletAddress: walletAddress.toLowerCase(),
     displayName,
-    email,
+    legacyEmailHash: email ? hashAccountEmail(email) : null,
   });
   await bootstrapSysop(db);
   return userId;
@@ -1754,7 +1755,7 @@ describe("admin route RBAC", () => {
     expect(res.status).toBe(403);
   });
 
-  test("only returns cross-user email addresses to sysop, admin, or producer roles", async () => {
+  test("keeps account email out of operator and delegated read models", async () => {
     const targetUserId = await createUser(
       db,
       "0xpiitarget000000000000000000000000000000001",
@@ -1864,7 +1865,7 @@ describe("admin route RBAC", () => {
     expect(
       delegatedAgents.find((agent) => agent.userId === targetUserId)
         ?.ownerEmail,
-    ).toBeNull();
+    ).toBeUndefined();
     expect(
       delegatedAgents.find((agent) => agent.userId === targetUserId)
         ?.ownerDisplayName,
@@ -1876,7 +1877,7 @@ describe("admin route RBAC", () => {
     expect(
       delegatedAgents.find((agent) => agent.userId === delegatedUserId)
         ?.ownerEmail,
-    ).toBe("reader@example.test");
+    ).toBeUndefined();
 
     for (const token of [adminToken, sysopToken, producerReadToken]) {
       const response = await app.request("/api/admin/agents", {
@@ -1889,7 +1890,7 @@ describe("admin route RBAC", () => {
       }>;
       expect(
         agents.find((agent) => agent.userId === targetUserId)?.ownerEmail,
-      ).toBe("owner@localhost");
+      ).toBeUndefined();
     }
 
     const delegatedUsersResponse = await app.request("/api/admin/users", {
@@ -1905,7 +1906,7 @@ describe("admin route RBAC", () => {
     expect(delegatedUsers.find((user) => user.id === targetUserId)?.publicProfileId).toMatch(/^[0-9a-f-]{36}$/);
     expect(
       delegatedUsers.find((user) => user.id === targetUserId)?.email,
-    ).toBeNull();
+    ).toBeUndefined();
     expect(
       delegatedUsers.find((user) => user.id === targetUserId)?.displayName,
     ).toBe("Anonymous");
@@ -1915,7 +1916,7 @@ describe("admin route RBAC", () => {
     ).toBe("Anonymous");
     expect(
       delegatedUsers.find((user) => user.id === delegatedUserId)?.email,
-    ).toBe("reader@example.test");
+    ).toBeUndefined();
 
     for (const token of [
       sysopToken,
@@ -1930,9 +1931,7 @@ describe("admin route RBAC", () => {
         id: string;
         email: string | null;
       }>;
-      expect(users.find((user) => user.id === targetUserId)?.email).toBe(
-        "owner@localhost",
-      );
+      expect(users.find((user) => user.id === targetUserId)?.email).toBeUndefined();
     }
 
     const delegatedInviteCodesResponse = await app.request(
@@ -1998,7 +1997,7 @@ describe("admin route RBAC", () => {
     expect(
       revokedProducerAgents.find((agent) => agent.userId === targetUserId)
         ?.ownerEmail,
-    ).toBeNull();
+    ).toBeUndefined();
     expect(
       revokedProducerAgents.find((agent) => agent.userId === targetUserId)
         ?.ownerDisplayName,
@@ -2016,14 +2015,14 @@ describe("admin route RBAC", () => {
       }>;
     expect(
       revokedProducerUsers.find((user) => user.id === targetUserId)?.email,
-    ).toBeNull();
+    ).toBeUndefined();
     expect(
       revokedProducerUsers.find((user) => user.id === targetUserId)
         ?.displayName,
     ).toBe("Anonymous");
     expect(
       revokedProducerUsers.find((user) => user.id === producerUserId)?.email,
-    ).toBe("producer@example.test");
+    ).toBeUndefined();
 
     const revokedProducerInviteCodesResponse = await app.request(
       `/api/admin/invite-codes?userId=${targetUserId}`,

@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -57,7 +58,7 @@ describe("authentication identity inventory", () => {
     expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
     expect(await db.select().from(schema.verifiedEmailClaims)).toEqual([
       expect.objectContaining({
-        normalizedEmail: EMAIL,
+        emailHash: hashAccountEmail(EMAIL),
         userId: subject,
         state: "active",
       }),
@@ -89,7 +90,7 @@ describe("authentication identity inventory", () => {
     expect(second.status).toBe("ready");
     expect(await db.select().from(schema.verifiedEmailClaims)).toEqual([
       expect.objectContaining({
-        normalizedEmail: EMAIL,
+        emailHash: hashAccountEmail(EMAIL),
         userId: null,
         state: "conflict",
       }),
@@ -398,7 +399,7 @@ describe("authentication identity inventory", () => {
 
   test("blocks an unmapped email identity when a verified email claim overlaps Influence", async () => {
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: EMAIL,
+      emailHash: hashAccountEmail(EMAIL),
       userId: null,
       state: "conflict",
     });
@@ -813,5 +814,5 @@ async function insertUser(
   walletAddress: string | null = null,
   email: string | null = null,
 ): Promise<void> {
-  await db.insert(schema.users).values({ id, walletAddress, email });
+  await db.insert(schema.users).values({ id, walletAddress, legacyEmailHash: email ? hashAccountEmail(email) : null });
 }

@@ -1226,6 +1226,20 @@
       "when": 1795219200000,
       "tag": "0174_producer_media_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1795219200001,
+      "tag": "0175_signup_admission",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1795219200002,
+      "tag": "0176_account_email_hashes",
+      "breakpoints": true
     }
   ]
 }

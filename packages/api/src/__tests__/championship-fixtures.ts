@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import sharp from "sharp";
 import { writeLocalUpload } from "../lib/storage.js";
 import { setChampionshipArtDependenciesForTests } from "../services/championship-artwork.js";
@@ -30,7 +31,7 @@ export async function championshipFixture() {
   await writeLocalUpload("fixture-head.png", "image/png", image);
   await writeLocalUpload("fixture-body.png", "image/png", image);
   const actorId = randomUUID(), seasonId = randomUUID();
-  await db.insert(schema.users).values({ id: actorId, displayName: "Championship test owner", email: `${actorId}@example.test` });
+  await db.insert(schema.users).values({ id: actorId, displayName: "Championship test owner", legacyEmailHash: hashAccountEmail(`${actorId}@example.test`) });
   await db.insert(schema.seasons).values({ id: seasonId, slug: `season-${seasonId}`, name: "Season 0", status: "final" });
   const agents: string[] = [];
   const gameId = randomUUID();

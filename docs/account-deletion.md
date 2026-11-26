@@ -30,10 +30,14 @@ means the account is closed and external cleanup is pending, not that every
 processor has physically erased every copy. The browser signs out across tabs
 using the existing session coordinator and resets its analytics identity.
 
+Authorized operators can also find an account by exact email hash and confirm
+deletion by typing the current profile name on its admin page. See
+[signup admission and account support](authentication/signup-admission.md).
+
 ## Storage and continuity
 
 `users.deleted_at` is irreversible. The row is a non-login continuity record:
-email, wallet association, handle, and display name are null. Private internal
+email hash, wallet association, handle, and display name are null. Private internal
 IDs, public UUID, ratings and game relationships remain. Older internal IDs may
 themselves contain legacy provider identifiers; these are restricted operational
 references, not anonymized data. Do not describe this operation as total erasure

@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { rejectOptionalAnalytics } from "./test-browser.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -57,6 +58,7 @@ beforeAll(async () => {
   app.route(
     "/",
     createAuthRoutes(database.db, {
+      verifySignupHuman: async token => token,
       managedAuthMode: "full",
       compatibilityBridgeEnabled: false,
       isInviteRequired: async () => false,
@@ -139,6 +141,7 @@ beforeAll(async () => {
       NEXT_PUBLIC_PRIVY_APP_ID: "e2e-test-privy-app-id-001",
       NEXT_PUBLIC_E2E_AUTH: "true",
       NEXT_PUBLIC_E2E_LAYERED_AUTH: "true",
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: "fixture-site-key",
       MANAGED_AUTH_MODE: "full",
       CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
@@ -294,6 +297,17 @@ test("public hall → one tracked preview → image signup → free account mess
   });
   try {
     await page.setViewport({ width: 1440, height: 1000 });
+    await page.setRequestInterception(true);
+    page.on("request", request => {
+      if (request.url().startsWith("https://challenges.cloudflare.com/turnstile/v0/api.js")) {
+        void request.respond({ contentType: "application/javascript", body: `
+          window.turnstile = { render(_target, options) {
+            queueMicrotask(() => options.callback(crypto.randomUUID()));
+            return "fixture-widget";
+          }, remove() {} };
+        ` });
+      } else { void request.continue(); }
+    });
     await page.goto(`${webUrl}/agents/create`, { waitUntil: "networkidle0" });
     await page.waitForSelector(
       'textarea[aria-label="Message the character assistant"]:not([disabled])',
@@ -359,6 +373,9 @@ test("public hall → one tracked preview → image signup → free account mess
     await page.evaluate(
       "Array.from(document.querySelectorAll('[role=\"dialog\"] button')).find(button => button.textContent === 'Verify code')?.click()",
     );
+    await page.waitForFunction(`Array.from(document.querySelectorAll('dialog[open] button')).some(
+      button => button.textContent === 'Create account' && !button.hasAttribute('disabled'))`);
+    await page.click('dialog[open] button:last-child');
     await page.waitForFunction(
       '!document.querySelector(\'[role="dialog"][aria-label="Influence authentication"]\')',
     );
@@ -398,12 +415,13 @@ test("public hall → one tracked preview → image signup → free account mess
     const [owner] = await database.db
       .select()
       .from(schema.users)
-      .where(eq(schema.users.email, "ui-new+e2e@example.test"));
+      .innerJoin(schema.verifiedEmailClaims, eq(schema.users.id, schema.verifiedEmailClaims.userId))
+      .where(eq(schema.verifiedEmailClaims.emailHash, hashAccountEmail("ui-new+e2e@example.test")));
     expect(owner).toBeDefined();
     const [allowance] = await database.db
       .select()
       .from(schema.inferenceAccounts)
-      .where(eq(schema.inferenceAccounts.userId, owner!.id));
+      .where(eq(schema.inferenceAccounts.userId, owner!.users.id));
     expect(allowance).toMatchObject({
       textBalance: 99,
       imageBalance: 25,

@@ -88,7 +88,7 @@ test("a lost Influence resume response is confirmed when the worker already comp
     accounting:{knownCostMicrousd:0,unpricedAttempts:0,uncertainAttempts:0,attempts:[]}};
   let posts=0;
   respond(async(_url,init)=>{if(init?.method==="POST"){posts++;expect(JSON.parse(String(init.body))).toEqual({action:"resume"});data.gameStatus="completed";data.pause=null;throw Error("Resume response lost");}return Response.json(data);});
-  const auth:InfluenceAuthState={ready:true,authenticated:true,account:{id:"operator",publicId:"public-operator",handle:"operator",displayName:"Operator",walletAddress:null,email:null,isAdmin:false,
+  const auth:InfluenceAuthState={ready:true,authenticated:true,account:{id:"operator",publicId:"public-operator",handle:"operator",displayName:"Operator",walletAddress:null,isAdmin:false,
     roles:[],permissions:["view_admin","start_game"],publicIdentityOnboarding:{state:"complete",diagnosticCode:null},loginMethods:{privy:false,emailPassword:false},
     legal:{termsVersion:"fixture",privacyVersion:"fixture",accepted:true,acceptedAt:null}},hydrationError:false,
     openSignIn(){},openCreateAccount(){},openPrivySignIn(){},resetPrivyIdentity:async()=>{},requestPrivyProof:async()=>null,

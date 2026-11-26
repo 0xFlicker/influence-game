@@ -33,7 +33,6 @@ type PublicPlayerIdentityRow = {
   publicId: string;
   handle: string | null;
   walletAddress: string | null;
-  email: string | null;
   displayName: string | null;
 };
 
@@ -74,7 +73,6 @@ export async function resolvePublicPlayer(
     publicId: schema.users.publicId,
     handle: schema.users.handle,
     walletAddress: schema.users.walletAddress,
-    email: schema.users.email,
     displayName: schema.users.displayName,
     rating: schema.users.rating,
     gamesPlayed: schema.users.gamesPlayed,
@@ -132,7 +130,6 @@ export async function getPublicPlayerIdentityMap(
       publicId: schema.users.publicId,
       handle: schema.users.handle,
       walletAddress: schema.users.walletAddress,
-      email: schema.users.email,
       displayName: schema.users.displayName,
     }).from(schema.users).where(and(inArray(schema.users.id, ids), isNull(schema.users.deletedAt))));
   }
@@ -158,7 +155,6 @@ export function isImportedSyntheticPlayer(
 
 export function publicPlayerDisplayName(input: {
   displayName: string | null | undefined;
-  email: string | null | undefined;
   walletAddress: string | null | undefined;
 }): string {
   const displayName = getPublicDisplayName(input);

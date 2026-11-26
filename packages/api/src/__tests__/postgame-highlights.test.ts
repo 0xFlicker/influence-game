@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -520,12 +521,12 @@ async function insertRouteUsers(db: DrizzleDB): Promise<void> {
   await db.insert(schema.users).values([
     {
       id: ADMIN_USER_ID,
-      email: "highlights-admin@test.example",
+      legacyEmailHash: hashAccountEmail("highlights-admin@test.example"),
       displayName: "Highlights Admin",
     },
     {
       id: GAMER_USER_ID,
-      email: "highlights-gamer@test.example",
+      legacyEmailHash: hashAccountEmail("highlights-gamer@test.example"),
       displayName: "Highlights Gamer",
     },
   ]);
@@ -541,7 +542,7 @@ async function insertEdgeSmokeDusk(
   );
   await db.insert(schema.users).values({
     id: userId,
-    email: "lilith@test.example",
+    legacyEmailHash: hashAccountEmail("lilith@test.example"),
     displayName: "Lilith Owner",
   });
   await db.insert(schema.agentProfiles).values(Object.values(EDGE_SMOKE_DUSK_PLAYERS).map((player) => ({

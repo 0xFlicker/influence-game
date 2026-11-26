@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -19,7 +20,7 @@ beforeEach(async () => {
   process.env.JWT_SECRET = "account-rbac-regression";
   db = await setupTestDB(); await seedRBAC(db);
   sysop = randomUUID(); target = randomUUID();
-  await db.insert(schema.users).values([{ id: sysop }, { id: target, email: "walletless@example.test" }]);
+  await db.insert(schema.users).values([{ id: sysop }, { id: target, legacyEmailHash: hashAccountEmail("walletless@example.test") }]);
   await grant(sysop, "sysop"); token = await createSessionToken(sysop);
   app = new Hono<AuthEnv>().route("/", createAdminRoutes(db));
   app.get("/human", requireAuth(db), requirePermission("create_game"), c => c.json({ ok: true }));

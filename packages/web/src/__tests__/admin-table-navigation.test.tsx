@@ -44,8 +44,8 @@ function rowNames(table: HTMLElement): string[] {
 test("admin users start newest first, toggle column sort, and link public profiles", () => {
   setupDom();
   const users: AdminUser[] = [
-    { id: "older", publicProfileId: "public-older", walletAddress: "0x111", email: "z@example.test", displayName: "Zed", roles: [], permissions: [], createdAt: "2026-01-01T00:00:00Z" },
-    { id: "newer", publicProfileId: "public-newer", walletAddress: null, email: "a@example.test", displayName: "Amy", roles: ["admin"], permissions: [], createdAt: "2026-11-01T00:00:00Z" },
+    { id: "older", publicId: "older", handle: null, deletedAt: null, publicProfileId: "public-older", walletAddress: "0x111", displayName: "Zed", roles: [], permissions: [], createdAt: "2026-01-01T00:00:00Z" },
+    { id: "newer", publicId: "newer", handle: null, deletedAt: null, publicProfileId: "public-newer", walletAddress: null, displayName: "Amy", roles: ["admin"], permissions: [], createdAt: "2026-11-01T00:00:00Z" },
   ];
   const mounted = render(<UsersTable users={users} onQuickAssign={() => undefined} />);
   const table = mounted.getByRole("table");
@@ -65,8 +65,8 @@ test("admin users start newest first, toggle column sort, and link public profil
 test("admin agents link profiles and toggle numeric sort", async () => {
   setupDom();
   const agents: AdminAgent[] = [
-    { id: "older", userId: "u1", name: "Zed", publicProfileAvailable: true, backstory: null, personality: "", strategyStyle: null, personaKey: null, avatarUrl: null, gamesPlayed: 2, gamesWon: 1, ownerWallet: null, ownerDisplayName: null, ownerEmail: null, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
-    { id: "newer", userId: "u2", name: "Amy", publicProfileAvailable: true, backstory: null, personality: "", strategyStyle: null, personaKey: null, avatarUrl: null, gamesPlayed: 5, gamesWon: 2, ownerWallet: null, ownerDisplayName: null, ownerEmail: null, createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z" },
+    { id: "older", userId: "u1", name: "Zed", publicProfileAvailable: true, backstory: null, personality: "", strategyStyle: null, personaKey: null, avatarUrl: null, gamesPlayed: 2, gamesWon: 1, ownerWallet: null, ownerDisplayName: null, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+    { id: "newer", userId: "u2", name: "Amy", publicProfileAvailable: true, backstory: null, personality: "", strategyStyle: null, personaKey: null, avatarUrl: null, gamesPlayed: 5, gamesWon: 2, ownerWallet: null, ownerDisplayName: null, createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z" },
   ];
   globalThis.fetch = (async () => new Response(JSON.stringify(agents), { status: 200, headers: { "Content-Type": "application/json" } })) as unknown as typeof fetch;
   const mounted = render(<AgentsAdminPanel />);
@@ -89,8 +89,8 @@ test("role assignments link accounts and sort by role", async () => {
         { userId: "u1", roleId: "admin", roleName: "admin", grantedBy: "operator", grantedAt: "2026-01-01" },
         { userId: "u2", roleId: "gamer", roleName: "gamer", grantedBy: "operator", grantedAt: "2026-01-01" },
       ] : [
-        { id: "u1", publicProfileId: "public-1", walletAddress: null, email: null, displayName: "Zed", roles: ["admin"], permissions: [], createdAt: "2026-01-01" },
-        { id: "u2", publicProfileId: "public-2", walletAddress: null, email: null, displayName: "Amy", roles: ["gamer"], permissions: [], createdAt: "2026-11-01" },
+        { id: "u1", publicId: "u1", handle: null, deletedAt: null, publicProfileId: "public-1", walletAddress: null, displayName: "Zed", roles: ["admin"], permissions: [], createdAt: "2026-01-01" },
+        { id: "u2", publicId: "u2", handle: null, deletedAt: null, publicProfileId: "public-2", walletAddress: null, displayName: "Amy", roles: ["gamer"], permissions: [], createdAt: "2026-11-01" },
       ];
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }) as unknown as typeof fetch;

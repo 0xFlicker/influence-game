@@ -28,7 +28,7 @@ function adminAgent(overrides: Partial<AdminAgent> = {}): AdminAgent {
     publicProfileAvailable: true,
     ownerWallet: "0x0000000000000000000000000000000000000001",
     ownerDisplayName: "Architect",
-    ownerEmail: null,
+
     ...overrides,
   };
 }

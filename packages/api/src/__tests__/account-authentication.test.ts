@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { normalizeVerifiedEmail } from "../lib/verified-email.js";
@@ -269,7 +270,7 @@ describe("account authentication resolver", () => {
     const subject = "did:privy:claim-first";
     await insertUser(db, subject, null, "claim-first@example.com");
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: "claim-first@example.com",
+      emailHash: hashAccountEmail("claim-first@example.com"),
       userId: subject,
       state: "active",
     });
@@ -367,9 +368,9 @@ describe("account authentication resolver", () => {
     expect(outcome.created).toBe(true);
     expect(outcome.user.id).not.toBe(subject);
     expect(outcome.user.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(outcome.user.email).toBe("new+tag@example.com");
+    expect(outcome.user).not.toHaveProperty("email");
     expect((await credentials(db))[0]?.providerSubject).toBe(subject);
-    expect((await claims(db))[0]?.normalizedEmail).toBe("new+tag@example.com");
+    expect((await claims(db))[0]?.emailHash).toBe(hashAccountEmail("new+tag@example.com"));
   });
 
   test("creates a wallet-owned account using the embedded product wallet projection", async () => {
@@ -384,7 +385,7 @@ describe("account authentication resolver", () => {
     if (outcome.status !== "authenticated") return;
     expect(outcome.user.id).not.toBe(subject);
     expect(outcome.user.walletAddress).toBe(EMBEDDED_WALLET);
-    expect(outcome.user.email).toBeNull();
+    expect(outcome.user).not.toHaveProperty("email");
   });
 
   test("never uses users.email as an implicit merge key", async () => {
@@ -406,7 +407,7 @@ describe("account authentication resolver", () => {
   test("returns link_required instead of merging a matching active email claim", async () => {
     await insertUser(db, "claimed-email-user", null, "claimed@example.com");
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: "claimed@example.com",
+      emailHash: hashAccountEmail("claimed@example.com"),
       userId: "claimed-email-user",
       state: "active",
     });
@@ -799,7 +800,7 @@ describe("account authentication resolver", () => {
       providerSubject: "clerk-conflict",
     });
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: "second@example.com",
+      emailHash: hashAccountEmail("second@example.com"),
       userId: "second",
       state: "active",
     });
@@ -896,7 +897,7 @@ async function insertUser(
   await db.insert(schema.users).values({
     id,
     walletAddress,
-    email,
+    legacyEmailHash: email ? hashAccountEmail(email) : null,
     displayName: "Existing",
   });
 }

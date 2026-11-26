@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { DEFAULT_GAME_FALLBACKS } from "@influence/engine/model-defaults";
 import { deleteAccount } from "../services/account-deletion.js";
 import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
@@ -1026,7 +1027,7 @@ async function insertUser(db: DrizzleDB, label: string): Promise<string> {
   const id = randomUUID();
   await db.insert(schema.users).values({
     id,
-    email: `${label}@example.test`,
+    legacyEmailHash: hashAccountEmail(`${label}@example.test`),
     displayName: label,
   });
   return id;

@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import {createAcceptedTestProfile as createOwnedAgentProfile} from "./test-utils.js";
 import { grantAward, revokeAward } from "../services/awards.js";
 import { assertPublicPlayerProfileEnvelope } from "../game-mcp/public-player-tool-schema.js";
@@ -71,7 +72,6 @@ describe("public player profile", () => {
     ]) {
       expect(publicPlayerDisplayName({
         displayName,
-        email: null,
         walletAddress: null,
       })).toBe("Anonymous");
     }
@@ -285,7 +285,7 @@ describe("public player profile", () => {
       publicId: walletPublicId,
       handle: "wallet-player",
       walletAddress,
-      email: "wallet@example.test",
+      legacyEmailHash: hashAccountEmail("wallet@example.test"),
       displayName: "0xabcd...abcd",
     });
     const playerPublicId = randomUUID();
@@ -411,7 +411,7 @@ async function seedPublicPlayerFixture(db: DrizzleDB) {
     id: userId,
     publicId,
     handle: "flick",
-    email: "private@example.test",
+    legacyEmailHash: hashAccountEmail("private@example.test"),
     walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
     displayName: "Flick",
     rating: 1540,

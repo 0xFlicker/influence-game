@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import {createAcceptedTestProfile as createOwnedAgentProfile} from "./test-utils.js";
 import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
@@ -83,13 +84,13 @@ async function setupApp() {
       {
         id: ADMIN_USER_ID,
         walletAddress: TEST_ADMIN_ADDRESS,
-        email: "admin@test.com",
+        legacyEmailHash: hashAccountEmail("admin@test.com"),
         displayName: "Admin",
       },
       {
         id: REGULAR_USER_ID,
         walletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        email: "player@test.com",
+        legacyEmailHash: hashAccountEmail("player@test.com"),
         displayName: "Player",
       },
     ]);

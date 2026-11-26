@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import {acceptTestAgent,createAcceptedTestProfile as createOwnedAgentProfile,submitAcceptedTestProfile as updateOwnedAgentProfile} from "./test-utils.js";
 import { actorProviderManifest } from "@influence/engine";
 import { loadPayloads } from "../services/payload-storage.js";
@@ -797,7 +798,7 @@ async function createRatedWaitingFixture() {
 
 async function insertUser(db: DrizzleDB, label: string): Promise<string> {
   const id = randomUUID();
-  await db.insert(schema.users).values({ id, email: `${label}-${id}@test.invalid`, displayName: label });
+  await db.insert(schema.users).values({ id, legacyEmailHash: hashAccountEmail(`${label}-${id}@test.invalid`), displayName: label });
   return id;
 }
 

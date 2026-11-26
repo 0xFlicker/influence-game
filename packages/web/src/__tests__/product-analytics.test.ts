@@ -42,3 +42,20 @@ test("measurement preserves API values and errors without retrying mutations", a
   await expect(measureProductRequest("agent_save", async () => { calls++; throw failure; })).rejects.toBe(failure);
   expect(calls).toBe(1);
 });
+
+test("analytics strips email fields and addresses while retaining campaign metadata", () => {
+  const properties: Record<string, unknown> = {
+    ownerEmailHash: "ab".repeat(32),
+    context: { ownerEmail: "operator@example.test", note: "Contact operator@example.test" },
+    current_url: "https://thehouse.game/search/operator%40example.test?email=operator%40example.test",
+    utm_campaign: "season-1",
+    gclid: "test-click",
+  };
+  sanitizeAnalyticsProperties(properties);
+  expect(properties).toEqual({
+    context: { note: "Contact [redacted]" },
+    current_url: "https://thehouse.game/search/[redacted]",
+    utm_campaign: "season-1",
+    gclid: "test-click",
+  });
+});

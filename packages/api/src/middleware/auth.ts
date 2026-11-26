@@ -32,7 +32,6 @@ export interface AuthUser {
 export interface AuthContextUser extends AuthUser {
   publicId: string;
   handle: string | null;
-  email: string | null;
   createdAt: string;
 }
 
@@ -50,7 +49,6 @@ function projectAuthContextUser(user: AuthContextUser): AuthContextUser {
     publicId: user.publicId,
     handle: user.handle,
     walletAddress: user.walletAddress,
-    email: user.email,
     displayName: user.displayName,
     createdAt: user.createdAt,
   };

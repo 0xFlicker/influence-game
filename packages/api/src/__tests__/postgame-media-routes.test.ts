@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { loadPayloads, storeFields } from "../services/payload-storage.js";
 import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -195,7 +196,7 @@ describe("postgame media worker routes and leases", () => {
     const gameId = await insertQueuedMedia(db, "queued-consent");
     await db.insert(schema.users).values({
       id: ownerUserId,
-      email: "queued-owner@test.example",
+      legacyEmailHash: hashAccountEmail("queued-owner@test.example"),
     });
     await db.insert(schema.gamePlayers).values({
       id: "postgame-media-queued-player",
@@ -518,8 +519,8 @@ async function insertOwnedCompletedMediaGame(
   const profileOwnerId = "postgame-media-profile-owner";
   const profileId = "postgame-media-owned-profile";
   await db.insert(schema.users).values([
-    { id: directOwnerId, email: "direct-owner@test.example" },
-    { id: profileOwnerId, email: "profile-owner@test.example" },
+    { id: directOwnerId, legacyEmailHash: hashAccountEmail("direct-owner@test.example") },
+    { id: profileOwnerId, legacyEmailHash: hashAccountEmail("profile-owner@test.example") },
   ]);
   await db.insert(schema.agentProfiles).values({
     id: profileId,
