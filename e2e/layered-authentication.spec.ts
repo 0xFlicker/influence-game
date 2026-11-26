@@ -552,10 +552,8 @@ test.describe("deterministic layered authentication", () => {
     await page.getByLabel("Email").fill("ui-outage@example.test");
     await page.getByLabel("Password").fill("test-password");
     await page.getByRole("button", { name: "Sign in with email" }).click();
-    await expect(page.getByText(
-      "Authentication provider is temporarily unavailable",
-      { exact: true },
-    )).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Influence authentication" }).getByRole("alert"))
+      .toHaveText("Request failed (HTTP 503).");
     await page.evaluate((token) => {
       window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
     }, harness.tokens.uiExistingPrivy);
