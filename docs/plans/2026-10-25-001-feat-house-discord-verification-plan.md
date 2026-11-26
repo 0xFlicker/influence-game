@@ -244,6 +244,16 @@ and test guild so tests cannot grant production staff roles.
 
 ## Building on Society / waking the agent
 
+The first conversational release qualifies the House authorization and MCP
+contract in disposable local PostgreSQL and exercises the ARM sandbox with
+synthetic inference and media. Production activation follows the protected
+approval path and the agreed smoke checks in `#ask-the-house` and one-to-one
+DMs. These are the only live acceptance destinations. Any future access to
+House staging needs a separate role decision. The production House role grant
+does not confer that access.
+See [the conversation release notes](../discord-house-conversations.md).
+
+
 The current Society Agents source has a signed serverless controller, durable
 queue/outbox, disposable GitHub Actions workers, native conversation recovery,
 isolated Gateway/coding containers, scoped repository access, and checkpointed
@@ -291,8 +301,8 @@ public community bot.
 5. **Wake the conversational House:** isolated runtime, House persona/workspace,
    current permission checks, bounded repository/capability grants, provider
    authentication, durable wake/queue/sleep/restore. Prove a real authorized
-   conversation and rejected unauthorized access. Infrastructure and inference
-   prerequisites are resolved here, independently of verification availability.
+   conversation and rejected unauthorized access. Qualify locally first, then
+   verify federated inference and approved live replies during production rollout.
 6. **Later live synchronization:** emit role/account/link changes into the same
    durable delivery path, handle Discord leave/rejoin, and add periodic drift
    reconciliation. No replacement identity store or new role authority.

@@ -11,9 +11,10 @@ The AWS-compatible worker applies cumulative House User, Moderator, Admin and
 Sysop roles. A signed Discord `/verify` command returns the website link privately.
 Refresh and disconnect are available at `/discord/verify` and linked from Profile.
 
-Live role-change subscriptions and the conversational House agent are not part of
-this slice. A trusted controller can resolve fresh House authority through the
-internal identity endpoint; a Discord role itself never grants House API access.
+The verification release above predates the [Discord conversation runtime](discord-house-conversations.md).
+Live role-change subscriptions remain separate. A trusted controller can resolve fresh
+House authority through the internal identity endpoint. Discord roles govern membership
+access and House account roles govern MCP authorization.
 The current source of truth for the broader runtime is the
 [verification plan](plans/2026-10-25-001-feat-house-discord-verification-plan.md).
 

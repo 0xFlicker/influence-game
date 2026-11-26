@@ -119,15 +119,22 @@ export async function changeDiscordConnection(db: DrizzleDB, userId: string, act
 }
 
 /** Resolve fresh authority for the trusted Discord controller; never a login token. */
-export async function resolveDiscordAuthority(db: DrizzleDB | Transaction, discordId: string, guildId: string) {
+export async function resolveDiscordLinkedAccount(db: DrizzleDB | Transaction, discordId: string, guildId: string) {
   const [connection] = await db.select().from(connections).where(and(eq(connections.discordId, discordId), eq(connections.guildId, guildId), eq(connections.disconnecting, false)));
   if (!connection) return { connected: false as const };
   const [user] = await db.select().from(schema.users).where(eq(schema.users.id, connection.userId));
   const [service] = await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, connection.userId));
   if (!user || user.deletedAt || service || user.walletAddress === "0x0000000000000000000000000000000000000000") return { connected: false as const };
   const authority = await getPermissionsForUser(db, connection.userId);
-  return { connected: true as const, publicId: user.publicId, roles: authority.roles, permissions: authority.permissions,
+  return { connected: true as const, connectionId: connection.id, userId: user.id, publicId: user.publicId, roles: authority.roles, permissions: authority.permissions,
     communityRoles: discordCommunityRoles(authority.roles) };
+}
+
+export async function resolveDiscordAuthority(db: DrizzleDB | Transaction, discordId: string, guildId: string) {
+  const account = await resolveDiscordLinkedAccount(db, discordId, guildId);
+  if (!account.connected) return account;
+  const { connectionId: _connectionId, userId: _userId, ...authority } = account;
+  return authority;
 }
 
 export async function claimDiscordRoleWork(db: DrizzleDB, guildId: string) {

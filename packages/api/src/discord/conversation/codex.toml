@@ -1,0 +1,31 @@
+approval_policy = "never"
+sandbox_mode = "read-only"
+web_search = "disabled"
+cli_auth_credentials_store = "ephemeral"
+model_provider = "house"
+model_reasoning_effort = "low"
+
+[model_providers.house]
+name = "House federated inference"
+base_url = "http://127.0.0.1:18791/v1"
+wire_api = "responses"
+supports_websockets = false
+
+[features]
+apps = false
+in_app_browser = false
+multi_agent = false
+multi_agent_v2 = false
+shell_tool = false
+shell_snapshot = false
+view_image = false
+skill_mcp_dependency_install = false
+tool_call_mcp_elicitation = false
+
+[mcp_servers.house]
+default_tools_approval_mode = "writes"
+omit_tools_from = ["deferred", "code_mode"]
+command = "/usr/local/bin/bun"
+args = ["/opt/house/mcp-stdio.ts"]
+required = true
+tool_timeout_sec = 27
