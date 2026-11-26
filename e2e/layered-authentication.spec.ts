@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 import {
   clerkSetup,
   setupClerkTestingToken,
@@ -74,16 +74,7 @@ test.describe("deterministic layered authentication", () => {
   });
 
   test.beforeEach(async ({ context }) => {
-    await context.route("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", route =>
-      route.fulfill({ contentType: "application/javascript", body: `
-        window.turnstile = {
-          render(_target, options) {
-            queueMicrotask(() => options.callback(crypto.randomUUID()));
-            return "fixture-widget";
-          },
-          remove() {}
-        };
-      ` }));
+    await installTurnstileFixture(context);
   });
 
   test("shows an exhausted bucket in the signup panel before asking for credentials", async ({ page }, testInfo) => {
@@ -420,6 +411,7 @@ test.describe("deterministic layered authentication", () => {
       },
     ]) {
       const context = await browser.newContext();
+      await installTurnstileFixture(context);
       await context.addInitScript((token) => {
         window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
       }, scenario.token);
@@ -429,6 +421,7 @@ test.describe("deterministic layered authentication", () => {
           json: {
             PRIVY_APP_ID: "e2e-test-privy-app-id-001",
             CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
+            TURNSTILE_SITE_KEY: "fixture-site-key",
             MANAGED_AUTH_MODE: scenario.mode,
             API_URL: harness.apiUrl,
             WS_URL: harness.apiUrl,
@@ -451,6 +444,7 @@ test.describe("deterministic layered authentication", () => {
       }).getByRole("checkbox");
       await consent.check();
       await page.getByRole("button", { name: "Continue with Privy" }).click();
+      await finishHumanVerification(page);
       await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
       await context.close();
     }
@@ -1069,6 +1063,19 @@ function pkceS256(verifier: string): string {
 async function finishHumanVerification(page: import("@playwright/test").Page) {
   await page.getByRole("region", { name: "Verify to create your account" })
     .getByRole("button", { name: "Create account" }).click();
+}
+
+async function installTurnstileFixture(context: BrowserContext) {
+  await context.route("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", route =>
+    route.fulfill({ contentType: "application/javascript", body: `
+      window.turnstile = {
+        render(_target, options) {
+          queueMicrotask(() => options.callback(crypto.randomUUID()));
+          return "fixture-widget";
+        },
+        remove() {}
+      };
+    ` }));
 }
 
 async function clickNavigationSignIn(
