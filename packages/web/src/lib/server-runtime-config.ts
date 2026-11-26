@@ -39,6 +39,7 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
 
   return {
     PUBLIC_MEDIA_DELIVERY: configuredPublicMediaDelivery() ?? null,
+    TURNSTILE_SITE_KEY: runtimeEnvironment.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "",
     POSTHOG_PROJECT_TOKEN: runtimeEnvironment.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "",
     PRIVY_APP_ID:
       process.env.PRIVY_APP_ID ??

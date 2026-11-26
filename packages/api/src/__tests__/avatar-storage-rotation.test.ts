@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { storeFields, loadPayloads } from "../services/payload-storage.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
@@ -58,7 +59,7 @@ describe("private avatar storage rotation", () => {
 
     await db.insert(schema.users).values({
       id: USER_ID,
-      email: "avatar-rotation@example.test",
+      legacyEmailHash: hashAccountEmail("avatar-rotation@example.test"),
       displayName: "Avatar Rotation",
     });
     await db.insert(schema.agentProfiles).values({

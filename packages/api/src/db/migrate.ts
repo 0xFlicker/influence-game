@@ -12,9 +12,9 @@ import { fileURLToPath } from "node:url";
 import { createDB, resolveDatabaseUrl } from "./index.js";
 import { applyMigrationsSerialized } from "./serialized-migrations.js";
 
-export async function runMigrations(connectionString?: string) {
+export async function runMigrations(connectionString?: string, options?: { accountEmailCutover?: boolean; verifyWritersStopped?: boolean }) {
   const migrationsFolder = resolveMigrationsFolder();
-  await applyMigrationsSerialized(resolveDatabaseUrl(connectionString), migrationsFolder);
+  await applyMigrationsSerialized(resolveDatabaseUrl(connectionString), migrationsFolder, options);
   console.log("Migrations applied successfully.");
   return createDB(connectionString);
 }
@@ -149,6 +149,9 @@ export function inspectReleaseMigrationSql(
   // see docs/deployment/championship-migration-review.md for upgrade/rollback limits.
   const reviewedChampionshipCorrections = path.basename(file) === "0150_championship_corrections.sql"
     && createHash("sha256").update(sql).digest("hex") === "10a282ea8c91ca8ac2c78be5e27f9f1a8e5b72fc41ba1000a3a11de2ee99e47b";
+  // The exact account email cutover refuses ordinary startup on an existing database.
+  const reviewedAccountEmailCutover = path.basename(file) === "0176_account_email_hashes.sql"
+    && createHash("sha256").update(sql).digest("hex") === "c3cf68de57ce7106da2a2121bf8aa3739731940d8aa2b5ede18441369363cb8a";
   const policyInput = stripSqlCommentsAndStrings(sql);
   const replacementCheckConstraints = new Set(
     [
@@ -166,6 +169,7 @@ export function inspectReleaseMigrationSql(
   );
   const violations: ReleaseMigrationPolicyViolation[] = [];
   for (const rule of RELEASE_MIGRATION_RULES) {
+    if (reviewedAccountEmailCutover && ["drop-column", "drop-constraint", "narrow-type"].includes(rule.rule)) continue;
     if (reviewedChampionshipCorrections && ["drop-constraint", "set-not-null"].includes(rule.rule)) continue;
     if (rule.rule === "delete" && REVIEWED_CLAIM_CLEANUP_MIGRATIONS.get(path.basename(file))
       === createHash("sha256").update(sql).digest("hex")) continue;
@@ -295,6 +299,8 @@ if (import.meta.main) {
     console.log(
       `Release migration policy accepted ${files.length} changed migration file(s).`,
     );
+  } else if (command === "--account-email-cutover") {
+    await runMigrations(process.env.DATABASE_URL, { accountEmailCutover: true, verifyWritersStopped: true });
   } else if (command) {
     console.error(`Unknown migration command: ${command}`);
     process.exit(64);

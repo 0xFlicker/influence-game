@@ -12,6 +12,10 @@
  * stripped from every URL/referrer value), non-http(s) values, unlisted utm_*
  * fields, and any attribution value that fails its format check.
  */
+const EMAIL_FIELD = /(?:^|[_-])e[_-]?mail(?:[_-]?(?:address|hash))?(?:$|[_-])/i;
+const EMAIL_TEXT = /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+(?:@|%40)[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const redactEmail = (value: string) => value.replace(EMAIL_TEXT, "[redacted]");
+
 const UTM_SUFFIXES = new Set(["source", "medium", "campaign", "content", "term"]);
 const CLICK_ID_KEYS = new Set(["gclid", "fbclid", "msclkid", "ttclid", "twclid", "dclid", "gbraid", "wbraid"]);
 const VARIANT_KEYS = new Set(["landing_variant", "onboarding_variant", "starter_prompt", "starter_skill"]);
@@ -40,6 +44,10 @@ function attributionValueValid(key: string, value: unknown): boolean {
 export function sanitizeAnalyticsProperties(properties: Record<string, unknown>): void {
   for (const key of Object.keys(properties)) {
     const value = properties[key];
+    if (EMAIL_FIELD.test(key.replace(/([a-z0-9])([A-Z])/g, "$1_$2"))) {
+      delete properties[key];
+      continue;
+    }
     const campaign = key.match(/(?:^|_)utm_(.+)$/)?.[1];
     if (campaign && !UTM_SUFFIXES.has(campaign)) {
       delete properties[key];
@@ -57,9 +65,17 @@ export function sanitizeAnalyticsProperties(properties: Record<string, unknown>)
       try {
         const url = new URL(value);
         if (!["https:", "http:"].includes(url.protocol)) { delete properties[key]; continue; }
-        properties[key] = key.includes("referrer") ? url.origin : `${url.origin}${url.pathname}`;
+        properties[key] = key.includes("referrer") ? url.origin : `${url.origin}${url.pathname.split("/").map(redactEmail).join("/")}`;
       } catch { delete properties[key]; }
-    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+    } else if (typeof value === "string") {
+      properties[key] = redactEmail(value);
+    } else if (Array.isArray(value)) {
+      properties[key] = value.map(entry => {
+        if (typeof entry === "string") return redactEmail(entry);
+        if (entry && typeof entry === "object") sanitizeAnalyticsProperties(entry as Record<string, unknown>);
+        return entry;
+      });
+    } else if (value && typeof value === "object") {
       sanitizeAnalyticsProperties(value as Record<string, unknown>);
     }
   }

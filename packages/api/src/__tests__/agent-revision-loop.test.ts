@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import {acceptTestAgent,createAcceptedTestProfile as createOwnedAgentProfile,submitAcceptedTestProfile as updateOwnedAgentProfile} from "./test-utils.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
@@ -21,7 +22,7 @@ describe("agent revision update loop", () => {
     db = await setupTestDB();
     await db.insert(schema.users).values({
       id: OWNER_ID,
-      email: "revision-loop-owner@test.example",
+      legacyEmailHash: hashAccountEmail("revision-loop-owner@test.example"),
       displayName: "Revision Loop Owner",
     });
   });
@@ -106,7 +107,7 @@ describe("agent revision update loop", () => {
     const foreignOwnerId = "revision-loop-foreign-owner";
     await db.insert(schema.users).values({
       id: foreignOwnerId,
-      email: "revision-loop-foreign@test.example",
+      legacyEmailHash: hashAccountEmail("revision-loop-foreign@test.example"),
       displayName: "Foreign Owner",
     });
     const foreignBody = await contentImageFixture("pfp/revision-loop/foreign-waiting.png");

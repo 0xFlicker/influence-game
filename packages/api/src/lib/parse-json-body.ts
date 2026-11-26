@@ -11,11 +11,8 @@ export async function parseJsonBody(
 ): Promise<any> {
   try {
     return await c.req.json();
-  } catch (err) {
-    console.warn(
-      `[${routeName}] JSON body parse failed:`,
-      err instanceof Error ? err.message : err,
-    );
+  } catch {
+    console.warn(`[${routeName}] JSON body parse failed`);
     return null;
   }
 }

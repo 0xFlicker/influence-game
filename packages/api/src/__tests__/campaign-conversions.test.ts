@@ -271,6 +271,7 @@ test("signup issues a session despite conversion write failure, then recovers an
   const { verifySessionToken } = await import("../middleware/auth.js");
   process.env.JWT_SECRET = "campaign-auth-regression";
   const app = new Hono().route("/", createAuthRoutes(db, {
+    verifySignupHuman: async token => token,
     verifyPrivyToken: async () => "did:privy:tracking-failure",
     getPrivyUser: async () => ({ id: "did:privy:tracking-failure", createdAt: new Date(), isGuest: false, customMetadata: {},
       linkedAccounts: [{ type: "email", address: "tracking-failure@example.com", verifiedAt: new Date(), firstVerifiedAt: new Date(), latestVerifiedAt: new Date() }] }),
@@ -280,7 +281,7 @@ test("signup issues a session despite conversion write failure, then recovers an
   await db.execute(sql`CREATE TRIGGER campaign_test_fail BEFORE INSERT ON campaign_conversion_events FOR EACH ROW EXECUTE FUNCTION campaign_test_fail()`);
   try {
     const response = await app.request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: "test", intent: "create_account", acceptTerms: true,
+      body: JSON.stringify({ token: "test", intent: "create_account", turnstileToken: "fixture-proof", acceptTerms: true,
         termsVersion: "2026-11-12", privacyVersion: "2026-11-12", deploymentSha: "0123456789abcdef0123456789abcdef01234567",
         analytics: true, attribution: { campaign: "season1" } }) });
     expect(response.status).toBe(200);

@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { SignJWT } from "jose";
@@ -25,10 +26,10 @@ describe("account deletion", () => {
   beforeEach(async () => {
     db = await setupTestDB();
     process.env.JWT_SECRET = "account-deletion-test-secret-at-least-32-characters";
-    const [user] = await db.insert(schema.users).values({ id: "owner", handle: "former-owner", displayName: "Former Owner", email: "former@example.test", walletAddress: "0xformer", gamesPlayed: 1 }).returning();
+    const [user] = await db.insert(schema.users).values({ id: "owner", handle: "former-owner", displayName: "Former Owner", legacyEmailHash: hashAccountEmail("former@example.test"), walletAddress: "0xformer", gamesPlayed: 1 }).returning();
     publicId = user!.publicId;
     await db.insert(schema.authenticationCredentials).values({ userId: "owner", provider: "clerk", providerSubject: "user_former" });
-    await db.insert(schema.verifiedEmailClaims).values({ userId: "owner", normalizedEmail: "former@example.test", state: "active" });
+    await db.insert(schema.verifiedEmailClaims).values({ userId: "owner", emailHash: hashAccountEmail("former@example.test"), state: "active" });
     await db.insert(schema.agentProfiles).values({ id: "agent", userId: "owner", name: "Lady Macbeth", personality: "An ambitious fictional character", avatarUrl: "/portraits/macbeth.png" });
     await db.insert(schema.freeGameQueue).values({ id: "queue", userId: "owner", agentProfileId: "agent" });
     for (const status of ["waiting", "in_progress", "completed"] as const) {
@@ -64,7 +65,7 @@ describe("account deletion", () => {
     const response = await app.request(request(token));
     expect(response.status).toBe(202);
     const [user] = await db.select().from(schema.users);
-    expect(user).toMatchObject({ email: null, walletAddress: null, handle: null, displayName: null });
+    expect(user).toMatchObject({ legacyEmailHash: null, walletAddress: null, handle: null, displayName: null });
     expect(user!.deletedAt).toBeTruthy();
     expect(await db.select().from(schema.authenticationCredentials)).toEqual([]);
     expect(await db.select().from(schema.verifiedEmailClaims)).toEqual([]);

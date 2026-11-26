@@ -74,14 +74,17 @@ export default function PrivacyPage() {
                 "A public account UUID",
                 "A unique public handle",
                 "Display name",
-                "Email address (if applicable)",
+                "Keyed email hash for account matching (if applicable)",
                 "Wallet addresses associated with existing accounts or optional wallet sign-in, including previously created embedded wallets",
                 "Authentication information provided by your sign-in provider",
                 "Profile image, if any",
               ]}
             />
             <P>
-              Email signup does not automatically create a wallet.
+              Clerk and Privy verify email addresses. We use the address during
+              verification or an exact support lookup and store its keyed hash for
+              matching. Email signup does not automatically create a wallet.
+              Cloudflare Turnstile checks for automated signup abuse.
               We do not collect passwords when authentication is handled through
               third-party providers.
             </P>

@@ -13,6 +13,9 @@ import postgres from "postgres";
 import { createDB, schema, type DrizzleDB } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 
+// Deterministic key for disposable account fixtures only.
+process.env.ACCOUNT_EMAIL_HMAC_KEY ??= Buffer.alloc(32, 7).toString("base64");
+
 // Use TEST_DATABASE_URL or hardcoded default — never fall back to DATABASE_URL
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
@@ -93,7 +96,7 @@ export async function setupTestDB(): Promise<DrizzleDB> {
       const known = tables.map(row => String(row.tablename)).filter(name => INFLUENCE_TABLES.some(known => known === name));
       if (known.length) await cleanup.unsafe(`TRUNCATE TABLE ${known.map(name => `"${name.replaceAll('"', '""')}"`).join(",")} CASCADE`);
     } finally { await cleanup.end(); }
-    await runMigrations(TEST_DATABASE_URL);
+    await runMigrations(TEST_DATABASE_URL, { accountEmailCutover: true });
     migrated = true;
   }
   const db = createDB(TEST_DATABASE_URL);

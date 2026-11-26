@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -28,7 +29,7 @@ beforeEach(async () => {
   db = await setupTestDB();
   await db.insert(schema.users).values({
     id: USER_ID,
-    email: `${randomUUID()}@live-provider.test`,
+    legacyEmailHash: hashAccountEmail(`${randomUUID()}@live-provider.test`),
     displayName: "Live Provider Tester",
   });
   token = await createSessionToken(USER_ID, {

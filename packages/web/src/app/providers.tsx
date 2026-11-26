@@ -1,5 +1,6 @@
 "use client";
 
+import { SignupAdmission } from "@/components/signup-admission";
 import { ProductAnalytics } from "@/components/product-analytics";
 import {
   createContext,
@@ -356,6 +357,7 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
             clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
             privyAppId={privyAppId ?? ""}
           >
+            <SignupAdmission />
             <FarcasterMiniAppAuthBootstrap />
             {children}
           </InfluenceAuthLayer>

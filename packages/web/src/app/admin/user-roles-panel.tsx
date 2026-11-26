@@ -16,13 +16,12 @@ import { TruncatedAddress } from "@/components/truncated-address";
 import { formatRoleName, getRoleBadgeClass } from "@/lib/role-display";
 import { compareSortValues, SortableColumnHeader, type SortDirection } from "./sortable-column-header";
 
-type UserSortKey = "address" | "displayName" | "email" | "roles" | "joined";
+type UserSortKey = "address" | "displayName" | "roles" | "joined";
 
 function userSortValue(user: AdminUser, key: UserSortKey): string | null {
   switch (key) {
     case "address": return user.walletAddress;
     case "displayName": return user.displayName;
-    case "email": return user.email;
     case "roles": return user.roles.length > 0 ? [...user.roles].sort().join(", ") : null;
     case "joined": return user.createdAt;
   }
@@ -102,7 +101,7 @@ function AssignRoleForm({
           className="w-full bg-zinc-950 border border-white/15 rounded-lg px-3 py-2 text-sm text-white">
           <option value="">Select account...</option>
           {users.filter(user => user.walletAddress?.toLowerCase() !== "0x0000000000000000000000000000000000000000").map(user => (
-            <option key={user.id} value={user.id}>{user.displayName ?? "Anonymous"} · {user.email ?? user.walletAddress ?? user.id}</option>
+            <option key={user.id} value={user.id}>{user.displayName ?? "Anonymous"} · {user.walletAddress ?? user.id}</option>
           ))}
         </select>
       </div>
@@ -183,7 +182,7 @@ function UserRolesTable({
     function value(userId: string, roles: UserRoleAssignment[]): string | null {
       const user = usersById.get(userId);
       switch (sortKey) {
-        case "account": return user?.displayName ?? user?.email ?? user?.walletAddress ?? userId;
+        case "account": return user?.displayName ?? user?.walletAddress ?? userId;
         case "roles": return roles.map((role) => role.roleName).sort().join(", ");
         case "grantedBy": return roles[0]?.grantedBy ?? null;
       }
@@ -211,7 +210,7 @@ function UserRolesTable({
             const user = usersById.get(addr);
             const label = user?.displayName && !user.displayName.startsWith("0x")
               ? user.displayName
-              : user?.email ?? null;
+              : null;
             return (
             <tr key={addr} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
               <td className="py-3 px-4 text-sm">
@@ -310,7 +309,7 @@ export function UsersTable({
         <thead>
           <tr className="border-b border-white/10">
             {([
-              ["address", "Address"], ["displayName", "Display Name"], ["email", "Email"],
+              ["address", "Address"], ["displayName", "Display Name"],
               ["roles", "Roles"], ["joined", "Joined"],
             ] as const).map(([key, label]) => (
               <SortableColumnHeader
@@ -333,7 +332,7 @@ export function UsersTable({
               </td>
               <td className="py-3 px-4 text-white text-sm font-mono">
                 {user.publicProfileId ? (
-                  <Link href={`/profile/${encodeURIComponent(user.publicProfileId)}`} prefetch={false} className="hover:underline focus-visible:underline" aria-label={`View ${user.displayName ?? user.email ?? "user"} public profile`}>
+                  <Link href={`/profile/${encodeURIComponent(user.publicProfileId)}`} prefetch={false} className="hover:underline focus-visible:underline" aria-label={`View ${user.displayName ?? "user"} public profile`}>
                     {user.displayName
                       ? (user.displayName.startsWith("0x")
                           ? <TruncatedAddress address={user.displayName} maxWidth="11ch" />
@@ -342,7 +341,7 @@ export function UsersTable({
                   </Link>
                 ) : (user.displayName ?? "—")}
               </td>
-              <td className="py-3 px-4 text-white/50 text-sm">{user.email ?? "—"}</td>
+              <td className="py-3 px-4 text-white/50 text-sm">{"—"}</td>
               <td className="py-3 px-4">
                 <div className="flex gap-1 flex-wrap">
                   {user.roles.length > 0

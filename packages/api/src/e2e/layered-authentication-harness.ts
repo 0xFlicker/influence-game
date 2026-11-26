@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { createAdminRoutes } from "../routes/admin.js";
+import { hashAccountEmail } from "../lib/verified-email.js";
 import path from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -56,6 +59,7 @@ interface LayeredAuthHarness {
     walletOwner: string;
     walletless: string;
     uiWalletOwner: string;
+    accountOperator: string;
   };
 }
 
@@ -91,13 +95,15 @@ async function main(): Promise<void> {
   const authDependencies = {
     managedAuthMode: "full" as const,
     clerkVerifier,
+    verifySignupHuman: async (token: string) => token,
     compatibilityBridgeEnabled: false,
     verifyPrivyToken: verifyInjectedPrivyToken,
     getPrivyUser: loadInjectedPrivyUser,
   };
   const app = new Hono();
   app.use("*", cors({
-    origin: "*",
+    origin: webUrl,
+    credentials: true,
     allowHeaders: ["Content-Type", "Authorization", "x-correlation-id"],
     allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
   }));
@@ -105,6 +111,7 @@ async function main(): Promise<void> {
   app.route("/", createAuthRoutes(db, authDependencies));
   app.route("/", createMcpOAuthRoutes(db));
   app.route("/", createProfileRoutes(db));
+  app.route("/", createAdminRoutes(db));
 
   const existingOnly = new Hono();
   existingOnly.route("/", createAuthRoutes(db, {
@@ -140,6 +147,7 @@ async function main(): Promise<void> {
         NEXT_PUBLIC_PRIVY_APP_ID: "e2e-test-privy-app-id-001",
         NEXT_PUBLIC_E2E_AUTH: "true",
         NEXT_PUBLIC_E2E_LAYERED_AUTH: "true",
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: "fixture-site-key",
         MANAGED_AUTH_MODE: "full",
         CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
@@ -190,6 +198,21 @@ async function seedFixture(db: DrizzleDB): Promise<{
   sessions: LayeredAuthHarness["sessions"];
 }> {
   const existingEmail = "e2e-existing-privy-email";
+  const accountOperator = "e2e-account-operator";
+  await db.insert(schema.users).values([
+    { id: accountOperator, displayName: "Account operator", handle: "fixture-operator" },
+    { id: "e2e-support-target", displayName: "A Long Profile Name For Mobile Confirmation Proof",
+      handle: "fixture-support-target", legacyEmailHash: hashAccountEmail("support-target@example.test") },
+  ]);
+  await db.insert(schema.verifiedEmailClaims).values({
+    emailHash: hashAccountEmail("support-target@example.test"), userId: "e2e-support-target", state: "active",
+  });
+  await db.insert(schema.authenticationCredentials).values({
+    userId: "e2e-support-target", provider: "privy", providerSubject: "did:privy:e2e-support-target",
+  });
+  const [admin] = await db.select({ id: schema.roles.id }).from(schema.roles).where(eq(schema.roles.name, "admin"));
+  await db.insert(schema.userRoles).values({ userId: accountOperator, roleId: admin!.id });
+  await recordCurrentLegalAcceptance(db, accountOperator, "existing_account", "0123456789abcdef0123456789abcdef01234567");
   const walletOwner = "e2e-existing-wallet-owner";
   const reverseOwner = "e2e-password-reverse-owner";
   const walletless = "e2e-walletless-oauth-owner";
@@ -200,7 +223,7 @@ async function seedFixture(db: DrizzleDB): Promise<{
   await db.insert(schema.users).values([
     {
       id: existingEmail,
-      email: "existing@example.test",
+      legacyEmailHash: hashAccountEmail("existing@example.test"),
       walletAddress: EMBEDDED_WALLET,
       displayName: "Existing Privy Email",
       handle: "e2e-existing-email",
@@ -213,19 +236,19 @@ async function seedFixture(db: DrizzleDB): Promise<{
     },
     {
       id: reverseOwner,
-      email: "reverse@example.test",
+      legacyEmailHash: hashAccountEmail("reverse@example.test"),
       displayName: "Password First",
       handle: "e2e-reverse-owner",
     },
     {
       id: walletless,
-      email: "walletless@example.test",
+      legacyEmailHash: hashAccountEmail("walletless@example.test"),
       displayName: "Walletless OAuth User",
       handle: "e2e-walletless",
     },
     {
       id: uiExistingEmail,
-      email: "ui-existing@example.test",
+      legacyEmailHash: hashAccountEmail("ui-existing@example.test"),
       walletAddress: UI_EMBEDDED_WALLET,
       displayName: "UI Existing Privy Email",
       handle: "e2e-ui-existing",
@@ -238,7 +261,7 @@ async function seedFixture(db: DrizzleDB): Promise<{
     },
     {
       id: uiReverseOwner,
-      email: "ui-reverse@example.test",
+      legacyEmailHash: hashAccountEmail("ui-reverse@example.test"),
       displayName: "UI Password First",
       handle: "e2e-ui-reverse",
     },
@@ -282,22 +305,22 @@ async function seedFixture(db: DrizzleDB): Promise<{
   ]);
   await db.insert(schema.verifiedEmailClaims).values([
     {
-      normalizedEmail: "existing@example.test",
+      emailHash: hashAccountEmail("existing@example.test"),
       userId: existingEmail,
       state: "active",
     },
     {
-      normalizedEmail: "reverse@example.test",
+      emailHash: hashAccountEmail("reverse@example.test"),
       userId: reverseOwner,
       state: "active",
     },
     {
-      normalizedEmail: "ui-existing@example.test",
+      emailHash: hashAccountEmail("ui-existing@example.test"),
       userId: uiExistingEmail,
       state: "active",
     },
     {
-      normalizedEmail: "ui-reverse@example.test",
+      emailHash: hashAccountEmail("ui-reverse@example.test"),
       userId: uiReverseOwner,
       state: "active",
     },
@@ -316,6 +339,7 @@ async function seedFixture(db: DrizzleDB): Promise<{
       walletOwner: await createSessionToken(walletOwner),
       walletless: await createSessionToken(walletless),
       uiWalletOwner: await createSessionToken(uiWalletOwner),
+      accountOperator: await createSessionToken(accountOperator),
     },
   };
 }

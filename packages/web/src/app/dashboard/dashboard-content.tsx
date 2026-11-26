@@ -70,7 +70,7 @@ export function DashboardContent() {
     }).catch(() => { if (active) setJoinError("Could not load the requested game."); });
     return () => { active = false; };
   }, [requestedJoinGameId]);
-  const displayName = identity?.displayName && identity.displayName !== "Anonymous" ? identity.displayName : account?.email ?? account?.walletAddress?.slice(0, 10) ?? "Player";
+  const displayName = identity?.displayName && identity.displayName !== "Anonymous" ? identity.displayName : account?.walletAddress?.slice(0, 10) ?? "Player";
   const visibleAgents = authenticated && dataOwner === accountId ? agents : [];
   const closeJoin = () => { setJoinTarget(null); setJoinError(null); router.replace("/dashboard"); };
   return <div className={styles.dashboard}>

@@ -2,7 +2,8 @@
 
 import { AccountInferencePanel } from "./account-inference-panel";
 import { AdminPanel } from "./admin-panel";
-import { UserRolesPanel } from "./user-roles-panel";
+import { UserDirectory } from "./user-account-panel";
+import { SignupSettings, SignupCampaigns } from "./signup-admin-panel";
 import { AgentsAdminPanel } from "./agents-admin-panel";
 import { InviteCodesPanel } from "./invite-codes-panel";
 import { ChampionshipAdminPanel } from "./championship-admin-panel";
@@ -25,8 +26,9 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
       {activeTab === "championships" && <ChampionshipAdminPanel />}
       {activeTab === "free-queue" && <FreeQueuePanel />}
       {activeTab === "agents" && <AgentsAdminPanel />}
-      {activeTab === "users" && <UserRolesPanel />}
-      {activeTab === "invites" && <InviteCodesPanel />}
+      {activeTab === "users" && <UserDirectory />}
+      {activeTab === "invites" && <><InviteCodesPanel /><SignupCampaigns /></>}
+      {activeTab === "signups" && <SignupSettings />}
     </div>
   );
 }

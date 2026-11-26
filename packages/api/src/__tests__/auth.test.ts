@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 /**
  * Auth middleware and routes tests.
@@ -23,7 +24,7 @@ import {
   type AuthEnv,
   type AuthUser,
 } from "../middleware/auth.js";
-import { createAuthRoutes } from "../routes/auth.js";
+import { createAuthRoutes as createProductionAuthRoutes } from "../routes/auth.js";
 import { createProfileRoutes } from "../routes/profile.js";
 import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 import { seedRBAC } from "../db/rbac-seed.js";
@@ -167,7 +168,7 @@ describe("requireAuth middleware", () => {
       .values({
         id: "real-user",
         walletAddress: "0xabc",
-        email: "test@test.com",
+        legacyEmailHash: hashAccountEmail("test@test.com"),
         displayName: "Tester",
       });
 
@@ -435,7 +436,7 @@ describe("authenticated public identity session projection", () => {
     await db.insert(schema.users).values({
       id: "identity-session-user",
       walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
-      email: "identity@example.com",
+      legacyEmailHash: hashAccountEmail("identity@example.com"),
       displayName: "0x1234...5678",
       createdAt: "2026-07-17T00:00:00.000Z",
     });
@@ -462,7 +463,7 @@ describe("authenticated public identity session projection", () => {
   test("/auth/me projects login methods without exposing provider subjects", async () => {
     await db.insert(schema.users).values({
       id: "private-login-method-user",
-      email: "methods@example.com",
+      legacyEmailHash: hashAccountEmail("methods@example.com"),
     });
     await db.insert(schema.authenticationCredentials).values([
       {
@@ -504,7 +505,7 @@ describe("authenticated public identity session projection", () => {
   test("login returns the updated row and retains the resolved user projection", async () => {
     await db.insert(schema.users).values({
       id: "did:privy:existing-user",
-      email: "identity@example.com",
+      legacyEmailHash: hashAccountEmail("identity@example.com"),
       displayName: "identity@example.com",
       createdAt: "2026-07-17T00:00:00.000Z",
     });
@@ -569,13 +570,13 @@ describe("authenticated public identity session projection", () => {
       const id = "existing-wallet-account";
       const subject = "did:privy:retained-wallet";
       const address = "0x1111111111111111111111111111111111111111";
-      await db.insert(schema.users).values({ id, walletAddress: address, email: "retained@example.test" });
+      await db.insert(schema.users).values({ id, walletAddress: address, legacyEmailHash: hashAccountEmail("retained@example.test") });
       await db.insert(schema.authenticationCredentials).values({
         userId: id, provider: "privy", providerSubject: subject,
       });
       if (kind !== "external") {
         await db.insert(schema.verifiedEmailClaims).values({
-          normalizedEmail: "retained@example.test", userId: id, state: "active",
+          emailHash: hashAccountEmail("retained@example.test"), userId: id, state: "active",
         });
       }
       const before = await db.select().from(schema.users);
@@ -615,7 +616,7 @@ describe("authenticated public identity session projection", () => {
     const subject = "did:privy:route-bridge-disabled";
     await db.insert(schema.users).values({
       id: subject,
-      email: "legacy-route@example.com",
+      legacyEmailHash: hashAccountEmail("legacy-route@example.com"),
     });
     const app = new Hono();
     app.route("/", createAuthRoutes(db, {
@@ -656,7 +657,7 @@ describe("authenticated public identity session projection", () => {
     const subject = "did:privy:legacy-create";
     await db.insert(schema.users).values({
       id: subject,
-      email: "legacy-create@example.com",
+      legacyEmailHash: hashAccountEmail("legacy-create@example.com"),
     });
     const app = new Hono();
     app.route("/", createAuthRoutes(db, {
@@ -684,6 +685,7 @@ describe("authenticated public identity session projection", () => {
       body: JSON.stringify({
         token: "verified-token",
         intent: "create_account",
+        turnstileToken: crypto.randomUUID(),
         ...CURRENT_LEGAL_CONSENT,
       }),
     });
@@ -744,6 +746,7 @@ describe("authenticated public identity session projection", () => {
       body: JSON.stringify({
         token: "verified-token",
         intent: "create_account",
+        turnstileToken: crypto.randomUUID(),
         ...CURRENT_LEGAL_CONSENT,
       }),
     });
@@ -794,6 +797,7 @@ describe("authenticated public identity session projection", () => {
       body: JSON.stringify({
         token: "verified-token",
         intent: "create_account",
+        turnstileToken: crypto.randomUUID(),
         ...CURRENT_LEGAL_CONSENT,
       }),
     });
@@ -861,6 +865,7 @@ describe("authenticated public identity session projection", () => {
       body: JSON.stringify({
         token: "verified-token",
         intent: "create_account",
+        turnstileToken: crypto.randomUUID(),
         acceptTerms: true,
         termsVersion: "2026-07-01",
         privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
@@ -974,7 +979,7 @@ describe("managed authentication routes", () => {
 
     await db.insert(schema.users).values({
       id: "existing-only-user",
-      email: "mode@example.com",
+      legacyEmailHash: hashAccountEmail("mode@example.com"),
       displayName: "Existing password user",
     });
     await db.insert(schema.authenticationCredentials).values({
@@ -983,7 +988,7 @@ describe("managed authentication routes", () => {
       providerSubject: "clerk-mode",
     });
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: "mode@example.com",
+      emailHash: hashAccountEmail("mode@example.com"),
       userId: "existing-only-user",
       state: "active",
     });
@@ -1169,7 +1174,7 @@ describe("managed authentication routes", () => {
   test("managed creation enforces and atomically redeems the invite gate", async () => {
     await db.insert(schema.users).values({
       id: "invite-owner",
-      email: "owner@example.com",
+      legacyEmailHash: hashAccountEmail("owner@example.com"),
       displayName: "Invite owner",
     });
     await db.insert(schema.appSettings).values({
@@ -1251,7 +1256,7 @@ describe("managed authentication routes", () => {
   test("pending legal sessions cannot mutate linked credentials", async () => {
     await db.insert(schema.users).values({
       id: "pending-link-user",
-      email: "pending-link@example.com",
+      legacyEmailHash: hashAccountEmail("pending-link@example.com"),
       displayName: "Pending link",
     });
     await db.insert(schema.authenticationCredentials).values({
@@ -1260,7 +1265,7 @@ describe("managed authentication routes", () => {
       providerSubject: "clerk-pending-link-owner",
     });
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: "pending-link@example.com",
+      emailHash: hashAccountEmail("pending-link@example.com"),
       userId: "pending-link-user",
       state: "active",
     });
@@ -1462,7 +1467,7 @@ describe("managed authentication routes", () => {
   test("email collision asks for confirmation and authenticated link preserves the account", async () => {
     await db.insert(schema.users).values({
       id: "email-owner",
-      email: "owner@example.com",
+      legacyEmailHash: hashAccountEmail("owner@example.com"),
       displayName: "Owner",
     });
     await db.insert(schema.authenticationCredentials).values({
@@ -1471,7 +1476,7 @@ describe("managed authentication routes", () => {
       providerSubject: "did:privy:email-owner",
     });
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: "owner@example.com",
+      emailHash: hashAccountEmail("owner@example.com"),
       userId: "email-owner",
       state: "active",
     });
@@ -1506,7 +1511,7 @@ describe("managed authentication routes", () => {
   test("reverse Privy collision requires password proof and explicit link confirmation", async () => {
     await db.insert(schema.users).values({
       id: "password-owner",
-      email: "reverse@example.com",
+      legacyEmailHash: hashAccountEmail("reverse@example.com"),
       displayName: "Password owner",
     });
     await db.insert(schema.authenticationCredentials).values({
@@ -1515,7 +1520,7 @@ describe("managed authentication routes", () => {
       providerSubject: "clerk-reverse-owner",
     });
     await db.insert(schema.verifiedEmailClaims).values({
-      normalizedEmail: "reverse@example.com",
+      emailHash: hashAccountEmail("reverse@example.com"),
       userId: "password-owner",
       state: "active",
     });
@@ -1771,6 +1776,10 @@ function verifiedClerk(
   };
 }
 
+function createAuthRoutes(db: DrizzleDB, options: Parameters<typeof createProductionAuthRoutes>[1] = {}) {
+  return createProductionAuthRoutes(db, { verifySignupHuman: async token => token, ...options });
+}
+
 async function managedRequest(
   app: Hono,
   path: string,
@@ -1785,7 +1794,9 @@ async function managedRequest(
   return app.request(path, {
     method: "POST",
     headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify(path === "/api/auth/managed/create"
+      ? { turnstileToken: crypto.randomUUID(), ...body }
+      : body),
   });
 }
 
@@ -1977,7 +1988,7 @@ describe("requireAdmin middleware", () => {
     await db.insert(schema.users)
       .values({
         id: "email-only",
-        email: "nope@test.com",
+        legacyEmailHash: hashAccountEmail("nope@test.com"),
         displayName: "Email Only",
       });
 
@@ -2023,7 +2034,7 @@ describe("optionalAuth middleware", () => {
       .values({
         id: "opt-user",
         walletAddress: "0xopt",
-        email: "optional@example.test",
+        legacyEmailHash: hashAccountEmail("optional@example.test"),
         displayName: "Optional",
       });
 

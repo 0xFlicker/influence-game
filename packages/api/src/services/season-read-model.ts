@@ -695,7 +695,6 @@ function publicOwnerSnapshotName(
   if (!snapshot) return owner?.displayName ?? null;
   const safeSnapshot = publicPlayerDisplayName({
     displayName: snapshot,
-    email: null,
     walletAddress: null,
   });
   return safeSnapshot === "Anonymous"

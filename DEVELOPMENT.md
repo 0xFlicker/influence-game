@@ -800,6 +800,8 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 
 **Dev database:** `influence_dev` on `127.0.0.1:54320`, owned by the `influence` user. Default connection string: `postgresql://influence:influence@127.0.0.1:54320/influence_dev`. Override with `DATABASE_URL` env var. If a sandboxed command reports `ECONNREFUSED`, rerun with elevated sandbox access before assuming the Docker database is down.
 
+Set a persistent local `ACCOUNT_EMAIL_HMAC_KEY` before running migrations. Generate it once with `openssl rand -base64 32` and keep it in your local environment. For an existing plaintext-era database, stop all clients and follow the [email cutover runbook](docs/authentication/signup-admission.md#email-migration).
+
 **Test database:** `influence_test` on the same instance, same credentials. Used by test suites to avoid polluting dev data.
 
 **Staging database:** Uses the same PostgreSQL instance with staging-specific config via Doppler. Migrations run automatically during deployment.

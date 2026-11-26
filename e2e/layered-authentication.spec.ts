@@ -48,6 +48,7 @@ interface LayeredAuthHarness {
     walletOwner: string;
     walletless: string;
     uiWalletOwner: string;
+    accountOperator: string;
   };
 }
 
@@ -72,9 +73,43 @@ test.describe("deterministic layered authentication", () => {
     if (harnessProcess) await stopHarness(harnessProcess);
   });
 
+  test.beforeEach(async ({ context }) => {
+    await context.route("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", route =>
+      route.fulfill({ contentType: "application/javascript", body: `
+        window.turnstile = {
+          render(_target, options) {
+            queueMicrotask(() => options.callback(crypto.randomUUID()));
+            return "fixture-widget";
+          },
+          remove() {}
+        };
+      ` }));
+  });
+
   test("recovers account creation from sign in and keeps creation consent explicit", async ({
     page,
-  }) => {
+  }, testInfo) => {
+    await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
+      route => route.abort("failed"), { times: 1 });
+    let signupFull = true;
+    await page.route("**/api/auth/signup-availability", async route => {
+      const response = await route.fetch();
+      if (signupFull) {
+        await route.fulfill({ response, json: {
+          available: false, nextAvailableAt: new Date(Date.now() + 12 * 60_000).toISOString(), rate: 25,
+        } });
+      } else await route.fulfill({ response });
+    });
+    let transientFailure = true;
+    await page.route("**/api/auth/managed/create", async route => {
+      if (route.request().method() === "POST" && route.request().postDataJSON()?.turnstileToken && transientFailure) {
+        transientFailure = false;
+        await route.fulfill({ status: 503, headers: {
+          "access-control-allow-origin": new URL(harness.webUrl).origin,
+          "access-control-allow-credentials": "true",
+        }, json: { code: "SIGNUP_VERIFICATION_UNAVAILABLE", error: "Human verification is temporarily unavailable. Try again." } });
+      } else await route.continue();
+    });
     await page.addInitScript((token) => {
       window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
     }, harness.tokens.uiNewPrivy);
@@ -104,6 +139,22 @@ test.describe("deterministic layered authentication", () => {
       .toBeVisible();
     await page.getByLabel("Verification code").fill("424242");
     await page.getByRole("button", { name: "Verify code" }).click();
+    const waiting = page.getByRole("dialog", { name: "Signup availability" });
+    await expect(waiting.getByText(/Signups are full/)).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: testInfo.outputPath("signup-full-mobile.png") });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    signupFull = false;
+    await waiting.getByRole("button", { name: "Check again" }).click();
+    const challenge = page.getByRole("dialog", { name: "Verify to create your account" });
+    await expect(challenge.getByRole("alert")).toHaveText("Verification could not load. Try again.");
+    await challenge.getByRole("button", { name: "Try again" }).click();
+    await expect(challenge.getByRole("button", { name: "Create account" })).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath("signup-available.png") });
+    await finishHumanVerification(page);
+    await expect(challenge.getByRole("alert")).toHaveText(/temporarily unavailable/);
+    await page.screenshot({ path: testInfo.outputPath("signup-verify-retry.png") });
+    await finishHumanVerification(page);
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     await page.getByLabel("Display name").fill("Sign-in Recovery E2E");
     await page.getByLabel("Handle").fill("e2e-signin-recovery");
@@ -142,6 +193,7 @@ test.describe("deterministic layered authentication", () => {
       .toBeDisabled();
     await privyConsent.check();
     await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await finishHumanVerification(page);
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     await page.getByLabel("Display name").fill("Privy Recovery E2E");
     await page.getByLabel("Handle").fill("e2e-privy-recovery");
@@ -392,6 +444,7 @@ test.describe("deterministic layered authentication", () => {
       .toBeVisible();
     await page.getByLabel("Verification code").fill("424242");
     await page.getByRole("button", { name: "Verify code" }).click();
+    await finishHumanVerification(page);
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     await expect(page.getByRole("heading", {
       name: "Choose how players know you",
@@ -775,6 +828,39 @@ test.describe("deterministic layered authentication", () => {
     expect(callback.searchParams.get("code")).toBeTruthy();
     await context.close();
   });
+
+  test("admin finds an account and confirms deletion by profile name", async ({ page }, testInfo) => {
+    await page.addInitScript(token => localStorage.setItem("influence_session", token), harness.sessions.accountOperator);
+    await page.goto(`${harness.webUrl}/admin/users`);
+    const targetName = "A Long Profile Name For Mobile Confirmation Proof";
+    const email = page.getByLabel("Find by email");
+    await expect(page.getByRole("link", { name: targetName, exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("directory-desktop.png") });
+    await email.fill("Support-Target@Example.Test");
+    await page.getByRole("button", { name: "Find user" }).click({ timeout: 10000 });
+    await expect(page).toHaveURL(/\/admin\/users\/[0-9a-f-]+$/, { timeout: 30000 });
+    await expect(page.getByRole("heading", { name: targetName })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("heading", { name: "Sign-in providers" })).toBeVisible();
+    await expect(page.getByText("Privy", { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("account-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Delete account", exact: true }).click();
+    const confirmation = page.getByRole("dialog", { name: "Delete this account?" });
+    const input = confirmation.getByRole("textbox");
+    await expect(input).toBeFocused();
+    await input.fill("Wrong name");
+    await expect(confirmation.getByRole("button", { name: "Delete account" })).toBeDisabled();
+    await input.press("Escape");
+    await expect(confirmation).toBeHidden();
+    await expect(page.getByRole("button", { name: "Delete account", exact: true })).toBeFocused();
+    await page.getByRole("button", { name: "Delete account", exact: true }).click();
+    await input.fill(targetName);
+    await expect(confirmation.getByRole("button", { name: "Delete account" })).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath("account-confirmation-mobile.png"), fullPage: true });
+    await confirmation.getByRole("button", { name: "Delete account" }).click();
+    await expect(page.getByText(/Account closed on/)).toBeVisible();
+  });
+
 });
 
 test.describe("real Clerk development project", () => {
@@ -913,7 +999,7 @@ async function authRequest(
     headers: influenceToken
       ? { Authorization: `Bearer ${influenceToken}` }
       : undefined,
-    data: body,
+    data: path === "/api/auth/managed/create" ? { ...body, turnstileToken: randomUUID() } : body,
   });
 }
 
@@ -921,6 +1007,11 @@ function pkceS256(verifier: string): string {
   return createHash("sha256")
     .update(verifier)
     .digest("base64url");
+}
+
+async function finishHumanVerification(page: import("@playwright/test").Page) {
+  await page.getByRole("dialog", { name: "Verify to create your account" })
+    .getByRole("button", { name: "Create account" }).click();
 }
 
 async function clickNavigationSignIn(

@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, describe, expect, test } from "bun:test";
@@ -286,7 +287,7 @@ async function seedRouteFixture() {
 
 async function insertUser(db: DrizzleDB, label: string): Promise<string> {
   const id = randomUUID();
-  await db.insert(schema.users).values({ id, displayName: label, email: `${id}@example.test` });
+  await db.insert(schema.users).values({ id, displayName: label, legacyEmailHash: hashAccountEmail(`${id}@example.test`) });
   return id;
 }
 

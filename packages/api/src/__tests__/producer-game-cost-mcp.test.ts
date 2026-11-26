@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
@@ -133,7 +134,7 @@ describe("producer MCP game cost detail", () => {
     const adminUserId = randomUUID();
     await db.insert(schema.users).values({
       id: adminUserId,
-      email: "cost-contract-admin@example.test",
+      legacyEmailHash: hashAccountEmail("cost-contract-admin@example.test"),
       displayName: "Cost Contract Admin",
     });
     await grantTestAuthority(db, adminUserId, ["view_admin"]);

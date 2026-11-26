@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
@@ -85,13 +86,13 @@ async function setupApp() {
       {
         id: USER_A_ID,
         walletAddress: TEST_ADMIN_ADDRESS,
-        email: "usera@test.com",
+        legacyEmailHash: hashAccountEmail("usera@test.com"),
         displayName: "User A",
       },
       {
         id: USER_B_ID,
         walletAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        email: "userb@test.com",
+        legacyEmailHash: hashAccountEmail("userb@test.com"),
         displayName: "User B",
       },
     ]);

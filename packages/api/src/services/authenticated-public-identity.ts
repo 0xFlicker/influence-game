@@ -17,7 +17,7 @@ export const PUBLIC_IDENTITY_LAUNCH_CUTOFF =
 
 type UserIdentityRow = Pick<
   typeof schema.users.$inferSelect,
-  "publicId" | "handle" | "displayName" | "email" | "walletAddress" | "createdAt"
+  "publicId" | "handle" | "displayName" | "walletAddress" | "createdAt"
 >;
 
 export interface AuthenticatedPublicIdentity {

@@ -14,6 +14,9 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { cleanupE2eResources } from "./cleanup.js";
 
+// Deterministic key for disposable account fixtures only.
+process.env.ACCOUNT_EMAIL_HMAC_KEY ??= Buffer.alloc(32, 7).toString("base64");
+
 // Use TEST_DATABASE_URL or hardcoded default — never fall back to DATABASE_URL
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ??

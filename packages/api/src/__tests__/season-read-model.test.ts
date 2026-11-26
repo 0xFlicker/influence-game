@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { loadPayloads } from "../services/payload-storage.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -476,6 +477,6 @@ async function createAgent(db: DrizzleDB, ownerId: string, name: string) {
 
 async function insertUser(db: DrizzleDB, displayName: string): Promise<string> {
   const id = randomUUID();
-  await db.insert(schema.users).values({ id, displayName, email: `${id}@example.test` });
+  await db.insert(schema.users).values({ id, displayName, legacyEmailHash: hashAccountEmail(`${id}@example.test`) });
   return id;
 }

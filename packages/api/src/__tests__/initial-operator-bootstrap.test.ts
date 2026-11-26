@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -12,7 +13,7 @@ const input = { userId: account, operator: "ssh:operator@example.test", dryRun: 
 beforeEach(async () => {
   db = await setupTestDB();
   await seedRBAC(db);
-  await db.insert(schema.users).values({ id: account, email: "bootstrap@example.test" });
+  await db.insert(schema.users).values({ id: account, legacyEmailHash: hashAccountEmail("bootstrap@example.test") });
 });
 
 test("requires explicit account, operator label and exactly one execution mode", () => {

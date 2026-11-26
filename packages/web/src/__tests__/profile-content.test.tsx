@@ -81,7 +81,6 @@ describe("private profile public identity controls", () => {
 
   it("offers only additive email/password controls and exposes no provider subjects", () => {
     const add = renderToString(createElement(LoginMethodsSection, {
-      email: "owner@example.test",
       loginMethods: { privy: true, emailPassword: false },
       onAddPassword: () => undefined,
       onResetPassword: () => undefined,
@@ -91,7 +90,6 @@ describe("private profile public identity controls", () => {
     expect(add).not.toContain("Reset password");
 
     const reset = renderToString(createElement(LoginMethodsSection, {
-      email: "owner@example.test",
       loginMethods: { privy: true, emailPassword: true },
       onAddPassword: () => undefined,
       onResetPassword: () => undefined,
@@ -108,7 +106,6 @@ describe("private profile public identity controls", () => {
     expect(combined).not.toContain("user_");
 
     const existingOnly = renderToString(createElement(LoginMethodsSection, {
-      email: "owner@example.test",
       loginMethods: { privy: true, emailPassword: false },
       canAddPassword: false,
       onAddPassword: () => undefined,

@@ -59,7 +59,6 @@ interface PublicAgentProfileRow {
   ownerHandle?: string | null;
   ownerDisplayName?: string | null;
   ownerWalletAddress?: string | null;
-  ownerEmail?: string | null;
 }
 
 interface PublicAgentCompetitionAggregate {
@@ -115,7 +114,6 @@ export async function getPublicReplayAgentPreviewsByProfileIds(
     ownerHandle: schema.users.handle,
     ownerDisplayName: schema.users.displayName,
     ownerWalletAddress: schema.users.walletAddress,
-    ownerEmail: schema.users.email,
   }).from(schema.agentProfiles)
     .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
     .where(and(inArray(schema.agentProfiles.id, uniqueProfileIds), eligibleAgentContent()));
@@ -239,7 +237,6 @@ function publicReplayAgentOwner(
     handle: profile.ownerHandle ?? null,
     displayName: profile.ownerDisplayName ?? null,
     walletAddress: profile.ownerWalletAddress ?? null,
-    email: profile.ownerEmail ?? null,
   });
 }
 

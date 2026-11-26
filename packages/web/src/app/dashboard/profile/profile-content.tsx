@@ -102,13 +102,11 @@ export function InviteCodesSection({
 }
 
 export function LoginMethodsSection({
-  email,
   loginMethods,
   onAddPassword,
   onResetPassword,
   canAddPassword = true,
 }: {
-  email: string | null;
   loginMethods: {
     privy: boolean;
     emailPassword: boolean;
@@ -139,7 +137,7 @@ export function LoginMethodsSection({
             <p className="influence-copy-strong text-sm">Email/password</p>
             <p className="influence-copy-muted text-xs">
               {loginMethods.emailPassword
-                ? `Active${email ? ` for ${email}` : ""}`
+                ? "Active"
                 : "Add a verified email and password as another way to sign in."}
             </p>
           </div>
@@ -434,12 +432,6 @@ export function ProfileContent({ onAuthAction }: { onAuthAction?: () => void } =
               </span>
             </div>
           )}
-          {profile.email && (
-            <div className="flex items-center justify-between">
-              <span className="influence-copy-muted">Email</span>
-              <span className="influence-copy-strong">{profile.email}</span>
-            </div>
-          )}
           <div className="flex items-center justify-between">
             <span className="influence-copy-muted">Member since</span>
             <span className="influence-copy-strong">
@@ -453,22 +445,17 @@ export function ProfileContent({ onAuthAction }: { onAuthAction?: () => void } =
       </section>
 
       <LoginMethodsSection
-        email={account?.email ?? profile.email}
         loginMethods={account?.loginMethods ?? {
           privy: false,
           emailPassword: false,
         }}
         onAddPassword={() => {
           onAuthAction?.();
-          window.dispatchEvent(new CustomEvent("auth:open-link-password", {
-            detail: { email: account?.email ?? profile.email ?? "" },
-          }));
+          window.dispatchEvent(new CustomEvent("auth:open-link-password"));
         }}
         onResetPassword={() => {
           onAuthAction?.();
-          window.dispatchEvent(new CustomEvent("auth:open-reset-password", {
-            detail: { email: account?.email ?? profile.email ?? "" },
-          }));
+          window.dispatchEvent(new CustomEvent("auth:open-reset-password"));
         }}
         canAddPassword={runtimeConfig.MANAGED_AUTH_MODE === "full"}
       />

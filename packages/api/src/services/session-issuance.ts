@@ -53,7 +53,6 @@ export async function issueInfluenceSession(
     user: {
       id: user.id,
       walletAddress: user.walletAddress,
-      email: user.email,
       ...projectAuthenticatedPublicIdentity(user),
       roles: resolved.roles,
       permissions: resolved.permissions,

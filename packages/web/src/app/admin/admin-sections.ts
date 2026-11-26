@@ -8,7 +8,8 @@ export const ADMIN_TABS = [
   { id: "reviews", label: "Learning reviews" },
   { id: "free-queue", label: "Free Queue" },
   { id: "agents", label: "Agents" },
-  { id: "users", label: "Users & Roles", permission: "manage_roles" },
+  { id: "users", label: "Users" },
+  { id: "signups", label: "Signups" },
   { id: "invites", label: "Invites", permission: "manage_invites" },
 ] as const;
 
@@ -29,7 +30,7 @@ export function adminTabLabel(tab: AdminTab): string {
 
 export type AdminAccess = { permissions: readonly string[]; roles: readonly string[] };
 export type AdminArea = "Games" | "Production" | "Operations" | "People";
-export type AdminEntry = { label: string; href: string; area: AdminArea; access: "championship" | "admin" | "werewolf" | "producer" | "production" | "roles" | "visual" | "operator" | "invites" };
+export type AdminEntry = { label: string; href: string; area: AdminArea; access: "championship" | "admin" | "werewolf" | "producer" | "production" | "roles" | "visual" | "operator" | "invites" | "users" };
 export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Influence", href: "/admin/games", area: "Games", access: "admin" },
   { label: "Werewolf", href: "/admin/werewolf", area: "Games", access: "werewolf" },
@@ -42,7 +43,8 @@ export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Free queue", href: "/admin/free-queue", area: "Operations", access: "admin" },
   { label: "Agents", href: "/admin/agents", area: "People", access: "admin" },
   { label: "Learning reviews", href: "/admin/reviews", area: "People", access: "admin" },
-  { label: "Users & roles", href: "/admin/users", area: "People", access: "roles" },
+  { label: "Users", href: "/admin/users", area: "People", access: "users" },
+  { label: "Signups", href: "/admin/signups", area: "People", access: "operator" },
   { label: "Invites", href: "/admin/invites", area: "People", access: "invites" },
 ];
 export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: AdminAccess): boolean {
@@ -50,6 +52,7 @@ export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: Admin
   const producer = user.roles.some(role => role === "producer" || role === "sysop");
   switch (entry.access) {
     case "championship": return permission("manage_championships");
+    case "users": return permission("manage_roles") || user.roles.some(role => role === "admin" || role === "sysop");
     case "invites": return permission("manage_invites");
     case "operator": return user.roles.some(role => role === "admin" || role === "sysop");
     case "producer": return producer;

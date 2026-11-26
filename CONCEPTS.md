@@ -506,7 +506,18 @@ The authentication identity through which an Influence user enters Privy: either
 
 ## Verified email claim
 
-The private duplicate-prevention rule that assigns one normalized verified email to at most one Influence account. Normalization trims whitespace and compares case-insensitively without collapsing dots, plus-tags, or provider-specific aliases. The claim may block account creation or select an unambiguous existing email-owned account for linking, but it is not the account's ownership key or public identity.
+A private keyed digest of one provider-verified address. A claim assigns that
+address to a single account or records an explicit conflict. Normalization
+trims whitespace and lowercases while preserving dots and plus-tags. Provider
+linking compares claim digests. Account support can also match the migrated
+legacy metadata digest for an exact lookup.
+
+## Signup capacity
+
+An aggregate PostgreSQL bucket for committed new accounts. The configured rate
+sets the capacity and the continuous refill per 24 hours. A single-use campaign
+session can bypass the bucket during its 24-hour lifetime. All new accounts
+also require human verification. See [signup admission](docs/authentication/signup-admission.md).
 
 ## Public player profile
 

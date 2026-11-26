@@ -7,10 +7,15 @@
 
 import { createHmac } from "node:crypto";
 import { Hono, type Context } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
+import {
+  admitSignup, CAMPAIGN_COOKIE, issueCampaignSession, SignupAdmissionError,
+  signupAvailability, verifySignupHuman,
+} from "../services/signup-admission.js";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { eq } from "drizzle-orm";
-import { deleteAccount } from "../services/account-deletion.js";
+import { deleteAccount, ProtectedAccountError } from "../services/account-deletion.js";
 import {
   verifyPrivyToken,
   getPrivyUser,
@@ -78,6 +83,7 @@ interface AuthRouteDependencies {
     windowMs: number;
   };
   privyTimeoutMs?: number;
+  verifySignupHuman?: typeof verifySignupHuman;
   now?: () => number;
 }
 
@@ -92,6 +98,58 @@ export function createAuthRoutes(
   dependencies: AuthRouteDependencies = {},
 ) {
   const app = new Hono<AuthEnv>();
+  app.onError((error, c) => {
+    if (error instanceof SignupAdmissionError) {
+      c.header("Cache-Control", "private, no-store");
+      if (error.nextAvailableAt) {
+        c.header("Retry-After", String(Math.max(1, Math.ceil((Date.parse(error.nextAvailableAt) - Date.now()) / 1000))));
+      }
+      return c.json({ code: error.code, error: error.message, nextAvailableAt: error.nextAvailableAt }, error.status);
+    }
+    console.error("[auth] Auth request failed");
+    return c.json({ error: "Authentication is temporarily unavailable" }, 500);
+  });
+
+  app.get("/api/auth/signup-availability", async c => {
+    c.header("Cache-Control", "private, no-store");
+    return c.json(await signupAvailability(db, getCookie(c, CAMPAIGN_COOKIE)));
+  });
+
+  app.post("/api/auth/signup-campaign/session", async c => {
+    c.header("Cache-Control", "private, no-store");
+    const body = await parseJsonBody(c, "campaign session");
+    const session = await issueCampaignSession(db, body?.code, getCookie(c, CAMPAIGN_COOKIE));
+    if (!session) return c.json({ error: "This signup campaign is unavailable." }, 404);
+    if (!session.existing) setCookie(c, CAMPAIGN_COOKIE, session.token, {
+      httpOnly: true, sameSite: "Lax", secure: process.env.NODE_ENV === "production",
+      path: "/api/auth", maxAge: session.maxAge,
+    });
+    return c.json({ available: true });
+  });
+
+  async function prepareSignup(c: Context, token: unknown) {
+    const campaign = getCookie(c, CAMPAIGN_COOKIE);
+    let result: string | SignupAdmissionError = new SignupAdmissionError(
+      "SIGNUP_VERIFICATION_REQUIRED", "Complete human verification to create an account.", 403);
+    if (typeof token === "string" && token.length > 0 && token.length <= 2048) {
+      try {
+        result = await (dependencies.verifySignupHuman ?? verifySignupHuman)(token);
+      } catch (error) {
+        if (!(error instanceof SignupAdmissionError)) throw error;
+        result = error;
+      }
+    }
+    return async (tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0]) => {
+      if (typeof result !== "string") {
+        const status = await signupAvailability(tx, campaign);
+        if (!status.available) throw new SignupAdmissionError(
+          "SIGNUP_LIMIT_REACHED", "Signups are full.", 429, status.nextAvailableAt!);
+        throw result;
+      }
+      await admitSignup(tx, result, campaign);
+    };
+  }
+
   app.delete("/api/account", requireAuth(db, { allowPendingLegalAcceptance: true }), async c => {
     const body = await parseJsonBody(c, "DELETE /api/account");
     if (!body || Array.isArray(body) || body.confirmation !== "DELETE" || Object.keys(body).length !== 1) {
@@ -101,9 +159,14 @@ export function createAuthRoutes(
     if (!session || session.issuedAt < Date.now() / 1000 - 600) {
       return c.json({ error: "Sign out and sign in again before deleting your account.", code: "REAUTH_REQUIRED" }, 403);
     }
-    const result = await deleteAccount(db, c.get("user").id);
     c.header("Cache-Control", "no-store");
-    return c.json({ ...result, status: "deleted", providerCleanup: "pending" }, 202);
+    try {
+      const result = await deleteAccount(db, c.get("user").id);
+      return c.json({ ...result, status: "deleted", providerCleanup: "pending" }, 202);
+    } catch (error) {
+      if (!(error instanceof ProtectedAccountError)) throw error;
+      return c.json({ error: error.message }, 403);
+    }
   });
   const verifyPrivyAccessToken = dependencies.verifyPrivyToken ?? verifyPrivyToken;
   const loadPrivyUser = dependencies.getPrivyUser ?? getPrivyUser;
@@ -143,6 +206,7 @@ export function createAuthRoutes(
       "termsVersion",
       "privacyVersion",
       "deploymentSha",
+      "turnstileToken",
       "attribution",
       "analytics",
       "analyticsExplicit",
@@ -182,6 +246,7 @@ export function createAuthRoutes(
     const provider = verification.status === "verified"
       ? verification.evidence.provider
       : verification.provider;
+    const admit = await prepareSignup(c, body.intent === "create_account" ? body.turnstileToken : undefined);
     const authentication = await resolveAccountAuthentication(db, {
       provider,
       subject,
@@ -193,12 +258,10 @@ export function createAuthRoutes(
         ? (tx, userId) => redeemCode(tx, body.inviteCode!, userId)
         : undefined,
       beforeCommit: body.intent === "create_account"
-        ? (tx, userId) => recordCurrentLegalAcceptance(
-          tx,
-          userId,
-          "account_creation",
-          body.deploymentSha as string,
-        )
+        ? async (tx, userId) => {
+          await admit(tx);
+          await recordCurrentLegalAcceptance(tx, userId, "account_creation", body.deploymentSha as string);
+        }
         : undefined,
     });
 
@@ -262,10 +325,9 @@ export function createAuthRoutes(
   // -------------------------------------------------------------------------
 
   app.post("/api/auth/farcaster/login", async (c) => {
-    const body = await parseJsonBody(c, "POST /api/auth/farcaster/login");
-    if (!body?.token || typeof body.token !== "string") {
-      return c.json({ error: "token is required" }, 400);
-    }
+    const request = await readStrictTokenRequest(c, ["token", "inviteCode", "turnstileToken"]);
+    if (!request.ok) return request.response;
+    const { body } = request;
 
     const domain = resolveFarcasterAuthDomain(
       dependencies.farcasterAuthDomain,
@@ -290,11 +352,13 @@ export function createAuthRoutes(
       }, 503);
     }
 
+    const admit = await prepareSignup(c, body.turnstileToken);
     const authentication = await resolveAccountAuthentication(db, {
       provider: verification.evidence.provider,
       subject: verification.evidence.subject,
       evidence: verification.evidence,
       compatibilityBridgeEnabled: true,
+      beforeCommit: admit,
       checkInviteRequired: (tx) => inviteIsRequired(tx),
       redeemInvite: typeof body.inviteCode === "string"
         ? (tx, userId) => redeemCode(tx, body.inviteCode as string, userId)
@@ -374,6 +438,7 @@ export function createAuthRoutes(
         "termsVersion",
         "privacyVersion",
         "deploymentSha",
+        "turnstileToken",
         "attribution",
         "analytics",
         "analyticsExplicit",
@@ -394,6 +459,7 @@ export function createAuthRoutes(
     );
     if (!verification.ok) return verification.response;
 
+    const admit = await prepareSignup(c, request.body.turnstileToken);
     const outcome = await createManagedAccountAuthentication(
       db,
       verification.evidence,
@@ -406,12 +472,10 @@ export function createAuthRoutes(
             userId,
           )
           : undefined,
-        beforeCommit: (tx, userId) => recordCurrentLegalAcceptance(
-          tx,
-          userId,
-          "account_creation",
-          request.body.deploymentSha!,
-        ),
+        beforeCommit: async (tx, userId) => {
+          await admit(tx);
+          await recordCurrentLegalAcceptance(tx, userId, "account_creation", request.body.deploymentSha!);
+        },
       },
     );
     if (outcome.status === "authenticated" && !outcome.created) {
@@ -575,7 +639,6 @@ export function createAuthRoutes(
     return c.json({
       id: user.id,
       walletAddress: user.walletAddress,
-      email: user.email,
       ...projectAuthenticatedPublicIdentity(user),
       isAdmin,
       roles,
@@ -673,6 +736,7 @@ type StrictAuthBody = {
   token: string;
   intent?: "sign_in" | "create_account";
   inviteCode?: string;
+  turnstileToken?: unknown;
   privyToken?: string;
   confirm?: true;
   acceptTerms?: true;
@@ -753,6 +817,7 @@ async function readStrictTokenRequest(
     ok: true,
     body: {
       token: body.token,
+      turnstileToken: body.turnstileToken,
       intent: body.intent as "sign_in" | "create_account" | undefined,
       inviteCode: body.inviteCode as string | undefined,
       privyToken: body.privyToken as string | undefined,

@@ -1,3 +1,4 @@
+import { hashAccountEmail } from "../lib/verified-email.js";
 import { reserveInference, dispatchInference } from "../services/inference-allowances.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
@@ -49,7 +50,7 @@ describe("avatar generation service", () => {
     db = await setupTestDB();
     await db.insert(schema.users).values({
       id: USER_ID,
-      email: "avatar@test.example",
+      legacyEmailHash: hashAccountEmail("avatar@test.example"),
       displayName: "Avatar User",
     });
     await insertAgent();

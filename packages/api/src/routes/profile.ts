@@ -100,7 +100,6 @@ export function createProfileRoutes(db: DrizzleDB) {
     }
     if (!hasSafePublicDisplayName({
       displayName: trimmed,
-      email: current.email,
       walletAddress: current.walletAddress,
     })) {
       return c.json({ error: "displayName must not be an account placeholder" }, 400);
@@ -154,7 +153,6 @@ export function createProfileRoutes(db: DrizzleDB) {
       .select({
         id: schema.users.id,
         displayName: schema.users.displayName,
-        email: schema.users.email,
         walletAddress: schema.users.walletAddress,
         rating: schema.users.rating,
         gamesPlayed: schema.users.gamesPlayed,
@@ -225,7 +223,6 @@ async function loadPrivateProfile(db: DrizzleDB, userId: string) {
       handle: schema.users.handle,
       displayName: schema.users.displayName,
       walletAddress: schema.users.walletAddress,
-      email: schema.users.email,
       rating: schema.users.rating,
       gamesPlayed: schema.users.gamesPlayed,
       gamesWon: schema.users.gamesWon,

@@ -42,13 +42,11 @@ await db.insert(schema.users)
     {
       id: userIds.alice,
       walletAddress: "0xAlice0000000000000000000000000000000001",
-      email: "alice@example.com",
       displayName: "Alice",
     },
     {
       id: userIds.bob,
       walletAddress: "0xBob00000000000000000000000000000000000002",
-      email: "bob@example.com",
       displayName: "Bob",
     },
     {
@@ -58,13 +56,11 @@ await db.insert(schema.users)
     },
     {
       id: userIds.diana,
-      email: "diana@example.com",
       displayName: "Diana",
     },
     {
       id: userIds.eve,
       walletAddress: "0xEve00000000000000000000000000000000000005",
-      email: "eve@example.com",
       displayName: "Eve",
     },
   ]);
