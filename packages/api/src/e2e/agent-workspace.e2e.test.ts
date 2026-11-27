@@ -1076,9 +1076,12 @@ test("a dropped image connection reconnects to the durable request and keeps the
     privateKey: owner.wallet.privateKey,
   });
   const name = "Image Reconnection";
+  const providerStarted = Promise.withResolvers<void>();
+  const releaseProvider = Promise.withResolvers<void>();
+  let worker: Promise<number> | undefined;
   let imageRequestId: string | undefined;
   let imagePosts = 0;
-  let dropImageStatus = true;
+  let dropImageStatus = false;
   let disconnectedReads = 0;
   try {
     await mockCharacterAssistant(page, name, "A quiet investigator.", Promise.resolve(), (request) => {
@@ -1101,6 +1104,16 @@ test("a dropped image connection reconnects to the durable request and keeps the
     await fill(page, "#agent-creation-message", "A bronze coat and narrow boots.");
     await button(page, "Send");
     const job = await latestPendingJob(name);
+    const art = await Bun.file(new URL("../../../web/public/avatars/personas/full-body-v1/strategic.webp", import.meta.url)).bytes();
+    worker = processMockCharacterReference(database.db, art, false, false, async () => {
+      providerStarted.resolve();
+      await releaseProvider.promise;
+    });
+    await Promise.race([
+      providerStarted.promise,
+      worker.then(() => { throw new Error("The worker exited before dispatching an image."); }),
+    ]);
+    dropImageStatus = true;
     await page.waitForFunction("document.body.innerText.includes('Checking your image request')");
     await fill(page, "#agent-creation-message", "Keep this next idea while the network reconnects.");
     expect(disconnectedReads).toBeGreaterThan(0);
@@ -1109,8 +1122,8 @@ test("a dropped image connection reconnects to the durable request and keeps the
     await page.screenshot({ path: proof + "image-reconnecting-mobile.png" });
     await page.waitForFunction("document.body.innerText.includes('We couldn’t confirm whether your image finished')");
     expect(disconnectedReads).toBeGreaterThanOrEqual(4);
-    const art = await Bun.file(new URL("../../../web/public/avatars/personas/full-body-v1/strategic.webp", import.meta.url)).bytes();
-    expect(await processMockCharacterReference(database.db, art)).toBe(1);
+    releaseProvider.resolve();
+    expect(await worker).toBe(1);
     dropImageStatus = false;
     await button(page, "Check status");
     await page.waitForFunction("document.body.innerText.includes('Artwork ready')");
@@ -1121,7 +1134,10 @@ test("a dropped image connection reconnects to the durable request and keeps the
     const rows = await database.db.select({ id: schema.characterReferenceJobs.id, status: schema.characterReferenceJobs.status })
       .from(schema.characterReferenceJobs).where(eq(schema.characterReferenceJobs.id, job.id));
     expect(rows).toEqual([{ id: job.id, status: "ready" }]);
-  } finally { await page.close(); }
+  } finally {
+    releaseProvider.resolve();
+    await Promise.all([worker, page.close()]);
+  }
 }, 120_000);
 test("Guided creation saves model, voice and ready artwork directly from review", async () => {
   const page = await createAuthenticatedPage(

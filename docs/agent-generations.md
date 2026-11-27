@@ -125,5 +125,6 @@ Staging and production require their normal migration/deployment process.
 Tests cover competing starts, pause/exhaustion, queued and dispatched cancellation,
 refund idempotence, stale leases, heartbeat fencing, late success, retry admission,
 owner isolation, and cancellation preserving editor drafts through the real UI.
-The localhost browser test interrupts status requests after admission and checks
-recovery of the same request without a second submission.
+The localhost browser test drops status requests while the image worker is
+waiting for its provider response, then checks recovery of the same request
+without a second submission.
