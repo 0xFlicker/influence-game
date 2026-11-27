@@ -1,4 +1,5 @@
 import { hashAccountEmail } from "../lib/verified-email.js";
+import onomaverse from "../data/onomaverse-v2026.10.json";
 import { loadPayloads } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
@@ -1573,7 +1574,7 @@ describe("Agent Profile API", () => {
         const request=input instanceof Request?input:new Request(input.toString(),init);
         expect(request.url).toContain("/chat/completions");
         requests.push(await request.json() as Record<string,unknown>);
-        return Response.json({id:"appearance-only",model:"gpt-6-luna",choices:[{index:0,finish_reason:"stop",message:{role:"assistant",content:JSON.stringify({...existingProfile,personality:"Unwanted rewrite",werewolfStrategyStyle:"Compare claims before voting.",performanceInstructions:"Measured gestures",visualDesign:invalid?" ":"A green coat",introQuips:["One","Two","Three"]})}}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}});
+        return Response.json({id:"appearance-only",model:"gpt-6-luna",choices:[{index:0,finish_reason:"stop",message:{role:"assistant",content:JSON.stringify({...existingProfile,name:{source:"fixed",value:existingProfile.name},personality:"Unwanted rewrite",werewolfStrategyStyle:"Compare claims before voting.",performanceInstructions:"Measured gestures",visualDesign:invalid?" ":"A green coat",introQuips:["One","Two","Three"]})}}],usage:{prompt_tokens:10,completion_tokens:10,total_tokens:20}});
       },{preconnect:originalFetch.preconnect});
       try {
         const response=await app.request("/api/agent-profiles/generate",jsonReq({changeRequest:"Make their coat green",selectedFields:["visualDesign"],existingProfile},tokenA));
@@ -1595,7 +1596,7 @@ describe("Agent Profile API", () => {
       const originalFetch = globalThis.fetch, savedKey = process.env.OPENAI_API_KEY;
       process.env.OPENAI_API_KEY = "test-openai-key";
       const context = { name: "Arden Vale", personality: "Observant", backstory: "A librarian", strategyStyle: "Influence notes", werewolfStrategyStyle: "", personaKey: "observer", gender: "non-binary", performanceInstructions: "", visualDesign: "", hasFullBody: true };
-      const generated = { ...context, name: "Unwanted rename", personality: "Unwanted personality", strategyStyle: "Unwanted Influence edit", werewolfStrategyStyle: "As village, compare claims. As wolf, keep a consistent story.", introQuips: ["One", "Two", "Three"] };
+      const generated = { ...context, name: { source: "fixed", value: context.name }, personality: "Unwanted personality", strategyStyle: "Unwanted Influence edit", werewolfStrategyStyle: "As village, compare claims. As wolf, keep a consistent story.", introQuips: ["One", "Two", "Three"] };
       const { hasFullBody: _hasFullBody, ...profile } = generated;
       let content = JSON.stringify(profile);
       const requests: Record<string, unknown>[] = [];
@@ -1644,6 +1645,11 @@ describe("Agent Profile API", () => {
       );
       const originalFetch = globalThis.fetch;
       const requestBodies: Array<Record<string, unknown>> = [];
+      const cueBodies: Array<Record<string, unknown>> = [];
+      const polishBackground = "Raised in a Polish-speaking family.";
+      let cueContent = JSON.stringify({ cues: [] });
+      let shortlist: string[] = [];
+      let nameOverride: { source: string; value: string; request?: string } | undefined;
 
       process.env.OPENAI_API_KEY = "test-openai-key";
       delete process.env.OPENAI_BASE_URL;
@@ -1652,7 +1658,27 @@ describe("Agent Profile API", () => {
       globalThis.fetch = Object.assign(
         async (input: string | URL | Request, init?: RequestInit) => {
           const request = input instanceof Request ? input : new Request(input.toString(), init);
-          requestBodies.push(await request.clone().json() as Record<string, unknown>);
+          const body = await request.json() as Record<string, unknown> & {
+            response_format: { json_schema: { name: string; strict: boolean; schema: { properties: { name: { anyOf?: unknown[] } } } } };
+          };
+          if (body.response_format.json_schema.name === "agent_naming_cues") {
+            cueBodies.push(body);
+            expect(body.response_format.json_schema.strict).toBe(true);
+            return Response.json({ id: "cue-test", object: "chat.completion", model: "gpt-6-luna",
+              choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: cueContent } }],
+              usage: { prompt_tokens: 25, completion_tokens: 5, total_tokens: 30 } });
+          }
+          requestBodies.push(body);
+          const nameSchema = body.response_format.json_schema.schema.properties.name;
+          const options = (nameSchema.anyOf ?? [nameSchema]) as {
+            properties: { source: { enum: string[] }; value: { enum?: string[] } };
+          }[];
+          const names = (source: string) => options.find(option => option.properties.source.enum.includes(source))?.properties.value.enum;
+          shortlist = names("shortlist") ?? [];
+          const fixedName = names("fixed")?.[0];
+          const name = nameOverride ?? (fixedName === undefined
+            ? { source: "shortlist", value: shortlist[0] }
+            : { source: "fixed", value: fixedName });
           return new Response(JSON.stringify({
             id: "chatcmpl-test",
             object: "chat.completion",
@@ -1663,10 +1689,10 @@ describe("Agent Profile API", () => {
               message: {
                 role: "assistant",
                 content: JSON.stringify({
-                  name: "Nova Vale",
-                  backstory: "Nova learned patience in crowded rooms.",
-                  personality: "Nova listens before making a move.",
-                  strategyStyle: "Nova builds a coalition and waits for leverage.",
+                  name,
+                  backstory: `${name.value} learned patience in crowded rooms.`,
+                  personality: "She listens before making a move.",
+                  strategyStyle: "She builds a coalition and waits for leverage.",
                   performanceInstructions: "Measured delivery and open posture.",
                   visualDesign: "Short dark hair and a green coat.",
                   werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["I brought a plan and excellent snacks.", "Let's make this interesting.", "I know a shortcut to the good chairs."],
@@ -1690,6 +1716,10 @@ describe("Agent Profile API", () => {
           "/api/agent-profiles/generate",
           jsonReq({ traits: "patient and observant" }, tokenA),
         );
+        expect(generated.status).toBe(200);
+        expect(shortlist).toHaveLength(8);
+        expect(cueBodies).toHaveLength(1);
+        expect(await generated.json()).toMatchObject({ name: shortlist[0], backstory: expect.stringContaining(shortlist[0]!) });
         const refined = await app.request(
           "/api/agent-profiles/generate",
           jsonReq({
@@ -1713,8 +1743,8 @@ describe("Agent Profile API", () => {
         }, tokenA));
         expect(completedIdentity.status).toBe(200);
         expect(await completedIdentity.json()).toMatchObject({ name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy", performanceInstructions: "Original voice", visualDesign: "Original look", gender: "female", personaKey: "strategic" });
-        expect(generated.status).toBe(200);
         expect(refined.status).toBe(200);
+        expect(await refined.json()).toMatchObject({ name: "Nova Vale" });
         const genderContext = { name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy", werewolfStrategyStyle: "Original Werewolf strategy", performanceInstructions: "Original voice", visualDesign: "Original look", personaKey: "strategic", gender: "male", fullBodyReferenceUrl: "/missing-old-body.png" };
         const genderEdit = await app.request("/api/agent-profiles/generate", jsonReq({
           changeRequest: "Make female", selectedFields: ["gender"], existingProfile: genderContext,
@@ -1733,18 +1763,44 @@ describe("Agent Profile API", () => {
         expect(unrestrictedGender.status).toBe(200);
         expect(await unrestrictedGender.json()).toMatchObject({ gender: "female" });
         expect(JSON.stringify(requestBodies.at(-1)?.messages)).not.toContain("Required gender: male");
-        expect(requestBodies).toHaveLength(7);
+        const cueCount = cueBodies.length;
+        const explicit = await app.request("/api/agent-profiles/generate", jsonReq({ name: "Xóchitl", traits: "Patient" }, tokenA));
+        expect(explicit.status).toBe(200);
+        expect(shortlist).toHaveLength(0);
+        expect(cueBodies).toHaveLength(cueCount);
+        expect(await explicit.json()).toMatchObject({ name: "Xóchitl" });
+
+        const suppliedRequest = "Call this quiet diplomat Moss.";
+        nameOverride = { source: "provided", value: "Moss", request: suppliedRequest };
+        const supplied = await app.request("/api/agent-profiles/generate", jsonReq({ changeRequest: suppliedRequest }, tokenA));
+        expect(supplied.status).toBe(200);
+        expect(await supplied.json()).toMatchObject({ name: "Moss" });
+        nameOverride = { source: "shortlist", value: "First9 Last9" };
+        expect((await app.request("/api/agent-profiles/generate", jsonReq({ traits: "Patient" }, tokenA))).status).toBe(502);
+
+        const request = "Invent a name using your list as inspiration.";
+        nameOverride = { source: "inspiration", value: "Orris", request };
+        const inspired = await app.request("/api/agent-profiles/generate", jsonReq({ changeRequest: request }, tokenA));
+        expect(inspired.status).toBe(200);
+        expect(await inspired.json()).toMatchObject({ name: "Orris" });
+
+        nameOverride = undefined;
+        cueContent = JSON.stringify({ cues: [{ country: "PL", quote: polishBackground }] });
+        const grounded = await app.request("/api/agent-profiles/generate", jsonReq({ backstoryIdea: polishBackground }, tokenA));
+        expect(grounded.status).toBe(200);
+        expect(JSON.stringify(cueBodies.at(-1)?.messages)).toContain(polishBackground);
+        expect(shortlist).toHaveLength(8);
+        const polishPool = onomaverse.find(pool => pool.country === "PL")!;
+        expect(shortlist.filter(candidate => polishPool.givenNames.some(given =>
+          candidate.startsWith(given + " ") && polishPool.surnames.includes(candidate.slice(given.length + 1)),
+        )).length).toBeGreaterThanOrEqual(6);
+        expect(await grounded.json()).toMatchObject({ name: shortlist[0] });
+        const cueOnly = await app.request("/api/agent-profiles/generate", jsonReq({ traits: "A reserved painter" }, tokenA));
+        expect(cueOnly.status).toBe(502);
+        expect(requestBodies).toHaveLength(12);
         for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
         for (const body of requestBodies) expect(JSON.stringify(body.messages)).toContain("The Short List votes off the player with the fewest positive votes");
-        expect(requestBodies.map((body) => body.model)).toEqual([
-          "gpt-6-luna",
-          "gpt-6-luna",
-          "gpt-6-luna",
-          "gpt-6-luna",
-          "gpt-6-luna",
-          "gpt-6-luna",
-          "gpt-6-luna",
-        ]);
+        expect(new Set(requestBodies.map(body => body.model))).toEqual(new Set(["gpt-6-luna"]));
       } finally {
         globalThis.fetch = originalFetch;
         for (const [key, value] of savedEnv) restoreEnv(key, value);

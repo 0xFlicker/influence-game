@@ -19,10 +19,11 @@ Daily Free entry points. The former dashboard creation route is removed. Arrivin
 signed out shows the same stone hall, House mark, ingredients, and composer;
 it does not open authentication.
 
-An anonymous browser gets one successful House text message. A single strict
-structured provider attempt returns `{reply, profile}`: questions can receive a
-grounded answer with `profile: null`, and character ideas can produce all nine
-character cards, including separate Influence and Werewolf strategies. There is no image generation or Agent saving in this endpoint.
+An anonymous browser gets one successful House text message. A short naming
+cue check precedes the strict structured response `{reply, profile}`. Questions
+can receive a grounded answer with `profile: null`, and character ideas can
+produce all nine character cards, including separate Influence and Werewolf
+strategies. There is no image generation or Agent saving in this endpoint.
 Approval remains a local action. Asking for another message, an image, Advanced
 create, or a server save opens account creation. The authentication modal uses
 the House hall, gold mark, and muted purple surfaces. Free accounts keep the
@@ -31,7 +32,8 @@ existing text and image allowances (100 text operations and 25 image operations)
 `GET /api/agent-profiles/anonymous` establishes a signed, HTTP-only browser cookie
 and reads whether its message is used. `POST` accepts only a message, curated
 ingredient IDs, and an idempotency key. PostgreSQL serializes admission to the
-Anonymous pool: at most one provider dispatch globally per rolling minute. Busy
+Anonymous pool to one admitted preview globally per rolling minute. Both
+provider calls use that admission and accumulate usage on the same operation. Busy
 responses include `Retry-After` and offer account creation or trying later,
 without consuming that browser's message. Browser identity is not proof of a
 person; clearing cookies creates a new visitor, still subject to the global cap.
@@ -228,12 +230,41 @@ The guided command router and character writer use low reasoning effort. The
 Advanced Workshop uses strict function tools with `reasoning_effort: "none"`:
 GPT-6 Luna rejects function tools with reasoning in Chat Completions. All three
 explicitly request Standard (`service_tier: "default"`), bypassing the background Flex
-transport. Each provider call has a 45-second timeout and no SDK retries; the
-command request has a 60-second browser deadline. Timeouts return a readable retry message and
+transport. Profile writing and command routing have a 45-second provider
+timeout. The naming cue check has an eight-second timeout. SDK retries are disabled.
+The command request has a 60-second browser deadline. Timeouts return a readable retry message and
 leave the draft intact. Game and background generation policy is unchanged.
 [Flex processing](https://developers.openai.com/api/docs/guides/flex-processing)
 trades lower cost for slower responses and occasional resource unavailability;
 interactive character creation uses Standard instead.
+
+## Generated names
+
+The signed-out preview and signed-in profile writer use a short, strict model
+call to identify up to two supported naming traditions from an explicit naming
+request or clear family background. Every selected country code needs a
+verbatim source quote. A place of residence, job or appearance alone does not
+establish a naming tradition.
+
+Each shortlist uses eight distinct given names. Clear cues steer six slots
+toward the selected Onomaverse pools, split evenly when two pools are indicated.
+Two slots draw from the full dataset, and available slots return to the broad
+draw if a targeted pool runs short. With no clear cue all eight slots use the
+broad draw. Each given name is paired with a surname from the same country pool.
+The shuffled shortlist excludes occupied and reserved full names and respects
+the saved profile's 32-character limit.
+
+The profile writer must return a name from the shortlist in its strict
+response. A structured user-supplied name is fixed. In conversational
+requests, the writer can return an exact name supplied in the user's message,
+or an original name with a verbatim request for inspiration. The server checks
+the selected option or quoted source text before accepting the result. A scoped
+edit preserves the current name unless it includes naming, and an unscoped
+refinement defaults to preserving it. The model writes the profile using the
+chosen name when it writes the profile. Save still enforces unique full names.
+
+The bundled pool uses Onomaverse release `v2026.10` and needs no runtime
+download. See the [data provenance and rebuild instructions](../packages/api/src/data/README.md).
 
 ## Advanced edit and incomplete profiles
 

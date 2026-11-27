@@ -1,12 +1,10 @@
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { APIError } from "openai";
-import type { ChatCompletion } from "openai/resources/chat/completions";
-import { estimateCostForKnownModel, MODEL_PRICING } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { GenerationAdmissionError } from "./generation-admission-error.js";
 import { sha256StableJson } from "./stable-hash.js";
+import { textProviderAttempts, type TextProviderAttempt } from "./text-provider-attempts.js";
 
 export class AnonymousPoolBusyError extends GenerationAdmissionError {
   constructor(public readonly retryAfterSeconds: number) {
@@ -21,10 +19,10 @@ export async function readAnonymousAllowance(db: DrizzleDB, visitorHash: string)
   return { used: rows.some(row => row.state !== "failed") };
 }
 
-/** One successful preview per browser, at most one global provider dispatch per rolling minute. */
+/** One successful preview per browser, at most one global preview admitted per rolling minute. */
 export async function runAnonymousText<T>(db: DrizzleDB, input: {
   visitorHash: string; requestKey: string; model: string; payload: unknown;
-}, run: (record: (response: ChatCompletion) => Promise<void>) => Promise<T>): Promise<T> {
+}, run: (attempt: TextProviderAttempt) => Promise<T>): Promise<T> {
   if (!/^[\w:-]{1,160}$/.test(input.requestKey)) {
     throw new GenerationAdmissionError("invalid_request_id", "A valid request ID is required.", 400);
   }
@@ -55,22 +53,15 @@ export async function runAnonymousText<T>(db: DrizzleDB, input: {
     return { replay: false as const, id };
   });
   if (admission.replay) return admission.value;
-  let responseObserved = false;
+  const attempts = textProviderAttempts(2, async usage => {
+    await db.update(table).set(usage).where(eq(table.id, admission.id));
+  });
   try {
-    const result = await run(async response => {
-      responseObserved = true;
-      const usage = response.usage;
-      const cost = usage ? estimateCostForKnownModel({ promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
-        cachedTokens: usage.prompt_tokens_details?.cached_tokens ?? 0, reasoningTokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
-        totalTokens: usage.total_tokens, callCount: 1, emptyResponses: 0 }, response.model) : null;
-      await db.update(table).set(await storeFields({ promptTokens: usage?.prompt_tokens, completionTokens: usage?.completion_tokens,
-        model: response.model, providerRequestId: response.id, estimatedCostMicrousd: cost ? Math.round(cost.totalCost * 1_000_000) : null,
-        pricingSource: cost ? `engine.MODEL_PRICING:${sha256StableJson(MODEL_PRICING[response.model])}` : null }, {"result":"json-gzip"})).where(eq(table.id, admission.id));
-    });
+    const result = await run(attempts.attempt);
     await db.update(table).set(await storeFields({ state: "succeeded", result, completedAt: sql`clock_timestamp()` }, {"result":"json-gzip"})).where(and(eq(table.id, admission.id), eq(table.state, "dispatched")));
     return result;
   } catch (error) {
-    const state = responseObserved || (error instanceof APIError && error.status !== undefined) ? "failed" : "uncertain";
+    const state = attempts.uncertain ? "uncertain" : "failed";
     await db.update(table).set(await storeFields({ state, completedAt: state === "failed" ? sql`clock_timestamp()` : null }, {"result":"json-gzip"})).where(eq(table.id, admission.id));
     throw error;
   }

@@ -14,7 +14,6 @@ import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 import { createAnonymousAgentCreationRoutes } from "../routes/anonymous-agent-creation.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
 import { runAccountText } from "../services/account-text-usage.js";
-import { decodeAnonymousCreationTurn } from "../services/anonymous-agent-creation.js";
 import {
   createIsolatedTestDb,
   destroyIsolatedTestDb,
@@ -32,7 +31,7 @@ const temporaryPath = (name: string) => join(tmpdir(), name);
 const profile = {
   name: "Mira Vale",
   personaKey: "diplomat",
-  gender: "female",
+  gender: "female" as const,
   personality: "A warm diplomat who keeps receipts.",
   backstory: "An exiled ambassador.",
   strategyStyle: "Build trust at the risk of waiting too long.",
@@ -87,15 +86,12 @@ beforeAll(async () => {
     "/",
     createAnonymousAgentCreationRoutes(
       database.db,
-      async (_input, _signal, record) => {
-        await record(response);
-        return decodeAnonymousCreationTurn(
-          JSON.stringify({
-            reply:
-              "Mira builds trust, but may hesitate to act. Does she feel right?",
-            profile,
-          }),
-        );
+      async (_input, _signal, attempt) => {
+        await attempt(async () => response);
+        return {
+          reply: "Mira builds trust, but may hesitate to act. Does she feel right?",
+          profile,
+        };
       },
     ),
   );
@@ -113,8 +109,8 @@ beforeAll(async () => {
             model: response.model,
             payload: await c.req.json(),
           },
-          async (record) => {
-            await record(response);
+          async (attempt) => {
+            await attempt(async () => response);
             return {
               command: "clarify",
               reply: "Your account is ready. We can keep shaping Mira.",

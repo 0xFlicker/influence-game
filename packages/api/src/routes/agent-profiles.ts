@@ -16,7 +16,8 @@ import { agentCollectionActivity } from "../services/agent-collection-activity.j
 import {isPlayerVoiceId,PLAYER_VOICES,VOICE_AUDITION_VERSION} from "@influence/engine/voice-catalog";
 import { generationContacts } from "../services/generation-admission-error.js";
 import { randomUUID } from "node:crypto";
-import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
+import { drawAgentNameShortlist, type CharacterNaming } from "../services/generated-agent-names.js";
+import { resolveAgentNamingCountries } from "../services/agent-naming-cues.js";
 import { runAccountText, GenerationAdmissionError } from "../services/account-text-usage.js";
 import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
@@ -166,7 +167,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     try {
       return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
-        record => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, record)));
+        attempt => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, attempt)));
     } catch (error) {
       if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts, requestId }, error.status);
       generationFailure(c, error);
@@ -190,7 +191,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       const message = body.message;
       const turn = await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
-        record => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, record));
+        attempt => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, attempt));
       // Meaningful creation start: first successful assistant turn per
       // account. The deterministic ID makes retries/replays count once.
       await recordAgentCreationStarted(db, { userId: c.get("user").id, channel: "web" });
@@ -315,6 +316,9 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     if (changeRequest !== undefined && (typeof changeRequest !== "string" || changeRequest.trim().length === 0 || changeRequest.length > 2_000)) {
       return c.json({ error: "changeRequest must be a non-empty string of at most 2000 characters" }, 400);
     }
+    if (name !== undefined && (typeof name !== "string" || name.trim().length > AGENT_PROFILE_LIMITS.name)) {
+      return c.json({ error: `name must be a string of at most ${AGENT_PROFILE_LIMITS.name} characters` }, 400);
+    }
 
     if (creationTraitIds !== undefined && (!Array.isArray(creationTraitIds)
       || creationTraitIds.length > 12
@@ -349,7 +353,10 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       : editFields && !editFields.includes("gender") && isAgentGender(existingProfile?.gender)
         ? existingProfile.gender : undefined;
 
-    const systemPrompt = buildAgentProfileGenerationSystemPrompt(isRefine, allowedPersonaKeys);
+    const explicitName = name?.trim();
+    const existingName = typeof existingProfile?.name === "string" ? existingProfile.name.trim() : "";
+    const namingText = [changeRequest, traits, occupation, backstoryIdea]
+      .filter((part): part is string => typeof part === "string" && !!part.trim());
 
     const userParts: string[] = [];
     if (isRefine && existingProfile) {
@@ -364,7 +371,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     } else {
       userParts.push(`Choose personaKey only from these valid archetypes: ${allowedPersonaKeys.join(", ")}.`);
     }
-    if (name) userParts.push(`Preferred name: ${name}`);
+    if (explicitName) userParts.push(`User-supplied name: ${explicitName}`);
     if (traits) userParts.push(`Key traits: ${traits}`);
     if (creationTraitIds?.length) {
       userParts.push(`Selected character ingredients (honor each as a creative constraint in the profile and visualDesign):\n${describeAgentCreationTraits(creationTraitIds as AgentCreationTraitId[]).join("\n")}`);
@@ -381,73 +388,70 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       const sourceUrl = needsReference ? existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl : null;
       const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
       const result = await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
-        kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body }, async record => {
-      const response = await openai.chat.completions.create({
-        model: llmConfig.modelId,
-        service_tier: "default",
-        reasoning_effort: "low",
-        max_completion_tokens: 5200,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: reference ? [
-            { type: "text", text: userParts.join("\n\n") + "\nPreserve this character's visible identity when refining visualDesign." },
-            { type: "image_url", image_url: { url: `data:image/png;base64,${reference.toString("base64")}`, detail: "high" } },
-          ] : userParts.join("\n\n") },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "agent_profile_generation",
-            strict: true,
-            schema: characterProfileSchemaFor(allowedPersonaKeys, editFields ?? undefined),
+        kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body, attemptLimit: 2 }, async attempt => {
+        const fixedName = explicitName || (
+          editFields && !editFields.includes("name") ? existingName
+            : !editFields && !namingText.length ? existingName || undefined : undefined
+        );
+        let naming: CharacterNaming;
+        if (fixedName !== undefined) {
+          naming = { fixedName };
+        } else {
+          const existingNames = await db.select({ name: schema.agentProfiles.name }).from(schema.agentProfiles);
+          const occupiedNames = new Set(existingNames.map(profile => profile.name));
+          if (existingName) occupiedNames.add(existingName);
+          const background = existingProfile?.backstory;
+          const cueText = typeof background === "string" && background.trim() ? [...namingText, background] : namingText;
+          const countries = await resolveAgentNamingCountries(llmConfig, cueText, attempt, c.req.raw.signal);
+          naming = {
+            shortlist: drawAgentNameShortlist(occupiedNames, countries),
+            userText: namingText,
+            currentName: !editFields && existingName ? existingName : undefined,
+          };
+        }
+        const response = await attempt(() => openai.chat.completions.create({
+          model: llmConfig.modelId,
+          service_tier: "default",
+          reasoning_effort: "low",
+          max_completion_tokens: 5200,
+          messages: [
+            { role: "system", content: buildAgentProfileGenerationSystemPrompt(isRefine, allowedPersonaKeys, naming) },
+            { role: "user", content: reference ? [
+              { type: "text", text: userParts.join("\n\n") + "\nPreserve this character's visible identity when refining visualDesign." },
+              { type: "image_url", image_url: { url: `data:image/png;base64,${reference.toString("base64")}`, detail: "high" } },
+            ] : userParts.join("\n\n") },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "agent_profile_generation",
+              strict: true,
+              schema: characterProfileSchemaFor(naming, allowedPersonaKeys, editFields ?? undefined),
+            },
           },
-        },
-      }, { signal: c.req.raw.signal, maxRetries: 0 });
-      await record(response);
+        }, { signal: c.req.raw.signal, maxRetries: 0 }));
 
-      const generated = decodeGenerationOutput(() => {
-        const choice = response.choices[0];
-        if (choice?.finish_reason !== "stop" || !choice.message.content) throw new Error("Incomplete character profile");
-        return decodeCharacterProfile(choice.message.content, allowedPersonaKeys, editFields ?? undefined);
-      });
-      const existingNames = await db
-        .select({ name: schema.agentProfiles.name })
-        .from(schema.agentProfiles);
-      const generatedName = editFields && !editFields.includes("name") && existingProfile?.name ? { name: existingProfile.name } : allocateGeneratedAgentName(
-        generated.name,
-        new Set(existingNames.map((profile) => profile.name)),
-      );
-      const profile = updateGeneratedProfileNameReferences({
-        name: generated.name,
-        backstory: generated.backstory ?? null,
-        personality: generated.personality,
-        strategyStyle: generated.strategyStyle ?? null,
-        werewolfStrategyStyle: generated.werewolfStrategyStyle,
-      }, generatedName.name);
+        const generated = decodeGenerationOutput(() => {
+          const choice = response.choices[0];
+          if (choice?.finish_reason !== "stop" || !choice.message.content) throw new Error("Incomplete character profile");
+          return decodeCharacterProfile(choice.message.content, naming, allowedPersonaKeys, editFields ?? undefined);
+        });
 
-      const output = {
-        name: profile.name,
-        backstory: profile.backstory,
-        personality: profile.personality,
-        strategyStyle: profile.strategyStyle,
-        werewolfStrategyStyle: profile.werewolfStrategyStyle,
-        personaKey: generated.personaKey,
-        performanceInstructions: generated.performanceInstructions,
-        visualDesign: generated.visualDesign,
-        introQuips: generated.introQuips,
-        gender: resolveGeneratedAgentGender(generated, requestedGender),
-      };
-      // The model cannot rewrite unrelated populated fields, even if it returns them.
-      if (editFields && existingProfile) {
-        for (const field of CHARACTER_FIELDS) {
-          if (!editFields.includes(field)) {
-            const original = existingProfile[field];
-            if (typeof original === "string") Object.assign(output, { [field]: original });
-            else if (field === "strategyStyle" || field === "werewolfStrategyStyle") Object.assign(output, { [field]: "" });
+        const output = {
+          ...generated,
+          gender: resolveGeneratedAgentGender(generated, requestedGender),
+        };
+        // The model cannot rewrite unrelated populated fields, even if it returns them.
+        if (editFields && existingProfile) {
+          for (const field of CHARACTER_FIELDS) {
+            if (!editFields.includes(field) && !(field === "name" && explicitName)) {
+              const original = existingProfile[field];
+              if (typeof original === "string") Object.assign(output, { [field]: original });
+              else if (field === "strategyStyle" || field === "werewolfStrategyStyle") Object.assign(output, { [field]: "" });
+            }
           }
         }
-      }
-      return output;
+        return output;
       });
       return c.json(result);
     } catch (err) {

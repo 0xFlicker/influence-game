@@ -1,4 +1,6 @@
-import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
+import { characterNameSchema, decodeCharacterName, drawAgentNameShortlist } from "../services/generated-agent-names.js";
+import onomaverse from "../data/onomaverse-v2026.10.json";
+import { decodeAgentNamingCues } from "../services/agent-naming-cues.js";
 import { describe, expect, test } from "bun:test";
 import {
   resolveAgentProfileGenerationLlm,
@@ -43,66 +45,111 @@ describe("generated agent gender", () => {
 });
 
 describe("generated agent names", () => {
-  test("keeps a distinct full name and replaces only the surname on a collision", () => {
-    const occupiedNames = new Set(["nova quinn"]);
-
-    expect(allocateGeneratedAgentName("Nova Quinn", occupiedNames)).toEqual({
-      name: "Nova Hartwell",
-      changed: true,
-    });
-    expect(allocateGeneratedAgentName("Mira Vale", occupiedNames)).toEqual({
-      name: "Mira Vale",
-      changed: false,
-    });
+  test("draws eight distinct given names paired with surnames from the same country pool", () => {
+    const occupiedNames = new Set<string>();
+    for (let i = 0; i < 12; i++) {
+      const shortlist = drawAgentNameShortlist(occupiedNames);
+      expect(shortlist).toHaveLength(8);
+      const givenNames = shortlist.map(name => {
+        expect(name.length).toBeLessThanOrEqual(32);
+        expect(occupiedNames.has(` ${name.toLowerCase()} `)).toBe(false);
+        occupiedNames.add(` ${name.toLowerCase()} `);
+        return onomaverse.flatMap(pool => pool.givenNames.filter(given =>
+          name.startsWith(given + " ") && pool.surnames.includes(name.slice(given.length + 1))));
+      });
+      expect(givenNames.every(names => names.length > 0)).toBe(true);
+      // Given names can contain spaces and a pair may occur in more than one country.
+      expect(givenNames.every((names, index) => names.some(given =>
+        givenNames.every((others, otherIndex) => index === otherIndex || !others.includes(given))))).toBe(true);
+    }
   });
 
-  test("adds a surname when the model returns only a first name", () => {
-    expect(allocateGeneratedAgentName("Nova", new Set())).toEqual({
-      name: "Nova Hartwell",
-      changed: true,
+  const shortlist = ["Abel Pereira", "Maia Dupont", "Enzo Rizzo", "Eleni Giannou",
+    "Nora Larsen", "Isabel Gil", "Alma Berg", "Lucía Cano"];
+  const naming = { shortlist, userText: [] };
+
+  test("constrains the default choice to the actual shortlist", () => {
+    expect(characterNameSchema(naming)).toMatchObject({
+      properties: { source: { enum: ["shortlist"] }, value: { enum: shortlist } },
     });
+    expect(decodeCharacterName({ source: "shortlist", value: shortlist[0] }, naming)).toBe(shortlist[0]!);
+    expect(() => decodeCharacterName({ source: "shortlist", value: "Mira Vale" }, naming)).toThrow();
+    expect(() => decodeCharacterName({ source: "provided", value: "Mira Vale" }, naming)).toThrow();
   });
 
-  test("keeps a fallback full name within the saved profile limit", () => {
-    const name = "A".repeat(32);
-    expect(allocateGeneratedAgentName(name, new Set([name]))).toMatchObject({
-      name: `${"A".repeat(23)} Hartwell`,
-      changed: true,
-    });
+  test("steers six slots toward two family pools and keeps a broad draw", () => {
+    let sawBroadName = false;
+    const matches = (name: string, country: string) => {
+      const pool = onomaverse.find(candidate => candidate.country === country)!;
+      return pool.givenNames.some(given => name.startsWith(given + " ") && pool.surnames.includes(name.slice(given.length + 1)));
+    };
+    for (let i = 0; i < 5; i++) {
+      const names = drawAgentNameShortlist(new Set(), ["PL", "MX"]);
+      expect(new Set(names).size).toBe(8);
+      expect(names.filter(name => matches(name, "PL")).length).toBeGreaterThanOrEqual(3);
+      expect(names.filter(name => matches(name, "MX")).length).toBeGreaterThanOrEqual(3);
+      sawBroadName ||= names.some(name => !matches(name, "PL") && !matches(name, "MX"));
+    }
+    expect(sawBroadName).toBe(true);
   });
 
-  test("keeps generated copy consistent when a collision changes the full name", () => {
-    expect(updateGeneratedProfileNameReferences({
-      name: "Nova Quinn",
-      backstory: "Nova Quinn learned patience at the poker table.",
-      personality: "Nova Quinn has a warm but calculating presence.",
-      strategyStyle: "Nova Quinn builds alliances before making a move.",
-    }, "Nova Hartwell")).toEqual({
-      name: "Nova Hartwell",
-      backstory: "Nova Hartwell learned patience at the poker table.",
-      personality: "Nova Hartwell has a warm but calculating presence.",
-      strategyStyle: "Nova Hartwell builds alliances before making a move.",
-    });
+  test("preserves an explicit mononym and allows original names with a quoted inspiration request", () => {
+    const userText = ["Give this character the name Xóchitl.", "Invent a name, using the options as inspiration."];
+    const withRequests = { ...naming, userText };
+    expect(decodeCharacterName({ source: "provided", value: "Xóchitl", request: userText[0] }, withRequests)).toBe("Xóchitl");
+    expect(() => decodeCharacterName({ source: "provided", value: "Xóchitl" }, withRequests)).toThrow();
+    expect(() => decodeCharacterName({ source: "provided", value: "Xochitl", request: userText[0] }, withRequests)).toThrow();
+    expect(decodeCharacterName({ source: "inspiration", value: "Orris", request: userText[1] }, withRequests)).toBe("Orris");
+    expect(() => decodeCharacterName({ source: "inspiration", value: "Orris", request: "Make something up" }, withRequests)).toThrow();
+    expect(() => decodeCharacterName({ source: "inspiration", value: "Orris" }, withRequests)).toThrow();
+  });
+
+  test("pins a structured name and requires a quoted request to draw a replacement during unscoped refinement", () => {
+    const fixed = { fixedName: "Xóchitl" };
+    expect(decodeCharacterName({ source: "fixed", value: "Xóchitl" }, fixed)).toBe("Xóchitl");
+    expect(() => decodeCharacterName({ source: "fixed", value: "Xóchitl Vale" }, fixed)).toThrow();
+    const request = "Give them a different name.";
+    const refinement = { ...naming, currentName: "Xóchitl", userText: [request] };
+    expect(decodeCharacterName({ source: "fixed", value: "Xóchitl" }, refinement)).toBe("Xóchitl");
+    expect(decodeCharacterName({ source: "shortlist", value: shortlist[0], request }, refinement)).toBe(shortlist[0]!);
+    expect(() => decodeCharacterName({ source: "shortlist", value: shortlist[0] }, refinement)).toThrow();
+  });
+});
+
+describe("country cues", () => {
+  const quote = "raised in a Polish-speaking family";
+  const userText = [`An archivist ${quote}.`];
+  const valid = { country: "PL", quote };
+  test("accepts supported, quoted family cues and the broad draw decision", () => {
+    expect(decodeAgentNamingCues(JSON.stringify({ cues: [valid] }), userText)).toEqual(["PL"]);
+    expect(decodeAgentNamingCues('{"cues":[]}', ["A reserved archivist"])).toEqual([]);
+  });
+  test.each(["not JSON", "{}", '{"cues":null}', '{"cues":[{}]}', '{"cues":[],"extra":false}',
+    ...[[{ ...valid, country: "ZZ" }], [{ ...valid, quote: "a Polish name" }], [valid, valid], [{ ...valid, extra: true }]]
+      .map(cues => JSON.stringify({ cues }))])("rejects malformed or ungrounded cue output: %s", document => {
+    expect(() => decodeAgentNamingCues(document, userText)).toThrow();
   });
 });
 
 import { decodeCharacterProfile, characterProfileSchemaFor } from "../services/character-profile-contract.js";
 const character = { name: "Mira Vale", gender: "female", personaKey: "strategic", backstory: "History", personality: "Patient", strategyStyle: "Build alliances", performanceInstructions: "Open posture", visualDesign: "Blue jacket", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["The snacks are an alliance opportunity.", "I brought a plan and backup snacks.", "Trust is great; receipts are better."] as string[] } as const;
+const naming = { fixedName: character.name };
+const encodedCharacter = { ...character, name: { source: "fixed", value: character.name } };
 describe("complete character contract", () => {
   test("Werewolf editing allows untouched blank fields but requires complete valid strategy output", () => {
-    const draft = { ...character, strategyStyle: "", visualDesign: "", performanceInstructions: "" };
+    const draft = { ...encodedCharacter, strategyStyle: "", visualDesign: "", performanceInstructions: "" };
     const fields = ["werewolfStrategyStyle"] as const;
-    expect(decodeCharacterProfile(JSON.stringify(draft), ["strategic"], fields)).toEqual(draft);
-    expect(characterProfileSchemaFor(["strategic"], fields).properties).toMatchObject({ werewolfStrategyStyle: { minLength: 1, maxLength: 2000 }, strategyStyle: { minLength: 0 } });
-    expect(() => decodeCharacterProfile(JSON.stringify({ ...draft, name: "" }), ["strategic"], fields)).toThrow();
+    expect(decodeCharacterProfile(JSON.stringify(draft), naming, ["strategic"], fields)).toEqual({ ...draft, name: character.name });
+    expect(characterProfileSchemaFor(naming, ["strategic"], fields).properties).toMatchObject({ werewolfStrategyStyle: { minLength: 1, maxLength: 2000 }, strategyStyle: { minLength: 0 } });
+    expect(() => decodeCharacterProfile(JSON.stringify({ ...draft, name: "" }), naming, ["strategic"], fields)).toThrow();
     for (const bad of [undefined, null, "", " ", 1, "a".repeat(2001)]) {
-      expect(() => decodeCharacterProfile(JSON.stringify({ ...draft, werewolfStrategyStyle: bad }), ["strategic"], fields)).toThrow();
+      expect(() => decodeCharacterProfile(JSON.stringify({ ...draft, werewolfStrategyStyle: bad }), naming, ["strategic"], fields)).toThrow();
     }
   });
   test("requires performance and visual design alongside the original fields", () => {
-    expect(decodeCharacterProfile(JSON.stringify(character))).toEqual(character);
+    expect(decodeCharacterProfile(JSON.stringify(encodedCharacter), naming)).toEqual(character);
   });
-  test.each(["not json", "{}", "```json\n{}\n```", 'Here is {"name":"Mira"}', JSON.stringify({ ...character, extra: true }), JSON.stringify({ ...character, visualDesign: undefined }), JSON.stringify({ ...character, performanceInstructions: "" }), JSON.stringify({ ...character, gender: "unknown" })])("rejects malformed or incomplete output: %s", (output) => {
-    expect(() => decodeCharacterProfile(output)).toThrow();
+  test.each(["not json", "{}", "```json\n{}\n```", 'Here is {"name":"Mira"}', JSON.stringify({ ...encodedCharacter, extra: true }), JSON.stringify({ ...encodedCharacter, visualDesign: undefined }), JSON.stringify({ ...encodedCharacter, performanceInstructions: "" }), JSON.stringify({ ...encodedCharacter, gender: "unknown" })])("rejects malformed or incomplete output: %s", (output) => {
+    expect(() => decodeCharacterProfile(output, naming)).toThrow();
   });
 });

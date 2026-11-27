@@ -66,6 +66,13 @@ An AI competitor participating in a game under The House. Agents make in-game de
 
 ## Agent Profile
 
+In assisted character creation, a generated name comes from a random shortlist
+of eight distinct given names paired with surnames from the same country pool.
+A clear naming or family cue can steer six slots to the relevant pools. Two
+slots always draw from the full dataset.
+The owner can supply a name or explicitly request an original name using the
+shortlist as inspiration. See [the creation assistant contract](docs/agent-creation-assistant.md#generated-names).
+
 Character pictures belong to content revisions. Games keep their selected revision's picture; later revisions do not back-propagate. Background removal publishes a transparent derivative of the exact source hash in `agent_content_assets`; playback may use that derivative without changing the revision or consulting cutout jobs.
 
 Stored gender is shared contestant identity in both games. The game freezes it with the roster; missing gender remains unspecified, and contestants must not guess from names. Gender is not a separate pronoun preference. Personality, backstory, and strategy remain private character instructions.
@@ -81,7 +88,7 @@ editor. See [House sharing](docs/house-sharing.md#agent-profiles).
 
 ### Anonymous creation pool
 
-The public `/agents/create` preview gives an anonymous browser one successful House text message before account creation is required for further generation or saving. Signed-out game join actions enter this preview directly with the game target preserved; signup happens within creation. A signed browser cookie identifies the visitor; it is not a verified account or person. PostgreSQL limits the shared pool to one provider dispatch per rolling minute and journals request identity, outcomes, tokens, and estimated cost separately from account and game spending. The first message can answer a game question or create a character draft. Images always require an account.
+The public `/agents/create` preview gives an anonymous browser one successful House text message before account creation is required for further generation or saving. Signed-out game join actions enter this preview directly with the game target preserved; signup happens within creation. A signed browser cookie identifies the visitor; it is not a verified account or person. PostgreSQL limits the shared pool to one admitted preview per rolling minute. The preview journals request identity, outcomes, and combined usage and cost for its two bounded provider calls separately from account and game spending. The first message can answer a game question or create a character draft. Images always require an account.
 
 In every edit session, Strategy changes are compared with the session baseline. A review-linked edit uses the review proposal as the working text and the proposal's `before` value as the visible baseline; saving a custom review update requires changing the proposed text. Generated artwork is a draft candidate until explicitly selected and submitted with the profile. Agent image uploads are not supported.
 
