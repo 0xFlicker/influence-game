@@ -180,13 +180,14 @@ test("Werewolf defaults to Mystery until canonically resolved and fences live re
 
 test("structured consent rejects malformed output and cannot borrow another member's offer", () => {
   const m: DiscordMessage = { id: message, channel_id: room, guild_id: guild, content: "Sure", type: 0, author: { id: alice } };
-  const offer = { channel: room, game: "wolf", member: alice, link: "link", reply: "reply", expires: 1000 };
+  const authority = { link: "link", lane: "room" as const };
+  const offer = { ...authority, channel: room, game: "wolf", member: alice, reply: "reply", expires: 1000 };
   expect(destination(m, guild, room)).toBe("room");
   expect(destination({ ...m, channel_id: dm }, guild, room)).toBeNull();
-  expect(activeOffer(offer, m, "link", 999)).toBe(offer);
-  expect(activeOffer(offer, { ...m, author: { id: bob } }, "link", 999)).toBeUndefined();
-  expect(activeOffer(offer, m, "relinked", 999)).toBeUndefined();
-  expect(activeOffer(offer, m, "link", 1000)).toBeUndefined();
+  expect(activeOffer(offer, m, authority, 999)).toBe(offer);
+  expect(activeOffer(offer, { ...m, author: { id: bob } }, authority, 999)).toBeUndefined();
+  expect(activeOffer(offer, m, { ...authority, link: "relinked" }, 999)).toBeUndefined();
+  expect(activeOffer(offer, m, authority, 1000)).toBeUndefined();
   expect(validatedConsent({ allowed: true })).toBe(true);
   for (const invalid of [null, {}, "yes", { allowed: "true" }, { allowed: true, role: "staff" }]) {
     expect(() => validatedConsent(invalid)).toThrow();

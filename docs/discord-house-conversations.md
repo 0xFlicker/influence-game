@@ -34,9 +34,14 @@ before returning bytes. The gateway can attach up to two inspected images.
 
 The ARM gateway connects to Discord continuously. It queues at most 12
 messages, runs one Codex query at a time, and discards expired work. SQLite
-retains only short-lived message IDs for reconnect deduplication. A bounded
-in-memory window carries the member’s recent inputs in the same conversation.
-It does not replay prior model outputs or private tool results.
+retains only short-lived message IDs for reconnect deduplication. The shared
+room reads recent room messages and its explicit Discord reply target. In a DM,
+The House can follow a recent subject or a direct reply to the exchange where
+the subject came up. It keeps at most four exchanges for 15 minutes in memory,
+bound to the same channel, Discord member, verified link and House access lane.
+The gateway checks those subject references against the current grant. The next
+turn reads the current House record before answering. Prior bot replies, private
+tool results, images and spoiler grants stay out of DM history.
 
 Codex runs as UID 10004 in a networkless, read-only container. A per-turn Unix
 socket carries the scoped House MCP bridge and a fixed OpenAI inference
@@ -46,11 +51,11 @@ GPT-6 Luna with reasoning effort set to `none` and an empty tool catalog. Creden
 the gateway, inference relay and House API. The `SOUL.md` file defines the House
 voice and its typed-command rule for intent.
 
-False Floor owns the AWS runtime and Doppler provisioning in its
-[`infra` repository](https://github.com/falsefloor/infra). See the conversation
-deployment runbook there for the ARM image build, credential sync, staged proof,
-host replacement and rollback. The signed `/verify` Lambda and role worker have
-an independent lifecycle.
+False Floor owns the AWS runtime and Doppler provisioning. The deployment
+runbook covers the ARM image build, credential sync, staged proof, host
+replacement and rollback. The signed `/verify` Lambda and role worker have an
+independent lifecycle.
+[Conversation deployment runbook](https://github.com/falsefloor/infra/blob/main/docs/house-discord-agent.md)
 
 ## Local verification
 

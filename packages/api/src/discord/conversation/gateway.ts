@@ -1,6 +1,10 @@
 import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
-import { activeOffer, destination, discordMessageTime, roomContext, roomReplyId, safeReply, snowflake, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage, type SpoilerOffer } from "./policy.js";
+import {
+  activeOffer, availableDmHistory, destination, directReplyId, discordMessageTime, dmContext, revalidateDmSubject,
+  revalidateSpoilerOffer, roomContext, safeReply, snowflake, spoilerOfferText, subjectKey, subjectsFromRead, validatedConsent,
+  validatedReply, withTurnFeedback, type DiscordMessage, type DmHistory, type SpoilerOffer, type TurnAuthority,
+} from "./policy.js";
 import { runCodex } from "./sandbox.js";
 
 function env(name: string) {
@@ -24,7 +28,7 @@ ids.run("PRAGMA journal_mode = WAL");
 ids.run("CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, time INTEGER NOT NULL)");
 const seen = ids.query("INSERT OR IGNORE INTO seen VALUES (?, ?)");
 const offers = new Map<string, SpoilerOffer>();
-const history = new Map<string, { link: string; messages: string[]; expires: number }>();
+const history = new Map<string, DmHistory>();
 const queue: DiscordMessage[] = [];
 let draining = false;
 let closing = false;
@@ -78,7 +82,7 @@ async function readRoomContext(m: DiscordMessage) {
     }
     return null;
   };
-  const reference = roomReplyId(m);
+  const reference = directReplyId(m);
   const [page, parent] = await Promise.all([
     read("?limit=20&before=" + m.id),
     reference ? read("/" + reference) : null,
@@ -113,40 +117,58 @@ async function send(m: DiscordMessage, content: string, images: Array<{ mimeType
   return (await response.json() as { id: string }).id;
 }
 
-interface Turn { grant: string; publicId: string; lane: "room" | "owner" | "staff"; link: string }
+interface Turn extends TurnAuthority { grant: string; publicId: string }
 interface TurnBinding { discordId: string; channelId: string; messageId: string; kind: "room" | "dm" }
 interface TurnProgress {
   stage: "eligibility" | "grant" | "catalog" | "codex" | "reply" | "spoiler" | "attachment" | "revalidate" | "delivery";
 }
 async function handle(m: DiscordMessage, progress: TurnProgress) {
   const kind = destination(m, guild, room);
-  if (!kind || !(await allowed(m, kind))) return "ineligible";
+  if (!kind) return "ineligible";
+  const key = m.channel_id + ":" + m.author.id;
+  const forget = (reason: string) => {
+    history.delete(key);
+    offers.delete(key);
+    return reason;
+  };
+  if (!(await allowed(m, kind))) return forget("ineligible");
   const params: TurnBinding = { discordId: m.author.id, channelId: m.channel_id, messageId: m.id, kind };
   progress.stage = "grant";
   const start = await api("turn", params);
-  if (!start.ok) return "unavailable";
+  if (!start.ok) return start.status === 403 ? forget("unavailable") : "unavailable";
   const turn = await start.json() as Turn;
-  return withTurnFeedback(discord, m, () => answer(m, progress, params, turn));
+  return withTurnFeedback(discord, m, () => answer(m, progress, params, turn, key));
 }
 
-async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBinding, turn: Turn) {
+async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBinding, turn: Turn, key: string) {
   const { kind } = params;
-  const key = m.channel_id + ":" + m.author.id;
-  const prior = history.get(key);
-  const context = kind === "room" ? await readRoomContext(m) : undefined;
-  const recent = context
-    ? context.recent.filter(message => message.speaker === "requesting_member").map(message => message.text).slice(-4)
-    : prior?.link === turn.link && prior.expires > Date.now() ? prior.messages : [];
-  const offer = activeOffer(offers.get(key), m, turn.link);
+  const prior = availableDmHistory(history.get(key), m, turn);
+  if (!prior.length) history.delete(key);
+  const lastOffer = offers.get(key);
+  if (lastOffer && (lastOffer.link !== turn.link || lastOffer.lane !== turn.lane)) offers.delete(key);
+  const [roomHistory, dmHistory, offer] = await Promise.all([
+    kind === "room" ? readRoomContext(m) : undefined,
+    kind === "dm" ? dmContext(prior, m, reference => revalidateDmSubject(reference, turn.grant, api)) : undefined,
+    revalidateSpoilerOffer(activeOffer(offers.get(key), m, turn), turn.grant, api),
+  ]);
+  const recent = roomHistory
+    ? roomHistory.recent.filter(message => message.speaker === "requesting_member").map(message => message.text).slice(-4)
+    : dmHistory?.memberMessages ?? [];
   const current = m.content.slice(0, 2500);
   const games = new Set<string>();
+  const observedSubjects = new Set<string>();
   const inspected = new Set<string>();
   const finish = async () => {
     progress.stage = "revalidate";
-    return (await api("validate", { grant: turn.grant, games: [...games] })).ok && await allowed(m, kind);
+    const [validation, ...subjects] = await Promise.all([
+      api("validate", { grant: turn.grant, games: [...games] }),
+      ...(dmHistory?.recentSubjects ?? []).map(reference => revalidateDmSubject(reference, turn.grant, api)),
+    ]);
+    return validation.ok && subjects.every(Boolean) && await allowed(m, kind);
   };
 
   const generate = async (revealed?: string) => {
+    observedSubjects.clear();
     progress.stage = "catalog";
     const tools = await api("mcp", { grant: turn.grant, method: "tools/list" });
     if (!tools.ok) throw new Error("House catalog unavailable");
@@ -154,7 +176,9 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     const prompt = JSON.stringify({
       conversation: kind, access: turn.lane, memberPublicId: turn.publicId, houseOrigin: house.origin,
       activeSpoilerOffer: offer?.game, authorizedSpoiler: revealed, recentMemberMessages: recent,
-      recentRoomMessages: context?.recent, repliedToRoomMessage: context?.repliedTo,
+      recentRoomMessages: roomHistory?.recent, repliedToRoomMessage: roomHistory?.repliedTo,
+      recentDmSubjects: dmHistory?.recentSubjects, repliedToDmMessage: dmHistory?.repliedTo,
+      hasExplicitDmReply: kind === "dm" ? Boolean(m.message_reference) : undefined,
       currentMemberMessage: current,
     });
     progress.stage = "codex";
@@ -164,6 +188,9 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
         const args = body.args as Record<string, unknown> | undefined;
         if (typeof args?.game === "string") games.add(args.game);
         if (body.name === "inspect_image" && typeof args?.imageRef === "string") inspected.add(args.imageRef);
+        if (kind === "dm") {
+          for (const reference of await subjectsFromRead(body.name, args, response)) observedSubjects.add(subjectKey(reference));
+        }
       }
       return response;
     });
@@ -182,13 +209,13 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       reply = await generate();
       if (reply.spoiler.action !== "none") return "spoiler_unavailable";
     } else {
-      const matchingOffer = offer?.game === target.gameId;
+      const matchingOffer = offer?.game === target.gameId && offer.expires > Date.now();
       const consentPrompt = JSON.stringify({
         currentMemberMessage: current, recentMemberMessages: recent, game: target, matchingOffer,
       });
       const consent = reply.spoiler.action === "authorize"
         ? await runCodex(sandbox, "consent", consentPrompt, [], async () => new Response(null, { status: 403 })) : null;
-      if (consent && validatedConsent(consent)) {
+      if (consent && validatedConsent(consent) && (!matchingOffer || offer.expires > Date.now())) {
         if (!(await finish())) return "authority_changed";
         progress.stage = "spoiler";
         const grant = await api("turn", { ...params, spoilerGame: target.gameId });
@@ -206,10 +233,8 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
         games.add(target.gameId);
         if (!(await finish())) return "authority_changed";
         progress.stage = "delivery";
-        const sent = await send(m, kind === "room"
-          ? "Shall I open the Omniscient view for **" + target.slug + "**? The answer will be visible to this room."
-          : "Shall I open the Omniscient view for **" + target.slug + "**?");
-        if (sent) offers.set(key, { game: target.gameId, member: m.author.id, channel: m.channel_id, link: turn.link,
+        const sent = await send(m, spoilerOfferText(turn.lane, target.slug));
+        if (sent) offers.set(key, { game: target.gameId, member: m.author.id, channel: m.channel_id, link: turn.link, lane: turn.lane,
           reply: sent, expires: Date.now() + 5 * 60_000 });
         return "spoiler_offered";
       }
@@ -227,8 +252,15 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   }
   if (!(await finish())) return "authority_changed";
   progress.stage = "delivery";
-  if (!await send(m, reply.text, images)) return "empty_reply";
-  if (kind === "dm") history.set(key, { link: turn.link, messages: [...recent, current].slice(-4), expires: Date.now() + 15 * 60_000 });
+  const sent = await send(m, reply.text, images);
+  if (!sent) return "empty_reply";
+  if (kind === "dm" && snowflake.test(sent)) {
+    const subject = reply.subject.kind !== "none" && observedSubjects.has(subjectKey(reply.subject)) ? reply.subject : undefined;
+    history.set(key, {
+      channel: m.channel_id, member: m.author.id, link: turn.link, lane: turn.lane,
+      entries: [...prior, { messageId: m.id, memberText: current, replyId: sent, subject, expires: Date.now() + 15 * 60_000 }].slice(-4),
+    });
+  }
   return "replied";
 }
 
@@ -320,7 +352,7 @@ setInterval(() => {
   const now = Date.now();
   ids.run("DELETE FROM seen WHERE time < ?", [now - 86_400_000]);
   for (const [key, value] of offers) if (value.expires <= now) offers.delete(key);
-  for (const [key, value] of history) if (value.expires <= now) history.delete(key);
+  for (const [key, value] of history) if (value.entries.every(entry => entry.expires <= now)) history.delete(key);
 }, 60_000).unref();
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => {
