@@ -34,6 +34,7 @@ for mode in reply consent; do
     "$image" "$mode" "$model"
 done
 docker logs "$probe" | grep -Fx 'MCP IMAGE IN MODEL INPUT'
+docker logs "$probe" | grep -Fx 'MCP REPLAY URL IN MODEL INPUT'
 docker logs "$probe" | grep -Fx 'PROVIDER TOOLS []'
 docker run --rm --network none --read-only --cap-drop=ALL --security-opt=no-new-privileges --user=10004:10004 \
   --entrypoint /usr/local/bin/bun "$image" -e '

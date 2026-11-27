@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DrizzleDB } from "../db/index.js";
 import { HouseInspectionError } from "../services/house-game-access.js";
-import { discordGame, discordImage, discordRead, discordReadTools } from "../game-mcp/discord-reads.js";
+import { discordGame, discordImage, discordRead, discordReadTools, resolveDiscordHouseLink } from "../game-mcp/discord-reads.js";
 import {
   assertDiscordGrant, discordUnavailable, issueDiscordGrant, parseDiscordTurn, referencePattern,
   signDiscordRef, verifyDiscordRef, type DiscordGrant,
@@ -60,8 +60,17 @@ export function createDiscordAgentRoutes(db: DrizzleDB) {
         if (typeof selector !== "string" || !referencePattern.test(selector)) return discordUnavailable();
         await discordGame(db, grant, selector);
       }
+      const links: string[] = [];
+      if (body.links !== undefined) {
+        if (!Array.isArray(body.links) || body.links.length > 12) return discordUnavailable();
+        for (const link of new Set(body.links)) {
+          if (typeof link !== "string" || link.length > 2048) continue;
+          const target = await resolveDiscordHouseLink(db, grant, link);
+          if (target.status === "found" && target.url === link) links.push(link);
+        }
+      }
       await assertDiscordGrant(db, grant);
-      return c.json({ valid: true });
+      return c.json({ valid: true, ...(body.links !== undefined && { links }) });
     }
     if (action !== "mcp") return c.notFound();
 

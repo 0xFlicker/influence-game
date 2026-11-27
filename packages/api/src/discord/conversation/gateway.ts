@@ -2,9 +2,10 @@ import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   activeOffer, availableDmHistory, destination, directReplyId, discordMessageTime, dmContext, revalidateDmSubject,
-  revalidateSpoilerOffer, roomContext, safeReply, snowflake, spoilerOfferText, subjectKey, subjectsFromRead, validatedConsent,
-  validatedReply, withTurnFeedback, type DiscordMessage, type DmHistory, type SpoilerOffer, type TurnAuthority,
+  revalidateSpoilerOffer, roomContext, snowflake, spoilerOfferText, subjectKey, subjectsFromRead, validatedConsent,
+  validatedReply, withTurnFeedback, type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject, type TurnAuthority,
 } from "./policy.js";
+import { prepareReply } from "./reply-links.js";
 import { runCodex } from "./sandbox.js";
 
 function env(name: string) {
@@ -94,7 +95,7 @@ async function readRoomContext(m: DiscordMessage) {
 
 async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }> = []) {
   const payload = {
-    content: safeReply(content, house.origin), flags: 4, nonce: m.id, enforce_nonce: true,
+    content, flags: 4, nonce: m.id, enforce_nonce: true,
     allowed_mentions: { parse: [], replied_user: false },
     message_reference: { message_id: m.id, channel_id: m.channel_id, fail_if_not_exists: true },
     ...(images.length && { attachments: images.map((_, id) => ({ id, filename: "house-" + (id + 1) + ".png" })) }),
@@ -156,15 +157,21 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     : dmHistory?.memberMessages ?? [];
   const current = m.content.slice(0, 2500);
   const games = new Set<string>();
-  const observedSubjects = new Set<string>();
+  const observedSubjects = new Map<string, Subject>();
   const inspected = new Set<string>();
-  const finish = async () => {
+  const finish = async (links: string[] = []) => {
     progress.stage = "revalidate";
-    const [validation, ...subjects] = await Promise.all([
-      api("validate", { grant: turn.grant, games: [...games] }),
+    const checks = await Promise.all([
+      allowed(m, kind),
       ...(dmHistory?.recentSubjects ?? []).map(reference => revalidateDmSubject(reference, turn.grant, api)),
     ]);
-    return validation.ok && subjects.every(Boolean) && await allowed(m, kind);
+    if (!checks.every(Boolean)) return null;
+    const validation = await api("validate", { grant: turn.grant, games: [...games], links });
+    if (!validation.ok) return null;
+    const result = await validation.json() as { valid?: boolean; links?: string[] };
+    if (result.valid !== true || !Array.isArray(result.links)) return null;
+    const allowedLinks = new Set(result.links);
+    return new Set(links.filter(link => allowedLinks.has(link)));
   };
 
   const generate = async (revealed?: string) => {
@@ -188,8 +195,14 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
         const args = body.args as Record<string, unknown> | undefined;
         if (typeof args?.game === "string") games.add(args.game);
         if (body.name === "inspect_image" && typeof args?.imageRef === "string") inspected.add(args.imageRef);
-        if (kind === "dm") {
-          for (const reference of await subjectsFromRead(body.name, args, response)) observedSubjects.add(subjectKey(reference));
+        if (kind === "dm" || body.name === "resolve_house_link") {
+          for (const reference of await subjectsFromRead(body.name, args, response)) {
+            if (body.name === "resolve_house_link" && reference.kind === "game") games.add(reference.id);
+            if (kind === "dm") {
+              const key = subjectKey(reference);
+              if (reference.replayUrl || !observedSubjects.has(key)) observedSubjects.set(key, reference);
+            }
+          }
         }
       }
       return response;
@@ -233,7 +246,8 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
         games.add(target.gameId);
         if (!(await finish())) return "authority_changed";
         progress.stage = "delivery";
-        const sent = await send(m, spoilerOfferText(turn.lane, target.slug));
+        const text = prepareReply(spoilerOfferText(turn.lane, target.slug), house.origin).render(new Set());
+        const sent = await send(m, text);
         if (sent) offers.set(key, { game: target.gameId, member: m.author.id, channel: m.channel_id, link: turn.link, lane: turn.lane,
           reply: sent, expires: Date.now() + 5 * 60_000 });
         return "spoiler_offered";
@@ -250,12 +264,14 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     const image = (await response.json() as { content: Array<{ mimeType: string; data: string }> }).content[0];
     if (image?.mimeType === "image/png" && image.data.length <= 4_000_000) images.push(image);
   }
-  if (!(await finish())) return "authority_changed";
+  const prepared = prepareReply(reply.text, house.origin);
+  const replyLinks = await finish(prepared.links);
+  if (!replyLinks) return "authority_changed";
   progress.stage = "delivery";
-  const sent = await send(m, reply.text, images);
+  const sent = await send(m, prepared.render(replyLinks), images);
   if (!sent) return "empty_reply";
   if (kind === "dm" && snowflake.test(sent)) {
-    const subject = reply.subject.kind !== "none" && observedSubjects.has(subjectKey(reply.subject)) ? reply.subject : undefined;
+    const subject = reply.subject.kind === "none" ? undefined : observedSubjects.get(subjectKey(reply.subject));
     history.set(key, {
       channel: m.channel_id, member: m.author.id, link: turn.link, lane: turn.lane,
       entries: [...prior, { messageId: m.id, memberText: current, replyId: sent, subject, expires: Date.now() + 15 * 60_000 }].slice(-4),

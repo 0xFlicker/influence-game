@@ -23,6 +23,22 @@ game, verified account, conversation and triggering message. Shared live
 reveals visibly identify themselves as spoilers. Owner DMs stay within the
 member’s gameplay and agent access.
 
+## House links
+
+Paste a House player, agent, game or replay URL, including a House short link.
+`resolve_house_link` uses the share registry and current conversation grant to
+return a canonical reference and URL. The House reads the referenced record
+through its specialized tools. A failed lookup returns a generic result before
+the tool can expose facts about an unavailable target. The gateway checks each
+outgoing resource URL again immediately before delivery.
+
+An explicit Werewolf Mystery link keeps game and scene reads in Mystery.
+An Omniscient URL can only open that audience when the current conversation
+already has access. If the audience changes, the previous audience’s moment
+is discarded. A replay position is meaningful only within its audience and is
+separate from the opaque `read_game` continuation. The House can recover an
+exact replay URL from a recent DM only if the current grant still permits it.
+
 ## Runtime
 
 The gateway checks Discord channel type, current guild membership, the House
@@ -62,15 +78,28 @@ independent lifecycle.
 Run `bun run test`, `bun run test:postgres` and `bun run check`. The PostgreSQL
 Discord-agent tests exercise the actual routes, current roles and account link,
 two owners, Influence speech filtering, the live Werewolf audience transition,
-and opaque media references. The ARM probe uses a synthetic provider response,
-a local House MCP image fixture and the actual model-facing catalog filter.
+canonical link delivery, and opaque media references. The ARM probe uses a
+synthetic provider response, local House MCP replay and image fixtures, and the
+actual model-facing catalog filter.
 
 With Docker running, run `bash scripts/discord-agent/verify-arm.sh` for the synthetic ARM proof.
 
 ## Release qualification
 
-The release uses local PostgreSQL and Docker qualification, followed by the
-existing protected production approval and consented checks in
-`#ask-the-house` and DMs. These are the only live acceptance destinations.
-Any future access to House staging needs its own role decision. The
-production House role grant does not confer staging access.
+Qualify with local PostgreSQL and Docker. Release the resolver API through
+the normal staging qualification and protected production approval. Verify the
+deployed resolver catalog and link validation before rolling out a worker that
+uses them. The DM subject tracking can release independently against the
+existing API.
+
+Confirm a consented member can use a Public game link in `#ask-the-house` and
+can recover a recent replay by replying to The House in a verified DM. Use an
+owned Unlisted game to check the DM and the room independently. Check a live
+Werewolf Mystery link, an authorized reveal where permitted, and reply links
+and artwork in the same audience. Use synthetic fixtures for role removal,
+disconnect, relinking and another owner’s game. Confirm one reply per message
+through worker replacement and check `/verify` independently. Record the
+active API revision, worker digests and observed delivery outcome.
+
+Live Discord acceptance uses `#ask-the-house` and consented DMs. House staging
+access needs a separate role decision.

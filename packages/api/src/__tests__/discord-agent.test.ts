@@ -3,12 +3,17 @@ import { eq } from "drizzle-orm";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import sharp from "sharp";
+import { completedWerewolfResultsFixture, werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { planVisualScene } from "@influence/engine/visual-scene-plan";
+import { projectWerewolfPresentation } from "@influence/engine/werewolf/presentation";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createDiscordAgentRoutes } from "../routes/discord-agent.js";
-import { activeOffer, destination, roomContext, safeReply, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage } from "../discord/conversation/policy.js";
+import { activeOffer, destination, roomContext, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage } from "../discord/conversation/policy.js";
+import { prepareReply } from "../discord/conversation/reply-links.js";
 import { filterInference, mcpBridgeResponse } from "../discord/conversation/sandbox.js";
+import { prepareVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { setupTestDB } from "./test-utils.js";
 
 const guild = "1521918107554152468";
@@ -97,8 +102,8 @@ test("season queue exposes public counts and draw times without queue identities
     season: { status: "active" }, entriesOpen: false, agentsEntered: null, nextDrawAt: null,
   });
   const link = "https://thehouse.game/seasons?season=season-one";
-  expect(safeReply(link, "https://thehouse.game")).toBe(link);
-  expect(safeReply(link + "&token=bad", "https://thehouse.game")).toBe("[link removed]");
+  expect(prepareReply(link, "https://thehouse.game").render(new Set())).toBe(link);
+  expect(prepareReply(link + "&token=bad", "https://thehouse.game").render(new Set())).toBe("[link removed]");
 });
 
 test("the verified owner sees only their games and private agent details while the room is egalitarian", async () => {
@@ -150,6 +155,121 @@ test("fresh explicit roles, link revocation and credential separation fence ever
   expect((await tool(admin, "get_rules", { gameKind: "influence" })).status).toBe(403);
 });
 
+test("House link resolution returns canonical public profile and agent references through the share registry", async () => {
+  const origin = "https://thehouse.game";
+  const [house] = await db.update(schema.users).set({ handle: "thehouse" }).where(eq(schema.users.id, "alice")).returning();
+  await db.insert(schema.agentProfiles).values([
+    { id: "house-agent", userId: "alice", name: "House Agent", personality: "private personality" },
+    { id: "private-draft", userId: "alice", name: "Unapproved Agent", personality: "private draft", moderationRequired: true },
+  ]);
+  await db.insert(schema.houseShareLinks).values([
+    { code: "Lk3WEcewWi", path: "/profile/thehouse" },
+    { code: "Lk3WEcewWj", path: "/agents/house-agent" },
+    { code: "Lk3WEcewWk", path: "/about" },
+  ]);
+  const shared = await grant("room", bob);
+  expect(await tools(shared)).toContain("resolve_house_link");
+  const resolve = (url: string, session = shared) => contentForLink(session, url);
+  for (const url of [`${origin}/profile/thehouse`, `${origin}/profile/${house!.publicId}`, `${origin}/s/Lk3WEcewWi`, `${origin}/s/Lk3WEcewWi?app=mini`]) {
+    expect(await resolve(url)).toEqual({ status: "found", kind: "player", reference: house!.publicId, url: `${origin}/profile/thehouse` });
+  }
+  for (const url of [`${origin}/agents/house-agent`, "/s/Lk3WEcewWj"]) {
+    expect(await resolve(url)).toEqual({ status: "found", kind: "agent", reference: "house-agent", url: `${origin}/agents/house-agent` });
+  }
+  for (const url of [
+    "https://elsewhere.example/profile/thehouse", `${origin}/s/Lk3WEcewWi?token=invalid`, `${origin}/s/Lk3WEcewWk`,
+    `${origin}/s/Lk3WEcewWi?app=mini#fragment`, `${origin}/s/Lk3WEcewWi?app=mini&token=invalid`,
+    `${origin}/s/Lk3WEcewWm`, `${origin}/profile/junk/../thehouse`, `${origin}/profile/thehouse?redirect=/agents/house-agent`,
+  ]) {
+    expect(await resolve(url)).toEqual({ status: "not_found" });
+  }
+  expect(await resolve(`${origin}/agents/private-draft`, await grant("dm"))).toEqual({ status: "not_found" });
+  const profile = `${origin}/profile/thehouse`;
+  const agent = `${origin}/agents/house-agent`;
+  const validate = () => request("validate", { grant: shared, games: [], links: [profile, agent, profile, `${origin}/s/Lk3WEcewWi`] });
+  expect(await (await validate()).json()).toEqual({ valid: true, links: [profile, agent] });
+  await db.update(schema.agentProfiles).set({ archivedAt: "now" }).where(eq(schema.agentProfiles.id, "house-agent"));
+  await db.update(schema.users).set({ deletedAt: "now" }).where(eq(schema.users.id, "alice"));
+  expect(await (await validate()).json()).toEqual({ valid: true, links: [] });
+});
+
+async function contentForLink(session: string, url: string) {
+  return content(await tool(session, "resolve_house_link", { url }));
+}
+
+test("an Unlisted replay resolves in the owner's DM and stays unavailable in the room or another owner's DM", async () => {
+  const origin = "https://thehouse.game";
+  const id = "private-game-record";
+  await db.insert(schema.games).values({ id, slug: "unlisted-replay", status: "completed", config: '{"visibility":"unlisted"}' });
+  await db.insert(schema.gamePlayers).values({ id: "owned-seat", userId: "alice", gameId: id, persona: '{"name":"House Agent"}', agentConfig: "{}" });
+  await db.insert(schema.houseShareLinks).values({ code: "Lk3WEcewWi", path: "/games/unlisted-replay/replay/42?cue=id%3A42&t=1.25" });
+  const source = `${origin}/s/Lk3WEcewWi`;
+  const replay = `${origin}/games/unlisted-replay/replay/42?cue=id%3A42&t=1.25`;
+  const bare = `${origin}/games/unlisted-replay`;
+  const owner = await grant("dm");
+  expect(await contentForLink(owner, `${origin}/games/${id}`)).toMatchObject({ status: "found", kind: "game", reference: id, url: bare });
+  const expected = { status: "found", kind: "replay", reference: id, url: replay, gameKind: "influence", audience: "public", position: { sequence: 42 } };
+  for (const url of [source, replay]) expect(await contentForLink(owner, url)).toEqual(expected);
+  for (const other of [await grant("dm", bob), await grant("room")]) {
+    for (const url of [bare, source, replay, `${origin}/games/unknown`]) {
+      expect(await contentForLink(other, url)).toEqual({ status: "not_found" });
+    }
+    expect(await (await request("validate", { grant: other, games: [], links: [bare, replay] })).json()).toEqual({ valid: true, links: [] });
+  }
+  await role("producer");
+  const staff = await grant("dm");
+  expect(await contentForLink(staff, source)).toEqual(expected);
+  const validate = (session: string) => request("validate", { grant: session, games: [], links: [bare, replay] });
+  expect(await (await validate(staff)).json()).toEqual({ valid: true, links: [bare, replay] });
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, "alice"));
+  expect((await validate(staff)).status).toBe(403);
+  expect(await (await validate(owner)).json()).toEqual({ valid: true, links: [bare, replay] });
+  await db.update(schema.games).set({ hiddenAt: "now" }).where(eq(schema.games.id, id));
+  expect(await (await validate(owner)).json()).toEqual({ valid: true, links: [] });
+  expect(await contentForLink(owner, source)).toEqual({ status: "not_found" });
+});
+
+test("Werewolf replay links discard unauthorized spoiler coordinates and keep authorized positions", async () => {
+  const id = "wolf-link-record";
+  const events = await werewolfResultsFixture("village", id);
+  const result = events.findIndex(event => event.type === "werewolf.completed");
+  expect(result).toBeGreaterThan(0);
+  await db.insert(schema.games).values({ id, slug: "wolf-link", gameKind: "werewolf", status: "in_progress", startedAt: "now", config: "{}" });
+  await db.insert(schema.werewolfEvents).values(events.slice(0, result).map(event => ({ gameId: id, sequence: event.sequence, event })));
+  await db.insert(schema.gamePlayers).values({ id: "owned-seat", userId: "alice", gameId: id, persona: '{"name":"House Agent"}', agentConfig: "{}" });
+  const gameUrl = "https://thehouse.game/games/wolf-link";
+  const resultsUrl = `${gameUrl}/results`;
+  const bare = `${gameUrl}/replay`;
+  const omniscient = `${bare}?audience=omniscient&cue=private-cue&cursor=2&t=1.25#private-anchor`;
+  const mystery = `${bare}?audience=mystery`;
+  const mysteryMoment = `${mystery}&cursor=2`;
+  const normal = await grant("room");
+  const reveal = await grant("room", alice, id);
+  const ownerReveal = await grant("dm", alice, id);
+  expect(await contentForLink(normal, gameUrl)).toMatchObject({ kind: "game", audience: "mystery", url: gameUrl });
+  expect(await contentForLink(ownerReveal, gameUrl)).toMatchObject({ kind: "game", audience: "mystery", url: gameUrl });
+  expect(await contentForLink(reveal, resultsUrl)).toEqual({ status: "not_found" });
+  for (const g of [normal, ownerReveal, await grant("room", alice, "different-game")]) {
+    expect(await contentForLink(g, omniscient)).toEqual({
+      status: "found", kind: "replay", reference: id, gameKind: "werewolf", audience: "mystery", url: mystery,
+    });
+  }
+  expect(await contentForLink(normal, mysteryMoment)).toMatchObject({ audience: "mystery", url: mysteryMoment, position: { cursor: 2 } });
+  expect(await contentForLink(reveal, omniscient)).toMatchObject({ audience: "omniscient", url: omniscient, position: { cursor: 2 } });
+  const validate = (g: string) => request("validate", { grant: g, games: [], links: [omniscient, mysteryMoment] });
+  expect(await (await validate(normal)).json()).toEqual({ valid: true, links: [mysteryMoment] });
+  expect(await (await validate(ownerReveal)).json()).toEqual({ valid: true, links: [mysteryMoment] });
+  expect(await (await validate(reveal)).json()).toEqual({ valid: true, links: [omniscient, mysteryMoment] });
+  await db.insert(schema.werewolfEvents).values(events.slice(result).map(event => ({ gameId: id, sequence: event.sequence, event })));
+  expect(await contentForLink(ownerReveal, resultsUrl)).toMatchObject({ kind: "game", reference: id, url: resultsUrl });
+  expect(await contentForLink(await grant("dm", bob), resultsUrl)).toEqual({ status: "not_found" });
+  await db.update(schema.games).set({ status: "completed" }).where(eq(schema.games.id, id));
+  await db.insert(schema.houseShareLinks).values({ code: "Lk3WEcewWi", path: new URL(omniscient).pathname + new URL(omniscient).search + new URL(omniscient).hash });
+  expect(await contentForLink(normal, "/s/Lk3WEcewWi")).toMatchObject({ audience: "omniscient", url: omniscient, position: { cursor: 2 } });
+  expect(await (await validate(normal)).json()).toEqual({ valid: true, links: [omniscient, mysteryMoment] });
+  expect(await (await validate(ownerReveal)).json()).toEqual({ valid: true, links: [mysteryMoment] });
+});
+
 test("Werewolf defaults to Mystery until canonically resolved and fences live reveal to the exact game", async () => {
   const id = "wolf";
   const events = await werewolfResultsFixture("village", id);
@@ -163,6 +283,7 @@ test("Werewolf defaults to Mystery until canonically resolved and fences live re
   const normal = await grant("room");
   expect((await content(await tool(normal, "read_game", { game: id }))).audience).toBe("mystery");
   expect((await tool(normal, "read_game", { game: id, audience: "omniscient" })).status).toBe(403);
+  expect((await tool(normal, "list_scene_images", { game: id, audience: "omniscient" })).status).toBe(403);
   expect((await tool(normal, "read_thinking", { game: id })).status).toBe(403);
   expect(await content(await tool(normal, "list_game_images", { game: id }))).toEqual([]);
   expect((await content(await tool(await grant("room", alice, "wrong-game"), "read_game", { game: id }))).audience).toBe("mystery");
@@ -176,6 +297,47 @@ test("Werewolf defaults to Mystery until canonically resolved and fences live re
   await db.insert(schema.werewolfEvents).values(events.slice(result).map(event => ({ gameId: id, sequence: event.sequence, event })));
   expect((await content(await tool(normal, "read_game", { game: id }))).audience).toBe("omniscient");
   expect(await (await request("spoiler", { grant: normal, game: id })).json()).toMatchObject({ settled: true });
+});
+
+test("an explicit Mystery replay keeps text, continuation and published scene inspection at that audience", async () => {
+  const id = "wolf-audience";
+  const events = await completedWerewolfResultsFixture("village", id);
+  await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", startedAt: "2026-01-01T00:00:00.000Z", config: "{}" });
+  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
+  // This coordinate shows a village scene in Mystery and a different moment in Omniscient.
+  const after = 10;
+  const frame = projectWerewolfPresentation(events, "mystery", after);
+  expect(frame).toMatchObject({ purpose: "village", roomId: "lobby" });
+  expect(projectWerewolfPresentation(events, "omniscient", after).purpose).toBe("hunt");
+  const image = await storeVisualArtifact(db, id, await sharp({ create: { width: 8, height: 12, channels: 3, background: "grey" } }).png().toBuffer());
+  const cast = frame.participantIds.map(player => ({ id: player, name: player, referenceArtifactId: image, performanceInstructions: "" }));
+  const plan = planVisualScene({ roomId: "lobby", backgroundArtifactId: null, cast });
+  const scene = await prepareVisualScene(db, { gameId: id, boundarySequence: frame.boundary, plan });
+  const createdAt = "2026-01-01T00:00:00.000Z";
+  await db.insert(schema.visualMediaVersions).values({ id, gameId: id, sceneId: scene.id, version: 1, plan, imageArtifactId: image, annotatedArtifactId: image,
+    localization: { count: cast.length, verifiedParticipantIds: cast.map(player => player.id), anchors: [] }, verificationVersion: "fixture", createdAt });
+  await db.insert(schema.visualMediaPublications).values({ id, gameId: id, sceneId: scene.id, versionId: id, revision: 1, operatorId: "fixture", createdAt });
+
+  const shared = await grant("room");
+  await role("producer");
+  const staff = await grant("dm");
+  const url = `https://thehouse.game/games/${id}/replay?audience=mystery&cursor=${after}`;
+  for (const session of [shared, staff]) {
+    expect(await contentForLink(session, url)).toMatchObject({ audience: "mystery", position: { cursor: after }, url });
+    expect((await content(await tool(session, "read_game", { game: id }))).audience).toBe("omniscient");
+    const args = { game: id, audience: "mystery" };
+    const first = await content(await tool(session, "read_game", args));
+    expect(first).toMatchObject({ audience: "mystery", capabilities: { thinking: false } });
+    expect(first.nextCursor).toBeString();
+    expect((await content(await tool(session, "read_game", { ...args, cursor: first.nextCursor }))).audience).toBe("mystery");
+    expect((await tool(session, "read_game", { game: id, cursor: first.nextCursor })).status).toBe(403);
+    expect(await content(await tool(session, "list_scene_images", { game: id, after }))).toEqual([]);
+    const scenes = await content(await tool(session, "list_scene_images", { ...args, after }));
+    expect(scenes).toHaveLength(1);
+    const inspect = await tool(session, "inspect_image", { imageRef: scenes[0].imageRef });
+    expect(inspect.status).toBe(200);
+    expect(await inspect.json()).toMatchObject({ content: [{ type: "image", mimeType: "image/png", data: expect.any(String) }] });
+  }
 });
 
 test("structured consent rejects malformed output and cannot borrow another member's offer", () => {
@@ -261,8 +423,8 @@ test("public profile lookup resolves a House share link and a display name to th
   expect(result.candidates.map((candidate: { handle: string }) => candidate.handle).sort()).toEqual(["anotherhouse", "thehouse"]);
   await db.update(schema.users).set({ deletedAt: new Date().toISOString() }).where(eq(schema.users.id, "alice"));
   expect(await content(await tool(shared, "read_player", { player: short }))).toMatchObject({ status: "not_found" });
-  expect(safeReply("[The House](" + canonical + ")", origin)).toBe("[The House](" + canonical + ")");
-  expect(safeReply("See [the profile](https://elsewhere.example/profile/thehouse).", origin)).toBe("See the profile.");
+  expect(prepareReply("[The House](" + canonical + ")", origin).render(new Set([canonical]))).toBe("[The House](" + canonical + ")");
+  expect(prepareReply("See [the profile](https://elsewhere.example/profile/thehouse).", origin).render(new Set())).toBe("See the profile.");
 });
 
 test("turn feedback refreshes typing and removes only its own acknowledgement after delivery", async () => {

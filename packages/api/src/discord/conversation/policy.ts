@@ -59,8 +59,9 @@ function sameConversation(binding: ConversationAuthority, message: DiscordMessag
 }
 
 const subjectKinds = ["game", "player", "agent", "season"] as const;
-export interface Subject { kind: typeof subjectKinds[number]; id: string }
+export interface Subject { kind: typeof subjectKinds[number]; id: string; replayUrl?: string }
 export const subjectKey = ({ kind, id }: Subject) => `${kind}:${id}`;
+const historySubjectKey = (reference: Subject) => `${subjectKey(reference)}:${reference.replayUrl ?? ""}`;
 
 function subject(kind: Subject["kind"], id: unknown): Subject[] {
   return typeof id === "string" && gameReference.test(id) ? [{ kind, id }] : [];
@@ -82,7 +83,7 @@ async function textResult(response: Pick<Response, "ok" | "json">) {
   }
 }
 
-const subjectTools = new Set(["read_game", "read_results", "list_games", "read_player", "read_agent", "read_season"]);
+const subjectTools = new Set(["resolve_house_link", "read_game", "read_results", "list_games", "read_player", "read_agent", "read_season"]);
 
 /** Keep selectors from typed House results, with no excerpts, media, or turn grants. */
 export async function subjectsFromRead(name: unknown, args: unknown, response: Response) {
@@ -90,6 +91,17 @@ export async function subjectsFromRead(name: unknown, args: unknown, response: R
   const result = await textResult(response.clone());
   const games = (items: unknown) => Array.isArray(items) ? items.flatMap(game => subject("game", record(game).id)) : [];
   switch (name) {
+    case "resolve_house_link": {
+      if (result.status !== "found") return [];
+      if (result.kind === "player" || result.kind === "agent" || result.kind === "game") {
+        return subject(result.kind, result.reference);
+      }
+      const replayUrl = result.url;
+      if (result.kind === "replay" && typeof replayUrl === "string" && replayUrl.length <= 2048) {
+        return subject("game", result.reference).map(reference => ({ ...reference, replayUrl }));
+      }
+      return [];
+    }
     case "read_game": return subject("game", record(result.game).id);
     case "read_results": return subject("game", record(record(result.result).game).id);
     case "list_games": return games(result.games);
@@ -107,8 +119,11 @@ type HouseApi = (action: string, body: object) => Promise<Response>;
 export async function revalidateDmSubject(reference: Subject, grant: string, api: HouseApi) {
   try {
     if (reference.kind === "game") {
-      const response = await api("validate", { grant, games: [reference.id] });
-      return response.ok && record(await response.json()).valid === true;
+      const replayUrl = reference.replayUrl;
+      const response = await api("validate", { grant, games: [reference.id], ...(replayUrl && { links: [replayUrl] }) });
+      if (!response.ok) return false;
+      const result = record(await response.json());
+      return result.valid === true && (!replayUrl || Array.isArray(result.links) && result.links.includes(replayUrl));
     }
     const name = `read_${reference.kind}`;
     const args = { [reference.kind]: reference.id };
@@ -136,16 +151,21 @@ export function availableDmHistory(history: DmHistory | undefined, message: Disc
 
 export async function dmContext(entries: DmEntry[], message: DiscordMessage, allows: (reference: Subject) => Promise<boolean>) {
   const earlier = entries.filter(entry => BigInt(entry.replyId) < BigInt(message.id));
-  const subjects = new Map(earlier.reverse().flatMap(({ subject }) => subject ? [[subjectKey(subject), subject] as const] : []));
+  const subjects = new Map<string, Subject>();
+  for (const { subject } of earlier) {
+    if (!subject) continue;
+    subjects.delete(historySubjectKey(subject));
+    subjects.set(historySubjectKey(subject), subject);
+  }
   await Promise.all([...subjects].map(async ([key, reference]) => {
     if (!(await allows(reference))) subjects.delete(key);
   }));
-  const available = earlier.reverse().filter(entry => !entry.subject || subjects.has(subjectKey(entry.subject)));
+  const available = earlier.filter(entry => !entry.subject || subjects.has(historySubjectKey(entry.subject)));
   const parentId = directReplyId(message);
   const direct = parentId && available.find(entry => entry.replyId === parentId || entry.messageId === parentId);
   return {
     memberMessages: available.map(entry => entry.memberText),
-    recentSubjects: [...subjects.values()].reverse(),
+    recentSubjects: [...subjects.values()],
     repliedTo: direct ? {
       speaker: direct.replyId === parentId ? "house" : "requesting_member",
       memberMessage: direct.memberText,
@@ -199,21 +219,6 @@ export function validatedConsent(value: unknown) {
   if (typeof value !== "object" || value === null || Object.keys(value).length !== 1
       || !("allowed" in value) || typeof value.allowed !== "boolean") throw new Error("Invalid spoiler decision");
   return value.allowed;
-}
-
-export function safeReply(content: string, origin: string) {
-  return content.replace(/\[([^\[\]\r\n]+)\]\((https?:\/\/[^\s<>\])]+)\)|https?:\/\/[^\s<>\])]+/gi, (link, label?: string, destination?: string) => {
-    try {
-      const u = new URL(destination ?? link);
-      const path = /^\/games\/[A-Za-z0-9_-]+(?:\/(?:replay|results))?$/.test(u.pathname)
-        || /^\/(agents|profile)\/[A-Za-z0-9_-]+$/.test(u.pathname);
-      const season = u.pathname === "/seasons" && /^\?season=[A-Za-z0-9_-]+$/.test(u.search);
-      if (u.origin === origin && ((path && !u.search) || season) && !u.hash && !u.username && !u.password) {
-        return label === undefined ? u.href : "[" + label + "](" + u.href + ")";
-      }
-    } catch { /* Malformed URLs are removed below. */ }
-    return label?.replace(/https?:\/\/[^\s<>\])]+/gi, "") || "[link removed]";
-  }).trim().slice(0, 1900);
 }
 
 export async function withTurnFeedback<T>(

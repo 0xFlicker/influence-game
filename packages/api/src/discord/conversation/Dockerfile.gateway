@@ -10,5 +10,5 @@ RUN cargo build --locked --release --bin house-discord-relay
 FROM oven/bun:1.3.14
 COPY --from=relay /build/target/release/house-discord-relay /usr/local/bin/
 WORKDIR /opt/house
-COPY conversation/gateway.ts conversation/policy.ts conversation/sandbox.ts ./
+COPY conversation/gateway.ts conversation/policy.ts conversation/reply-links.ts conversation/sandbox.ts ./
 COPY conversation/gateway-entry.sh ./

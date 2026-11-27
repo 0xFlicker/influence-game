@@ -35,7 +35,7 @@ test("DM context keeps a checked explicit parent and bounded recent subjects in 
     checked.push(reference);
     return true;
   });
-  expect(checked).toEqual([newGame, oldGame]);
+  expect(checked).toEqual([oldGame, newGame]);
   expect(context).toEqual({
     memberMessages: history.entries.map(entry => entry.memberText),
     recentSubjects: [oldGame, newGame],
@@ -94,6 +94,30 @@ test("reauthorization uses the current grant and ignores successful HTTP respons
     { action: "mcp", body: { grant: "fresh-grant", method: "tools/call", name: "read_player", args: { player: "deleted-profile" } } },
   ]);
   expect(await revalidateDmSubject(newGame, "fresh-grant", async () => Response.json({ valid: false }))).toBe(false);
+});
+
+test("a reply to an earlier replay keeps its exact moment only while the fresh grant permits it", async () => {
+  const replayUrl = "https://thehouse.game/games/wolf/replay?audience=omniscient&cursor=7";
+  const mysteryUrl = "https://thehouse.game/games/wolf/replay?audience=mystery&cursor=3";
+  const [reveal] = await subjectsFromRead("resolve_house_link", {}, toolResult({
+    status: "found", kind: "replay", reference: "wolf", url: replayUrl,
+  }));
+  expect(reveal).toEqual({ kind: "game", id: "wolf", replayUrl });
+  expect(await subjectsFromRead("resolve_house_link", {}, toolResult({ status: "not_found" }))).toEqual([]);
+  const mystery = { ...reveal!, replayUrl: mysteryUrl };
+  const entries = [{ ...history.entries[0]!, subject: reveal }, { ...history.entries[1]!, subject: mystery }];
+  const firstReply = replyingTo(entries[0]!.replyId);
+  const freshGrant = async (action: string, body: object) => {
+    expect(action).toBe("validate");
+    expect(body).toMatchObject({ grant: "fresh-grant", games: ["wolf"] });
+    return Response.json({ valid: true, links: [mysteryUrl] });
+  };
+  const context = await dmContext(entries, firstReply, reference => revalidateDmSubject(reference, "fresh-grant", freshGrant));
+  expect(context.repliedTo).toBeUndefined();
+  expect(context.recentSubjects).toEqual([mystery]);
+  const permitted = await dmContext(entries, firstReply, async () => true);
+  expect(permitted.repliedTo?.subject).toEqual(reveal);
+  expect(permitted.recentSubjects).toEqual([reveal, mystery]);
 });
 
 test("spoiler continuity requires the same principal, eligible lane, direct reply and live game", async () => {
