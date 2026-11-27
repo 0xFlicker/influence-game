@@ -63,6 +63,7 @@ import {
   dailyFreeDrawEligibility,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
+import { requestPosthogSessionId } from "../services/campaign-conversions.js";
 import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import {
@@ -152,7 +153,10 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     }
 
     try {
-      const result = await joinQueue(db, { userId: user.id }, {
+      const result = await joinQueue(db, {
+        userId: user.id,
+        posthogSessionId: requestPosthogSessionId(c.req.raw.headers, body.posthogSessionId),
+      }, {
         queueType: "daily-free",
         agentId: body.agentProfileId,
         expectedSeasonId: body.expectedSeasonId,

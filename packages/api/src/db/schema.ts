@@ -326,6 +326,7 @@ export const campaignConversionEvents = pgTable("campaign_conversion_events", {
   channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
   mcpClientId: text("mcp_client_id"),
   attribution: jsonb("attribution").$type<Record<string, string>>(),
+  posthogSessionId: uuid("posthog_session_id"),
   clientUserAgent: text("client_user_agent"),
   occurredAt: text("occurred_at").notNull().default(sql`now()::text`),
   posthogStatus: text("posthog_status").notNull().default("pending"),
@@ -3913,6 +3914,15 @@ export const agentContentAssets = pgTable("agent_content_assets", {
   bytes: payloadColumn("bytes_object", "binary").notNull().$type<StoredPayload<Buffer>>(),
 }, table => [
   ...payloadChecks("agent_content_assets", { bytes: [table.bytes, "binary"] }),
+]);
+/** Optional browser context for a submitted revision awaiting publication. */
+export const campaignAgentReadySessions = pgTable("campaign_agent_ready_sessions", {
+  agentProfileId: text("agent_profile_id").primaryKey().references(() => agentProfiles.id, { onDelete: "cascade" }),
+  contentRevisionId: text("content_revision_id").notNull().references(() => agentContentRevisions.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => userAnalyticsPreferences.userId, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").notNull(),
+}, (table) => [
+  index("campaign_agent_ready_sessions_user_idx").on(table.userId),
 ]);
 export const agentModerationReviews = pgTable("agent_moderation_reviews", {
   id: text("id").primaryKey(),

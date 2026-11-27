@@ -24,6 +24,11 @@ signup still succeeds but both destinations suppress the conversion. Verify
 the persisted consent, attribution and delivery states before any signed-in
 preference sync runs.
 
+Keep the PostHog session ID on the originating web mutation. For asynchronous
+agent publication, bind it to the submitted revision under the analytics
+consent lock. Treat withdrawal as final for that pending session link, even if
+the account opts in again before publication. Only PostHog receives the ID.
+
 Campaign attribution supports either permitted measurement purpose. Clear shared
 attribution when both are off, and advertising-only browser metadata when ads
 are off. Keep browser acquisition independent of PostHog initialization so
