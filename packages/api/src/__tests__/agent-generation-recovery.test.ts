@@ -113,11 +113,40 @@ test("concurrent starts admit one job rather than two hidden queued requests", a
   expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
   expect(await db.select().from(schema.characterReferenceJobs)).toHaveLength(1);
 });
+test("a busy owner yields to another owner's image and keeps the original expiry", async () => {
+  const jobs = schema.characterReferenceJobs;
+  const blocked = randomUUID(), next = randomUUID();
+  const queuedAt = Date.now() - 9 * 60_000;
+  await requestCharacterReference(db, owner, characterGenerationInput(blocked, "Blocked image"), "");
+  await db.update(jobs)
+    .set({ queuedAt: new Date(queuedAt).toISOString(), updatedAt: new Date(queuedAt).toISOString() })
+    .where(eq(jobs.id, blocked));
+  await reserve();
+  await requestCharacterReference(db, other, characterGenerationInput(next, "Another owner's image"), "");
+
+  const image = await Bun.file(
+    new URL("../../../web/public/avatars/personas/full-body-v1/strategic.webp", import.meta.url),
+  ).bytes();
+  expect(await processMockCharacterReference(db, image)).toBe(0);
+  const [waiting] = await db.select().from(jobs).where(eq(jobs.id, blocked));
+  expect(waiting).toMatchObject({ status: "queued", stage: "waiting" });
+  expect(Date.parse(waiting!.queuedAt)).toBe(queuedAt);
+  expect(Date.parse(waiting!.updatedAt)).toBeGreaterThan(queuedAt);
+  expect(await processMockCharacterReference(db, image)).toBe(1);
+  expect(await readCharacterReference(db, other, next)).toMatchObject({ status: "ready" });
+
+  await db.update(jobs)
+    .set({ queuedAt: new Date(Date.now() - 11 * 60_000).toISOString() })
+    .where(eq(jobs.id, blocked));
+  expect(await readCharacterReference(db, owner, blocked)).toMatchObject({
+    status: "failed", errorCode: "artwork_queue_expired", retryable: true,
+  });
+});
 test("an unclaimed image expires without consuming a provider slot and can be retried", async () => {
   const id = randomUUID();
   await requestCharacterReference(db, owner, characterGenerationInput(id, "Abandoned image"), "");
   await db.update(schema.characterReferenceJobs)
-    .set({ updatedAt: new Date(Date.now() - 11 * 60_000).toISOString() })
+    .set({ queuedAt: new Date(Date.now() - 11 * 60_000).toISOString() })
     .where(eq(schema.characterReferenceJobs.id, id));
   expect(await readCharacterReference(db, owner, id)).toMatchObject({
     status: "failed", errorCode: "artwork_queue_expired", retryable: true,
@@ -126,6 +155,8 @@ test("an unclaimed image expires without consuming a provider slot and can be re
   await processCharacterReference(db);
   expect(await db.select().from(schema.inferenceReservations)).toHaveLength(0);
   expect(await retryCharacterReference(db, owner, id)).toMatchObject({ id, status: "queued" });
+  const [retried] = await db.select().from(schema.characterReferenceJobs).where(eq(schema.characterReferenceJobs.id, id));
+  expect(Date.parse(retried!.queuedAt)).toBe(Date.parse(retried!.updatedAt));
 });
 test("an expired worker claim shows a stopped request and retry clears the old lease", async () => {
   const id = randomUUID();

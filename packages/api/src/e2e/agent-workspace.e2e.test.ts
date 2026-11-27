@@ -1716,7 +1716,7 @@ test("pending requests are visible, inline retry and cancel keep edits, and mana
       servers.apiUrl,
     );
     await database.db.update(schema.characterReferenceJobs)
-      .set({ updatedAt: new Date(Date.now() - 11 * 60_000).toISOString() })
+      .set({ queuedAt: new Date(Date.now() - 11 * 60_000).toISOString() })
       .where(eq(schema.characterReferenceJobs.id, nextId));
     await button(page, "Retry image");
     await page.waitForFunction(

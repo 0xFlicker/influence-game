@@ -60,8 +60,10 @@ release metadata. A live provider call renews a two-minute execution lease every
 15 seconds. New image admission and worker maintenance recover expired leases.
 An unclaimed character image waiting for its first image stage expires after
 ten minutes without reserving an allowance. The worker skips expired queued
-requests. The owner can retry the stopped request from the editor. A stopped
-worker's expired claim can also be retried when the provider journal permits it.
+requests. Automatic retries for an occupied account slot go to the back of
+the queue and keep the original expiry. An explicit owner retry starts a fresh
+queue window. A stopped worker's expired claim can also be retried when the
+provider journal permits it.
 
 A reserved request that never dispatched can fail and return its credit once.
 A dispatched or uncertain request that loses ownership releases its execution slot
@@ -106,6 +108,8 @@ not delete or rewrite provider evidence, charge amounts, original reservation
 identities or existing binaries. The initial lease grace covers an existing
 bounded provider/fallback chain; expired historical execution is audited when
 recovered. Apply migrations before releasing the API, worker and web together.
+Migration 0179 initializes each existing request's queue age from the timestamp
+previously used for expiry.
 
 The old local development reservation was left unresolved financially. Its stale
 execution can be released without choosing the admin success/refund actions.

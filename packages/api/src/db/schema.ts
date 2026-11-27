@@ -4606,6 +4606,7 @@ export const characterReferenceJobs = pgTable("character_reference_jobs", {
   result: payloadColumn("result_object", "json-gzip").$type<StoredPayload<Record<string, unknown>>>(),
   status: text("status").notNull().default("queued"), stage: text("stage").notNull().default("image"),
   leaseId: text("lease_id"), leaseUntil: text("lease_until"), error: text("error"), errorCode: text("error_code"),
+  queuedAt: timestamp("queued_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   createdAt: text("created_at").notNull().default(sql`now()::text`), updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, table => [index("character_reference_jobs_owner_status").on(table.userId,table.status,table.createdAt),...payloadChecks("character_reference_jobs", { input: [table.input, "json-gzip"], result: [table.result, "json-gzip"] })]);
 

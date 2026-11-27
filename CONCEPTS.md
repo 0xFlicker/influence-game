@@ -98,6 +98,8 @@ An owner-scoped image request can be queued, running, stopped or ready for revie
 
 An image execution slot is a renewable lease, separate from the retained inference reservation and provider charge evidence. Cancellation or lease expiry releases capacity; it does not establish an unknown provider outcome or refund a dispatched generation. Late receipts remain auditable, and a cancelled worker cannot publish its output. See [agent generations](docs/agent-generations.md).
 
+A queued image keeps its expiry when the worker defers it because the owner's image slot is occupied. The deferred image yields to other eligible work. An explicit retry starts a new queue window.
+
 ## Owner Learning Loop
 
 The owner-only postgame workflow that turns one to three completed Daily Free games from one Agent Profile's current strategy family into deterministic game facts, a bounded strategic review, and an optional exact `strategyStyle` proposal. The family contains the active analytical revision plus game-effective `runtime_policy_change` variants derived directly from it, so a runtime policy override cannot make otherwise relevant play disappear from review. It is for owners who use the web app as well as owners working through MCP; it is not a producer agent-tuning surface. Canonical events and postgame projections remain the authority for actions and outcomes. Authorized dialogue and owned cognition provide strategic context but never repair or override game facts.

@@ -12,15 +12,15 @@ type Reader = Pick<DrizzleDB, "select">;
 const unclaimedImageQueueMs = 10 * 60 * 1000;
 const unclaimedStages = ["image", "waiting"];
 
-export function isExpiredCharacterReference(job: { status: string; stage: string; updatedAt: string }) {
+export function isExpiredCharacterReference(job: { status: string; stage: string; queuedAt: string }) {
   return job.status === "queued" && unclaimedStages.includes(job.stage) &&
-    Date.now() - Date.parse(job.updatedAt) >= unclaimedImageQueueMs;
+    Date.now() - Date.parse(job.queuedAt) >= unclaimedImageQueueMs;
 }
 
 export const expiredCharacterReferenceQueue = sql`
   (${schema.characterReferenceJobs.status} = 'queued'
   AND ${inArray(schema.characterReferenceJobs.stage, unclaimedStages)}
-  AND ${schema.characterReferenceJobs.updatedAt}::timestamptz <= now() - interval '1 millisecond' * ${unclaimedImageQueueMs})
+  AND ${schema.characterReferenceJobs.queuedAt} <= now() - interval '1 millisecond' * ${unclaimedImageQueueMs})
 `;
 
 export async function expireCharacterReferenceQueue(
@@ -57,7 +57,7 @@ export async function listAgentGenerations(
         status: schema.characterReferenceJobs.status,
         stage: schema.characterReferenceJobs.stage,
         createdAt: schema.characterReferenceJobs.createdAt,
-        updatedAt: schema.characterReferenceJobs.updatedAt,
+        queuedAt: schema.characterReferenceJobs.queuedAt,
         leaseUntil: schema.characterReferenceJobs.leaseUntil,
         name: sql<string>`COALESCE(${schema.agentProfiles.name},${schema.agentEditorDrafts.name},'Image request')`,
       })

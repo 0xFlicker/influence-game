@@ -170,4 +170,5 @@ draft reconciliation and connection errors. Apply draft changes and block
 conflicting sends or saves through their own controls. Place image actions and
 draft sync recovery beside the affected editor. Recheck the original durable
 image request when status requests drop and expire unclaimed work at the queue
-boundary. See [the generation recovery contract](../../agent-generations.md).
+boundary. Track queue age separately from retry order so a busy owner's image
+cannot delay other owners' work. See [the generation recovery contract](../../agent-generations.md).

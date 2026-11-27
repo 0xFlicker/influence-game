@@ -195,7 +195,7 @@ export async function processCharacterReference(
           and(
             eq(jobs.status, "queued"),
             not(expiredCharacterReferenceQueue),
-            sql`(${jobs.stage} != 'background' OR ${jobs.updatedAt}::timestamptz < now() - interval '3 seconds')`,
+            sql`(${jobs.stage} NOT IN ('background', 'waiting') OR ${jobs.updatedAt}::timestamptz < now() - interval '3 seconds')`,
           ),
           and(
             eq(jobs.status, "processing"),
@@ -203,7 +203,7 @@ export async function processCharacterReference(
           ),
         ),
       )
-      .orderBy(asc(jobs.updatedAt), asc(jobs.id))
+      .orderBy(asc(sql`${jobs.updatedAt}::timestamptz`), asc(jobs.id))
       .limit(1)
       .for("update", { skipLocked: true });
     if (!candidate) return null;
@@ -319,7 +319,7 @@ export async function processCharacterReference(
               : "Image preparation failed",
         leaseId: null,
         leaseUntil: null,
-        updatedAt: busy ? job.updatedAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       })
       .where(fence);
   } finally {
@@ -412,15 +412,18 @@ export async function retryCharacterReference(
         if (completed?.image) await retryCharacterCutout(tx, completed.image);
       }
     }
+    const queuedAt = new Date().toISOString();
     await tx
       .update(jobs)
       .set({
         status: "queued",
+        stage: job.stage === "waiting" ? "image" : job.stage,
         leaseId: null,
         leaseUntil: null,
         error: null,
         errorCode: null,
-        updatedAt: new Date().toISOString(),
+        queuedAt,
+        updatedAt: queuedAt,
       })
       .where(eq(jobs.id, id));
     return readCharacterReference(tx, userId, id);
