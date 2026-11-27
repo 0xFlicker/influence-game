@@ -28,10 +28,10 @@ export function roomContext(current: DiscordMessage, messages: DiscordMessage[],
       speaker: house ? "house" : message.author.id === current.author.id ? "requesting_member" : "room_member",
       text: message.content.slice(0, 1200) }];
   }).sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
-  return { recent: context.slice(-12), repliedTo: context.find(message => message.id === roomReplyId(current)) };
+  return { recent: context.slice(-12), repliedTo: context.find(message => message.id === directReplyId(current)) };
 }
 
-export function roomReplyId(message: DiscordMessage) {
+export function directReplyId(message: DiscordMessage) {
   const ref = message.message_reference;
   if (!ref || ref.channel_id !== message.channel_id || (ref.type !== undefined && ref.type !== 0)
     || !ref.message_id || !snowflake.test(ref.message_id) || BigInt(ref.message_id) >= BigInt(message.id)) return undefined;
@@ -50,19 +50,148 @@ export function destination(m: DiscordMessage, guild: string, room: string) {
   return null;
 }
 
+export interface TurnAuthority { link: string; lane: "room" | "owner" | "staff" }
+interface ConversationAuthority extends TurnAuthority { channel: string; member: string }
+
+function sameConversation(binding: ConversationAuthority, message: DiscordMessage, authority: TurnAuthority) {
+  return binding.channel === message.channel_id && binding.member === message.author.id
+    && binding.link === authority.link && binding.lane === authority.lane;
+}
+
+const subjectKinds = ["game", "player", "agent", "season"] as const;
+export interface Subject { kind: typeof subjectKinds[number]; id: string; replayUrl?: string }
+export const subjectKey = ({ kind, id }: Subject) => `${kind}:${id}`;
+const historySubjectKey = (reference: Subject) => `${subjectKey(reference)}:${reference.replayUrl ?? ""}`;
+
+function subject(kind: Subject["kind"], id: unknown): Subject[] {
+  return typeof id === "string" && gameReference.test(id) ? [{ kind, id }] : [];
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+async function textResult(response: Pick<Response, "ok" | "json">) {
+  if (!response.ok) return {};
+  try {
+    const result = record(await response.json());
+    if (result.isError === true || !Array.isArray(result.content) || result.content.length !== 1) return {};
+    const item = record(result.content[0]);
+    return item.type === "text" && typeof item.text === "string" ? record(JSON.parse(item.text)) : {};
+  } catch {
+    return {};
+  }
+}
+
+const subjectTools = new Set(["resolve_house_link", "read_game", "read_results", "list_games", "read_player", "read_agent", "read_season"]);
+
+/** Keep selectors from typed House results, with no excerpts, media, or turn grants. */
+export async function subjectsFromRead(name: unknown, args: unknown, response: Response) {
+  if (typeof name !== "string" || !subjectTools.has(name)) return [];
+  const result = await textResult(response.clone());
+  const games = (items: unknown) => Array.isArray(items) ? items.flatMap(game => subject("game", record(game).id)) : [];
+  switch (name) {
+    case "resolve_house_link": {
+      if (result.status !== "found") return [];
+      if (result.kind === "player" || result.kind === "agent" || result.kind === "game") {
+        return subject(result.kind, result.reference);
+      }
+      const replayUrl = result.url;
+      if (result.kind === "replay" && typeof replayUrl === "string" && replayUrl.length <= 2048) {
+        return subject("game", result.reference).map(reference => ({ ...reference, replayUrl }));
+      }
+      return [];
+    }
+    case "read_game": return subject("game", record(result.game).id);
+    case "read_results": return subject("game", record(record(result.result).game).id);
+    case "list_games": return games(result.games);
+    case "read_player": return result.status === "found" ? subject("player", record(record(result.profile).identity).publicId) : [];
+    case "read_agent": {
+      const id = record(args).agent;
+      return record(result.publicProfile).status === "found" || record(result.profile).id === id ? subject("agent", id) : [];
+    }
+    case "read_season": return [...subject("season", record(result.season).id), ...games(result.publicGames)];
+    default: return [];
+  }
+}
+
+type HouseApi = (action: string, body: object) => Promise<Response>;
+export async function revalidateDmSubject(reference: Subject, grant: string, api: HouseApi) {
+  try {
+    if (reference.kind === "game") {
+      const replayUrl = reference.replayUrl;
+      const response = await api("validate", { grant, games: [reference.id], ...(replayUrl && { links: [replayUrl] }) });
+      if (!response.ok) return false;
+      const result = record(await response.json());
+      return result.valid === true && (!replayUrl || Array.isArray(result.links) && result.links.includes(replayUrl));
+    }
+    const name = `read_${reference.kind}`;
+    const args = { [reference.kind]: reference.id };
+    const response = await api("mcp", { grant, method: "tools/call", name, args });
+    return (await subjectsFromRead(name, args, response)).some(found => subjectKey(found) === subjectKey(reference));
+  } catch {
+    return false;
+  }
+}
+
+export interface DmEntry {
+  messageId: string;
+  memberText: string;
+  replyId: string;
+  subject?: Subject;
+  expires: number;
+}
+
+export interface DmHistory extends ConversationAuthority { entries: DmEntry[] }
+
+export function availableDmHistory(history: DmHistory | undefined, message: DiscordMessage, authority: TurnAuthority, now = Date.now()) {
+  if (!history || !sameConversation(history, message, authority)) return [];
+  return history.entries.filter(entry => entry.expires > now);
+}
+
+export async function dmContext(entries: DmEntry[], message: DiscordMessage, allows: (reference: Subject) => Promise<boolean>) {
+  const earlier = entries.filter(entry => BigInt(entry.replyId) < BigInt(message.id));
+  const subjects = new Map<string, Subject>();
+  for (const { subject } of earlier) {
+    if (!subject) continue;
+    subjects.delete(historySubjectKey(subject));
+    subjects.set(historySubjectKey(subject), subject);
+  }
+  await Promise.all([...subjects].map(async ([key, reference]) => {
+    if (!(await allows(reference))) subjects.delete(key);
+  }));
+  const available = earlier.filter(entry => !entry.subject || subjects.has(historySubjectKey(entry.subject)));
+  const parentId = directReplyId(message);
+  const direct = parentId && available.find(entry => entry.replyId === parentId || entry.messageId === parentId);
+  return {
+    memberMessages: available.map(entry => entry.memberText),
+    recentSubjects: [...subjects.values()],
+    repliedTo: direct ? {
+      speaker: direct.replyId === parentId ? "house" : "requesting_member",
+      memberMessage: direct.memberText,
+      subject: direct.subject,
+    } : undefined,
+  };
+}
+
 export interface Reply {
   text: string;
   imageRefs: string[];
   spoiler: { action: "none" | "offer" | "authorize"; game: string };
+  subject: Subject | { kind: "none"; id: "" };
 }
 export const replySchema = {
-  type: "object", additionalProperties: false, required: ["text", "imageRefs", "spoiler"],
+  type: "object", additionalProperties: false, required: ["text", "imageRefs", "spoiler", "subject"],
   properties: {
     text: { type: "string" },
     imageRefs: { type: "array", items: { type: "string" } },
     spoiler: {
       type: "object", additionalProperties: false, required: ["action", "game"],
       properties: { action: { type: "string", enum: ["none", "offer", "authorize"] }, game: { type: "string" } },
+    },
+    subject: {
+      type: "object", additionalProperties: false, required: ["kind", "id"],
+      properties: { kind: { type: "string", enum: ["none", ...subjectKinds] }, id: { type: "string" } },
     },
   },
 };
@@ -74,11 +203,15 @@ export const consentSchema = {
 export function validatedReply(value: unknown): Reply {
   if (!value || typeof value !== "object") throw new Error("Invalid reply");
   const r = value as Partial<Reply>;
-  if (Object.keys(r).length !== 3) throw new Error("Invalid reply");
+  if (Object.keys(r).length !== 4) throw new Error("Invalid reply");
   if (typeof r.text !== "string" || !Array.isArray(r.imageRefs) || r.imageRefs.length > 2
       || !r.imageRefs.every(x => typeof x === "string" && x.length <= 2048)
       || !r.spoiler || Object.keys(r.spoiler).length !== 2 || typeof r.spoiler.game !== "string" || !["none", "offer", "authorize"].includes(r.spoiler.action)
-      || (r.spoiler.action !== "none" && !gameReference.test(r.spoiler.game))) throw new Error("Invalid reply");
+      || (r.spoiler.action !== "none" && !gameReference.test(r.spoiler.game))
+      || !r.subject || Object.keys(r.subject).length !== 2 || typeof r.subject.id !== "string"
+      || (r.subject.kind === "none" ? r.subject.id !== "" : !subjectKinds.includes(r.subject.kind) || !gameReference.test(r.subject.id))) {
+    throw new Error("Invalid reply");
+  }
   return r as Reply;
 }
 
@@ -88,19 +221,66 @@ export function validatedConsent(value: unknown) {
   return value.allowed;
 }
 
-export function safeReply(content: string, origin: string) {
-  return content.replace(/\[([^\[\]\r\n]+)\]\((https?:\/\/[^\s<>\])]+)\)|https?:\/\/[^\s<>\])]+/gi, (link, label?: string, destination?: string) => {
-    try {
-      const u = new URL(destination ?? link);
-      const path = /^\/games\/[A-Za-z0-9_-]+(?:\/(?:replay|results))?$/.test(u.pathname)
-        || /^\/(agents|profile)\/[A-Za-z0-9_-]+$/.test(u.pathname);
-      const season = u.pathname === "/seasons" && /^\?season=[A-Za-z0-9_-]+$/.test(u.search);
-      if (u.origin === origin && ((path && !u.search) || season) && !u.hash && !u.username && !u.password) {
-        return label === undefined ? u.href : "[" + label + "](" + u.href + ")";
+const replyLimit = 1900;
+const linkLimit = 12;
+const replyLink = /\[([^\[\]\r\n]+)\]\((https?:\/\/[^\s<>\])]+)\)|https?:\/\/[^\s<>\])]+/gi;
+const resourcePaths = new Set(["agents", "games", "profile"]);
+
+export function prepareReply(content: string, origin: string) {
+  const source = content.trim();
+  const links = new Set<string>();
+  const parts: Array<string | { label?: string; href: string; needsValidation: boolean }> = [];
+  let offset = 0;
+  for (const match of source.matchAll(replyLink)) {
+    const start = match.index;
+    if (start >= replyLimit) break;
+    parts.push(source.slice(offset, start));
+    offset = start + match[0].length;
+    if (offset > replyLimit) break;
+
+    const [, rawLabel, destination] = match;
+    const label = rawLabel?.replace(replyLink, "");
+    const raw = destination ?? match[0].replace(/[.,!?]+$/, "");
+    const trailing = destination === undefined ? match[0].slice(raw.length) : "";
+    const href = URL.canParse(raw) ? new URL(raw) : null;
+    if (href?.origin === origin && !href.username && !href.password) {
+      const [, section, id] = href.pathname.split("/");
+      if (id && section && resourcePaths.has(section)) {
+        if (links.has(href.href) || links.size < linkLimit) {
+          links.add(href.href);
+          parts.push({ label, href: href.href, needsValidation: true });
+          if (trailing) parts.push(trailing);
+          continue;
+        }
+      } else if (href.pathname === "/seasons" && /^\?season=[A-Za-z0-9_-]+$/.test(href.search) && !href.hash) {
+        parts.push({ label, href: href.href, needsValidation: false });
+        if (trailing) parts.push(trailing);
+        continue;
       }
-    } catch { /* Malformed URLs are removed below. */ }
-    return label?.replace(/https?:\/\/[^\s<>\])]+/gi, "") || "[link removed]";
-  }).trim().slice(0, 1900);
+    }
+    parts.push((label || "[link removed]") + trailing);
+  }
+  if (offset < replyLimit) parts.push(source.slice(offset, replyLimit));
+
+  return {
+    links: [...links],
+    render(allowed: ReadonlySet<string>) {
+      let text = "";
+      for (const part of parts) {
+        if (typeof part === "string") {
+          text += part.slice(0, replyLimit - text.length);
+        } else {
+          const fallback = part.label || "[link removed]";
+          const value = part.needsValidation && !allowed.has(part.href) ? fallback
+            : part.label === undefined ? part.href : `[${part.label}](${part.href})`;
+          if (text.length + value.length > replyLimit) break;
+          text += value;
+        }
+        if (text.length === replyLimit) break;
+      }
+      return text.trim();
+    },
+  };
 }
 
 export async function withTurnFeedback<T>(
@@ -141,9 +321,26 @@ export async function withTurnFeedback<T>(
   }
 }
 
-export interface SpoilerOffer { game: string; channel: string; member: string; link: string; reply: string; expires: number }
-export function activeOffer(offer: SpoilerOffer | undefined, m: DiscordMessage, link: string, now = Date.now()) {
-  if (!offer || offer.expires <= now || offer.channel !== m.channel_id || offer.member !== m.author.id || offer.link !== link) return undefined;
-  const repliedTo = m.message_reference?.message_id;
-  return !repliedTo || repliedTo === offer.reply ? offer : undefined;
+export interface SpoilerOffer extends ConversationAuthority { game: string; reply: string; expires: number }
+export function activeOffer(offer: SpoilerOffer | undefined, m: DiscordMessage, authority: TurnAuthority, now = Date.now()) {
+  if (!offer || offer.expires <= now || !sameConversation(offer, m, authority)) return undefined;
+  return !m.message_reference || directReplyId(m) === offer.reply ? offer : undefined;
+}
+
+export async function revalidateSpoilerOffer(offer: SpoilerOffer | undefined, grant: string, api: HouseApi) {
+  if (!offer) return undefined;
+  try {
+    const response = await api("spoiler", { grant, game: offer.game });
+    if (!response.ok) return undefined;
+    const target = record(await response.json());
+    return target.gameId === offer.game && target.settled === false && offer.expires > Date.now() ? offer : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function spoilerOfferText(lane: TurnAuthority["lane"], slug: string) {
+  if (lane === "owner") return "Shall I reveal saved thinking from your own agents in **" + slug + "**? It may contain live Werewolf spoilers.";
+  const question = "Shall I open the Omniscient view for **" + slug + "**?";
+  return lane === "room" ? question + " The answer will be visible to this room." : question;
 }

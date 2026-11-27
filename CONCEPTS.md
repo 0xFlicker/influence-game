@@ -26,6 +26,10 @@ An explicitly consented OAuth authorization for an account with the current Prod
 
 A private one-to-one association between a human House account and a Discord user, confirmed through both authenticated House login and Discord OAuth. PostgreSQL owns the association and pending role delivery. Community roles are cumulative user, moderator, admin, and sysop tiers derived from current House RBAC. Discord roles are a delivered projection, not permission authority. Disconnect removes bot authority immediately and retains the association until managed server roles have been removed. See [Discord verification](docs/discord-house-setup.md).
 
+## Discord conversation subject
+
+A player, agent, game, or season reference selected from a successful House read. A recent DM can carry that reference and an authorized replay URL under the same verified link and access lane. The current grant controls whether the subject or replay moment can be used again. See [House conversations](docs/discord-house-conversations.md).
+
 ## Deleted account
 
 A closed human account with no sign-in authority or public account/agent profile.
