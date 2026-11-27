@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
+import { isSignupCampaignLanding, SIGNUP_CAMPAIGN_LANDINGS, type SignupCampaignLanding } from "@influence/engine/house-share-target";
 import { apiFetch, type SignupAvailability } from "@/lib/api";
 
 const field = "min-h-11 rounded-lg border border-white/25 bg-black/30 px-3 text-white focus-visible:outline-2 focus-visible:outline-indigo-300";
@@ -52,8 +53,72 @@ export function SignupSettings() {
   </section>;
 }
 
-type Campaign = { id: string; label: string; startsAt: string; endsAt: string; closedAt: string | null };
+type Campaign = { id: string; label: string; startsAt: string; endsAt: string; closedAt: string | null; landing?: SignupCampaignLanding };
 const campaignsPath = "/api/admin/signup-campaigns";
+
+function CampaignLandingOptions() {
+  return Object.entries(SIGNUP_CAMPAIGN_LANDINGS).map(([path, label]) =>
+    <option key={path} value={path}>{label}</option>);
+}
+
+function CampaignShortLink({ campaign }: { campaign: Campaign }) {
+  const linkId = useId();
+  const [link, setLink] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function generate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const landing = new FormData(event.currentTarget).get("landing");
+    setBusy(true);
+    setError("");
+    setLink("");
+    setCopied(false);
+    try {
+      const { path } = await apiFetch<{ path: string }>(`${campaignsPath}/${campaign.id}/short-link`, {
+        method: "POST", body: JSON.stringify({ landing }),
+      });
+      setLink(`${location.origin}${path}`);
+    } catch (failure) {
+      setError(message(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setError("");
+    } catch {
+      setError("Select and copy the link from the field.");
+    }
+  }
+
+  return <details className="w-full max-w-xl space-y-3" data-analytics-private>
+    <summary className={`${secondary} inline-flex cursor-pointer items-center`}>Short link</summary>
+    <form onSubmit={generate} className="flex flex-wrap items-end gap-3">
+      <label className="grid gap-1 text-sm">Landing page
+        <select name="landing" className={field} defaultValue={campaign.landing ?? "/season-1"} disabled={busy}
+          onChange={() => { setLink(""); setCopied(false); setError(""); }}>
+          <CampaignLandingOptions />
+        </select>
+      </label>
+      <button className={secondary} disabled={busy}>{busy ? "Generating…" : "Generate short link"}</button>
+    </form>
+    {link && <div className="space-y-1">
+      <label className="block text-sm" htmlFor={linkId}>Campaign short link</label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input id={linkId} className={`${field} min-w-0 flex-1`} value={link} readOnly onFocus={event => event.currentTarget.select()} />
+        <button type="button" className={`${secondary} self-start`} onClick={() => void copy()}>Copy short link</button>
+      </div>
+      <p role="status" className="text-sm text-white/65">{copied ? "Short link copied." : "Short link ready."}</p>
+    </div>}
+    {error && <p role="alert" className="text-red-300">{error}</p>}
+  </details>;
+}
 
 export function SignupCampaigns() {
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
@@ -77,11 +142,13 @@ export function SignupCampaigns() {
       const startsAt = new Date(String(fields.get("startsAt"))).toISOString();
       const endsAt = new Date(String(fields.get("endsAt"))).toISOString();
       const label = String(fields.get("label")).trim();
+      const landing = fields.get("landing");
+      if (!isSignupCampaignLanding(landing)) throw new Error("Choose a campaign landing page.");
       const { code, id } = await apiFetch<{ id: string; code: string }>(campaignsPath, {
         method: "POST", body: JSON.stringify({ label, startsAt, endsAt }),
       });
-      setLink(`${location.origin}${fields.get("landing")}#signup_campaign=${code}`);
-      setCampaigns(current => [...(current ?? []), { id, label, startsAt, endsAt, closedAt: null }]);
+      setLink(`${location.origin}${landing}#signup_campaign=${code}`);
+      setCampaigns(current => [...(current ?? []), { id, label, startsAt, endsAt, closedAt: null, landing }]);
       form.reset();
     } catch (failure) { setError(message(failure)); }
     finally { setBusy(false); }
@@ -102,8 +169,7 @@ export function SignupCampaigns() {
     <form onSubmit={create} className="grid gap-3 sm:grid-cols-2">
       <label className="grid gap-1">Campaign name<input name="label" className={field} required maxLength={100} /></label>
       <label className="grid gap-1">Landing page<select name="landing" className={field}>
-        <option value="/season-1">Season 1</option><option value="/season-1/create">Character creation</option>
-        <option value="/season-1/ai">AI campaign</option><option value="/sign-up">Signup</option>
+        <CampaignLandingOptions />
       </select></label>
       <label className="grid gap-1">Starts (local time)<input name="startsAt" type="datetime-local" className={field} required /></label>
       <label className="grid gap-1">Ends (local time)<input name="endsAt" type="datetime-local" className={field} required /></label>
@@ -124,7 +190,10 @@ export function SignupCampaigns() {
         </p></div>
         {item.closedAt ? <span className="text-sm text-white/65">Closed</span>
           : Date.parse(item.endsAt) <= Date.now() ? <span className="text-sm text-white/65">Expired</span>
-          : <button className={secondary} disabled={busy} onClick={() => void close(item.id)}>Close campaign</button>}
+          : <>
+            <button className={secondary} disabled={busy} onClick={() => void close(item.id)}>Close campaign</button>
+            <CampaignShortLink campaign={item} />
+          </>}
       </li>)}
     </ul>
   </section>;

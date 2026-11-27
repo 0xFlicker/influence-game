@@ -2,6 +2,24 @@ import { parseReplayAudience, parseReplayCursor, parseReplaySequenceParam } from
 import { parseReplayShare, REPLAY_SHARE_KEYS } from "./replay-share-state";
 
 export const SHARE_CODE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{10}$/;
+export const SIGNUP_CAMPAIGN_CODE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+export const SIGNUP_CAMPAIGN_LANDINGS = {
+  "/season-1": "Season 1",
+  "/season-1/create": "Character creation",
+  "/season-1/ai": "AI campaign",
+  "/sign-up": "Signup",
+} as const;
+
+export type SignupCampaignLanding = keyof typeof SIGNUP_CAMPAIGN_LANDINGS;
+
+export function isSignupCampaignLanding(value: unknown): value is SignupCampaignLanding {
+  return typeof value === "string" && Object.hasOwn(SIGNUP_CAMPAIGN_LANDINGS, value);
+}
+
+export function isSignupCampaignLinkCode(value: unknown): value is string {
+  return typeof value === "string" && (SIGNUP_CAMPAIGN_CODE_PATTERN.test(value) || SHARE_CODE_PATTERN.test(value));
+}
+
 export interface HouseShareTarget {
   path: string;
   kind: "game" | "profile" | "agent" | "page";

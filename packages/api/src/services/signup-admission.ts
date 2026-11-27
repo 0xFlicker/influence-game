@@ -1,12 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
-import { sql } from "drizzle-orm";
-import type { DrizzleDB } from "../db/index.js";
+import { eq, sql } from "drizzle-orm";
+import { isSignupCampaignLinkCode, SHARE_CODE_PATTERN, SIGNUP_CAMPAIGN_CODE_PATTERN } from "@influence/engine/house-share-target";
+import { schema, type DrizzleDB } from "../db/index.js";
+import { readSignupCampaignSharePath } from "./house-share-links.js";
 
 type Transaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 const DAY = 86_400_000n;
 const CAMPAIGN_TTL_SECONDS = 86_400;
 export const CAMPAIGN_COOKIE = "house_signup_campaign";
-const CODE = /^[A-Za-z0-9_-]{43}$/;
+const CODE = SIGNUP_CAMPAIGN_CODE_PATTERN;
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
 export class SignupAdmissionError extends Error {
@@ -92,11 +94,19 @@ export async function createSignupCampaign(db: DrizzleDB, label: string, startsA
 }
 
 export async function issueCampaignSession(db: DrizzleDB, code: unknown, existingToken?: string) {
-  if (typeof code !== "string" || !CODE.test(code)) return null;
+  if (!isSignupCampaignLinkCode(code)) return null;
   return db.transaction(async tx => {
+    let match = sql`link_digest = ${digest(code)}`;
+    if (SHARE_CODE_PATTERN.test(code)) {
+      const [link] = await tx.select({ path: schema.houseShareLinks.path }).from(schema.houseShareLinks)
+        .where(eq(schema.houseShareLinks.code, code));
+      const target = link && readSignupCampaignSharePath(link.path);
+      if (!target) return null;
+      match = sql`id = ${target.campaignId}`;
+    }
     await tx.execute(sql`DELETE FROM signup_campaign_sessions WHERE expires_at <= clock_timestamp()`);
     const [campaign] = await tx.execute<{ id: string }>(sql`SELECT id FROM signup_campaigns
-      WHERE link_digest = ${digest(code)} AND closed_at IS NULL
+      WHERE ${match} AND closed_at IS NULL
       AND starts_at <= clock_timestamp() AND ends_at > clock_timestamp() FOR SHARE`);
     if (!campaign) return null;
     if (existingToken && CODE.test(existingToken)) {

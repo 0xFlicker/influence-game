@@ -2,7 +2,8 @@ import { cache } from "react";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { parseHouseShareTarget, SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
+import { isSignupCampaignLanding, parseHouseShareTarget, SHARE_CODE_PATTERN, type HouseShareTarget } from "@influence/engine/house-share-target";
+import { copyCampaignQuery } from "@/lib/campaign-attribution";
 import { serverApiFetch, ServerApiError } from "@/lib/server-api";
 import { getServerGameMetadata, getServerPublicAgentCard } from "@/lib/server-api";
 import { playerCardMetadata, resultsCardMetadata } from "@/lib/player-card";
@@ -10,17 +11,23 @@ import { serializeMiniAppEmbedMeta } from "@/lib/farcaster-miniapp";
 import { agentShareMetadata, getHighlightsShareMetadata, getProfileShareMetadata } from "@/lib/server-share-metadata";
 import { ShareDestination } from "./share-destination";
 
-const resolve = cache(async (code: string) => {
+type ResolvedShare = { target: HouseShareTarget; openTicket?: string; signupCampaign?: boolean };
+
+const resolve = cache(async (code: string): Promise<ResolvedShare> => {
   if (!SHARE_CODE_PATTERN.test(code)) notFound();
   try {
-    const result = await serverApiFetch<{path: string; openTicket?: string}>(`/api/share-links/${code}`, {cache: "no-store"});
+    const result = await serverApiFetch<{path: string; openTicket?: string; signupCampaign?: boolean}>(`/api/share-links/${code}`, {cache: "no-store"});
+    if (result.signupCampaign) {
+      if (!isSignupCampaignLanding(result.path)) notFound();
+      return { target: { path: result.path, kind: "page" }, signupCampaign: true };
+    }
     return { target: parseHouseShareTarget(result.path), openTicket: result.openTicket };
   } catch (error) {
     if (error instanceof ServerApiError && error.status === 404) notFound();
     throw error;
   }
 });
-type Props = { params: Promise<{code: string}>; searchParams: Promise<{app?: string}> };
+type Props = { params: Promise<{code: string}>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export async function generateMetadata({params}: Props): Promise<Metadata> {
   const {code} = await params;
@@ -62,9 +69,16 @@ export async function generateMetadata({params}: Props): Promise<Metadata> {
 }
 
 export default async function ShortSharePage({params, searchParams}: Props) {
-  const { target, openTicket } = await resolve((await params).code);
-  // Only the Mini App context hint may be added. Saved playback settings are immutable.
+  const { code } = await params;
+  const { target, openTicket, signupCampaign } = await resolve(code);
+  const query = await searchParams;
   const url = new URL(target.path, "https://thehouse.game");
-  if ((await searchParams).app === "mini") url.searchParams.set("app", "mini");
+  if (query.app === "mini") url.searchParams.set("app", "mini");
+  if (signupCampaign) {
+    // Ad query parameters are only forwarded on campaign links. Ordinary shares
+    // continue to ignore caller-supplied parameters except for the Mini App hint.
+    copyCampaignQuery(query, url.searchParams);
+    url.hash = `signup_campaign=${code}`;
+  }
   return <ShareDestination path={`${url.pathname}${url.search}${url.hash}`} openTicket={openTicket} />;
 }
