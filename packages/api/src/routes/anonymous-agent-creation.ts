@@ -9,7 +9,6 @@ import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateAnonymousCreationTurn, type AnonymousCreationInput } from "../services/anonymous-agent-creation.js";
 import { AnonymousPoolBusyError, readAnonymousAllowance, runAnonymousText } from "../services/anonymous-text-usage.js";
 import { GenerationAdmissionError } from "../services/generation-admission-error.js";
-import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
 import { sha256StableJson } from "../services/stable-hash.js";
 
 const COOKIE = "house_preview";
@@ -57,13 +56,8 @@ export function createAnonymousAgentCreationRoutes(db: DrizzleDB, generate = gen
     }
     return c.json(await runAnonymousText(db, { visitorHash: await visitorHash(c), requestKey,
       model: config?.modelId ?? "test", payload: body }, async record => {
-      const turn = await generate(body as unknown as AnonymousCreationInput, c.req.raw.signal, record);
-      if (turn.profile) {
-        const names = await db.select({ name: schema.agentProfiles.name }).from(schema.agentProfiles);
-        const allocated = allocateGeneratedAgentName(turn.profile.name, new Set(names.map(row => row.name)));
-        turn.profile = updateGeneratedProfileNameReferences(turn.profile, allocated.name);
-      }
-      return turn;
+      const names = await db.select({ name: schema.agentProfiles.name }).from(schema.agentProfiles);
+      return generate(body as unknown as AnonymousCreationInput, c.req.raw.signal, record, new Set(names.map(row => row.name)));
     }));
   });
   return app;

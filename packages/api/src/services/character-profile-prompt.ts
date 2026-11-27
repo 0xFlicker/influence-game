@@ -1,11 +1,12 @@
 import { USER_SELECTABLE_AGENT_ARCHETYPES } from "./agent-archetypes.js";
-import { MAX_AGENT_DISPLAY_NAME_LENGTH } from "./agent-profile-management.js";
 import { AGENT_CREATION_GAME_PRIMER } from "./agent-creation-game-primer.js";
 import { defaultWerewolfStrategy } from "@influence/engine/werewolf";
+import { characterNamingInstructions, type CharacterNaming } from "./generated-agent-names.js";
 
 export function buildAgentProfileGenerationSystemPrompt(
   isRefine: boolean,
   allowedPersonaKeys: readonly string[],
+  naming: CharacterNaming,
 ): string {
   const archetypeChoices = USER_SELECTABLE_AGENT_ARCHETYPES
     .filter((archetype) => allowedPersonaKeys.includes(archetype.key))
@@ -19,9 +20,12 @@ Generate a complete agent personality profile. The character should feel like a 
 
 ${isRefine ? "The user is refining an existing profile. Improve and flesh out the provided details while respecting the original direction." : "Create a fresh character based on the provided hints."}
 
+${characterNamingInstructions(naming)}
+Use the selected name consistently in all returned text.
+
 Respond with JSON only:
 {
-  "name": "A distinctive full first and last name for the character (creative, memorable, ${MAX_AGENT_DISPLAY_NAME_LENGTH} characters or fewer)",
+  "name": { "source": "Follow the naming instructions", "value": "The character's name" },
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
   "personality": "A detailed character prompt in 4-6 sentences: motivations, contradictions, flaws, voice, social habits and how they react under pressure. Include concrete behaviors that make them distinctive to play and watch. Refer to them by their first name or pronouns, never their full name.",
   "strategyStyle": "A 1-2 sentence strategic approach grounded in their personality and real Influence decisions: social trust, empowerment, adaptable format-specific coordination, and jury relationships as appropriate. Give this person a recognizable tradeoff rather than a perfect generic plan. Refer to them by their first name or pronouns, never their full name.",

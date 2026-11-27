@@ -235,6 +235,26 @@ leave the draft intact. Game and background generation policy is unchanged.
 trades lower cost for slower responses and occasional resource unavailability;
 interactive character creation uses Standard instead.
 
+## Generated names
+
+The signed-out preview and signed-in profile writer draw eight distinct given
+names from a bundled Onomaverse snapshot. Given names have equal odds in the
+draw. Each is paired with a surname from one country pool that contains both
+names. The shortlist excludes occupied and reserved full names and respects the saved
+profile's 32-character limit.
+
+The profile writer must return a name from the shortlist in its strict
+response. A structured user-supplied name is fixed. In conversational
+requests, the writer can return an exact name supplied in the user's message,
+or an original name with a verbatim request for inspiration. The server checks
+the selected option or quoted source text before accepting the result. A scoped
+edit preserves the current name unless it includes naming, and an unscoped
+refinement defaults to preserving it. The model writes the profile using the
+chosen name in the same provider call. Save still enforces unique full names.
+
+The bundled pool uses Onomaverse release `v2026.10` and needs no runtime
+download. See the [data provenance and rebuild instructions](../packages/api/src/data/README.md).
+
 ## Advanced edit and incomplete profiles
 
 The Workshop sends incomplete drafts to inference; missing gender or archetype

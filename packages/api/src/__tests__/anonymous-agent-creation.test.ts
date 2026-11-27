@@ -17,7 +17,9 @@ import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 const profile = { name: "Mira Vale", gender: "female", personaKey: "diplomat", backstory: "A former envoy.",
   personality: "Patient, warm, and suspicious of easy promises.", strategyStyle: "Build trust, at the risk of waiting too long.",
   performanceInstructions: "Quiet gestures.", visualDesign: "A blue coat.", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["Trust takes time.", "I keep receipts.", "We can talk."] };
-const turn = decodeAnonymousCreationTurn(JSON.stringify({ reply: "Mira builds trust, but may hesitate to act. Does she feel right?", profile }));
+const turn = { reply: "Mira builds trust, but may hesitate to act. Does she feel right?", profile: { ...profile, gender: "female" as const } };
+const naming = { shortlist: [profile.name], userText: [] };
+const encodedProfile = { ...profile, name: { source: "shortlist", value: profile.name } };
 const response: ChatCompletion = { id: "preview-response", object: "chat.completion", created: 0, model: "gpt-5.6-luna", choices: [],
   usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } };
 
@@ -61,7 +63,7 @@ describe("Anonymous preview pool", () => {
   test("malformed output is not accepted, retains cost evidence, and can be retried after the minute", async () => {
     const value = input();
     await expect(runAnonymousText(db, value, async record => {
-      await record(response); return decodeAnonymousCreationTurn("{}");
+      await record(response); return decodeAnonymousCreationTurn("{}", naming);
     })).rejects.toThrow("Invalid House preview fields");
     expect(await readAnonymousAllowance(db, value.visitorHash)).toEqual({ used: false });
     const [operation] = await loadPayloads(db.select().from(schema.anonymousTextOperations));
@@ -116,6 +118,44 @@ describe("Anonymous preview pool", () => {
     expect(status.headers.get("Set-Cookie")).not.toContain("invalid");
   });
 
+  test("the real preview handler requests an eight-name enum and rejects a name outside it", async () => {
+    const app = createAnonymousAgentCreationRoutes(db);
+    const originalFetch = globalThis.fetch, originalKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "provider-free";
+    let offeredNames: string[] = [];
+    let returnOutsideName = false;
+    globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input.toString(), init);
+      const body = await request.json() as {
+        response_format: { json_schema: { schema: { properties: { profile: { anyOf: [{
+          properties: { name: { anyOf: [{ properties: { value: { enum: string[] } } }] } };
+        }] } } } } };
+      };
+      const profileSchema = body.response_format.json_schema.schema.properties.profile.anyOf[0];
+      offeredNames = profileSchema.properties.name.anyOf[0].properties.value.enum;
+      const name = { source: "shortlist", value: returnOutsideName ? "First9 Last9" : offeredNames[0] };
+      return Response.json({ ...response, choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant",
+        content: JSON.stringify({ ...turn, profile: { ...profile, name } }) } }] });
+    }, { preconnect: originalFetch.preconnect });
+    const preview = () => app.request("/api/agent-profiles/anonymous", {
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomUUID() },
+      body: JSON.stringify({ message: "A quiet diplomat", creationTraitIds: [] }),
+    });
+    try {
+      const valid = await preview();
+      expect(valid.status).toBe(200);
+      expect(offeredNames).toHaveLength(8);
+      expect(await valid.json()).toMatchObject({ profile: { name: offeredNames[0] } });
+      await reopenMinute();
+      returnOutsideName = true;
+      expect((await preview()).status).toBe(502);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = originalKey;
+    }
+  });
+
   test("the anonymous route returns controlled diagnostics for an observed upstream timeout", async () => {
     const app = new Hono().use("*", requestDiagnostics).route("/", createAnonymousAgentCreationRoutes(db, async () => {
       throw new APIConnectionTimeoutError({ message: "private provider detail" });
@@ -143,12 +183,12 @@ describe("Anonymous preview pool", () => {
 
 describe("strict House preview output", () => {
   test("a game question can be answered without inventing a character", () => {
-    expect(decodeAnonymousCreationTurn(JSON.stringify({ reply: "Empowerment is not immunity. Would you seek it?", profile: null })).profile).toBeNull();
+    expect(decodeAnonymousCreationTurn(JSON.stringify({ reply: "Empowerment is not immunity. Would you seek it?", profile: null }), naming).profile).toBeNull();
   });
   test.each(["not JSON", "{}", "```json\n{}\n```", 'Here is {"profile":null}', JSON.stringify({ reply: "", profile: null }),
     JSON.stringify({ reply: "Hi", profile: null, command: "generate_image" }), JSON.stringify({ reply: "Hi" }),
-    JSON.stringify({ reply: "Hi", profile: {} }), JSON.stringify({ reply: "Hi", profile: { ...profile, gender: "unknown" } }),
-    JSON.stringify({ reply: "Hi", profile: { ...profile, visualDesign: undefined } })])("rejects malformed preview: %s", content => {
-    expect(() => decodeAnonymousCreationTurn(content)).toThrow();
+    JSON.stringify({ reply: "Hi", profile: {} }), JSON.stringify({ reply: "Hi", profile: { ...encodedProfile, gender: "unknown" } }),
+    JSON.stringify({ reply: "Hi", profile: { ...encodedProfile, visualDesign: undefined } })])("rejects malformed preview: %s", content => {
+    expect(() => decodeAnonymousCreationTurn(content, naming)).toThrow();
   });
 });

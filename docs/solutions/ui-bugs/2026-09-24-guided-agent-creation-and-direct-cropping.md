@@ -24,6 +24,12 @@ one successful preview per browser and one shared dispatch per minute. Busy
 admission consumes no visitor allowance; accepted retries replay their stored
 result. Anonymous spending has its own admin pool.
 
+The profile writer now chooses a name from a server-drawn Onomaverse shortlist
+in the same provider call. Enforce the offered full-name enum at decoding.
+Explicit names and inspiration are structured alternatives grounded in the
+player's own text, so the anonymous endpoint keeps its one-dispatch contract.
+See [generated names](../../agent-creation-assistant.md#generated-names).
+
 Keep the active draft storage owner stable while authentication changes. This
 avoids replacing a new visitor's cards with an account recovery prompt during
 signup. Account reloads can recover that anonymous draft when no account draft

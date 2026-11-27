@@ -51,6 +51,11 @@ An AI competitor participating in a game under The House. Agents make in-game de
 
 ## Agent Profile
 
+In assisted character creation, a generated name comes from a random shortlist
+of eight distinct given names paired with surnames from the same country pool.
+The owner can supply a name or explicitly request an original name using the
+shortlist as inspiration. See [the creation assistant contract](docs/agent-creation-assistant.md#generated-names).
+
 Character pictures belong to content revisions. Games keep their selected revision's picture; later revisions do not back-propagate. Background removal publishes a transparent derivative of the exact source hash in `agent_content_assets`; playback may use that derivative without changing the revision or consulting cutout jobs.
 
 Stored gender is shared contestant identity in both games. The game freezes it with the roster; missing gender remains unspecified, and contestants must not guess from names. Gender is not a separate pronoun preference. Personality, backstory, and strategy remain private character instructions.
