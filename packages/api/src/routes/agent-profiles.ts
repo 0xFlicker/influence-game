@@ -4,7 +4,7 @@ import { recordAgentCreationStarted } from "../services/campaign-conversions.js"
 import { listAgentGenerations, cancelAgentGeneration } from "../services/agent-generations.js";
 import { AgentDraftImageUnavailable, readAgentDraftImage } from "../services/agent-draft-images.js";
 import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
-import { readAgentTransparentBodies } from "../services/agent-transparent-bodies.js";
+import { readAgentTransparentBodies, readSubmittedAgentArtwork } from "../services/agent-transparent-bodies.js";
 import { readAgentVisualUpdate, requestAgentVisualUpdate, resumeAgentVisualUpdate } from "../services/agent-visual-updates.js";
 import {readAgentVoice} from "../services/audio-voices.js";
 import { readAgentDraft, saveAgentDraft, deleteAgentDraft, AgentDraftConflict } from "../services/agent-editor-drafts.js";
@@ -604,6 +604,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
 
   app.get("/api/agent-profiles", requireAuth(db), async (c) => {
     const user = c.get("user");
+    c.header("Cache-Control", "private, no-store");
 
     const profiles = await db
       .select()
@@ -611,16 +612,18 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       .where(and(eq(schema.agentProfiles.userId, user.id), isNull(schema.agentProfiles.archivedAt)))
       .orderBy(desc(schema.agentProfiles.createdAt), asc(schema.agentProfiles.id));
 
-    const completions = await latestAvatarCompletionsByAgentProfileId(
-      db,
-      user.id,
-      profiles.map((profile) => profile.id),
-    );
-
-    const transparentBodies = await readAgentTransparentBodies(db, profiles);
-    const activity = await agentCollectionActivity(db, profiles);
+    const activityRequest = agentCollectionActivity(db, profiles);
+    const [completions, transparentBodies, activity, submittedArtwork] = await Promise.all([
+      latestAvatarCompletionsByAgentProfileId(db, user.id, profiles.map(profile => profile.id)),
+      readAgentTransparentBodies(db, profiles),
+      activityRequest,
+      activityRequest.then(activity => readSubmittedAgentArtwork(db,
+        profiles.filter(profile => activity.get(profile.id)?.reviewState === "reviewing"),
+      )),
+    ]);
     return c.json(profiles.map((profile) => ({
       transparentBodyUrl: transparentBodies.get(profile.id) ?? null,
+      submittedArtwork: submittedArtwork.get(profile.id) ?? null,
       ...playerSafeAgentProfile(profile),
       ...activity.get(profile.id),
       profileHref: ownedAgentPublicHref(profile, user.walletAddress),

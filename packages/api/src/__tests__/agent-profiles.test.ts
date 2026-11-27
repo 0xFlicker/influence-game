@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import { joinQueue } from "../services/queue-enrollment.js";
 import { createSeason } from "../services/seasons.js";
 import { avatarProfileFingerprint } from "../services/avatar-generation.js";
+import { storeAgentDraftImage } from "../services/agent-draft-images.js";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -596,6 +597,50 @@ describe("Agent Profile API", () => {
   // =========================================================================
 
   describe("GET /api/agent-profiles", () => {
+    test("shows the latest private artwork to the submitting owner while retaining accepted artwork", async () => {
+      const originalAvatar = "/avatars/personas/diplomat.png";
+      const created = await app.request("/api/agent-profiles", jsonReq({
+        name: "Artwork Casey", personality: "Patient.", avatarUrl: originalAvatar,
+      }, tokenA));
+      expect(created.status).toBe(201);
+      const { id } = await acceptResponse(created) as { id: string };
+      const readCollection = async (token: string) => {
+        const response = await app.request("/api/agent-profiles", authGet(token));
+        expect(response.status).toBe(200);
+        return response.json();
+      };
+      const replacements: string[] = [];
+      for (const persona of ["strategic", "diplomat"]) {
+        const bytes = await Bun.file(new URL(`../../../web/public/avatars/personas/full-body-v1/${persona}.webp`, import.meta.url)).bytes();
+        const avatarUrl = await storeAgentDraftImage(db, USER_A_ID, bytes);
+        replacements.push(avatarUrl);
+        const response = await app.request(`/api/agent-profiles/${id}`, jsonReq({ avatarUrl }, tokenA, "PATCH"));
+        expect(response.status).toBe(200);
+        expect(await readCollection(tokenA)).toMatchObject([{
+          id, avatarUrl: originalAvatar, reviewState: "reviewing",
+          submittedArtwork: { imageUrl: avatarUrl, hasFullBody: false },
+        }]);
+        expect(await readCollection(tokenB)).toEqual([]);
+        expect((await app.request(avatarUrl, authGet(tokenA))).status).toBe(200);
+        expect((await app.request(avatarUrl, authGet(tokenB))).status).toBe(404);
+        expect((await app.request(avatarUrl)).status).toBe(401);
+      }
+      const published = await acceptTestAgent(db, id);
+      expect(published?.profile.avatarUrl).toBe(replacements[1]);
+      expect(await readCollection(tokenA)).toMatchObject([{
+        id, avatarUrl: replacements[1], reviewState: "accepted", submittedArtwork: null,
+      }]);
+
+      const rejected = await app.request(`/api/agent-profiles/${id}`, jsonReq({ avatarUrl: replacements[0] }, tokenA, "PATCH"));
+      expect(rejected.status).toBe(200);
+      const { latestContentRevisionId } = await rejected.json() as { latestContentRevisionId: string };
+      await db.update(schema.agentModerationReviews).set({ status: "resolved", disposition: "rejected" })
+        .where(eq(schema.agentModerationReviews.contentRevisionId, latestContentRevisionId));
+      expect(await readCollection(tokenA)).toMatchObject([{
+        id, avatarUrl: replacements[1], reviewState: "held", submittedArtwork: null,
+      }]);
+    });
+
     test("keeps creation order across review updates and deterministically breaks timestamp ties", async () => {
       const ids=["stable-a","stable-b","stable-c"];
       await db.insert(schema.agentProfiles).values(ids.map((id,index)=>({id,userId:USER_A_ID,name:id,personality:"Patient",createdAt:index===0?"2026-01-01T00:00:00Z":"2026-02-01T00:00:00Z",updatedAt:"2026-01-01T00:00:00Z"})));

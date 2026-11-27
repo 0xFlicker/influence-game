@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { agentPreparationHref } from "@/lib/agent-entry";
 import { withManagementReturn } from "./agent-management-navigation";
-import { AgentList, agentNeedsAttention, agentActivity } from "./agent-list";
+import { AgentList, agentNeedsAttention, agentActivity, agentHasFullBody } from "./agent-list";
 import styles from "./agent-workspace.module.css";
 import { AgentWorkspacePanel } from "./agent-workspace-panel";
 import { AgentGenerations, useAgentGenerations } from "./agent-generations";
@@ -162,7 +162,7 @@ export function AgentsContent() {
               <div>
                 <strong>{agent.name}</strong>
                 <p className={styles.meta}>
-                  {agentNeedsAttention(agent) && !agent.fullBodyReferenceUrl
+                  {agentNeedsAttention(agent) && !agentHasFullBody(agent)
                     ? "Full-body image missing"
                     : agentActivity(agent)}
                 </p>

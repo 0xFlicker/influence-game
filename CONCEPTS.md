@@ -750,7 +750,7 @@ Guided and Advanced are views of one owner draft, including model, voice, conver
 
 ## Submitted and accepted agent content
 
-`latestContentRevisionId` names the latest immutable submission; `contentRevisionId` names accepted public content. Save queues enforced screening and returns Reviewing. New agents wait for acceptance; an edited agent's last accepted version remains usable during review or hold. Publication applies the complete content, model/voice, applicable competitive revision and waiting-seat effects together; frozen games stay pinned. See [the submission contract](docs/agent-content-submissions.md).
+`latestContentRevisionId` names the latest immutable submission; `contentRevisionId` names accepted public content. Save queues enforced screening and returns Reviewing. The owner's Reviewing card previews the submitted artwork. New agents wait for acceptance; an edited agent's last accepted version remains usable during review or hold. Publication applies the complete content, model/voice, applicable competitive revision and waiting-seat effects together; frozen games stay pinned. See [the submission contract](docs/agent-content-submissions.md).
 
 ## Public avatar storage key
 

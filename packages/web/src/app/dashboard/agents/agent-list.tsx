@@ -9,6 +9,9 @@ import { HouseShareButton } from "@/components/house-share-button";
 import { AgentModelLabel } from "@/components/agent-model-label";
 import { withManagementReturn } from "./agent-management-navigation";
 import styles from "./agent-workspace.module.css";
+export function agentHasFullBody(agent: SavedAgent) {
+  return agent.submittedArtwork?.hasFullBody ?? Boolean(agent.fullBodyReferenceUrl);
+}
 export function agentActivity(agent: SavedAgent) {
   if (agent.reviewState === "reviewing") return "Reviewing";
   if (agent.reviewState === "held") return "Held for moderation";
@@ -26,7 +29,7 @@ export function agentActivity(agent: SavedAgent) {
         } as Record<string, string>
       )[agent.visualActivity?.stage ?? ""] ?? "Preparing images"
     );
-  if (!agent.fullBodyReferenceUrl) return "Full-body image missing";
+  if (!agentHasFullBody(agent)) return "Full-body image missing";
   return null;
 }
 export function agentNeedsAttention(agent: SavedAgent) {
@@ -35,7 +38,7 @@ export function agentNeedsAttention(agent: SavedAgent) {
     ["ready", "failed", "conflict"].includes(
       agent.visualActivity?.status ?? "",
     ) ||
-    !agent.fullBodyReferenceUrl
+    !agentHasFullBody(agent)
   );
 }
 export function AgentList({
@@ -66,7 +69,9 @@ export function AgentList({
         const working = reviewing || (!held && imageWorking);
         const failed = !reviewing && !held && agent.visualActivity?.status === "failed";
         const stillUsable = !!agent.contentRevisionId && (reviewing || held);
-        const image = agent.transparentBodyUrl ?? agent.fullBodyReferenceUrl ?? agent.avatarUrl;
+        const image = agent.submittedArtwork
+          ? agent.submittedArtwork.imageUrl
+          : agent.transparentBodyUrl ?? agent.fullBodyReferenceUrl ?? agent.avatarUrl;
         return (
           <article
             id={"agent-" + agent.id}

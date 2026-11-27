@@ -1700,11 +1700,15 @@ test("generates and saves replacement artwork with touch on an iPhone viewport",
   const page = await createAuthenticatedPage(
     browser,
     owner.jwt,
-    servers.webUrl + `/dashboard/agents/${profile.id}/edit`,
+    servers.webUrl + "/dashboard/agents",
     { privateKey: owner.wallet.privateKey },
   );
   try {
     await page.setViewport({ width: 375, height: 667, isMobile: true, hasTouch: true });
+    const card = `#agent-${profile.id}`;
+    await page.waitForSelector(`${card} img`);
+    await page.screenshot({ path: proof + "iphone-management-before-artwork.png" });
+    await button(page, "Edit Mobile Artwork");
     async function visibleAction(label: string) {
       const selector = `Array.from((document.querySelector('dialog[open]') ?? document).querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled && button.checkVisibility())`;
       await page.waitForFunction(selector);
@@ -1819,10 +1823,29 @@ test("generates and saves replacement artwork with touch on an iPhone viewport",
       expect(Math.sign(afterPinch.width - afterCorner.width)).toBe(Math.sign(distance));
       expect(afterPinch.width / afterPinch.height).toBeCloseTo(afterCorner.width / afterCorner.height, 1);
     }
+    const patched = page.waitForRequest(request =>
+      request.method() === "PATCH" && new URL(request.url()).pathname === `/api/agent-profiles/${profile.id}`,
+    );
     await tap("Save artwork");
+    const { fullBodyReferenceUrl } = JSON.parse((await patched).postData()!) as { fullBodyReferenceUrl: string };
     await page.waitForFunction('location.pathname === "/dashboard/agents"');
     const [saved] = await database.db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, profile.id));
     expect(saved!.latestContentRevisionId).not.toBe(profile.latestContentRevisionId);
+    const image = `${card}[data-review-state="reviewing"] img[alt="Mobile Artwork"]`;
+    for (const reload of [false, true]) {
+      if (reload) await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(`(() => {
+        const img = document.querySelector(${JSON.stringify(image)});
+        return img?.currentSrc.startsWith("blob:") && img.naturalWidth > 0;
+      })()`);
+      const displayedHash = await page.$eval(image, async img => {
+        const bytes = await (await fetch((img as unknown as { currentSrc: string }).currentSrc)).arrayBuffer();
+        const hash = await crypto.subtle.digest("SHA-256", bytes);
+        return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
+      });
+      expect(displayedHash).toBe(fullBodyReferenceUrl.split("/").at(-1)!);
+    }
+    await page.screenshot({ path: proof + "iphone-management-saved-artwork.png" });
     const { readAgentDraft } = await import("../services/agent-editor-drafts.js");
     expect(await readAgentDraft(database.db, owner.userId, `edit:${profile.id}`)).toBeNull();
   } catch (error) {
