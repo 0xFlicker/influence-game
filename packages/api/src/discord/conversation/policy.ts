@@ -197,20 +197,26 @@ export async function dmContext(entries: DmEntry[], message: DiscordMessage, all
   };
 }
 
+export const discordReplyAttachmentLimit = 10;
+export const discordReplyAttachmentByteLimit = 20 * 1024 * 1024;
+export const discordReplyMultipartByteLimit = 25 * 1024 * 1024;
+export const discordReplyImageRefLengthLimit = 2048;
+const spoilerActions = ["none", "offer", "authorize"] as const;
+
 export interface Reply {
   messages: string[];
   imageRefs: string[];
-  spoiler: { action: "none" | "offer" | "authorize"; game: string };
+  spoiler: { action: typeof spoilerActions[number]; game: string };
   subject: Subject | { kind: "none"; id: "" };
 }
 export const replySchema = {
   type: "object", additionalProperties: false, required: ["messages", "imageRefs", "spoiler", "subject"],
   properties: {
     messages: { type: "array", items: { type: "string" } },
-    imageRefs: { type: "array", items: { type: "string" } },
+    imageRefs: { type: "array", maxItems: discordReplyAttachmentLimit, items: { type: "string" } },
     spoiler: {
       type: "object", additionalProperties: false, required: ["action", "game"],
-      properties: { action: { type: "string", enum: ["none", "offer", "authorize"] }, game: { type: "string" } },
+      properties: { action: { type: "string", enum: spoilerActions }, game: { type: "string" } },
     },
     subject: {
       type: "object", additionalProperties: false, required: ["kind", "id"],
@@ -225,20 +231,44 @@ export const consentSchema = {
   properties: { intent: { type: "string", enum: consentIntents } },
 };
 
-export function validatedReply(value: unknown): Reply {
-  if (!value || typeof value !== "object") throw new Error("Invalid reply");
-  const r = value as Partial<Reply>;
-  if (Object.keys(r).length !== 4) throw new Error("Invalid reply");
-  if (!Array.isArray(r.messages) || !r.messages.every(text => typeof text === "string" && text.trim().length > 0)
-      || !Array.isArray(r.imageRefs) || r.imageRefs.length > 2
-      || !r.imageRefs.every(x => typeof x === "string" && x.length <= 2048)
-      || !r.spoiler || Object.keys(r.spoiler).length !== 2 || typeof r.spoiler.game !== "string" || !["none", "offer", "authorize"].includes(r.spoiler.action)
-      || (r.spoiler.action !== "none" && !gameReference.test(r.spoiler.game))
-      || !r.subject || Object.keys(r.subject).length !== 2 || typeof r.subject.id !== "string"
-      || (r.subject.kind === "none" ? r.subject.id !== "" : !subjectKinds.includes(r.subject.kind) || !gameReference.test(r.subject.id))) {
-    throw new Error("Invalid reply");
+export type ReplyValidationReason = "shape" | "message" | "attachment_count" | "attachment_ref" | "subject" | "spoiler";
+
+export class ReplyValidationError extends Error {
+  constructor(readonly reason: ReplyValidationReason) {
+    super("Invalid reply");
+    this.name = "ReplyValidationError";
   }
-  return r as Reply;
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]) {
+  return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+
+export function validatedReply(value: unknown): Reply {
+  const { properties, required } = replySchema;
+  const r = record(value);
+  if (!hasExactKeys(r, required)) throw new ReplyValidationError("shape");
+  if (!Array.isArray(r.messages) || !r.messages.every(text => typeof text === "string" && text.trim().length > 0)) {
+    throw new ReplyValidationError("message");
+  }
+  if (!Array.isArray(r.imageRefs)) throw new ReplyValidationError("attachment_ref");
+  if (r.imageRefs.length > discordReplyAttachmentLimit) throw new ReplyValidationError("attachment_count");
+  if (!r.imageRefs.every(ref => typeof ref === "string" && ref.length <= discordReplyImageRefLengthLimit)) {
+    throw new ReplyValidationError("attachment_ref");
+  }
+
+  const spoiler = record(r.spoiler);
+  if (!hasExactKeys(spoiler, properties.spoiler.required) || typeof spoiler.game !== "string"
+      || !spoilerActions.some(action => action === spoiler.action)
+      || (spoiler.action !== "none" && !gameReference.test(spoiler.game))) {
+    throw new ReplyValidationError("spoiler");
+  }
+  const subject = record(r.subject);
+  if (!hasExactKeys(subject, properties.subject.required) || typeof subject.id !== "string"
+      || (subject.kind === "none" ? subject.id !== "" : !subjectKinds.some(kind => kind === subject.kind) || !gameReference.test(subject.id))) {
+    throw new ReplyValidationError("subject");
+  }
+  return value as Reply;
 }
 
 export function validatedConsent(value: unknown) {
@@ -263,13 +293,14 @@ export function discordReplyForm(
   text: string,
   images: Array<{ mimeType: string; data: string }>,
   liveRoomSpoiler: boolean,
-  part = 0,
+  part: number | "error" = 0,
 ) {
   const content = discordReplyContent(text, liveRoomSpoiler);
   if (content.length > discordContentLimit) throw new RangeError("Discord message is too long");
+  if (images.length > discordReplyAttachmentLimit) throw new RangeError("Too many Discord attachments");
   if (!content.trim() && !images.length) return null;
-  if (!Number.isSafeInteger(part) || part < 0) throw new RangeError("Invalid Discord reply part");
-  const nonce = part === 0 ? message.id : `${message.id}:${part.toString(36)}`;
+  if (part !== "error" && (!Number.isSafeInteger(part) || part < 0)) throw new RangeError("Invalid Discord reply part");
+  const nonce = part === "error" ? `${message.id}-err` : part === 0 ? message.id : `${message.id}:${part.toString(36)}`;
   if (nonce.length > 25) throw new RangeError("Discord reply nonce is too long");
   const filename = (id: number) => `house-${id + 1}.png`;
   const attachments = images.map((_, id) => ({ id, filename: filename(id), ...(liveRoomSpoiler && { is_spoiler: true }) }));

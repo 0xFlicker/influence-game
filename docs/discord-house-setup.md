@@ -370,4 +370,8 @@ reply delivered back to its originating conversation.
 - Use `discord_turn` to see the failing stage, `discord_sandbox_failed` for
   container exit status, timeouts and inference bridge counts, and
   `discord_delivery_rejected` for Discord's HTTP and numeric error codes.
+  Use `discord_reply_validation` for the structured reply reason and retry.
+  Media reply checks should cover ten inspected and attached replay pictures,
+  an exhausted validation retry under current authorization, and a transport
+  failure after a partial reply.
   These events contain no message text, prompt, model reasoning, or token.

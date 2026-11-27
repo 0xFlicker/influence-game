@@ -150,6 +150,18 @@ test("ordered parts use distinct stable Discord nonces and keep the original rep
   }
 });
 
+test("an error notice has a stable nonce distinct from the first and subsequent substantive parts", () => {
+  const readPayload = (part: number | "error") =>
+    JSON.parse(discordReplyForm(current, "Message body.", [], false, part)!.get("payload_json") as string);
+  const error = readPayload("error");
+  expect(error.nonce).toBe(`${current.id}-err`);
+  expect(readPayload("error").nonce).toBe(error.nonce);
+  const nonces = new Set([error.nonce, readPayload(0).nonce, readPayload(1).nonce, readPayload(parseInt("err", 36)).nonce]);
+  expect(nonces.size).toBe(4);
+  expect(error.message_reference).toEqual({ message_id: current.id, channel_id: current.channel_id, fail_if_not_exists: true });
+  expect(error.enforce_nonce).toBe(true);
+});
+
 test("room context masks prior House live reveals, including explicit reply targets after replacement", () => {
   const prior: DiscordMessage = {
     ...current, id: offerMessage, author: { id: bot, bot: true },

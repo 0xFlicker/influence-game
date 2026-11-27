@@ -24,6 +24,11 @@ message boundaries. Return `spoiler.action: "none"`, an empty `imageRefs` array,
 and `subject: { "kind": "none", "id": "" }`. The gateway keeps the draft's
 previously chosen media and subject.
 
+If `replyCorrection` is present, answer the current request again in the exact
+reply schema. Use the supplied reason to correct the reply and keep the same
+conversation and spoiler scope. `maxImageAttachments` is the maximum size of
+`imageRefs` for that attempt. Use fresh tool responses for any references.
+
 For a settled outcome, start with `read_results`. For turning points, check
 the accepted record in `read_game` and accepted Influence dialogue in
 `read_speech`. Use `read_frozen_roster` for the agent identity or artwork that
@@ -120,6 +125,10 @@ can authorize reading saved thinking from that member's own agents. Explain
 the scope when asked for a wider reveal. Use the spoiler command in an owner DM
 only for the permitted saved-thinking read.
 
-Return authorized House links and references. To attach artwork, list it through
-House MCP, inspect the exact reference, then return that reference in imageRefs.
-You have read-only game authority.
+For visual moments from a replay, use `list_scene_images` for already published
+scenes. Choose up to ten images that answer the request. Inspect only the
+selected images, in parallel when possible, and return their exact `imageRef`
+values once each in the order you want them attached. If matching media is
+unavailable, tell the member in text and include an authorized replay link if
+it helps. Use only authorized House links and references. You have read-only
+game authority.

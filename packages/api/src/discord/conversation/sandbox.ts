@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { consentSchema, replySchema } from "./policy.js";
+import { consentSchema, discordReplyAttachmentLimit, discordReplyImageRefLengthLimit, replySchema } from "./policy.js";
 
 interface Sandbox {
   image: string;
@@ -10,7 +10,11 @@ interface Sandbox {
   inferenceToken: string;
 }
 
-const maxRequests = 12;
+const baseRequestBudget = 12;
+const replyToolBudget = baseRequestBudget + discordReplyAttachmentLimit;
+const baseOutputChars = 16_384;
+const baseOutputTokens = 2048;
+const imageReplyOutputTokens = 8192;
 export const consentModel = "gpt-6-luna";
 
 export async function runCodex(
@@ -21,13 +25,16 @@ export async function runCodex(
   mcp: (body: Record<string, unknown>) => Promise<Response>,
 ) {
   const model = mode === "consent" ? consentModel : config.model;
+  const modelBudget = mode === "reply" ? replyToolBudget + 1 : baseRequestBudget;
+  const outputChars = baseOutputChars + (mode === "reply" ? discordReplyAttachmentLimit * discordReplyImageRefLengthLimit : 0);
   const folder = await mkdtemp(join(tmpdir(), "house-turn-"));
   const socket = join(folder, "turn.sock");
   const name = "house-turn-" + randomUUID();
-  const limit = AbortSignal.timeout(mode === "consent" ? 25_000 : 70_000);
+  const limit = AbortSignal.timeout(mode === "consent" ? 25_000 : 100_000);
   let server: ReturnType<typeof Bun.serve> | undefined;
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let toolCalls = 0;
+  let imageCalls = 0;
   let modelCalls = 0;
   let blockedRequests = 0;
   let upstreamStatus: number | null = null;
@@ -46,10 +53,16 @@ export async function runCodex(
         try {
           const body = await request.json() as Record<string, unknown>;
           if (url.pathname === "/mcp" && mode === "reply" && !url.search) {
-            if (body.method === "tools/call" && ++toolCalls > maxRequests) return new Response(null, { status: 429 });
+            if (body.method === "tools/call") {
+              toolCalls++;
+              if (body.name === "inspect_image") imageCalls++;
+              if (imageCalls > discordReplyAttachmentLimit || toolCalls - imageCalls > baseRequestBudget) {
+                return new Response(null, { status: 429 });
+              }
+            }
             return mcpBridgeResponse(await mcp(body));
           }
-          if (url.pathname !== "/v1/responses" || url.search || ++modelCalls > maxRequests) return new Response(null, { status: 403 });
+          if (url.pathname !== "/v1/responses" || url.search || ++modelCalls > modelBudget) return new Response(null, { status: 403 });
           const filtered = filterInference(body, model, allowed);
           if (!filtered) {
             blockedRequests++;
@@ -79,7 +92,7 @@ export async function runCodex(
       config.image, mode, model],
     { stdin: new Response(input).body!, stdout: "pipe", stderr: "ignore" });
     const [result, status] = await Promise.race([
-      Promise.all([readOutput(child.stdout), child.exited]),
+      Promise.all([readOutput(child.stdout, outputChars), child.exited]),
       new Promise<never>((_, reject) => limit.addEventListener("abort", () => reject(new Error("Codex timed out")), { once: true })),
     ]);
     if (status !== 0) throw new Error("Codex turn failed");
@@ -130,7 +143,9 @@ export function filterInference(body: Record<string, unknown>, model: string, al
     }
   }
   if (visible.size !== allowed.size) return null;
-  return { ...body, tools, tool_choice: "auto", store: false, max_output_tokens: 2048 };
+  // A visual reply can return ten signed references alongside its authored text.
+  const maxOutputTokens = allowed.has("inspect_image") ? imageReplyOutputTokens : baseOutputTokens;
+  return { ...body, tools, tool_choice: "auto", store: false, max_output_tokens: maxOutputTokens };
 }
 
 function localInput(value: unknown): boolean {
@@ -147,13 +162,13 @@ function localInput(value: unknown): boolean {
   return Object.values(item).every(localInput);
 }
 
-async function readOutput(stream: unknown) {
+async function readOutput(stream: unknown, limit: number) {
   if (!(stream instanceof ReadableStream)) throw new Error("Codex output unavailable");
   let output = "";
   const decoder = new TextDecoder();
   for await (const buffer of stream) {
     output += decoder.decode(buffer, { stream: true });
-    if (output.length > 16_384) throw new Error("Codex output too large");
+    if (output.length > limit) throw new Error("Codex output too large");
   }
   return output + decoder.decode();
 }
