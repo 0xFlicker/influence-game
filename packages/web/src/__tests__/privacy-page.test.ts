@@ -7,15 +7,15 @@ const pageSource = readFileSync(
 );
 
 describe("privacy policy page", () => {
-  it("discloses retained and optional wallet data without implying email signup creates a wallet", () => {
+  it("discloses retained and optional wallet data", () => {
     expect(pageSource).toContain("Wallet addresses associated with existing accounts or optional wallet sign-in, including previously created embedded wallets");
-    expect(pageSource).toContain("Email signup does not automatically create a wallet.");
     expect(pageSource).not.toContain("Wallet address (if used to connect your account)");
   });
 
   it("publishes the provided policy copy at a stable route", () => {
     expect(pageSource).toContain("Privacy Policy");
-    expect(pageSource).toContain("Last Updated: November 12, 2026");
+    expect(pageSource).toContain("Policy version November 12, 2026");
+    expect(pageSource).toContain("Notice clarified November 27, 2026");
     expect(pageSource).toContain("FALSE_FLOOR.websiteUrl");
     expect(pageSource).toContain("FALSE_FLOOR.supportEmail");
     expect(pageSource).toContain("False Floor operates");

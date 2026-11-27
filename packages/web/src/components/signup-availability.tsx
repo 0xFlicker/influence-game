@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getSignupAvailability, type SignupAvailability } from "@/lib/api";
 
+const CHECKING_SIGNUP_AVAILABILITY = "Checking signup availability…";
+
 export function useSignupAvailability(nextAvailableAt?: string) {
   const [status, setStatus] = useState<SignupAvailability | null>(
     nextAvailableAt ? { available: false, nextAvailableAt, rate: 0 } : null,
@@ -61,7 +63,7 @@ export function SignupAvailabilityNotice({ status, checking, failed, check, chec
           <strong className="font-semibold text-text-primary">Signups are full.</strong>{" "}
           Try again in about {wait}.
         </p>
-      ) : checking ? <p role="status">Checking signup availability…</p> : null}
+      ) : checking ? <p role="status">{CHECKING_SIGNUP_AVAILABILITY}</p> : null}
       {failed && <p role="alert">Signup availability is temporarily unavailable.</p>}
       {(!checking || minutes !== null) && (
         <button type="button" disabled={checking} className="influence-button-secondary min-h-11 rounded-lg px-3 py-2 text-sm"
@@ -78,9 +80,22 @@ function formatHourWait(minutes: number) {
   return `${hours} ${hours === 1 ? "hour" : "hours"}`;
 }
 
-export function SignupAvailabilityGate({ children, heading }: { children: ReactNode; heading?: ReactNode }) {
+export function SignupAvailabilityGate({ children, heading, pending }: {
+  children: ReactNode;
+  heading?: ReactNode;
+  pending?: ReactNode;
+}) {
   const availability = useSignupAvailability();
   if (availability.status?.available) return children;
+  if (pending && availability.checking && !availability.status && !availability.failed) {
+    return (
+      <>
+        {heading}
+        <p role="status" className="sr-only">{CHECKING_SIGNUP_AVAILABILITY}</p>
+        {pending}
+      </>
+    );
+  }
 
   return (
     <div className="influence-copy space-y-3 text-sm">

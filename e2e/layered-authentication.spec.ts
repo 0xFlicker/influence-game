@@ -78,6 +78,53 @@ test.describe("deterministic layered authentication", () => {
     await installTurnstileFixture(context);
   });
 
+  test("keeps the authentication modal in place while switching to signup", async ({ page }, testInfo) => {
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 620 }]) {
+      await test.step(`${viewport.width} × ${viewport.height}`, async () => {
+        const availabilityUrl = "**/api/auth/signup-availability";
+        const availability = Promise.withResolvers<void>();
+        await page.route(availabilityUrl, async route => {
+          await availability.promise;
+          const response = await route.fetch();
+          await route.fulfill({ response, json: { available: true, rate: 1, nextAvailableAt: null } });
+        });
+
+        try {
+          await page.setViewportSize(viewport);
+          await page.goto(`${harness.webUrl}/sign-in`);
+          const panel = page.getByRole("dialog", { name: "Influence authentication" });
+          const email = panel.getByLabel("Email", { exact: true });
+          const signupTab = panel.getByRole("tab", { name: "Create account" });
+          const skeleton = panel.getByTestId("signup-form-skeleton");
+          await expect(email).toBeVisible();
+          const signInBounds = await panel.boundingBox();
+          const tabBounds = await signupTab.boundingBox();
+
+          await signupTab.click();
+          await expect(panel.getByRole("status")).toHaveText("Checking signup availability…");
+          await expect(skeleton).toBeVisible();
+          await expect(email).toHaveCount(0);
+          await page.screenshot({ animations: "disabled", path: testInfo.outputPath(`signup-checking-${viewport.width}.png`) });
+          expect.soft(await panel.boundingBox()).toEqual(signInBounds);
+          expect.soft(await signupTab.boundingBox()).toEqual(tabBounds);
+
+          availability.resolve();
+          await expect(email).toBeVisible();
+          await expect(skeleton).toHaveCount(0);
+          expect.soft(await panel.boundingBox()).toEqual(signInBounds);
+          expect.soft(await signupTab.boundingBox()).toEqual(tabBounds);
+          await page.screenshot({ animations: "disabled", path: testInfo.outputPath(`signup-ready-${viewport.width}.png`) });
+          const privy = panel.getByRole("button", { name: "Continue with Privy" });
+          await privy.scrollIntoViewIfNeeded({ timeout: 5_000 });
+          await expect(privy).toBeInViewport();
+        } finally {
+          availability.resolve();
+          await page.unroute(availabilityUrl);
+        }
+      });
+    }
+  });
+
   test("shows an exhausted bucket in the signup panel before asking for credentials", async ({ page }, testInfo) => {
     let nextAvailableAt: string | null = new Date(Date.now() + 86_400_000).toISOString();
     await page.route("**/api/auth/signup-availability", async route => {
@@ -87,6 +134,7 @@ test.describe("deterministic layered authentication", () => {
     await page.goto(`${harness.webUrl}/sign-up`);
     const panel = page.getByRole("dialog", { name: "Influence authentication" });
     await expect(panel.getByRole("status")).toHaveText("Signups are full. Try again in about 24 hours.");
+    await expect(panel.getByTestId("signup-form-skeleton")).toHaveCount(0);
     await expect(panel.getByLabel("Email", { exact: true })).toHaveCount(0);
     await expect(panel.getByLabel("Password", { exact: true })).toHaveCount(0);
     await expect(panel.getByRole("button", { name: "Continue with Privy" })).toHaveCount(0);
@@ -97,8 +145,10 @@ test.describe("deterministic layered authentication", () => {
     await panel.getByRole("tab", { name: "Sign in" }).focus();
     await page.keyboard.press("Enter");
     await expect(panel.getByLabel("Email", { exact: true })).toBeVisible();
+    const signInBounds = await panel.boundingBox();
     await panel.getByRole("tab", { name: "Create account" }).click();
     await expect(panel.getByRole("status")).toHaveText(/Signups are full/);
+    expect(await panel.boundingBox()).toEqual(signInBounds);
     nextAvailableAt = null;
     await panel.getByRole("button", { name: "Check again" }).click();
     await expect(panel.getByLabel("Email", { exact: true })).toBeVisible();
