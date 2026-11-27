@@ -15,7 +15,8 @@ describe("privacy policy page", () => {
 
   it("publishes the provided policy copy at a stable route", () => {
     expect(pageSource).toContain("Privacy Policy");
-    expect(pageSource).toContain("Last Updated: November 12, 2026");
+    expect(pageSource).toContain("Policy version November 12, 2026");
+    expect(pageSource).toContain("Notice clarified November 27, 2026");
     expect(pageSource).toContain("FALSE_FLOOR.websiteUrl");
     expect(pageSource).toContain("FALSE_FLOOR.supportEmail");
     expect(pageSource).toContain("False Floor operates");
