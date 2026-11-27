@@ -1,5 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { isSignupCampaignLanding } from "@influence/engine/house-share-target";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { getPermissionsForUser } from "../db/rbac.js";
 import { containsEmailLike } from "../lib/display-name.js";
@@ -9,6 +10,7 @@ import { hashAccountEmail } from "../lib/verified-email.js";
 import { requirePermission, requireRole, type AuthEnv } from "../middleware/auth.js";
 import { countSysops, deleteAccountInTransaction } from "../services/account-deletion.js";
 import { parseHistoryCursor, readHouseParticipationPage } from "../services/house-participation.js";
+import { saveSignupCampaignShareLink } from "../services/house-share-links.js";
 import { changeSignupRate, createSignupCampaign, signupAvailability } from "../services/signup-admission.js";
 
 const operator = requireRole("admin", "sysop");
@@ -149,6 +151,21 @@ export function createAdminAccountRoutes(db: DrizzleDB) {
     const [campaign] = await db.update(schema.signupCampaigns).set({ closedAt: sql`coalesce(closed_at, clock_timestamp())` })
       .where(eq(schema.signupCampaigns.id, id)).returning({ id: schema.signupCampaigns.id });
     return campaign ? c.json({ closed: true }) : c.json({ error: "Campaign not found." }, 404);
+  });
+  app.post("/api/admin/signup-campaigns/:id/short-link", requirePermission("manage_invites"), async c => {
+    c.header("Cache-Control", "private, no-store");
+    const id = c.req.param("id");
+    if (!isUuidShapedPublicIdentity(id)) return c.json({ error: "Campaign not found." }, 404);
+    const body = await parseJsonBody(c, "campaign short link");
+    if (!isSignupCampaignLanding(body?.landing)) return c.json({ error: "Choose a campaign landing page." }, 400);
+    const [campaign] = await db.select({ id: schema.signupCampaigns.id, closedAt: schema.signupCampaigns.closedAt, endsAt: schema.signupCampaigns.endsAt })
+      .from(schema.signupCampaigns).where(eq(schema.signupCampaigns.id, id));
+    if (!campaign) return c.json({ error: "Campaign not found." }, 404);
+    if (campaign.closedAt || campaign.endsAt.getTime() <= Date.now()) {
+      return c.json({ error: "This campaign has ended." }, 409);
+    }
+    const { code } = await saveSignupCampaignShareLink(db, campaign.id, body.landing);
+    return c.json({ path: `/s/${code}` });
   });
   return app;
 }

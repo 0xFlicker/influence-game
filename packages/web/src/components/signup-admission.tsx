@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { isSignupCampaignLinkCode } from "@influence/engine/house-share-target";
 import { providerAuthFetch } from "@/lib/api";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import { installSignupPrompt, registerCampaignRedemption, type SignupStep } from "@/lib/signup-verification";
@@ -62,11 +63,12 @@ export function SignupAdmission({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const match = /^#signup_campaign=([A-Za-z0-9_-]{43})$/.exec(location.hash);
-    if (!match) return;
+    const prefix = "#signup_campaign=";
+    const code = location.hash.startsWith(prefix) ? location.hash.slice(prefix.length) : undefined;
+    if (!isSignupCampaignLinkCode(code)) return;
     history.replaceState(history.state, "", location.pathname + location.search);
     registerCampaignRedemption(providerAuthFetch("/api/auth/signup-campaign/session", {
-      method: "POST", credentials: "include", signal: AbortSignal.timeout(8000), body: JSON.stringify({ code: match[1] }),
+      method: "POST", credentials: "include", signal: AbortSignal.timeout(8000), body: JSON.stringify({ code }),
     }));
   }, []);
 

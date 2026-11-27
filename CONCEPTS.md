@@ -563,6 +563,9 @@ also require human verification. Signup checks estimated availability before
 starting provider verification and claims the slot when the account commits.
 See [signup admission](docs/authentication/signup-admission.md).
 
+Campaign operators can publish a House short link to an approved landing page.
+The campaign window controls signup session issuance for both link formats.
+
 ## Public player profile
 
 The anonymously loadable, shareable competitive résumé addressed by a public player handle or UUID. It contains only public player identity, the current saved agent roster, and deterministic facts already derived from existing season, career, result, and agent records. The private dashboard, account and wallet data, agent editing, prompts, backstory, strategy, revisions, reasoning, cognitive and provider artifacts, and administrator data do not cross this boundary.

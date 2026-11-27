@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { Hono } from "hono";
+import type { AuthEnv } from "../middleware/auth.js";
+import { createAdminAccountRoutes } from "../routes/admin-accounts.js";
 import { createAuthRoutes } from "../routes/auth.js";
+import { createHouseShareRoutes } from "../routes/house-share-links.js";
 import { CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION } from "../services/legal-acceptance.js";
 import { setupTestDB } from "./test-utils.js";
 import {
@@ -78,6 +81,52 @@ test("a campaign session survives closing and is consumed once, only by a commit
   await db.transaction(tx => admitSignup(tx, "rolled-back", session.token));
   await expect(db.transaction(tx => admitSignup(tx, "fresh", session.token))).rejects.toMatchObject({ code: "SIGNUP_LIMIT_REACHED" });
   await expect(db.transaction(tx => admitSignup(tx, "rolled-back", session.token))).rejects.toMatchObject({ code: "SIGNUP_VERIFICATION_REQUIRED" });
+});
+
+test("operators shorten an existing campaign without changing its original link or admission window", async () => {
+  const db = await setupTestDB();
+  process.env.JWT_SECRET = "campaign-short-link-test";
+  const campaign = await createSignupCampaign(db, "Campaign", new Date(Date.now() + 600_000), new Date(Date.now() + 1_200_000));
+  const app = new Hono<AuthEnv>().use("*", async (c, next) => {
+    c.set("userPermissions", c.req.header("test-operator") ? ["manage_invites"] : []);
+    await next();
+  }).route("/", createAdminAccountRoutes(db))
+    .route("/", createHouseShareRoutes(db))
+    .route("/", createAuthRoutes(db, { managedAuthMode: "disabled" }));
+  const post = (path: string, body: object, operator = false) => app.request(path, {
+    method: "POST", headers: { "Content-Type": "application/json", ...(operator && { "test-operator": "yes" }) },
+    body: JSON.stringify(body),
+  });
+  const adminPath = `/api/admin/signup-campaigns/${campaign.id}`;
+  const shortLink = (landing: string, operator = true) => post(`${adminPath}/short-link`, { landing }, operator);
+  expect((await shortLink("/season-1/create", false)).status).toBe(403);
+  expect((await shortLink("//example.com")).status).toBe(400);
+  expect((await post("/api/share-links", { path: `/_signup-campaign/${campaign.id}/season-1/create` })).status).toBe(400);
+
+  const created = await shortLink("/season-1/create");
+  expect(created.status).toBe(200);
+  const { path } = await created.json() as { path: string };
+  expect(path).toMatch(/^\/s\/[1-9A-HJ-NP-Za-km-z]{10}$/);
+  expect(await (await shortLink("/season-1/create")).json()).toEqual({ path });
+  expect(await (await shortLink("/sign-up")).json()).not.toEqual({ path });
+  const code = path.slice(3);
+  expect(await (await app.request(`/api/share-links/${code}`)).json()).toEqual({
+    code, path: "/season-1/create", signupCampaign: true,
+  });
+  const redeem = (linkCode: string) => post("/api/auth/signup-campaign/session", { code: linkCode });
+  expect((await redeem(code)).status).toBe(404);
+  await db.execute(sql`UPDATE signup_campaigns SET starts_at = now() - interval '1 minute' WHERE id = ${campaign.id}`);
+  const redeemed = await redeem(code);
+  expect(redeemed.status).toBe(200);
+  expect(redeemed.headers.get("set-cookie")).toContain("Max-Age=86400");
+  expect((await redeem(campaign.code)).status).toBe(200);
+  const ordinary = await post("/api/share-links", { path: "/rules" });
+  expect((await redeem((await ordinary.json() as { code: string }).code)).status).toBe(404);
+
+  expect((await post(`${adminPath}/close`, {}, true)).status).toBe(200);
+  expect((await shortLink("/sign-up")).status).toBe(409);
+  expect((await redeem(code)).status).toBe(404);
+  expect((await app.request(`/api/share-links/${code}`)).status).toBe(200);
 });
 
 test("Farcaster requires proof for a new account, preserves existing sign-in and rejects reused proof", async () => {

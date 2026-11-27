@@ -26,6 +26,12 @@ creation and resolution check game visibility/status and public profile identity
 Unlisted games retain their existing link-access semantics; hidden games do not
 become accessible through a saved link. Missing codes return 404.
 
+People → Invites uses the same short-link resolver for signup campaigns.
+Operators with `manage_invites` can choose from the existing campaign landing
+pages. The saved target identifies the campaign and landing page. The campaign
+session endpoint checks the active window before issuing a signup pass. See
+[signup admission](authentication/signup-admission.md).
+
 The first icon click captures the replay cue, cue-local time and settings
 synchronously and opens a small native HTML dialog. After link creation, Copy link
 and a second share-icon button operate on the short URL. This fresh user gesture
@@ -105,7 +111,7 @@ and awards after rendering. These responses remain uncached so withdrawn content
 is not served from the application cache.
 
 Farcaster's action points back to `/s/<code>?app=mini`. Farcaster can merge cast URL
-parameters into its launch action, so this resolver discards everything except the
+parameters into its launch action, so ordinary shares discard everything except the
 Mini App context hint before opening the saved route. It cannot override the cue,
 time, speed, audience or settings. The full app retains its existing navigation and
 authentication. Native host sign-in/wallet behavior still needs live host testing;
