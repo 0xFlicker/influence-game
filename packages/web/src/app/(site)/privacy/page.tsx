@@ -86,7 +86,6 @@ export default function PrivacyPage() {
               We use the address during verification and exact support lookup.
               Your sign-in provider may retain your email address. If you email
               support, we keep your address in the correspondence you send us.
-              Email signup does not automatically create a wallet.
               We do not collect passwords when authentication is handled through
               third-party providers.
             </P>
