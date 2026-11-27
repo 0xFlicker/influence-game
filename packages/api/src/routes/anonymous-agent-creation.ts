@@ -55,9 +55,9 @@ export function createAnonymousAgentCreationRoutes(db: DrizzleDB, generate = gen
       throw new GenerationAdmissionError("generation_unavailable", "The House preview is unavailable. Try again later.", 503);
     }
     return c.json(await runAnonymousText(db, { visitorHash: await visitorHash(c), requestKey,
-      model: config?.modelId ?? "test", payload: body }, async record => {
+      model: config?.modelId ?? "test", payload: body }, async attempt => {
       const names = await db.select({ name: schema.agentProfiles.name }).from(schema.agentProfiles);
-      return generate(body as unknown as AnonymousCreationInput, c.req.raw.signal, record, new Set(names.map(row => row.name)));
+      return generate(body as unknown as AnonymousCreationInput, c.req.raw.signal, attempt, new Set(names.map(row => row.name)));
     }));
   });
   return app;

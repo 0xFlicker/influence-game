@@ -1,4 +1,5 @@
 import { loadPayloads } from "../services/payload-storage.js";
+import onomaverse from "../data/onomaverse-v2026.10.json";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
@@ -9,6 +10,7 @@ import { FAILURE_HEADER, REQUEST_ID_HEADER, uuid } from "@influence/engine/opera
 import { requestDiagnostics } from "../middleware/request-diagnostics.js";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
+import type { TextProviderAttempt } from "../services/text-provider-attempts.js";
 import { runAnonymousText, readAnonymousAllowance } from "../services/anonymous-text-usage.js";
 import { decodeAnonymousCreationTurn, type AnonymousCreationTurn } from "../services/anonymous-agent-creation.js";
 import { createAnonymousAgentCreationRoutes } from "../routes/anonymous-agent-creation.js";
@@ -32,8 +34,8 @@ describe("Anonymous preview pool", () => {
   test("racing visitors share one global slot; denial does not spend the loser's message", async () => {
     let calls = 0;
     const visitors = [input(), input()];
-    const results = await Promise.allSettled(visitors.map(value => runAnonymousText(db, value, async record => {
-      calls++; await record(response); return turn;
+    const results = await Promise.allSettled(visitors.map(value => runAnonymousText(db, value, async attempt => {
+      calls++; await attempt(async () => response); return turn;
     })));
     expect(calls).toBe(1);
     expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
@@ -48,7 +50,7 @@ describe("Anonymous preview pool", () => {
 
   test("response-loss replay is free; a second request requires signup even after the minute", async () => {
     const value = input(); let calls = 0;
-    const run = async (record: (response: ChatCompletion) => Promise<void>) => { calls++; await record(response); return turn; };
+    const run = async (attempt: TextProviderAttempt) => { calls++; await attempt(async () => response); return turn; };
     expect(await runAnonymousText(db, value, run)).toEqual(turn);
     expect(await runAnonymousText(db, value, run)).toEqual(turn);
     expect(calls).toBe(1);
@@ -62,8 +64,8 @@ describe("Anonymous preview pool", () => {
 
   test("malformed output is not accepted, retains cost evidence, and can be retried after the minute", async () => {
     const value = input();
-    await expect(runAnonymousText(db, value, async record => {
-      await record(response); return decodeAnonymousCreationTurn("{}", naming);
+    await expect(runAnonymousText(db, value, async attempt => {
+      await attempt(async () => response); return decodeAnonymousCreationTurn("{}", naming);
     })).rejects.toThrow("Invalid House preview fields");
     expect(await readAnonymousAllowance(db, value.visitorHash)).toEqual({ used: false });
     const [operation] = await loadPayloads(db.select().from(schema.anonymousTextOperations));
@@ -74,7 +76,7 @@ describe("Anonymous preview pool", () => {
 
   test("unknown transport outcome reserves the visitor's message and cannot dispatch again", async () => {
     const value = input();
-    await expect(runAnonymousText(db, value, async () => { throw new Error("connection lost"); })).rejects.toThrow("connection lost");
+    await expect(runAnonymousText(db, value, attempt => attempt(async () => { throw new Error("connection lost"); }))).rejects.toThrow("connection lost");
     expect(await readAnonymousAllowance(db, value.visitorHash)).toEqual({ used: true });
     await reopenMinute();
     await expect(runAnonymousText(db, { ...value, requestKey: randomUUID() }, async () => turn)).rejects.toMatchObject({ code: "anonymous_signup_required" });
@@ -83,8 +85,8 @@ describe("Anonymous preview pool", () => {
 
   test("public session, cookie replay and admission errors work without a user row; private writes remain gated", async () => {
     let calls = 0;
-    const app = new Hono().route("/", createAnonymousAgentCreationRoutes(db, async (_body, _signal, record) => {
-      calls++; await record(response); return structuredClone(turn) as AnonymousCreationTurn;
+    const app = new Hono().route("/", createAnonymousAgentCreationRoutes(db, async (_body, _signal, attempt) => {
+      calls++; await attempt(async () => response); return structuredClone(turn) as AnonymousCreationTurn;
     })).route("/", createAgentProfileRoutes(db));
     const status = await app.request("/api/agent-profiles/anonymous");
     expect(await status.json()).toEqual({ used: false });
@@ -127,10 +129,16 @@ describe("Anonymous preview pool", () => {
     globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input.toString(), init);
       const body = await request.json() as {
-        response_format: { json_schema: { schema: { properties: { profile: { anyOf: [{
+        response_format: { json_schema: { name: string; strict: boolean; schema: { properties: { profile: { anyOf: [{
           properties: { name: { anyOf: [{ properties: { value: { enum: string[] } } }] } };
         }] } } } } };
       };
+      if (body.response_format.json_schema.name === "agent_naming_cues") {
+        expect(body.response_format.json_schema.strict).toBe(true);
+        return Response.json({ ...response, id: "preview-cues", choices: [{ index: 0, finish_reason: "stop", message: {
+          role: "assistant", content: JSON.stringify({ cues: [{ country: "PL", quote: "Polish-speaking family" }] }),
+        } }] });
+      }
       const profileSchema = body.response_format.json_schema.schema.properties.profile.anyOf[0];
       offeredNames = profileSchema.properties.name.anyOf[0].properties.value.enum;
       const name = { source: "shortlist", value: returnOutsideName ? "First9 Last9" : offeredNames[0] };
@@ -139,13 +147,19 @@ describe("Anonymous preview pool", () => {
     }, { preconnect: originalFetch.preconnect });
     const preview = () => app.request("/api/agent-profiles/anonymous", {
       method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": randomUUID() },
-      body: JSON.stringify({ message: "A quiet diplomat", creationTraitIds: [] }),
+      body: JSON.stringify({ message: "A quiet diplomat raised in a Polish-speaking family", creationTraitIds: [] }),
     });
     try {
       const valid = await preview();
       expect(valid.status).toBe(200);
       expect(offeredNames).toHaveLength(8);
+      const polishPool = onomaverse.find(pool => pool.country === "PL")!;
+      expect(offeredNames.filter(candidate => polishPool.givenNames.some(given =>
+        candidate.startsWith(given + " ") && polishPool.surnames.includes(candidate.slice(given.length + 1)),
+      )).length).toBeGreaterThanOrEqual(6);
       expect(await valid.json()).toMatchObject({ profile: { name: offeredNames[0] } });
+      const [operation] = await loadPayloads(db.select().from(schema.anonymousTextOperations));
+      expect(operation).toMatchObject({ state: "succeeded", promptTokens: 40, completionTokens: 20, providerRequestId: response.id });
       await reopenMinute();
       returnOutsideName = true;
       expect((await preview()).status).toBe(502);

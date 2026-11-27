@@ -17,17 +17,17 @@ tags: [agent-creation, structured-output, mobile, portrait, pointer-events]
 
 The canonical creator is `/agents/create`. A page-level AuthGate prevented new
 visitors from seeing the hall or trying the assistant, so admission now happens
-at generation and save actions. The anonymous first turn uses one strict
-`{reply, profile}` generation rather than spending its preview on a separate
-command-router call. A signed browser cookie and PostgreSQL advisory lock enforce
-one successful preview per browser and one shared dispatch per minute. Busy
+at generation and save actions. The anonymous first turn writes one strict
+`{reply, profile}` response after a bounded naming cue check. A signed browser
+cookie and PostgreSQL advisory lock enforce one successful preview per browser
+and one shared preview admission per minute. Busy
 admission consumes no visitor allowance; accepted retries replay their stored
 result. Anonymous spending has its own admin pool.
 
-The profile writer now chooses a name from a server-drawn Onomaverse shortlist
-in the same provider call. Enforce the offered full-name enum at decoding.
-Explicit names and inspiration are structured alternatives grounded in the
-player's own text, so the anonymous endpoint keeps its one-dispatch contract.
+The profile writer chooses from the server-drawn Onomaverse shortlist. The
+cue check can steer up to six slots to matching country pools. At least two
+slots use the broad draw. Enforce the offered full-name enum at decoding and
+ground explicit names and inspiration in the player's own text.
 See [generated names](../../agent-creation-assistant.md#generated-names).
 
 Keep the active draft storage owner stable while authentication changes. This

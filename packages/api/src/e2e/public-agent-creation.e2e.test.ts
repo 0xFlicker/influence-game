@@ -86,8 +86,8 @@ beforeAll(async () => {
     "/",
     createAnonymousAgentCreationRoutes(
       database.db,
-      async (_input, _signal, record) => {
-        await record(response);
+      async (_input, _signal, attempt) => {
+        await attempt(async () => response);
         return {
           reply: "Mira builds trust, but may hesitate to act. Does she feel right?",
           profile,
@@ -109,8 +109,8 @@ beforeAll(async () => {
             model: response.model,
             payload: await c.req.json(),
           },
-          async (record) => {
-            await record(response);
+          async (attempt) => {
+            await attempt(async () => response);
             return {
               command: "clarify",
               reply: "Your account is ready. We can keep shaping Mira.",

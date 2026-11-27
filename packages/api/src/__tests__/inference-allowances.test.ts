@@ -101,8 +101,8 @@ describe('account inference allowances',()=>{
  test('text response-loss replay returns the stored result without another provider call or debit',async()=>{
   const input={userId:owner,requestKey:randomUUID(),kind:'profile_creation',model:'gpt-5.6-luna',payload:{idea:'detective'}};
   let calls=0;
-  const run=async(record:Parameters<Parameters<typeof runAccountText>[2]>[0])=>{
-    calls++;await record({id:'fake-response',object:'chat.completion',created:0,model:'gpt-5.6-luna',choices:[],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});
+  const run=async(attempt:Parameters<Parameters<typeof runAccountText>[2]>[0])=>{
+    calls++;await attempt(async()=>({id:'fake-response',object:'chat.completion',created:0,model:'gpt-5.6-luna',choices:[],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}}));
     return {name:'Mira'};
   };
   expect(await runAccountText(db,input,run)).toEqual({name:'Mira'});
@@ -111,14 +111,19 @@ describe('account inference allowances',()=>{
   await expect(runAccountText(db,{...input,payload:{idea:'changed'}},run)).rejects.toMatchObject({code:'request_conflict'});
  });
  test('confirmed text failures refund allowance but retain spend evidence; transport ambiguity remains reserved',async()=>{
-  await expect(runAccountText(db,{userId:owner,requestKey:randomUUID(),kind:'profile_creation',model:'test',payload:{}},async record=>{
-    await record({id:'bad-response',object:'chat.completion',created:0,model:'test',choices:[],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}});
+  await expect(runAccountText(db,{userId:owner,requestKey:randomUUID(),kind:'profile_creation',model:'test',payload:{}},async attempt=>{
+    await attempt(async()=>({id:'bad-response',object:'chat.completion',created:0,model:'test',choices:[],usage:{prompt_tokens:20,completion_tokens:10,total_tokens:30}}));
     throw new Error('Invalid structured output');
   })).rejects.toThrow('Invalid structured output');
   expect((await readInferenceAccount(db,admin,owner)).account.textBalance).toBe(100);
   expect((await loadPayloads(db.select().from(schema.accountTextOperations)))[0]!.promptTokens).toBe(20);
-  await expect(runAccountText(db,{userId:owner,requestKey:randomUUID(),kind:'profile_creation',model:'test',payload:{}},async()=>{throw new TypeError('Network disconnected');})).rejects.toThrow('Network disconnected');
+  await expect(runAccountText(db,{userId:owner,requestKey:randomUUID(),kind:'profile_creation',model:'test',payload:{},attemptLimit:2},async attempt=>{
+    await attempt(async()=>({id:'cue-response',object:'chat.completion',created:0,model:'gpt-5.6-luna',choices:[],usage:{prompt_tokens:9,completion_tokens:2,total_tokens:11}}));
+    return attempt(async()=>{throw new TypeError('Network disconnected');});
+  })).rejects.toThrow('Network disconnected');
   const detail=await readInferenceAccount(db,admin,owner);expect(detail.account.textBalance).toBe(99);expect(detail.pending[0]!.state).toBe('uncertain');
+  const operations=await loadPayloads(db.select().from(schema.accountTextOperations));
+  expect(operations.find(operation=>operation.state==='uncertain')).toMatchObject({promptTokens:9,completionTokens:2,providerRequestId:'cue-response'});
  });
 
 });

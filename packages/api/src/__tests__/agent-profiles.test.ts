@@ -1,4 +1,5 @@
 import { hashAccountEmail } from "../lib/verified-email.js";
+import onomaverse from "../data/onomaverse-v2026.10.json";
 import { loadPayloads } from "../services/payload-storage.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
@@ -1644,6 +1645,9 @@ describe("Agent Profile API", () => {
       );
       const originalFetch = globalThis.fetch;
       const requestBodies: Array<Record<string, unknown>> = [];
+      const cueBodies: Array<Record<string, unknown>> = [];
+      const polishBackground = "Raised in a Polish-speaking family.";
+      let cueContent = JSON.stringify({ cues: [] });
       let shortlist: string[] = [];
       let nameOverride: { source: string; value: string; request?: string } | undefined;
 
@@ -1655,8 +1659,15 @@ describe("Agent Profile API", () => {
         async (input: string | URL | Request, init?: RequestInit) => {
           const request = input instanceof Request ? input : new Request(input.toString(), init);
           const body = await request.json() as Record<string, unknown> & {
-            response_format: { json_schema: { schema: { properties: { name: { anyOf?: unknown[] } } } } };
+            response_format: { json_schema: { name: string; strict: boolean; schema: { properties: { name: { anyOf?: unknown[] } } } } };
           };
+          if (body.response_format.json_schema.name === "agent_naming_cues") {
+            cueBodies.push(body);
+            expect(body.response_format.json_schema.strict).toBe(true);
+            return Response.json({ id: "cue-test", object: "chat.completion", model: "gpt-6-luna",
+              choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: cueContent } }],
+              usage: { prompt_tokens: 25, completion_tokens: 5, total_tokens: 30 } });
+          }
           requestBodies.push(body);
           const nameSchema = body.response_format.json_schema.schema.properties.name;
           const options = (nameSchema.anyOf ?? [nameSchema]) as {
@@ -1707,6 +1718,7 @@ describe("Agent Profile API", () => {
         );
         expect(generated.status).toBe(200);
         expect(shortlist).toHaveLength(8);
+        expect(cueBodies).toHaveLength(1);
         expect(await generated.json()).toMatchObject({ name: shortlist[0], backstory: expect.stringContaining(shortlist[0]!) });
         const refined = await app.request(
           "/api/agent-profiles/generate",
@@ -1751,9 +1763,11 @@ describe("Agent Profile API", () => {
         expect(unrestrictedGender.status).toBe(200);
         expect(await unrestrictedGender.json()).toMatchObject({ gender: "female" });
         expect(JSON.stringify(requestBodies.at(-1)?.messages)).not.toContain("Required gender: male");
+        const cueCount = cueBodies.length;
         const explicit = await app.request("/api/agent-profiles/generate", jsonReq({ name: "Xóchitl", traits: "Patient" }, tokenA));
         expect(explicit.status).toBe(200);
         expect(shortlist).toHaveLength(0);
+        expect(cueBodies).toHaveLength(cueCount);
         expect(await explicit.json()).toMatchObject({ name: "Xóchitl" });
 
         const suppliedRequest = "Call this quiet diplomat Moss.";
@@ -1769,7 +1783,21 @@ describe("Agent Profile API", () => {
         const inspired = await app.request("/api/agent-profiles/generate", jsonReq({ changeRequest: request }, tokenA));
         expect(inspired.status).toBe(200);
         expect(await inspired.json()).toMatchObject({ name: "Orris" });
-        expect(requestBodies).toHaveLength(11);
+
+        nameOverride = undefined;
+        cueContent = JSON.stringify({ cues: [{ country: "PL", quote: polishBackground }] });
+        const grounded = await app.request("/api/agent-profiles/generate", jsonReq({ backstoryIdea: polishBackground }, tokenA));
+        expect(grounded.status).toBe(200);
+        expect(JSON.stringify(cueBodies.at(-1)?.messages)).toContain(polishBackground);
+        expect(shortlist).toHaveLength(8);
+        const polishPool = onomaverse.find(pool => pool.country === "PL")!;
+        expect(shortlist.filter(candidate => polishPool.givenNames.some(given =>
+          candidate.startsWith(given + " ") && polishPool.surnames.includes(candidate.slice(given.length + 1)),
+        )).length).toBeGreaterThanOrEqual(6);
+        expect(await grounded.json()).toMatchObject({ name: shortlist[0] });
+        const cueOnly = await app.request("/api/agent-profiles/generate", jsonReq({ traits: "A reserved painter" }, tokenA));
+        expect(cueOnly.status).toBe(502);
+        expect(requestBodies).toHaveLength(12);
         for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
         for (const body of requestBodies) expect(JSON.stringify(body.messages)).toContain("The Short List votes off the player with the fewest positive votes");
         expect(new Set(requestBodies.map(body => body.model))).toEqual(new Set(["gpt-6-luna"]));

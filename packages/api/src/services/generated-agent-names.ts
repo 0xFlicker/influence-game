@@ -5,44 +5,67 @@ import { normalizeAgentProfileName, RESERVED_AGENT_PROFILE_NAMES } from "./agent
 
 const normalizeName = (name: string) => normalizeAgentProfileName(name.normalize("NFC"));
 const shortlistSize = 8;
+const broadSlots = 2;
 
-const givenNames = new Map<string, { givenName: string; surnames: string[] }[]>();
-for (const { givenNames: names, surnames } of onomaverse) {
+export const NAME_POOL_COUNTRIES = onomaverse.map(pool => pool.country);
+type NamePool = { country: string; givenName: string; surnames: string[] };
+const givenNames = new Map<string, NamePool[]>();
+for (const { country, givenNames: names, surnames } of onomaverse) {
   for (const givenName of names) {
     const key = normalizeName(givenName);
     const pools = givenNames.get(key) ?? [];
-    pools.push({ givenName, surnames });
+    pools.push({ country, givenName, surnames });
     givenNames.set(key, pools);
   }
 }
 const namingPools = [...givenNames.values()];
 
-export function drawAgentNameShortlist(occupiedNames: ReadonlySet<string>): string[] {
+export function drawAgentNameShortlist(occupiedNames: ReadonlySet<string>, countries: readonly string[] = []): string[] {
   const unavailable = new Set([...RESERVED_AGENT_PROFILE_NAMES, ...occupiedNames].map(normalizeName));
-  const remaining = [...namingPools];
+  const usedGivenNames = new Set<string>();
   const shortlist: string[] = [];
-  while (shortlist.length < shortlistSize && remaining.length) {
-    const index = randomInt(remaining.length);
-    const pools = [...remaining[index]!];
-    remaining[index] = remaining.at(-1)!;
-    remaining.pop();
+  function draw(source: readonly NamePool[][], targetSize: number) {
+    const remaining = [...source];
+    while (shortlist.length < targetSize && remaining.length) {
+      const index = randomInt(remaining.length);
+      const pools = [...remaining[index]!];
+      remaining[index] = remaining.at(-1)!;
+      remaining.pop();
+      const normalizedGivenName = normalizeName(pools[0]!.givenName);
+      if (usedGivenNames.has(normalizedGivenName)) continue;
 
-    while (pools.length) {
-      const [pool] = pools.splice(randomInt(pools.length), 1);
-      const { givenName, surnames } = pool!;
-      const normalizedGivenName = normalizeName(givenName);
-      const eligible = surnames.filter(surname =>
-        givenName.length + surname.length + 1 <= AGENT_PROFILE_LIMITS.name
-        && normalizedGivenName !== normalizeName(surname)
-        && !unavailable.has(normalizeName(`${givenName} ${surname}`)));
-      if (!eligible.length) continue;
-      const candidate = `${givenName} ${eligible[randomInt(eligible.length)]}`;
-      shortlist.push(candidate);
-      unavailable.add(normalizeName(candidate));
-      break;
+      while (pools.length) {
+        const { givenName, surnames } = pools.splice(randomInt(pools.length), 1)[0]!;
+        const eligible = surnames.filter(surname =>
+          givenName.length + surname.length + 1 <= AGENT_PROFILE_LIMITS.name
+          && normalizedGivenName !== normalizeName(surname)
+          && !unavailable.has(normalizeName(`${givenName} ${surname}`)));
+        if (!eligible.length) continue;
+        const candidate = `${givenName} ${eligible[randomInt(eligible.length)]}`;
+        shortlist.push(candidate);
+        usedGivenNames.add(normalizedGivenName);
+        unavailable.add(normalizeName(candidate));
+        break;
+      }
     }
   }
+  if (countries.length) {
+    draw(namingPools, broadSlots);
+    const perCountry = (shortlistSize - broadSlots) / countries.length;
+    for (const country of countries) {
+      const pools = namingPools.map(matches => matches.filter(pool => pool.country === country))
+        .filter(matches => matches.length);
+      draw(pools, shortlist.length + Math.floor(perCountry));
+    }
+  }
+  draw(namingPools, shortlistSize);
   if (shortlist.length !== shortlistSize) throw new Error("Could not draw eight available agent names");
+  if (countries.length) {
+    for (let i = shortlist.length - 1; i > 0; i--) {
+      const other = randomInt(i + 1);
+      [shortlist[i], shortlist[other]] = [shortlist[other]!, shortlist[i]!];
+    }
+  }
   return shortlist;
 }
 

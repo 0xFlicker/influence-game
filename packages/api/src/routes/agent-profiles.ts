@@ -17,6 +17,7 @@ import {isPlayerVoiceId,PLAYER_VOICES,VOICE_AUDITION_VERSION} from "@influence/e
 import { generationContacts } from "../services/generation-admission-error.js";
 import { randomUUID } from "node:crypto";
 import { drawAgentNameShortlist, type CharacterNaming } from "../services/generated-agent-names.js";
+import { resolveAgentNamingCountries } from "../services/agent-naming-cues.js";
 import { runAccountText, GenerationAdmissionError } from "../services/account-text-usage.js";
 import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
@@ -166,7 +167,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
     try {
       return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
-        record => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, record)));
+        attempt => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, attempt)));
     } catch (error) {
       if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts, requestId }, error.status);
       generationFailure(c, error);
@@ -190,7 +191,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       const message = body.message;
       const turn = await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
-        record => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, record));
+        attempt => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, attempt));
       // Meaningful creation start: first successful assistant turn per
       // account. The deterministic ID makes retries/replays count once.
       await recordAgentCreationStarted(db, { userId: c.get("user").id, channel: "web" });
@@ -387,7 +388,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       const sourceUrl = needsReference ? existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl : null;
       const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
       const result = await runAccountText(db, { userId: c.get("user").id, requestKey: requestId,
-        kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body }, async record => {
+        kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body, attemptLimit: 2 }, async attempt => {
         const fixedName = explicitName || (
           editFields && !editFields.includes("name") ? existingName
             : !editFields && !namingText.length ? existingName || undefined : undefined
@@ -399,13 +400,16 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
           const existingNames = await db.select({ name: schema.agentProfiles.name }).from(schema.agentProfiles);
           const occupiedNames = new Set(existingNames.map(profile => profile.name));
           if (existingName) occupiedNames.add(existingName);
+          const background = existingProfile?.backstory;
+          const cueText = typeof background === "string" && background.trim() ? [...namingText, background] : namingText;
+          const countries = await resolveAgentNamingCountries(llmConfig, cueText, attempt, c.req.raw.signal);
           naming = {
-            shortlist: drawAgentNameShortlist(occupiedNames),
+            shortlist: drawAgentNameShortlist(occupiedNames, countries),
             userText: namingText,
             currentName: !editFields && existingName ? existingName : undefined,
           };
         }
-        const response = await openai.chat.completions.create({
+        const response = await attempt(() => openai.chat.completions.create({
           model: llmConfig.modelId,
           service_tier: "default",
           reasoning_effort: "low",
@@ -425,8 +429,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
               schema: characterProfileSchemaFor(naming, allowedPersonaKeys, editFields ?? undefined),
             },
           },
-        }, { signal: c.req.raw.signal, maxRetries: 0 });
-        await record(response);
+        }, { signal: c.req.raw.signal, maxRetries: 0 }));
 
         const generated = decodeGenerationOutput(() => {
           const choice = response.choices[0];

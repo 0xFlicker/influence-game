@@ -1,5 +1,6 @@
 import { characterNameSchema, decodeCharacterName, drawAgentNameShortlist } from "../services/generated-agent-names.js";
 import onomaverse from "../data/onomaverse-v2026.10.json";
+import { decodeAgentNamingCues } from "../services/agent-naming-cues.js";
 import { describe, expect, test } from "bun:test";
 import {
   resolveAgentProfileGenerationLlm,
@@ -76,6 +77,22 @@ describe("generated agent names", () => {
     expect(() => decodeCharacterName({ source: "provided", value: "Mira Vale" }, naming)).toThrow();
   });
 
+  test("steers six slots toward two family pools and keeps a broad draw", () => {
+    let sawBroadName = false;
+    const matches = (name: string, country: string) => {
+      const pool = onomaverse.find(candidate => candidate.country === country)!;
+      return pool.givenNames.some(given => name.startsWith(given + " ") && pool.surnames.includes(name.slice(given.length + 1)));
+    };
+    for (let i = 0; i < 5; i++) {
+      const names = drawAgentNameShortlist(new Set(), ["PL", "MX"]);
+      expect(new Set(names).size).toBe(8);
+      expect(names.filter(name => matches(name, "PL")).length).toBeGreaterThanOrEqual(3);
+      expect(names.filter(name => matches(name, "MX")).length).toBeGreaterThanOrEqual(3);
+      sawBroadName ||= names.some(name => !matches(name, "PL") && !matches(name, "MX"));
+    }
+    expect(sawBroadName).toBe(true);
+  });
+
   test("preserves an explicit mononym and allows original names with a quoted inspiration request", () => {
     const userText = ["Give this character the name Xóchitl.", "Invent a name, using the options as inspiration."];
     const withRequests = { ...naming, userText };
@@ -96,6 +113,21 @@ describe("generated agent names", () => {
     expect(decodeCharacterName({ source: "fixed", value: "Xóchitl" }, refinement)).toBe("Xóchitl");
     expect(decodeCharacterName({ source: "shortlist", value: shortlist[0], request }, refinement)).toBe(shortlist[0]!);
     expect(() => decodeCharacterName({ source: "shortlist", value: shortlist[0] }, refinement)).toThrow();
+  });
+});
+
+describe("country cues", () => {
+  const quote = "raised in a Polish-speaking family";
+  const userText = [`An archivist ${quote}.`];
+  const valid = { country: "PL", quote };
+  test("accepts supported, quoted family cues and the broad draw decision", () => {
+    expect(decodeAgentNamingCues(JSON.stringify({ cues: [valid] }), userText)).toEqual(["PL"]);
+    expect(decodeAgentNamingCues('{"cues":[]}', ["A reserved archivist"])).toEqual([]);
+  });
+  test.each(["not JSON", "{}", '{"cues":null}', '{"cues":[{}]}', '{"cues":[],"extra":false}',
+    ...[[{ ...valid, country: "ZZ" }], [{ ...valid, quote: "a Polish name" }], [valid, valid], [{ ...valid, extra: true }]]
+      .map(cues => JSON.stringify({ cues }))])("rejects malformed or ungrounded cue output: %s", document => {
+    expect(() => decodeAgentNamingCues(document, userText)).toThrow();
   });
 });
 
