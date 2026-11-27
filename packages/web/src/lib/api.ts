@@ -2206,6 +2206,7 @@ export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "pe
 export interface SavedAgent {
   profileHref?: string | null;
   transparentBodyUrl?: string | null;
+  submittedArtwork?: { imageUrl: string | null; hasFullBody: boolean } | null;
   reviewState?: "accepted" | "reviewing" | "held";
   voiceId?: string | null;
   entryIntent?: import("./agent-entry").AgentEntryIntent | null;

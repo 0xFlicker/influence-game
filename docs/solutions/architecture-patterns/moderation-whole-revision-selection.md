@@ -23,6 +23,9 @@ Undoing R2 after an approved correction R4 must leave R4 published.
 
 - `latestContentRevisionId` records submission history; `contentRevisionId`
   selects effective publication. Owner concurrency checks use the latest pointer.
+- The owner dashboard previews the submitted artwork while its card is
+  Reviewing. The card resolves derivatives from that submission's body hash.
+  Public artwork resolves from the accepted content revision.
 - Record explicit parents under the profile lock. Mark legacy ancestry unknown;
   never infer ordering from UUIDs or tied timestamps.
 - Rejection changes the target disposition and holds dependent snapshots.

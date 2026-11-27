@@ -28,7 +28,7 @@ Screened revisions and explicit human work remain reviewable even after another 
 
 ## Owner surfaces and entry
 
-Dashboard management shows full-body cards, actual activity, Needs attention and resumable account drafts. Edit stays first; View opens the owner profile. Review is a separate artwork decision. Search/filter and the originating card are carried back from editing. Reading collection/status routes never starts generation.
+Dashboard management shows full-body cards, actual activity, Needs attention and resumable account drafts. A card marked **Reviewing** shows the owner artwork from the latest submitted revision. Public profiles and game entry continue to use accepted artwork. Edit stays first; View opens the owner profile. Review is a separate artwork decision. Search/filter and the originating card are carried back from editing. Reading collection/status routes never starts generation.
 
 The owner profile distinguishes accepted content from a reviewing/held submission. Model and voice share one draft/review/save path. Voice auditions read versioned cached samples; playing or selecting never generates speech or saves the agent. Only one sample plays at once; selection, dismissal, mode changes and unmount stop playback.
 
