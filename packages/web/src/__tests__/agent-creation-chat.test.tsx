@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { Window } from "happy-dom";
 import { useState } from "react";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
@@ -132,19 +132,41 @@ for (const end of ["end_abuse", "end_fatigue"]) test(`${end} ends chat while pre
   expect(generated).toHaveLength(0);
 });
 
+test("fresh openings sample each character row and keep the draw while typing", () => {
+  const random = spyOn(Math, "random").mockReturnValue(0);
+  try {
+    const first = mount(true);
+    const labels = (row: HTMLElement) => within(row).getAllByRole("button").map(button => button.textContent);
+    const background = first.getByRole("group", { name: "Background suggestions" });
+    const opening = labels(background);
+    expect(new Set(opening).size).toBe(8);
+    expect(labels(first.getByRole("group", { name: "Game strategy suggestions" }))).toHaveLength(4);
+    expect(labels(first.getByRole("group", { name: "Gender suggestions" }))).toHaveLength(3);
+    random.mockReturnValue(0.99);
+    fireEvent.input(first.getByLabelText("Message the character assistant"), { target: { value: "Quiet" } });
+    expect(labels(background)).toEqual(opening);
+    first.unmount();
+    const next = mount(true);
+    expect(labels(next.getByRole("group", { name: "Background suggestions" }))).not.toEqual(opening);
+  } finally {
+    random.mockRestore();
+  }
+});
+
 test("starter pills can be removed and sent without typing a prompt", async () => {
   command = "revise_character";
   const view = mount(true);
-  fireEvent.click(view.getByRole("button", { name: "Add Gamer ingredient" }));
-  fireEvent.click(view.getByRole("button", { name: "Add Inventor ingredient" }));
-  fireEvent.click(view.getByRole("button", { name: "Remove Inventor ingredient" }));
-  expect(view.queryByRole("button", { name: "Remove Inventor ingredient" })).toBeNull();
+  const [first, second] = within(view.getByRole("group", { name: "Background suggestions" })).getAllByRole("button").map(button => button.textContent!);
+  fireEvent.click(view.getByRole("button", { name: `Add ${first} ingredient` }));
+  fireEvent.click(view.getByRole("button", { name: `Add ${second} ingredient` }));
+  fireEvent.click(view.getByRole("button", { name: `Remove ${second} ingredient` }));
+  expect(view.queryByRole("button", { name: `Remove ${second} ingredient` })).toBeNull();
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(generated).toHaveLength(1));
-  expect(generated[0]).toContain("Gamer");
-  expect(generated[0]).not.toContain("Inventor");
+  expect(generated[0]).toContain(first);
+  expect(generated[0]).not.toContain(second);
   expect(view.queryByText("Character ingredients")).toBeNull();
-  expect(view.queryByRole("button", { name: "Add Inventor ingredient" })).toBeNull();
+  expect(view.queryByRole("button", { name: `Add ${second} ingredient` })).toBeNull();
   expect(view.getByRole("button", { name: "Continue" })).toBeTruthy();
   expect(view.queryByText("Your character starts here.")).toBeNull();
   expect(view.getByRole("button", { name: "Revise Character prompt" })).toBeTruthy();
@@ -152,48 +174,51 @@ test("starter pills can be removed and sent without typing a prompt", async () =
 test("a browser timeout gives a useful error and preserves the text and ingredient tags", async () => {
   globalThis.fetch = Object.assign(async () => { throw new DOMException("signal timed out", "TimeoutError"); }, { preconnect: originalFetch.preconnect });
   const view = mount(true);
-  fireEvent.click(view.getByRole("button", { name: "Add Gamer ingredient" }));
-  fireEvent.click(view.getByRole("button", { name: "Add Streamer ingredient" }));
-  fireEvent.click(view.getByRole("button", { name: "Remove Streamer ingredient" }));
+  const [first, second] = within(view.getByRole("group", { name: "Background suggestions" })).getAllByRole("button").map(button => button.textContent!);
+  fireEvent.click(view.getByRole("button", { name: `Add ${first} ingredient` }));
+  fireEvent.click(view.getByRole("button", { name: `Add ${second} ingredient` }));
+  fireEvent.click(view.getByRole("button", { name: `Remove ${second} ingredient` }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A suspicious dragon" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Character update timed out."));
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("A suspicious dragon");
-  expect(view.getByRole("button", { name: "Remove Gamer ingredient" })).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Add Streamer ingredient" })).toBeNull();
+  expect(view.getByRole("button", { name: `Remove ${first} ingredient` })).toBeTruthy();
+  expect(view.queryByRole("button", { name: `Add ${second} ingredient` })).toBeNull();
   expect(generated).toHaveLength(0);
   expect(view.getByText("Your character starts here.")).toBeTruthy();
 });
 
 test("appearance offers visual tags and sends them while showing a user bubble and typing indicator", async () => {
   const view = mount(true);
+  const [first] = within(view.getByRole("group", { name: "Background suggestions" })).getAllByRole("button").map(button => button.textContent!);
   command = "revise_character";
-  fireEvent.click(view.getByRole("button", { name: "Add Gamer ingredient" }));
+  fireEvent.click(view.getByRole("button", { name: `Add ${first} ingredient` }));
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => {
-    expect(generated).toHaveLength(1);
+    expect(generated[0]).toContain(first);
     expect(view.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(false);
   });
   command = "accept_character";
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Continue" })));
-  expect(view.queryByRole("button", { name: "Add Gamer ingredient" })).toBeNull();
-  for (const form of ["Human", "Halfling", "Gnome"]) {
-    expect(view.getByRole("button", { name: `Add ${form} ingredient` })).toBeTruthy();
-  }
-  fireEvent.click(view.getByRole("button", { name: "Add Dragon ingredient" }));
+  expect(view.queryByRole("button", { name: `Add ${first} ingredient` })).toBeNull();
+  const forms = within(view.getByRole("group", { name: "Character form suggestions" })).getAllByRole("button");
+  expect(forms).toHaveLength(7);
+  expect(within(view.getByRole("group", { name: "Visual flavor suggestions" })).getAllByRole("button")).toHaveLength(4);
+  const form = forms[0].textContent!;
+  fireEvent.click(forms[0]);
   const response = Promise.withResolvers<Response>();
   globalThis.fetch = Object.assign(() => response.promise, { preconnect: originalFetch.preconnect });
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Gold coat" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("");
-  expect(view.getByText("Gold coat · Dragon")).toBeTruthy();
+  expect(view.getByText(`Gold coat · ${form}`)).toBeTruthy();
   expect(view.getByRole("status", { name: "Assistant typing" })).toBeTruthy();
   await act(async () => response.resolve(Response.json({ command: "generate_appearance", reply: "" })));
   await waitFor(() => expect(appearances).toHaveLength(1));
-  expect(appearances[0]).toContain("Dragon");
+  expect(appearances[0]).toContain(form);
   expect(appearances[0]).toContain("Gold coat");
   expect(view.queryByRole("status", { name: "Assistant typing" })).toBeNull();
-  expect(view.queryByRole("button", { name: "Remove Dragon ingredient" })).toBeNull();
+  expect(view.queryByRole("button", { name: `Remove ${form} ingredient` })).toBeNull();
 });
 
 test("gender tags allow multiple selections and suggestions return only on shuffle", () => {

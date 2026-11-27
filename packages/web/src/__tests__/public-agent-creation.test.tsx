@@ -82,12 +82,14 @@ test("a busy pool offers signup or later and retains the message and ingredients
   globalThis.fetch = Object.assign(async (_input: string | URL | Request, init?: RequestInit) => Response.json(init?.method === "POST"
     ? { error: "The free House preview is busy. Create an account or try again later.", code: "anonymous_pool_busy", retryAfterSeconds: 30 } : { used: false }, { status: init?.method === "POST" ? 429 : 200 }), { preconnect: originalFetch.preconnect });
   const view = mount();
-  await act(async () => fireEvent.click(view.getByRole("button", { name: "Add Gamer ingredient" })));
+  const ingredient = view.getAllByRole("button", { name: /^Add / })[0];
+  const label = ingredient.textContent;
+  await act(async () => fireEvent.click(ingredient));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A quiet schemer" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(view.getByRole("button", { name: "Try again later" })).toBeTruthy());
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("A quiet schemer");
-  expect(view.getByRole("button", { name: "Remove Gamer ingredient" })).toBeTruthy();
+  expect(view.getByRole("button", { name: `Remove ${label} ingredient` })).toBeTruthy();
   expect(signupCalls).toBe(0);
   fireEvent.click(view.getByRole("button", { name: "Create a free account" }));
   expect(signupCalls).toBe(1);

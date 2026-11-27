@@ -177,7 +177,7 @@ Failed requests restore the typed message for retry.
 Starter ingredient pills and “Surprise me” use the same curated traits as
 Advanced create. Background (including interests), Strategy, and Gender rows start the
 conversation; the appearance question offers form and visual-style pills.
-Human, halfling, and gnome are among the initial form options.
+Each time a picker opens, it samples unselected tags from each row. Character opens with up to eight background, four strategy, and three gender suggestions. Appearance opens with up to seven form and four style suggestions.
 Both character and portrait review hide the ingredient picker so the player can
 focus on approval or describe a specific change.
 Pill rows hide native scrollbars and subtly fade only edges with more content;

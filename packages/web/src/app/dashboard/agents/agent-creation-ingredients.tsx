@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { AGENT_CREATION_TRAIT_GROUPS, ALL_AGENT_CREATION_TRAITS, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 
 const GROUPS = {
   character: ["scene", "strategy", "gender"],
   appearance: ["form", "style"],
 } as const;
-const INITIAL: Record<"character" | "appearance", AgentCreationTraitId[]> = {
-  character: ["gamer", "streamer", "inventor", "alliance-builder", "under-the-radar", "deal-maker", "aristocrat", "small-town", "working-class", "gender-male", "gender-female", "gender-non-binary"],
-  appearance: ["human", "halfling", "gnome", "furry", "dragon", "robot", "neon-noir", "storybook", "scrappy-diy"],
-};
+const OPENING_COUNTS = { scene: 8, strategy: 4, gender: 3, form: 7, style: 4 } as const;
+
+// Server markup and the first hydration render must agree before showing a local draw.
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 
 /** Keep swipe/trackpad scrolling and fade only edges with hidden pills. */
 function PillRow({ children, label }: { children: ReactNode; label: string }) {
@@ -41,7 +43,7 @@ export function AgentCreationIngredients({ selected, onChange, disabled, mode }:
   mode: "character" | "appearance";
   selected: AgentCreationTraitId[]; onChange: (ids: AgentCreationTraitId[]) => void; disabled: boolean;
 }) {
-  const [suggestions, setSuggestions] = useState(INITIAL[mode]);
+  const hydrated = useSyncExternalStore(subscribeToHydration, clientReady, serverReady);
   const groups = AGENT_CREATION_TRAIT_GROUPS
     .filter(group => (GROUPS[mode] as readonly string[]).includes(group.id))
     .sort((a, b) => (GROUPS[mode] as readonly string[]).indexOf(a.id) - (GROUPS[mode] as readonly string[]).indexOf(b.id))
@@ -49,20 +51,27 @@ export function AgentCreationIngredients({ selected, onChange, disabled, mode }:
       ...group,
       traits: AGENT_CREATION_TRAIT_GROUPS.filter(candidate => candidate.id === "scene" || candidate.id === "background").flatMap(candidate => [...candidate.traits]),
     } : group);
-  function shuffle() {
-    setSuggestions(groups.flatMap(group => {
-      const available = group.traits.filter(trait => !selected.includes(trait.id) && !suggestions.includes(trait.id));
-      const fallback = group.traits.filter(trait => !selected.includes(trait.id));
-      const pool = available.length ? available : fallback;
-      return [...pool].sort(() => Math.random() - 0.5).slice(0, 3).map(trait => trait.id);
-    }));
+  function draw(previous?: readonly AgentCreationTraitId[]): AgentCreationTraitId[] {
+    return groups.flatMap(group => {
+      const eligible = group.traits.map(trait => trait.id).filter(id => !selected.includes(id));
+      const fresh = previous ? eligible.filter(id => !previous.includes(id)) : eligible;
+      const pool = fresh.length ? fresh : eligible;
+      const count = previous ? 3 : OPENING_COUNTS[group.id as keyof typeof OPENING_COUNTS];
+      const drawn: AgentCreationTraitId[] = [];
+      while (drawn.length < count && pool.length) {
+        const index = Math.floor(Math.random() * pool.length);
+        drawn.push(pool.splice(index, 1)[0]);
+      }
+      return drawn;
+    });
   }
+  const [suggestions, setSuggestions] = useState(() => draw());
   return <div className="space-y-2">
-    <div className="flex items-center justify-between"><span className="text-xs text-white/45">{mode === "appearance" ? "Visual ingredients" : "Character ingredients"}</span><button type="button" onClick={shuffle} disabled={disabled} className="min-h-9 px-2 text-xs text-violet-200 disabled:opacity-40">✦ Surprise me</button></div>
+    <div className="flex items-center justify-between"><span className="text-xs text-white/45">{mode === "appearance" ? "Visual ingredients" : "Character ingredients"}</span><button type="button" onClick={() => setSuggestions(draw(suggestions))} disabled={disabled} className="min-h-9 px-2 text-xs text-violet-200 disabled:opacity-40">✦ Surprise me</button></div>
     <div aria-label="Character ingredient suggestions" className="space-y-1">
       {groups.map(group => <div key={group.id} className="flex items-center gap-2">
         <span className="w-16 shrink-0 text-[10px] text-white/45">{group.id === "scene" ? "Background" : group.id === "strategy" ? "Strategy" : group.id === "gender" ? "Gender" : group.id === "form" ? "Form" : "Style"}</span>
-        <PillRow label={`${group.id === "scene" ? "Background" : group.label} suggestions`}>{suggestions.filter(id => group.traits.some(trait => trait.id === id) && !selected.includes(id)).map(id => <button key={id} type="button" disabled={disabled || selected.length >= 12} onClick={() => { onChange([...selected, id]); setSuggestions(current => current.filter(value => value !== id)); }} aria-label={`Add ${ALL_AGENT_CREATION_TRAITS.find(trait => trait.id === id)?.label} ingredient`} className="min-h-9 shrink-0 rounded-full border border-white/15 bg-white/[.035] px-3 text-xs text-white/75 disabled:opacity-40">{ALL_AGENT_CREATION_TRAITS.find(trait => trait.id === id)?.label}</button>)}</PillRow>
+        <PillRow label={`${group.id === "scene" ? "Background" : group.label} suggestions`}>{hydrated && suggestions.filter(id => group.traits.some(trait => trait.id === id) && !selected.includes(id)).map(id => <button key={id} type="button" disabled={disabled || selected.length >= 12} onClick={() => { onChange([...selected, id]); setSuggestions(current => current.filter(value => value !== id)); }} aria-label={`Add ${ALL_AGENT_CREATION_TRAITS.find(trait => trait.id === id)?.label} ingredient`} className="min-h-9 shrink-0 rounded-full border border-white/15 bg-white/[.035] px-3 text-xs text-white/75 disabled:opacity-40">{ALL_AGENT_CREATION_TRAITS.find(trait => trait.id === id)?.label}</button>)}</PillRow>
       </div>)}
     </div>
     {!!selected.length && <div aria-label="Selected character ingredients" className="flex max-h-24 flex-wrap gap-2 overflow-y-auto">{selected.map(id => {
