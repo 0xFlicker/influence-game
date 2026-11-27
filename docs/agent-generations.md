@@ -15,11 +15,11 @@ Agent creation, editing, management and MCP share the owner-scoped generation
 list. It includes unfinished agents and requests whose original drafts no longer
 exist. Reads return operational metadata only and never start or resume providers.
 
-The editor keeps status in a reserved footer and exposes the request list through
-Activity. On mobile the footer remains fixed above the safe area and Activity opens
-a bottom sheet. Generation, draft recovery, validation summaries and moderation
-never insert banners above the fields. Draft conflicts open in the same overlay.
-The preview keeps its dimensions while artwork becomes ready.
+The editor puts active image status and its recovery actions alongside the
+composer or Advanced fields. Activity remains the account-wide request list
+and opens a bottom sheet on mobile. Draft conflicts and draft sync failures
+appear in the editor. The preview keeps its dimensions while artwork becomes
+ready.
 
 Management uses an Activity dialog without reserving a sidebar. Its gallery uses
 creation date descending and ID ascending, never review state or update time.
@@ -32,12 +32,18 @@ admit only the available work; blocked starts and retries return `generation_pen
 with `blockedBy`. Exact replays keep the original request identity. Text editing,
 model and voice selection remain available while an image is pending.
 
-| State   | Copy                                                        | Actions         |
-| ------- | ----------------------------------------------------------- | --------------- |
-| Queued  | Waiting to start                                            | View, Cancel    |
-| Running | Generating image / Removing background / Preparing portrait | View, Cancel    |
-| Stopped | Generation stopped                                          | Clear, Support  |
-| Ready   | Image ready                                                 | Review, Discard |
+| State | Editor actions |
+| --- | --- |
+| Queued or running | Cancel image |
+| Status connection interrupted | Check status after bounded automatic reconnect attempts |
+| Stopped with safe retry | Retry image |
+| Stopped with an unresolved provider outcome | Check status, or explicitly Start new image with the allowance notice |
+| Ready | Review and choose whether to use the candidate |
+
+The browser keeps the request ID across a network interruption and checks that
+request for its outcome. Reconnecting to status does not send another image
+generation. If the original submission was never received, a retry uses its
+original request ID. Character edits and unsent composer text survive recovery.
 
 Support opens a contact dialog with Discord instructions, the support email and a
 copyable request reference. Email includes the reference automatically.
@@ -52,6 +58,10 @@ links open their own workspace; they never attach that image to the current draf
 journal remain accounting evidence. Image execution has independent lease and
 release metadata. A live provider call renews a two-minute execution lease every
 15 seconds. New image admission and worker maintenance recover expired leases.
+An unclaimed character image waiting for its first image stage expires after
+ten minutes without reserving an allowance. The worker skips expired queued
+requests. The owner can retry the stopped request from the editor. A stopped
+worker's expired claim can also be retried when the provider journal permits it.
 
 A reserved request that never dispatched can fail and return its credit once.
 A dispatched or uncertain request that loses ownership releases its execution slot
@@ -82,6 +92,12 @@ operation generation and reserves a fresh execution. Background removal and
 portrait preparation reuse their already-paid source and do not require another
 image slot. Uncertain native provider attempts remain fenced against replay.
 
+Account text operations have a three-minute execution lease. The next eligible
+request recovers expired work under the account lock. Unsent work returns its
+reservation, and previously dispatched work with an unknown outcome keeps the
+debit and receipt while releasing capacity. Late work cannot publish its result
+under an expired lease.
+
 ## Existing records and rollout
 
 Migrations 0164–0165 associate existing reservations with their visual/portrait
@@ -108,4 +124,6 @@ Staging and production require their normal migration/deployment process.
 
 Tests cover competing starts, pause/exhaustion, queued and dispatched cancellation,
 refund idempotence, stale leases, heartbeat fencing, late success, retry admission,
-owner isolation and cancellation preserving editor drafts through the real UI.
+owner isolation, and cancellation preserving editor drafts through the real UI.
+The localhost browser test interrupts status requests after admission and checks
+recovery of the same request without a second submission.

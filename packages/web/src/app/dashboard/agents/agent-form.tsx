@@ -74,6 +74,12 @@ import {
 const DRAFT_VERSION = AGENT_EDITOR_DRAFT_VERSION;
 const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
+function referenceConnectionLost(error: unknown) {
+  return error instanceof TypeError ||
+    (error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name)) ||
+    (error instanceof ApiError && [500, 502, 503, 504].includes(error.status));
+}
+
 function reviewFieldValue(
   field: string,
   value: string | null | undefined,
@@ -424,6 +430,8 @@ export function AgentForm({
     initialSnapshot.fullBodyReferenceUrl,
   );
   const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceChecking, setReferenceChecking] = useState(false);
+  const [cancellingImage, setCancellingImage] = useState(false);
   const [referenceError, setReferenceError] = useAgentIssue("artwork");
   const referenceRequest = useRef<{
     agentId?: string;
@@ -589,12 +597,11 @@ export function AgentForm({
     : null;
 
   const [remoteReady, setRemoteReady] = useState(false);
+  const [draftReadVersion, setDraftReadVersion] = useState(0);
   const draftRecovering = authenticated && !remoteReady;
   const generations = useAgentGenerations();
   const imageGenerationBlocked =
-    generations.loading ||
-    !!generations.error ||
-    generations.rows.some((row) => row.blocksGeneration);
+    !generations.error && generations.rows.some((row) => row.blocksGeneration);
 
   const remoteVersion = useRef<string | null>(null);
   const remoteBlocked = useRef(false);
@@ -607,11 +614,13 @@ export function AgentForm({
       return;
     }
     let active = true;
+    const controller = new AbortController();
     setRemoteReady(false);
     remoteVersion.current = null;
     remoteBlocked.current = false;
     void apiFetch<{ version: string; document: StoredEditorDraft } | null>(
       remotePath,
+      { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) },
     )
       .then((result) => {
         if (!active) return;
@@ -651,6 +660,7 @@ export function AgentForm({
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [
     authenticated,
@@ -660,6 +670,7 @@ export function AgentForm({
     remotePath,
     initialSnapshot,
     setDraftStorageError,
+    draftReadVersion,
   ]);
   const persistRemote = useCallback(
     (document: StoredEditorDraft): Promise<void> => {
@@ -839,7 +850,10 @@ export function AgentForm({
   function applyDraft() {
     if (!pendingRestore || !remoteReady || restoreAlternatives) return;
     setGuided(pendingRestore.guided ?? initialGuided);
-    setConversation(pendingRestore.conversation);
+    const restoredConversation = pendingRestore.conversation;
+    setConversation(conversation?.input
+      ? { ...(restoredConversation ?? conversation), input: conversation.input }
+      : restoredConversation);
     setConversationKey((value) => value + 1);
     if (pendingRestore.referenceRequest) {
       referenceRequest.current =
@@ -856,8 +870,7 @@ export function AgentForm({
         void observeReference(requestId, epoch)
           .then((result) => {
             if (result) {
-              setCandidateImage(result);
-              referenceRequest.current = null;
+              acceptReferenceResult(result);
             }
           })
           .catch((cause) => setReferenceError(cause))
@@ -910,19 +923,17 @@ export function AgentForm({
       setGenerationNotice("assistant_timeout");
     submission.current = pendingRestore.submission;
     setPendingRestore(null);
-    setActivityOpen(conflicts.length > 0);
     setDraftReady(true);
   }
 
   useEffect(() => {
     if (
-      imageRequest && pendingRestore && remoteReady &&
-      !restoreAlternatives && !restoreConflict
+      pendingRestore && remoteReady && !restoreAlternatives && !restoreConflict &&
+      !dirty && !conversation?.input && !conversation?.messages.length
     ) applyDraft();
-    // An explicit artwork link resumes its matching draft after both reads settle.
-    // Divergent copies and changed baselines still require the owner's choice.
+    // Applying a draft is one-shot. An edited editor stays available for comparison.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageRequest, pendingRestore, remoteReady, restoreAlternatives, restoreConflict]);
+  }, [pendingRestore, remoteReady, restoreAlternatives, restoreConflict, dirty, conversation]);
 
   // Retire only this tab's active draft pointers. Server receipts remain durable,
   // and the epoch prevents any outstanding request from applying a late result.
@@ -1772,8 +1783,8 @@ export function AgentForm({
       })
       .catch((cause) => setReferenceError(cause));
   }, [imageRequest, remoteReady, draftReady, pendingRestore, restoreAlternatives, setReferenceError]);
-  async function retrySelectedJob() {
-    if (!imageRequest) return;
+  async function retrySelectedJob(id = imageRequest) {
+    if (!id) return;
     setReferenceBusy(true);
     setReferenceStage("starting");
     setReferenceStartedAt(null);
@@ -1781,13 +1792,16 @@ export function AgentForm({
     const epoch = ++referenceEpoch.current;
     try {
       await apiFetch(
-        "/api/agent-profiles/visual-references/" + imageRequest + "/retry",
-        { method: "POST" },
-      );
-      const result = await observeReference(imageRequest, epoch);
-      if (result) setCandidateImage(result);
+        "/api/agent-profiles/visual-references/" + id + "/retry",
+        { method: "POST", signal: AbortSignal.timeout(10_000) },
+      ).catch((error: unknown) => {
+        if (epoch !== referenceEpoch.current || !referenceConnectionLost(error)) throw error;
+        setReferenceChecking(true);
+      });
+      const result = await observeReference(id, epoch);
+      if (result) acceptReferenceResult(result);
     } catch (cause) {
-      setReferenceError(cause);
+      if (epoch === referenceEpoch.current) setReferenceError(cause);
     } finally {
       if (epoch === referenceEpoch.current) setReferenceBusy(false);
     }
@@ -1797,34 +1811,106 @@ export function AgentForm({
     requestId: string,
     epoch: number,
   ): Promise<CharacterImageDraft | null> {
-    for (;;) {
+    let failures = 0;
+    const deadline = Date.now() + GENERATION_TIMEOUT_MS;
+    try {
+      while (Date.now() < deadline) {
+        if (epoch !== referenceEpoch.current) return null;
+        const job = await apiFetch<{
+          status: string;
+          stage: string;
+          error: string | null;
+          errorCode: string | null;
+          retryable: boolean;
+          result: CharacterImageDraft | null;
+          createdAt: string;
+        }>("/api/agent-profiles/visual-references/" + encodeURIComponent(requestId), {
+          signal: AbortSignal.timeout(5_000),
+        }).catch((error: unknown) => {
+          if (!referenceConnectionLost(error) || epoch !== referenceEpoch.current) throw error;
+          setReferenceChecking(true);
+          if (++failures >= 4) throw new ApiError(503, "Image status unavailable", "artwork_status_unknown");
+          return null;
+        });
+        if (epoch !== referenceEpoch.current) return null;
+        if (!job) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1500));
+          continue;
+        }
+        failures = 0;
+        setReferenceChecking(false);
+        setReferenceStage(job.stage);
+        setReferenceStartedAt(job.createdAt);
+        if (job.status === "ready" && job.result) return job.result;
+        if (job.status === "selected" || job.status === "discarded") {
+          if (referenceRequest.current?.requestId === requestId) {
+            clearReferencePointer();
+            setUnfinishedReplacement(false);
+          }
+          generations.refresh();
+          return null;
+        }
+        if (job.status === "ready")
+          throw new ApiError(409, "Artwork changed", "artwork_changed");
+        if (job.status === "failed")
+          throw new ApiError(
+            409,
+            job.error ?? "Image preparation failed",
+            job.errorCode ?? undefined,
+            job.retryable,
+          );
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
       if (epoch !== referenceEpoch.current) return null;
-      const job = await apiFetch<{
-        status: string;
-        stage: string;
-        error: string | null;
-        errorCode: string | null;
-        retryable: boolean;
-        result: CharacterImageDraft | null;
-        createdAt: string;
-      }>(
-        "/api/agent-profiles/visual-references/" +
-          encodeURIComponent(requestId),
-      );
-      if (epoch !== referenceEpoch.current) return null;
-      setReferenceStage(job.stage);
-      setReferenceStartedAt(job.createdAt);
-      if (job.status === "ready" && job.result) return job.result;
-      if (job.status === "selected" || job.status === "discarded")
-        throw new ApiError(409, "Artwork changed", "artwork_changed");
-      if (job.status === "failed")
-        throw new ApiError(
-          409,
-          job.error ?? "Image preparation failed",
-          job.errorCode ?? undefined,
-          job.retryable,
-        );
-      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      throw new ApiError(503, "Image status unavailable", "artwork_status_unknown");
+    } finally {
+      if (epoch === referenceEpoch.current) setReferenceChecking(false);
+    }
+  }
+
+  function clearReferencePointer() {
+    if (draftStorageKey) removeEditorStorage(draftStorageKey + ":visual-reference");
+    referenceRequest.current = null;
+  }
+
+  function acceptReferenceResult(result: CharacterImageDraft) {
+    setGenerationDeadline(null);
+    setCandidateImage(result);
+    setUnfinishedReplacement(false);
+    clearReferencePointer();
+    generations.refresh();
+  }
+
+  async function checkImageStatus(id: string) {
+    const epoch = ++referenceEpoch.current;
+    setReferenceBusy(true);
+    setReferenceChecking(true);
+    setReferenceError(null);
+    try {
+      const result = await observeReference(id, epoch);
+      if (result) acceptReferenceResult(result);
+    } catch (error) {
+      if (epoch === referenceEpoch.current) setReferenceError(error);
+    } finally {
+      if (epoch === referenceEpoch.current) setReferenceBusy(false);
+    }
+  }
+
+  async function cancelImageInline(row: AgentGeneration) {
+    if (cancellingImage) return;
+    setCancellingImage(true);
+    try {
+      await apiFetch("/api/agent-profiles/generations/" + encodeURIComponent(row.id) + "/cancel", {
+        method: "POST",
+        body: JSON.stringify({ source: row.source }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      await cancelGeneration(row);
+    } catch (error) {
+      setReferenceError(error, "generation_cancel_failed");
+      generations.refresh();
+    } finally {
+      setCancellingImage(false);
     }
   }
 
@@ -1837,14 +1923,13 @@ export function AgentForm({
     )
       return;
     ++referenceEpoch.current;
-    referenceRequest.current = null;
+    clearReferencePointer();
     setReferenceBusy(false);
+    setReferenceChecking(false);
     setCandidateImage(null);
     setUnfinishedReplacement(false);
     setGenerationDeadline(null);
     setReferenceError(null);
-    if (draftStorageKey)
-      removeEditorStorage(draftStorageKey + ":visual-reference");
   }
   async function reviewGeneration(row: AgentGeneration) {
     try {
@@ -1944,19 +2029,24 @@ export function AgentForm({
       const existing = await apiFetch<{ status: string }>(
         "/api/agent-profiles/visual-references/" +
           referenceRequest.current!.requestId,
+        { signal: AbortSignal.timeout(5_000) },
       ).catch((cause) => {
         if (cause instanceof ApiError && cause.status === 404) return null;
         throw cause;
       });
       if (epoch !== referenceEpoch.current) return false;
-      await apiFetch(
-        existing?.status === "failed"
-          ? "/api/agent-profiles/visual-references/" +
-              referenceRequest.current!.requestId +
-              "/retry"
-          : "/api/agent-profiles/visual-reference",
-        { method: "POST", body: JSON.stringify(referenceRequest.current) },
-      );
+      if (!existing || existing.status === "failed") {
+        await apiFetch(
+          existing?.status === "failed"
+            ? "/api/agent-profiles/visual-references/" + referenceRequest.current!.requestId + "/retry"
+            : "/api/agent-profiles/visual-reference",
+          { method: "POST", body: JSON.stringify(referenceRequest.current), signal: AbortSignal.timeout(10_000) },
+        ).catch((error: unknown) => {
+          if (epoch !== referenceEpoch.current || !referenceConnectionLost(error)) throw error;
+          setReferenceChecking(true);
+        });
+      }
+      if (epoch !== referenceEpoch.current) return false;
       generations.refresh();
       const result = await observeReference(
         referenceRequest.current!.requestId,
@@ -1964,12 +2054,7 @@ export function AgentForm({
       );
       if (!result) return false;
       if (epoch !== referenceEpoch.current) return;
-      setGenerationDeadline(null);
-      setCandidateImage(result);
-      generations.refresh();
-      setUnfinishedReplacement(false);
-      removeEditorStorage(referenceStorageKey);
-      referenceRequest.current = null;
+      acceptReferenceResult(result);
       return true;
     } catch (error) {
       if (epoch !== referenceEpoch.current) return;
@@ -1981,7 +2066,7 @@ export function AgentForm({
       }
       if (error instanceof ApiError && error.code === "generation_pending")
         generations.refresh();
-      else setReferenceError(error);
+      setReferenceError(error);
       return false;
     } finally {
       if (epoch === referenceEpoch.current) setReferenceBusy(false);
@@ -2045,8 +2130,16 @@ export function AgentForm({
     }
   }
 
+  const draftSyncIssue = draftStorageError &&
+    ["draft_load_failed", "draft_failed"].includes(draftStorageError.code) ? draftStorageError : null;
+  const draftSyncNotice = draftSyncIssue && (
+    <section className={styles.inlineRecovery} aria-label="Draft sync">
+      <p role="status">Draft sync is unavailable. Your edits are still in this tab.</p>
+      <button type="button" onClick={() => recoverIssue(draftSyncIssue)}>Retry sync</button>
+    </section>
+  );
   const activeIssue =
-    (draftStorageError?.code !== "draft_local_unavailable"
+    (draftStorageError?.code !== "draft_local_unavailable" && !draftSyncIssue
       ? draftStorageError
       : null) ??
     saveError ??
@@ -2054,8 +2147,13 @@ export function AgentForm({
     referenceError ??
     aiError ??
     generationNotice ??
-    draftStorageError;
+    (draftSyncIssue ? null : draftStorageError);
   function recoverIssue(issue: AgentIssue) {
+    if (issue.code === "draft_load_failed") {
+      setDraftStorageError(null);
+      setDraftReadVersion((version) => version + 1);
+      return;
+    }
     if (issue.code === "generations_load_failed") {
       generations.refresh();
       return;
@@ -2118,6 +2216,67 @@ export function AgentForm({
   const activeImageGeneration = generations.rows.find((row) =>
     (row.status === "queued" || row.status === "running") &&
     (initial?.id ? row.agentId === initial.id : row.draftScope === draftScope),
+  );
+  const blockingImage = !generations.error ? generations.rows.find((row) => row.blocksGeneration) : undefined;
+  const referenceStatusId = referenceRequest.current?.requestId ?? imageRequest ??
+    (currentGeneration?.source === "reference" ? currentGeneration.id : undefined);
+  const canCheckImage = !!referenceStatusId &&
+    (referenceError?.code === "artwork_status_unknown" || referenceError?.code === "artwork_recovery_required");
+  const stoppedImage = currentGeneration?.source === "reference" && currentGeneration.status === "stopped"
+    ? currentGeneration : undefined;
+  const canRetryImage = !canCheckImage && !imageGenerationBlocked && !referenceBusy &&
+    (!!stoppedImage || (!!referenceRequest.current && !!referenceError));
+  const canStartNewImage = referenceError?.code === "artwork_recovery_required" && !imageGenerationBlocked && !referenceBusy;
+  useEffect(() => {
+    if (!referenceStatusId || referenceError?.code !== "artwork_status_unknown") return;
+    const reconnect = () => void checkImageStatus(referenceStatusId);
+    window.addEventListener("online", reconnect);
+    return () => window.removeEventListener("online", reconnect);
+    // The request identity owns recovery after a dropped connection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceStatusId, referenceError?.code]);
+  const imageStatus = referenceChecking ? "Checking your image request…"
+    : referenceError?.code === "artwork_recovery_required" ? "Image generation stopped. We couldn’t confirm the provider’s result. You can keep editing."
+    : canCheckImage ? "We couldn’t confirm whether your image finished. You can keep editing."
+    : blockingImage?.status === "running" ? "Your image is still generating. You can keep editing."
+    : blockingImage ? "An image request is waiting to start. You can keep editing."
+    : canRetryImage ? "Image generation stopped. Your draft is still here. You can keep editing."
+    : null;
+  const inlineImage = imageStatus && (
+    <section className={styles.inlineRecovery} aria-label="Image generation">
+      <p role="status">{imageStatus}</p>
+      {canCheckImage && (
+        <button type="button" disabled={referenceChecking} onClick={() => void checkImageStatus(referenceStatusId!)}>
+          Check status
+        </button>
+      )}
+      {canRetryImage && (
+        <button type="button" disabled={draftRecovering || !!pendingRestore}
+          onClick={() => void (stoppedImage ? retrySelectedJob(stoppedImage.id) : generateReference())}>
+          Retry image
+        </button>
+      )}
+      {canStartNewImage && (
+        <>
+          <span>The earlier request may still count toward your allowance.</span>
+          <button type="button" disabled={draftRecovering || !!pendingRestore} onClick={() => {
+            if (draftStorageKey && !removeEditorStorage(draftStorageKey + ":visual-reference")) {
+              setDraftStorageError("draft_local_unavailable");
+              return;
+            }
+            referenceRequest.current = null;
+            void generateReference();
+          }}>
+            Start new image
+          </button>
+        </>
+      )}
+      {blockingImage && (
+        <button type="button" disabled={cancellingImage} onClick={() => void cancelImageInline(blockingImage)}>
+          {cancellingImage ? "Cancelling image…" : "Cancel image"}
+        </button>
+      )}
+    </section>
   );
   const imageUpdating = referenceBusy || uploading || Boolean(
     activeImageGeneration && !referenceError && (fullBodyReferenceUrl || avatarUrl),
@@ -2259,6 +2418,226 @@ export function AgentForm({
             </button>
           </div>
         </header>
+        {(!guided || focusedEntry) && draftSyncNotice}
+          {restoreAlternatives && (
+            <section className={styles.review} aria-label="Choose draft">
+              <h2>Two drafts differ</h2>
+              <p>
+                Choose which version to resume. Saving it will replace the other
+                account draft.
+              </p>
+              {(["tab", "account"] as const).map((source) => {
+                const draft = restoreAlternatives[source];
+                return (
+                  <section key={source}>
+                    <h3>
+                      {source === "tab" ? "This tab" : "Account"}:{" "}
+                      {draft.current.name || "Untitled agent"}
+                    </h3>
+                    <p className={styles.hint}>
+                      Saved {new Date(draft.savedAt).toLocaleString()}
+                    </p>
+                    <details>
+                      <summary>Contents</summary>
+                      {(
+                        [
+                          "personality",
+                          "backstory",
+                          "strategyStyle",
+                          "werewolfStrategyStyle",
+                          "visualDesign",
+                          "performanceInstructions",
+                        ] as const
+                      ).map(
+                        (field) =>
+                          draft.current[field] && (
+                            <p key={field} className="whitespace-pre-wrap">
+                              <strong>
+                                {
+                                  {
+                                    personality: "Personality",
+                                    backstory: "Backstory",
+                                    strategyStyle: "Influence strategy",
+                                    werewolfStrategyStyle: "Werewolf strategy",
+                                    visualDesign: "Appearance",
+                                    performanceInstructions: "Performance",
+                                  }[field]
+                                }
+                              </strong>{" "}
+                              {draft.current[field]}
+                            </p>
+                          ),
+                      )}
+                      <p>
+                        {agentModelLabel(draft.current.modelPreference) ??
+                          "House choice"}{" "}
+                        ·{" "}
+                        {PLAYER_VOICES.find(
+                          (voice) => voice.id === draft.current.voiceId,
+                        )?.name ?? "Automatic voice"}
+                      </p>
+                      {draft.current.fullBodyReferenceUrl && (
+                        <OwnedCharacterImage
+                          src={draft.current.fullBodyReferenceUrl}
+                          alt={draft.current.name || "Draft artwork"}
+                          className="max-h-64 w-full object-contain"
+                        />
+                      )}
+                    </details>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingRestore(draft);
+                        setRestoreConflict(
+                          !sameSnapshot(draft.base, initialSnapshot),
+                        );
+                        setRestoreAlternatives(null);
+                      }}
+                    >
+                      {source === "tab" ? "Tab" : "Account"}
+                    </button>
+                  </section>
+                );
+              })}
+            </section>
+          )}
+          {pendingRestore && !restoreAlternatives && (
+            <section
+              className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4"
+              aria-label="Saved local draft"
+            >
+              <p className="text-sm font-semibold text-text-primary">
+                {restoreConflict
+                  ? "A local draft was saved from an earlier Agent version."
+                  : "A local draft is available."}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/55">
+                Saved {new Date(pendingRestore.savedAt).toLocaleString()}. Apply
+                it to the editor, or clear it to keep working from this version.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={applyDraft}
+                  disabled={!remoteReady}
+                  className="influence-button-primary min-h-11 rounded-lg px-4 text-sm font-semibold"
+                >
+                  Resume
+                </button>
+                <button
+                  type="button"
+                  onClick={clearStoredDraft}
+                  className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm"
+                >
+                  Discard
+                </button>
+              </div>
+            </section>
+          )}
+          {!!draftConflicts.length && (
+            <section className={styles.review} aria-label="Draft conflicts">
+              <h2>Resolve draft conflicts</h2>
+              <p>
+                These fields changed both in your draft and in the saved agent.
+                Choose which value to keep.
+              </p>
+              {draftConflicts.map((field) => (
+                <div className={styles.change} key={field}>
+                  <h3>
+                    {
+                      {
+                        images: "Artwork and portrait",
+                        name: "Name",
+                        gender: "Gender",
+                        personaKey: "Archetype",
+                        personality: "Personality",
+                        backstory: "Backstory",
+                        strategyStyle: "Influence strategy",
+                        werewolfStrategyStyle: "Werewolf strategy",
+                        performanceInstructions: "Performance",
+                        visualDesign: "Appearance",
+                        modelPreference: "Preferred model",
+                        voiceId: "Voice",
+                        fullBodyReferenceUrl: "Artwork",
+                        explicitAvatarUrl: "Portrait",
+                        portraitCrop: "Portrait crop",
+                        headPosition: "Head position",
+                        headSuggestion: "Head position",
+                      }[field]
+                    }
+                  </h3>
+                  {field === "images" ? (
+                    <div className={styles.candidate}>
+                      {initialSnapshot.fullBodyReferenceUrl && (
+                        <OwnedCharacterImage
+                          src={initialSnapshot.fullBodyReferenceUrl}
+                          alt="Current saved artwork"
+                        />
+                      )}
+                      {fullBodyReferenceUrl && (
+                        <OwnedCharacterImage
+                          src={fullBodyReferenceUrl}
+                          alt="Restored draft artwork"
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <del>{JSON.stringify(initialSnapshot[field])}</del>
+                      <ins>{JSON.stringify(currentSnapshot[field])}</ins>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraftConflicts((fields) =>
+                        fields.filter((value) => value !== field),
+                      )
+                    }
+                  >
+                    Keep
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = { ...currentSnapshot };
+                      if (field === "images") {
+                        for (const key of imageFields)
+                          Object.assign(next, {
+                            [key]: initialSnapshot[key],
+                          });
+                      } else
+                        Object.assign(next, {
+                          [field]: initialSnapshot[field],
+                        });
+                      setName(next.name);
+                      setPersonality(next.personality);
+                      setBackstory(next.backstory);
+                      setStrategyStyle(next.strategyStyle);
+                      setWerewolfStrategyStyle(next.werewolfStrategyStyle);
+                      setVisualDesign(next.visualDesign);
+                      setPerformanceInstructions(next.performanceInstructions);
+                      setModelPreference(next.modelPreference ?? "default");
+                      setVoiceId(next.voiceId ?? null);
+                      setPersonaKey(next.personaKey);
+                      setGender(next.gender);
+                      setFullBodyReferenceUrl(next.fullBodyReferenceUrl);
+                      setExplicitAvatarUrl(next.explicitAvatarUrl);
+                      setHeadPosition(next.headPosition);
+                      setHeadSuggestion(next.headSuggestion);
+                      setPortraitCrop(next.portraitCrop);
+                      setDraftConflicts((fields) =>
+                        fields.filter((value) => value !== field),
+                      );
+                    }}
+                  >
+                    Current
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+        {focusedEntry && inlineImage}
         <div className={styles.layout}>
           {focusedEntry && entryArtwork && (
             <section className={styles.entryCopy}>
@@ -2478,6 +2857,7 @@ export function AgentForm({
                 }}
               />
               <AgentCreationChat
+                composerNotice={guided && !focusedEntry ? <>{draftSyncNotice}{inlineImage}</> : null}
                 key={conversationKey}
                 conversation={conversation}
                 onConversationChange={setConversation}
@@ -3147,6 +3527,7 @@ export function AgentForm({
           </div>
         </div>
         {!guided && !focusedEntry && preferences}
+        {!guided && !focusedEntry && inlineImage}
 
         {portraitEditor && (
           <CharacterPortraitEditor
@@ -3198,45 +3579,11 @@ export function AgentForm({
             ) : (
               <>
                 <div role="status" className={styles.footerMessage}>
-                  {restoreAlternatives ? (
-                    <>
-                      <span>Two drafts differ </span>
-                      <button
-                        type="button"
-                        aria-label="Choose draft"
-                        onClick={() => setActivityOpen(true)}
-                      >
-                        Choose
-                      </button>
-                    </>
-                  ) : pendingRestore ? (
-                    activityOpen ? (
-                      "Draft available"
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={!remoteReady}
-                        onClick={applyDraft}
-                      >
-                        Resume
-                      </button>
-                    )
-                  ) : draftConflicts.length ? (
-                    <>
-                      <span>Draft conflicts </span>
-                      <button
-                        type="button"
-                        aria-label="Resolve draft conflicts"
-                        onClick={() => setActivityOpen(true)}
-                      >
-                        Resolve
-                      </button>
-                    </>
-                  ) : profileGenerating ? (
+                  {profileGenerating ? (
                     generatingFields.length ? "Updating draft text…" : "Thinking…"
                   ) : focusedEntry && submitting ? (
                     <AgentOperationActivity stage="save" startedAt={null} />
-                  ) : uploading || referenceBusy ? (
+                  ) : !referenceChecking && (uploading || referenceBusy) ? (
                     <AgentOperationActivity
                       stage={uploading ? "upload" : referenceStage}
                       startedAt={referenceStartedAt}
@@ -3338,224 +3685,6 @@ export function AgentForm({
             }
             disabled={submitting}
           />
-          {restoreAlternatives && (
-            <section className={styles.review} aria-label="Choose draft">
-              <h2>Two drafts differ</h2>
-              <p>
-                Choose which version to resume. Saving it will replace the other
-                account draft.
-              </p>
-              {(["tab", "account"] as const).map((source) => {
-                const draft = restoreAlternatives[source];
-                return (
-                  <section key={source}>
-                    <h3>
-                      {source === "tab" ? "This tab" : "Account"}:{" "}
-                      {draft.current.name || "Untitled agent"}
-                    </h3>
-                    <p className={styles.hint}>
-                      Saved {new Date(draft.savedAt).toLocaleString()}
-                    </p>
-                    <details>
-                      <summary>Contents</summary>
-                      {(
-                        [
-                          "personality",
-                          "backstory",
-                          "strategyStyle",
-                          "werewolfStrategyStyle",
-                          "visualDesign",
-                          "performanceInstructions",
-                        ] as const
-                      ).map(
-                        (field) =>
-                          draft.current[field] && (
-                            <p key={field} className="whitespace-pre-wrap">
-                              <strong>
-                                {
-                                  {
-                                    personality: "Personality",
-                                    backstory: "Backstory",
-                                    strategyStyle: "Influence strategy",
-                                    werewolfStrategyStyle: "Werewolf strategy",
-                                    visualDesign: "Appearance",
-                                    performanceInstructions: "Performance",
-                                  }[field]
-                                }
-                              </strong>{" "}
-                              {draft.current[field]}
-                            </p>
-                          ),
-                      )}
-                      <p>
-                        {agentModelLabel(draft.current.modelPreference) ??
-                          "House choice"}{" "}
-                        ·{" "}
-                        {PLAYER_VOICES.find(
-                          (voice) => voice.id === draft.current.voiceId,
-                        )?.name ?? "Automatic voice"}
-                      </p>
-                      {draft.current.fullBodyReferenceUrl && (
-                        <OwnedCharacterImage
-                          src={draft.current.fullBodyReferenceUrl}
-                          alt={draft.current.name || "Draft artwork"}
-                          className="max-h-64 w-full object-contain"
-                        />
-                      )}
-                    </details>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPendingRestore(draft);
-                        setRestoreConflict(
-                          !sameSnapshot(draft.base, initialSnapshot),
-                        );
-                        setRestoreAlternatives(null);
-                      }}
-                    >
-                      {source === "tab" ? "Tab" : "Account"}
-                    </button>
-                  </section>
-                );
-              })}
-            </section>
-          )}
-          {pendingRestore && !restoreAlternatives && (
-            <section
-              className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4"
-              aria-label="Saved local draft"
-            >
-              <p className="text-sm font-semibold text-text-primary">
-                {restoreConflict
-                  ? "A local draft was saved from an earlier Agent version."
-                  : "A local draft is available."}
-              </p>
-              <p className="mt-1 text-xs leading-5 text-white/55">
-                Saved {new Date(pendingRestore.savedAt).toLocaleString()}. Apply
-                it to the editor, or clear it to keep working from this version.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={applyDraft}
-                  disabled={!remoteReady}
-                  className="influence-button-primary min-h-11 rounded-lg px-4 text-sm font-semibold"
-                >
-                  Resume
-                </button>
-                <button
-                  type="button"
-                  onClick={clearStoredDraft}
-                  className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm"
-                >
-                  Discard
-                </button>
-              </div>
-            </section>
-          )}
-          {!!draftConflicts.length && (
-            <section className={styles.review} aria-label="Draft conflicts">
-              <h2>Resolve draft conflicts</h2>
-              <p>
-                These fields changed both in your draft and in the saved agent.
-                Choose which value to keep.
-              </p>
-              {draftConflicts.map((field) => (
-                <div className={styles.change} key={field}>
-                  <h3>
-                    {
-                      {
-                        images: "Artwork and portrait",
-                        name: "Name",
-                        gender: "Gender",
-                        personaKey: "Archetype",
-                        personality: "Personality",
-                        backstory: "Backstory",
-                        strategyStyle: "Influence strategy",
-                        werewolfStrategyStyle: "Werewolf strategy",
-                        performanceInstructions: "Performance",
-                        visualDesign: "Appearance",
-                        modelPreference: "Preferred model",
-                        voiceId: "Voice",
-                        fullBodyReferenceUrl: "Artwork",
-                        explicitAvatarUrl: "Portrait",
-                        portraitCrop: "Portrait crop",
-                        headPosition: "Head position",
-                        headSuggestion: "Head position",
-                      }[field]
-                    }
-                  </h3>
-                  {field === "images" ? (
-                    <div className={styles.candidate}>
-                      {initialSnapshot.fullBodyReferenceUrl && (
-                        <OwnedCharacterImage
-                          src={initialSnapshot.fullBodyReferenceUrl}
-                          alt="Current saved artwork"
-                        />
-                      )}
-                      {fullBodyReferenceUrl && (
-                        <OwnedCharacterImage
-                          src={fullBodyReferenceUrl}
-                          alt="Restored draft artwork"
-                        />
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <del>{JSON.stringify(initialSnapshot[field])}</del>
-                      <ins>{JSON.stringify(currentSnapshot[field])}</ins>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDraftConflicts((fields) =>
-                        fields.filter((value) => value !== field),
-                      )
-                    }
-                  >
-                    Keep
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = { ...currentSnapshot };
-                      if (field === "images") {
-                        for (const key of imageFields)
-                          Object.assign(next, {
-                            [key]: initialSnapshot[key],
-                          });
-                      } else
-                        Object.assign(next, {
-                          [field]: initialSnapshot[field],
-                        });
-                      setName(next.name);
-                      setPersonality(next.personality);
-                      setBackstory(next.backstory);
-                      setStrategyStyle(next.strategyStyle);
-                      setWerewolfStrategyStyle(next.werewolfStrategyStyle);
-                      setVisualDesign(next.visualDesign);
-                      setPerformanceInstructions(next.performanceInstructions);
-                      setModelPreference(next.modelPreference ?? "default");
-                      setVoiceId(next.voiceId ?? null);
-                      setPersonaKey(next.personaKey);
-                      setGender(next.gender);
-                      setFullBodyReferenceUrl(next.fullBodyReferenceUrl);
-                      setExplicitAvatarUrl(next.explicitAvatarUrl);
-                      setHeadPosition(next.headPosition);
-                      setHeadSuggestion(next.headSuggestion);
-                      setPortraitCrop(next.portraitCrop);
-                      setDraftConflicts((fields) =>
-                        fields.filter((value) => value !== field),
-                      );
-                    }}
-                  >
-                    Current
-                  </button>
-                </div>
-              ))}
-            </section>
-          )}
           {headConfirmationRequired && (
             <p role="status" className="text-sm text-amber-200">
               The new artwork needs a confirmed headshot.{" "}

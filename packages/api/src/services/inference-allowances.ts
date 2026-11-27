@@ -180,7 +180,10 @@ export async function reserveInference(
         eq(reservations.userId, input.userId),
         eq(reservations.category, input.category),
         inArray(reservations.state, ["reserved", "dispatched", "uncertain"]),
-        sql`(${reservations.category} != 'image' OR (${reservations.executionReleasedAt} IS NULL AND ${reservations.executionLeaseUntil} > now()))`,
+        sql`${reservations.executionReleasedAt} IS NULL AND COALESCE(
+          ${reservations.executionLeaseUntil},
+          CASE WHEN ${reservations.category} = 'text' THEN ${reservations.createdAt} + interval '1 millisecond' * ${TEXT_EXECUTION_LEASE_MS} END
+        ) > now()`,
       ),
     );
   if (
@@ -243,13 +246,9 @@ export async function reserveInference(
       bucket,
       periodStart: account.periodStart,
       createdAt: now,
-      ...(input.category === "image"
-        ? {
-            executionLeaseUntil: new Date(
-              Date.parse(now) + IMAGE_EXECUTION_LEASE_MS,
-            ).toISOString(),
-          }
-        : {}),
+      executionLeaseUntil: new Date(
+        Date.parse(now) + (input.category === "image" ? IMAGE_EXECUTION_LEASE_MS : TEXT_EXECUTION_LEASE_MS),
+      ).toISOString(),
     })
     .returning();
   return row!;
@@ -265,10 +264,9 @@ export async function dispatchInference(tx: Tx, id: string, userId: string) {
   if (
     !row ||
     !["reserved", "dispatched"].includes(row.state) ||
-    (row.category === "image" &&
-      (row.executionReleasedAt ||
-        !row.executionLeaseUntil ||
-        Date.parse(row.executionLeaseUntil) <= Date.now()))
+    row.executionReleasedAt ||
+    (row.category === "image" && !row.executionLeaseUntil) ||
+    Date.parse(row.executionLeaseUntil ?? row.createdAt) + (row.executionLeaseUntil ? 0 : TEXT_EXECUTION_LEASE_MS) <= Date.now()
   )
     throw new GenerationAdmissionError(
       "generation_recovery_required",
@@ -313,18 +311,9 @@ export async function settleInference(
     .set({
       state,
       finishedAt: state === "uncertain" ? null : now,
-      ...(row.category === "image"
-        ? {
-            executionReleasedAt: row.executionReleasedAt ?? now,
-            executionReleaseReason:
-              row.executionReleaseReason ??
-              (state === "succeeded"
-                ? "completed"
-                : state === "failed"
-                  ? "failed"
-                  : "interrupted"),
-          }
-        : {}),
+      executionReleasedAt: row.executionReleasedAt ?? now,
+      executionReleaseReason: row.executionReleaseReason ??
+        (state === "succeeded" ? "completed" : state === "failed" ? "failed" : "interrupted"),
     })
     .where(eq(reservations.id, id));
 }
@@ -615,6 +604,29 @@ export async function checkInferenceDispatch(tx: Tx, userId: string) {
 }
 
 export const IMAGE_EXECUTION_LEASE_MS = 120_000;
+const TEXT_EXECUTION_LEASE_MS = 180_000;
+
+/** Release abandoned workspace execution while retaining any unresolved provider debit. */
+export async function recoverExpiredTextExecutions(tx: Tx, userId: string) {
+  const { now } = await lockAccount(tx, userId);
+  const ops = schema.accountTextOperations;
+  const stale = await tx.select({ id: reservations.id, state: reservations.state, operationId: ops.id })
+    .from(reservations)
+    .innerJoin(ops, sql`${reservations.id} = 'text:' || ${ops.id} AND ${ops.userId} = ${reservations.userId}`)
+    .where(and(
+      eq(reservations.userId, userId), eq(reservations.category, "text"),
+      inArray(reservations.state, ["reserved", "dispatched", "uncertain"]),
+      inArray(ops.state, ["reserved", "dispatched", "uncertain"]),
+      sql`(${reservations.executionReleasedAt} IS NOT NULL OR ${reservations.state} = 'uncertain'
+        OR COALESCE(${reservations.executionLeaseUntil}, ${reservations.createdAt} + interval '1 millisecond' * ${TEXT_EXECUTION_LEASE_MS}) <= ${now}::timestamptz)`,
+    ));
+  for (const row of stale) {
+    await settleInference(tx, row.id, userId, row.state === "reserved" ? "failed" : "uncertain");
+    await tx.update(ops).set({
+      state: "failed", failedBeforeDispatch: row.state === "reserved", completedAt: now,
+    }).where(eq(ops.id, row.operationId));
+  }
+}
 
 /** Billing evidence and its debit survive lost execution ownership. No provider call. */
 export async function recoverExpiredImageExecutions(tx: Tx, userId: string) {

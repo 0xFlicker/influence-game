@@ -40,7 +40,8 @@ describe('account inference allowances',()=>{
   const r=await reserve();await action({kind:'pause',paused:true});
   await expect(db.transaction(tx=>dispatchInference(tx,r.id,owner))).rejects.toMatchObject({code:'generation_paused'});
   await action({kind:'pause',paused:false});await db.transaction(tx=>dispatchInference(tx,r.id,owner));await db.transaction(tx=>settleInference(tx,r.id,owner,'uncertain'));
-  await expect(reserve()).rejects.toMatchObject({code:'generation_busy'});
+  expect((await reserve()).state).toBe('reserved');
+  expect((await readInferenceAccount(db,admin,owner)).pending.find(row=>row.id===r.id)).toMatchObject({state:'uncertain',executionReleaseReason:'interrupted'});
   await expect(changeInferenceAccount(db,owner,{actionId:randomUUID(),reason:'no',userId:owner,kind:'grant',category:'text',amount:5})).rejects.toMatchObject({status:403});
  });
  test('spending totals preserve unknown costs and exclude game spend',async()=>{
@@ -123,7 +124,25 @@ describe('account inference allowances',()=>{
   })).rejects.toThrow('Network disconnected');
   const detail=await readInferenceAccount(db,admin,owner);expect(detail.account.textBalance).toBe(99);expect(detail.pending[0]!.state).toBe('uncertain');
   const operations=await loadPayloads(db.select().from(schema.accountTextOperations));
-  expect(operations.find(operation=>operation.state==='uncertain')).toMatchObject({promptTokens:9,completionTokens:2,providerRequestId:'cue-response'});
+  expect(operations.find(operation=>operation.providerRequestId==='cue-response')).toMatchObject({state:'failed',promptTokens:9,completionTokens:2});
+  expect((await reserve()).state).toBe('reserved');
+ });
+
+ test('workspace text recovery releases an expired dispatch without erasing paid usage',async()=>{
+  const id=randomUUID(), requestKey=randomUUID();
+  await db.insert(schema.accountTextOperations).values({id,userId:owner,requestKey,kind:'profile_creation',
+    model:'gpt-6-luna',inputHash:'original',state:'dispatched',providerRequestId:'paid-response',promptTokens:12,completionTokens:5});
+  await reserve(`text:${id}`);
+  await db.transaction(tx=>dispatchInference(tx,`text:${id}`,owner));
+  await db.update(schema.inferenceReservations).set({executionLeaseUntil:new Date(Date.now()-1000).toISOString()})
+    .where(eq(schema.inferenceReservations.id,`text:${id}`));
+  const result=await runAccountText(db,{userId:owner,requestKey:randomUUID(),kind:'profile_creation',model:'gpt-6-luna',payload:{}},
+    async attempt=>{await attempt(async()=>({id:'fresh',object:'chat.completion',created:0,model:'gpt-6-luna',choices:[]}));return {name:'Recovered'};});
+  expect(result).toEqual({name:'Recovered'});
+  const [interrupted]=await db.select().from(schema.accountTextOperations).where(eq(schema.accountTextOperations.id,id));
+  expect(interrupted).toMatchObject({state:'failed',providerRequestId:'paid-response',promptTokens:12,completionTokens:5});
+  const [reservation]=await db.select().from(schema.inferenceReservations).where(eq(schema.inferenceReservations.id,`text:${id}`));
+  expect(reservation).toMatchObject({state:'uncertain',executionReleaseReason:'interrupted'});
  });
 
 });

@@ -32,6 +32,8 @@ const copy = {
   assistant_input: ["Describe your changes first.", "none"],
   image_pending: ["Finish or discard the current image.", "discard"],
   artwork_recovery_required: ["Image generation stopped.", "discard"],
+  artwork_status_unknown: ["We couldn’t confirm whether your image finished.", "none"],
+  artwork_queue_expired: ["Image generation stopped before it started.", "retry"],
   artwork_not_found: ["Image request is unavailable.", "discard"],
   artwork_changed: ["Artwork changed in another tab.", "reload"],
   artwork_select_failed: ["Couldn’t select artwork.", "none"],

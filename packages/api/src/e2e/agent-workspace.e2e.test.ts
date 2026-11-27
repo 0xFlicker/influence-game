@@ -9,7 +9,7 @@ import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { mkdir } from "node:fs/promises";
-import type { Browser, Page } from "puppeteer";
+import type { Browser, HTTPRequest, Page } from "puppeteer";
 import { schema } from "../db/index.js";
 import { processMockCharacterReference } from "../__tests__/character-generation-fixture.js";
 import {
@@ -54,6 +54,11 @@ beforeAll(async () => {
   database = await createIsolatedTestDb();
   const admin = await createAdminUser(database.db);
   owner = await createPlayerUser(database.db, 1);
+  // These journeys share one owner. Keep the daily cap from spilling over into
+  // unrelated tests while preserving normal per-request admission and limits.
+  const plans = schema.inferencePlans;
+  const [freePlan] = await database.db.select().from(plans).where(eq(plans.id, "free"));
+  await database.db.update(plans).set({ policy: { ...freePlan!.policy, imageDaily: 50 } }).where(eq(plans.id, "free"));
   await recordCurrentLegalAcceptance(
     database.db,
     owner.userId,
@@ -628,7 +633,7 @@ test("management → Edit → Guided/Advanced → review → Reviewing preserves
   try {
     await page.waitForFunction('document.body.innerText.includes("Mira Voss")');
     await page.screenshot({ path: proof + "management.png", fullPage: true });
-    await button(page, "Edit");
+    await button(page, "Edit Mira Voss");
     await page.waitForSelector("#agent-personality");
     for (const mode of ["Advanced", "Guided"]) {
       await button(page, mode);
@@ -774,6 +779,7 @@ test("Advanced creation saves voice and ready artwork directly from review", asy
     { name: "prefers-reduced-motion", value: "reduce" },
   ]);
   try {
+    const attemptsBefore = (await database.db.select().from(schema.visualRenderAttempts)).length;
     await button(page, "Advanced");
     await page.waitForSelector("#agent-name", { visible: true });
     await fill(page, "#agent-name", "Arden Workshop");
@@ -811,17 +817,7 @@ test("Advanced creation saves voice and ready artwork directly from review", asy
     ).toBe("Arden Workshop");
     await button(page, "Appearance");
     await button(page, "Generate");
-    let job: typeof schema.characterReferenceJobs.$inferSelect | undefined;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const rows = await database.db
-        .select()
-        .from(schema.characterReferenceJobs)
-        .where(eq(schema.characterReferenceJobs.userId, owner.userId));
-      job = rows.find((row) => !row.agentId);
-      if (job) break;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    expect(job).toBeDefined();
+    const job = await latestPendingJob("Arden Workshop");
     await page.waitForSelector('[data-image-updating="true"]');
     expect(await page.$eval('[data-image-updating="true"]', element => element.getAttribute("aria-busy"))).toBe("true");
     await button(page, "Close");
@@ -834,7 +830,6 @@ test("Advanced creation saves voice and ready artwork directly from review", asy
     ).bytes();
     await processMockCharacterReference(database.db, art);
     await page.goto(servers.webUrl + "/agents/create");
-    await button(page, "Resume");
     await page.waitForFunction('document.body.innerText.includes("Artwork ready")');
     await button(page, "Review");
     await page.screenshot({
@@ -856,12 +851,12 @@ test("Advanced creation saves voice and ready artwork directly from review", asy
         await database.db
           .select()
           .from(schema.characterReferenceJobs)
-          .where(eq(schema.characterReferenceJobs.id, job!.id))
+          .where(eq(schema.characterReferenceJobs.id, job.id))
       )[0]!.status,
     ).toBe("selected");
     expect(
       await database.db.select().from(schema.visualRenderAttempts),
-    ).toHaveLength(2);
+    ).toHaveLength(attemptsBefore + 2);
     await database.db
       .update(schema.agentScreenings)
       .set({ status: "completed", recommendation: "no_concern" })
@@ -969,6 +964,7 @@ async function mockCharacterAssistant(
   name: string,
   personality: string,
   generationReady: Promise<void> = Promise.resolve(),
+  interceptOther?: (request: HTTPRequest) => boolean,
 ) {
   await page.setRequestInterception(true);
   page.on("request", (request) => {
@@ -1024,7 +1020,7 @@ async function mockCharacterAssistant(
           personality,
         }),
       }));
-    } else void request.continue();
+    } else if (!interceptOther?.(request)) void request.continue();
   });
 }
 async function latestPendingJob(name: string) {
@@ -1046,7 +1042,7 @@ test("first guided conversation stays readable while generation is pending", asy
   const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/agents/create", { privateKey: owner.wallet.privateKey });
   try {
     await mockCharacterAssistant(page, "Pending Character", "An observant player.", generation.promise);
-    await page.waitForFunction('!document.querySelector("#agent-creation-message")?.disabled');
+    await page.waitForSelector('section[aria-label="Model and voice"]', { visible: true });
     await fill(page, "#agent-creation-message", "A patient lighthouse keeper who charts storms and quietly brokers alliances, but distrusts easy promises.");
     await button(page, "Send");
     await page.waitForSelector('[role="status"][aria-label="Assistant typing"]');
@@ -1074,6 +1070,58 @@ test("first guided conversation stays readable while generation is pending", asy
     generation.resolve();
     await page.close();
   }
+}, 120_000);
+test("a dropped image connection reconnects to the durable request and keeps the composer editable", async () => {
+  const page = await createAuthenticatedPage(browser, owner.jwt, servers.webUrl + "/agents/create", {
+    privateKey: owner.wallet.privateKey,
+  });
+  const name = "Image Reconnection";
+  let imageRequestId: string | undefined;
+  let imagePosts = 0;
+  let dropImageStatus = true;
+  let disconnectedReads = 0;
+  try {
+    await mockCharacterAssistant(page, name, "A quiet investigator.", Promise.resolve(), (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path === "/api/agent-profiles/visual-reference" && request.method() === "POST") {
+        imageRequestId = JSON.parse(request.postData()!).requestId;
+        imagePosts++;
+      }
+      if (imageRequestId && path.endsWith("/visual-references/" + imageRequestId) && dropImageStatus) {
+        disconnectedReads++;
+        void request.abort("internetdisconnected");
+        return true;
+      }
+      return false;
+    });
+    await page.waitForSelector('section[aria-label="Model and voice"]', { visible: true });
+    await fill(page, "#agent-creation-message", "Create a quiet investigator.");
+    await button(page, "Send");
+    await button(page, "Continue");
+    await fill(page, "#agent-creation-message", "A bronze coat and narrow boots.");
+    await button(page, "Send");
+    const job = await latestPendingJob(name);
+    await page.waitForFunction("document.body.innerText.includes('Checking your image request')");
+    await fill(page, "#agent-creation-message", "Keep this next idea while the network reconnects.");
+    expect(disconnectedReads).toBeGreaterThan(0);
+    await page.setViewport({ width: 390, height: 844 });
+    await page.$eval("#agent-creation-message", (input) => input.scrollIntoView({ block: "center" }));
+    await page.screenshot({ path: proof + "image-reconnecting-mobile.png" });
+    await page.waitForFunction("document.body.innerText.includes('We couldn’t confirm whether your image finished')");
+    expect(disconnectedReads).toBeGreaterThanOrEqual(4);
+    const art = await Bun.file(new URL("../../../web/public/avatars/personas/full-body-v1/strategic.webp", import.meta.url)).bytes();
+    expect(await processMockCharacterReference(database.db, art)).toBe(1);
+    dropImageStatus = false;
+    await button(page, "Check status");
+    await page.waitForFunction("document.body.innerText.includes('Artwork ready')");
+    expect(await page.$eval("#agent-creation-message", (input) => (input as unknown as { value: string }).value))
+      .toBe("Keep this next idea while the network reconnects.");
+    expect(imagePosts).toBe(1);
+    expect(imageRequestId).toBe(job.id);
+    const rows = await database.db.select({ id: schema.characterReferenceJobs.id, status: schema.characterReferenceJobs.status })
+      .from(schema.characterReferenceJobs).where(eq(schema.characterReferenceJobs.id, job.id));
+    expect(rows).toEqual([{ id: job.id, status: "ready" }]);
+  } finally { await page.close(); }
 }, 120_000);
 test("Guided creation saves model, voice and ready artwork directly from review", async () => {
   const page = await createAuthenticatedPage(
@@ -1625,13 +1673,9 @@ test("pending requests are visible before generation and cancellation keeps edit
       ).toBe(true);
     }
     await page.setViewport({ width: 1440, height: 900 });
-    await button(page, "Activity");
-    await page.waitForSelector('[aria-label="Image requests"]');
-    await button(page, "Cancel image for Mira Voss");
-    await page.waitForSelector("dialog[open]");
-    await button(page, "Cancel");
+    await button(page, "Cancel image");
     await page.waitForFunction(
-      `!document.querySelector('[aria-label="Image requests"]')`,
+      `!document.querySelector('[aria-label="Image generation"]')`,
     );
     expect(await page.$('[data-image-updating="true"]')).toBeNull();
     expect(
@@ -2102,7 +2146,7 @@ test("delayed image status never moves the editor in any mode or viewport", asyn
       }
 }, 120000);
 
-test("late account draft recovery and Resume keep the editor shell stationary", async () => {
+test("late account draft recovery keeps the editor shell stationary", async () => {
   const first = await createAuthenticatedPage(
     browser,
     owner.jwt,
@@ -2146,7 +2190,6 @@ test("late account draft recovery and Resume keep the editor shell stationary", 
     await page.evaluate("document.fonts.ready");
     const before = await editorPositions(page);
     release.resolve();
-    await button(page, "Resume");
     await page.waitForFunction(
       'document.querySelector("#agent-personality")?.value === "A saved draft that should resume without moving the editor."',
     );

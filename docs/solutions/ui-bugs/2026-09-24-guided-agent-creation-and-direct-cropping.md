@@ -161,3 +161,13 @@ The shared scene-model update passed `bun run check`, the provider-free baseline
 (2,030 passed, five intentional skips), and the PostgreSQL API baseline
 (1,762 passed). No deployment or live multi-character quality evaluation was
 performed for this follow-up.
+
+## Recovering a locked composer
+
+The editor used one lock for typing and submission, and cancellation of a
+stale image job lived in Activity. Keep text entry available during generation,
+draft reconciliation and connection errors. Apply draft changes and block
+conflicting sends or saves through their own controls. Place image actions and
+draft sync recovery beside the affected editor. Recheck the original durable
+image request when status requests drop and expire unclaimed work at the queue
+boundary. See [the generation recovery contract](../../agent-generations.md).

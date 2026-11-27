@@ -226,7 +226,7 @@ describe("agent workspace drafts",()=>{
   expect(view.container.querySelector('img[src="/avatars/arden.png"]')).toBeTruthy();
  });
  test("restores a draft and offers both strategies without mixing their content",async()=>{
-  const view=await renderForm(true);fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
+  const view=await renderForm(true);fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
   expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(draftStrategy);
   expect((view.getByLabelText("Werewolf strategy") as HTMLTextAreaElement).value).toBe("");
   expect(view.queryByLabelText("Saved local draft")).toBeNull();
@@ -277,7 +277,6 @@ test.each([false, true])("headshot confirmation saves the artwork and reviews si
   }, { preconnect: originalFetch.preconnect }) as typeof fetch;
 
   const view = await renderForm(false, async (params) => { submissions.push(params); });
-  fireEvent.click(view.getByRole("button", { name: "Resume" }));
   fireEvent.click(view.getByRole("button", { name: "Select" }));
   const preview = await view.findByRole("dialog", { name: "Headshot preview" });
   const action = profileEdited ? "Confirm" : "Save artwork";
@@ -354,10 +353,16 @@ test("a local draft cannot be silently replaced by a differing account draft",as
  globalThis.fetch=Object.assign(async (_input:RequestInfo|URL,init?:RequestInit)=>{
     if (String(_input).includes("/agent-profiles/generations")) return Response.json([]);if(init?.method==="PUT"){writes++;return Response.json({version:"11111111-1111-4111-8111-111111111111:2"});}return Response.json({version:"11111111-1111-4111-8111-111111111111:1",document:accountDraft});},{preconnect:originalFetch.preconnect}) as typeof fetch;
  const view=await renderForm(false,async()=>{},false,{},draftScope,true);
- fireEvent.click(await view.findByRole("button",{name:"Choose draft"}));
  const choices=await view.findByRole("region",{name:"Choose draft"});
  expect(choices.textContent).toContain("Account coalition plan");expect(choices.textContent).toContain(draftStrategy);expect(writes).toBe(0);
- fireEvent.click(within(choices).getByRole("button",{name:"Tab"}));fireEvent.click(view.getByRole("button",{name:"Resume"}));fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
+ fireEvent.click(view.getByRole("button",{name:"Guided"}));
+ const composer = view.getByLabelText("Message the character assistant") as HTMLTextAreaElement;
+ expect(composer.disabled).toBe(false);
+ fireEvent.input(composer,{target:{value:"Keep this idea while I compare the drafts."}});
+
+ fireEvent.click(within(choices).getByRole("button",{name:"Tab"}));fireEvent.click(view.getByRole("button",{name:"Resume"}));
+ expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("Keep this idea while I compare the drafts.");
+ fireEvent.click(view.getByRole("button",{name:"Advanced"}));fireEvent.click(view.getByRole("tab",{name:"Strategy"}));
  expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(draftStrategy);
 });
 
@@ -393,8 +398,6 @@ test("Resume waits for account recovery and does not reopen the recovered draft"
   fireEvent.click(view.getByRole("button",{name:"Close"}));
   expect(writes).toBe(0);
   await act(async()=>{resolveRead(Response.json({version:"11111111-1111-4111-8111-111111111111:1",document:stored}));});
-  await waitFor(()=>expect((view.getByRole("button",{name:"Resume"}) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(view.getByRole("button",{name:"Resume"}));
   await waitFor(()=>expect(view.queryByLabelText("Saved local draft")).toBeNull());
   fireEvent.click(view.getByRole("button",{name:"Guided"}));
   fireEvent.click(view.getByRole("button",{name:"Advanced"}));
@@ -423,7 +426,8 @@ test.each([false, true])("artwork handoff waits for recovery and only auto-resum
   if(conflict){
     await waitFor(()=>expect((view.getByRole("button",{name:"Resume"}) as HTMLButtonElement).disabled).toBe(false));
     expect(artworkReads).toBe(0);
-    fireEvent.click(view.getByRole("button",{name:"Resume"}));
+    const resume = view.queryByRole("button",{name:"Resume"});
+ if (resume) fireEvent.click(resume);
   }
   await waitFor(()=>expect((view.getByLabelText("Personality") as HTMLTextAreaElement).value).toBe(stored.current.personality));
   await waitFor(()=>expect(view.getByRole("button",{name:"Select"})).toBeTruthy());
@@ -439,7 +443,8 @@ test("a failed artwork selection never offers image generation as its retry",asy
   globalThis.fetch=Object.assign(async(input:RequestInfo|URL)=>{
     if (String(input).includes("/agent-profiles/generations")) return Response.json([]);requests.push(String(input));return Response.json({error:"Synthetic decision failure"},{status:503});},{preconnect:originalFetch.preconnect}) as typeof fetch;
   const view=await renderForm(false);
-  fireEvent.click(view.getByRole("button",{name:"Resume"}));
+  const resume = view.queryByRole("button",{name:"Resume"});
+ if (resume) fireEvent.click(resume);
   fireEvent.click(view.getByRole("button",{name:"Select"}));
   const alert=await view.findByRole("alert");
   expect(alert.textContent).toContain("Couldn’t select artwork.");
@@ -465,13 +470,35 @@ test("generation and review wait for account draft recovery without showing an e
   expect((view.getByRole("button", { name: "Review" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(view.getByRole("button", { name: "Generate" }));
   fireEvent.click(view.getByRole("button", { name: "Guided" }));
-  expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).disabled).toBe(true);
+  expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).disabled).toBe(false);
   expect(view.queryByRole("alert")).toBeNull();
   expect(posts).toBe(0);
   await act(async () => read.resolve(Response.json(null)));
   await waitFor(() => expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).disabled).toBe(false));
   expect(view.queryByText("Loading draft…")).toBeNull();
   expect(view.queryByRole("alert")).toBeNull();
+});
+
+test("a failed account draft load keeps the composer editable and retries sync inline", async () => {
+  domWindow.sessionStorage.removeItem(draftKey);
+  domWindow.localStorage.setItem("influence_session", "test-token");
+  let reads = 0;
+  globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes("/agent-profiles/generations")) return Response.json([]);
+    if (init?.method === "PUT") return Response.json({ version: "after-recovery" });
+    if (++reads === 1) throw new TypeError("Disconnected");
+    return Response.json(null);
+  }, { preconnect: originalFetch.preconnect }) as typeof fetch;
+  const view = await renderForm(false, async () => {}, false, {}, draftScope, true);
+  fireEvent.click(view.getByRole("button", { name: "Guided" }));
+  const retry = await view.findByRole("button", { name: "Retry sync" });
+  const input = view.getByLabelText("Message the character assistant") as HTMLTextAreaElement;
+  expect(input.disabled).toBe(false);
+  fireEvent.input(input, { target: { value: "This idea survives a failed draft load." } });
+  fireEvent.click(retry);
+  await waitFor(() => expect((view.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(input.value).toBe("This idea survives a failed draft load.");
+  expect(view.queryByRole("button", { name: "Retry sync" })).toBeNull();
 });
 
 

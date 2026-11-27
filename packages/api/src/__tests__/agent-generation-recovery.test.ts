@@ -16,6 +16,7 @@ import {
 } from "../services/inference-allowances.js";
 import {
   requestCharacterReference,
+  readCharacterReference,
   decideCharacterReference,
   processCharacterReference,
   retryCharacterReference,
@@ -111,6 +112,31 @@ test("concurrent starts admit one job rather than two hidden queued requests", a
   ]);
   expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
   expect(await db.select().from(schema.characterReferenceJobs)).toHaveLength(1);
+});
+test("an unclaimed image expires without consuming a provider slot and can be retried", async () => {
+  const id = randomUUID();
+  await requestCharacterReference(db, owner, characterGenerationInput(id, "Abandoned image"), "");
+  await db.update(schema.characterReferenceJobs)
+    .set({ updatedAt: new Date(Date.now() - 11 * 60_000).toISOString() })
+    .where(eq(schema.characterReferenceJobs.id, id));
+  expect(await readCharacterReference(db, owner, id)).toMatchObject({
+    status: "failed", errorCode: "artwork_queue_expired", retryable: true,
+  });
+  expect(await listAgentGenerations(db, owner)).toMatchObject([{ id, status: "stopped", blocksGeneration: false }]);
+  await processCharacterReference(db);
+  expect(await db.select().from(schema.inferenceReservations)).toHaveLength(0);
+  expect(await retryCharacterReference(db, owner, id)).toMatchObject({ id, status: "queued" });
+});
+test("an expired worker claim shows a stopped request and retry clears the old lease", async () => {
+  const id = randomUUID();
+  await requestCharacterReference(db, owner, characterGenerationInput(id, "Interrupted image"), "");
+  await db.update(schema.characterReferenceJobs)
+    .set({ status: "processing", leaseId: randomUUID(), leaseUntil: new Date(Date.now() - 1000).toISOString() })
+    .where(eq(schema.characterReferenceJobs.id, id));
+  expect(await listAgentGenerations(db, owner)).toMatchObject([{ id, status: "stopped", blocksGeneration: false }]);
+  expect(await readCharacterReference(db, owner, id)).toMatchObject({ status: "failed", retryable: true });
+  expect(await retryCharacterReference(db, owner, id)).toMatchObject({ id, status: "queued" });
+  expect((await db.select().from(schema.characterReferenceJobs))[0]).toMatchObject({ leaseId: null, leaseUntil: null });
 });
 test("activity routes enforce authentication, owner isolation and a scalar source", async () => {
   process.env.JWT_SECRET = "image-activity-test";
