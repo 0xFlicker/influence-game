@@ -406,7 +406,10 @@ export function AuthenticationWrapper({
   const signupForm = managedAuthMode === "full" && intent === "create_account"
     && !privyStarting && !privyAccountHandoff && !reversePrivyToken
     ? (
-      <SignupAvailabilityGate heading={<h2 tabIndex={-1} className="sr-only">Create account</h2>}>
+      <SignupAvailabilityGate
+        heading={<h2 tabIndex={-1} className="sr-only">Create account</h2>}
+        pending={presentation === "modal" ? <SignupFormSkeleton /> : undefined}
+      >
         {flow}
       </SignupAvailabilityGate>
     ) : flow;
@@ -440,6 +443,9 @@ export function AuthenticationWrapper({
     );
   }
 
+  // Keep the panel in place as the forms, skeleton and availability notices swap.
+  const primaryPanelHeight = isCreator ? "h-[54rem]" : "h-[48rem]";
+
   return createPortal(
     <div
       className="house-auth-backdrop fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
@@ -454,7 +460,7 @@ export function AuthenticationWrapper({
         aria-modal="true"
         aria-label="Influence authentication"
         tabIndex={-1}
-        className="house-auth-panel relative max-h-full w-full max-w-lg overflow-y-auto rounded-3xl p-6 shadow-2xl outline-none sm:p-8"
+        className={`house-auth-panel relative max-h-full w-full max-w-lg overflow-y-auto rounded-3xl p-6 shadow-2xl outline-none sm:p-8 ${primaryTabs ? `${primaryPanelHeight} [scrollbar-gutter:stable]` : ""}`}
       >
         <div className="mb-6 flex items-center gap-4 border-b border-amber-100/15 pb-6">
           <div className="flex size-20 shrink-0 items-center justify-center rounded-full border border-amber-200/30 bg-[#100d18]/80">
@@ -482,6 +488,38 @@ export function AuthenticationWrapper({
       </div>
     </div>,
     document.body,
+  );
+}
+
+function SignupFormSkeleton() {
+  return (
+    <div aria-hidden="true" data-testid="signup-form-skeleton" className="space-y-5 motion-safe:animate-pulse">
+      <div className="flex h-7 items-center">
+        <div className="h-3 w-32 rounded bg-white/15" />
+      </div>
+      <div className="space-y-4">
+        {["w-10", "w-16"].map(labelWidth => (
+          <div key={labelWidth} className="pb-5">
+            <div className="mb-1 flex h-5 items-center">
+              <div className={`h-3 rounded bg-white/15 ${labelWidth}`} />
+            </div>
+            <div className="h-11 rounded-lg border border-amber-200/15 bg-white/5" />
+          </div>
+        ))}
+        <div className="flex items-start gap-3">
+          <div className="mt-1 size-4 shrink-0 rounded-sm bg-white/15" />
+          <div className="flex-1 space-y-2 py-1">
+            <div className="h-3 rounded bg-white/10" />
+            <div className="h-3 w-2/3 rounded bg-white/10 sm:hidden" />
+          </div>
+        </div>
+        <div className="h-11 rounded-lg bg-indigo-400/20" />
+      </div>
+      <div className="flex h-4 items-center">
+        <div className="h-px w-full bg-border-active" />
+      </div>
+      <div className="h-11 rounded-lg border border-border-active bg-white/5" />
+    </div>
   );
 }
 

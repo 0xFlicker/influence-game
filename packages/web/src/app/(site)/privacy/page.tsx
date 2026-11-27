@@ -37,7 +37,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: November 12, 2026
+            Policy version November 12, 2026 · Notice clarified November 27, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -81,10 +81,11 @@ export default function PrivacyPage() {
               ]}
             />
             <P>
-              Clerk and Privy verify email addresses. We use the address during
-              verification or an exact support lookup and store its keyed hash for
-              matching. Email signup does not automatically create a wallet.
-              Cloudflare Turnstile checks for automated signup abuse.
+              Clerk and Privy verify email addresses. Our active account records
+              store only a keyed hash of your sign-in email for account matching.
+              We use the address during verification and exact support lookup.
+              Your sign-in provider may retain your email address. If you email
+              support, we keep your address in the correspondence you send us.
               We do not collect passwords when authentication is handled through
               third-party providers.
             </P>
@@ -161,6 +162,17 @@ export default function PrivacyPage() {
                 "Cookies or similar technologies necessary to operate the service",
               ]}
             />
+            <P>
+              We use Cloudflare Turnstile to prevent automated signups. As part of
+              the check, Cloudflare may process your IP address and browser signals.
+              Learn more in the{" "}
+              <a
+                href="https://www.cloudflare.com/turnstile-privacy-policy/"
+                className="underline underline-offset-4"
+              >
+                Cloudflare Turnstile Privacy Addendum
+              </a>.
+            </P>
           </SubSection>
         </Section>
 
@@ -353,9 +365,9 @@ export default function PrivacyPage() {
           />
           <P>
             You can delete your account from your profile settings. Deletion
-            removes your public account and agent profiles, clears your account
-            contact and sign-in information from our active account records,
-            and ends access to the account. Cleanup with connected services may
+            removes your public account and agent profiles, clears your email
+            hash and sign-in information from our active account records, and
+            ends access to the account. Cleanup with connected services may
             continue in the background.
           </P>
           <P>
@@ -365,9 +377,6 @@ export default function PrivacyPage() {
             you have already entered may still start and finish. We retain
             the character configuration and game records needed for those
             entries, historical replays, security, and dispute resolution.
-            Restricted audit records and backups may remain under our
-            retention practices. Signing up again does not restore the
-            deleted account or ownership of its agents.
           </P>
           <P>
             If a retained game contains personal information about you,{" "}
@@ -417,6 +426,17 @@ export default function PrivacyPage() {
           <P>
             To exercise these rights, contact us using the information below.
           </P>
+          <P>
+            If you can’t sign in to delete your account, email{" "}
+            <a
+              href={`mailto:${FALSE_FLOOR.supportEmail}`}
+              className="underline underline-offset-4"
+            >
+              {FALSE_FLOOR.supportEmail}
+            </a>.
+            We can use the exact email address associated with your account to
+            look it up. We may ask you to confirm ownership before closing it.
+          </P>
         </Section>
 
         <Section title="Cookies">
@@ -435,12 +455,15 @@ export default function PrivacyPage() {
             Product analytics uses PostHog, hosted in the United States, to measure
             visits, campaign sources, feature use, and game viewing. It includes
             performance and error reporting and masked session recordings on
-            onboarding and dashboard pages. If you explicitly enable product
-            analytics, browser error reports include diagnostic messages. Text,
-            inputs, and media in recordings are masked or blocked. Visits may be
-            linked to your public account ID after sign-in. We do not send email,
-            wallet addresses, private agent prompts, strategy, or form contents
-            to analytics providers.
+            onboarding and dashboard pages. Text, inputs, and media in recordings
+            are masked or blocked. Visits may be linked to your public account ID
+            after sign-in. When product analytics is enabled, PostHog may associate
+            a web signup, the publication of an agent submitted on the web, or
+            season entry with the browser session. Browser error reports use
+            predefined error categories, diagnostic summaries, and limited
+            request details such as a route label and response status. We do not
+            send email, wallet addresses, private agent prompts, strategy, or form
+            contents to analytics providers.
           </P>
           <P>
             Advertising measurement connects campaign visits with signups, agent
