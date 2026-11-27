@@ -257,7 +257,7 @@ remains available. Do not reset active worker leases to recover a failed job.
 
 ```sh
 cd /Users/user/Development/influence-game
-docker build -t house-character-cutouts:local workers/character-cutouts
+docker build --build-arg GIT_SHA="$(git rev-parse HEAD)" -t house-character-cutouts:local workers/character-cutouts
 export CUTOUT_ENV_FILE="$PWD/.env.private-trace.local"
 bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cutouts.ts inventory --env local --scope example-models
 bun --env-file="$CUTOUT_ENV_FILE" packages/api/src/scripts/backfill-character-cutouts.ts run --env local --agent 525f84a1-e1d2-472a-ba4e-ad3f9a9d2a53 --limit 1 --wait 900

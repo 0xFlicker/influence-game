@@ -1,3 +1,5 @@
+import { diagnosticEndpoint } from "./diagnostic-endpoint";
+import { observeApiRequest, type RequestObservation } from "./request-diagnostics";
 import { requestSignupStep, waitForCampaignRedemption } from "./signup-verification";
 import { getAnalyticsConsent } from "./analytics-consent";
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
@@ -116,13 +118,17 @@ export async function anonymousApiFetch<T>(path: string, options?: RequestInit):
 }
 
 export function apiFetch<T>(path: string, options?: RequestInit, decode?: (response: Response) => Promise<T>): Promise<T> {
-  return measureProductRequest(analyticsOperation(path, options?.method ?? "GET"), () => unmeasuredApiFetch(path, options, decode));
+  const operation = analyticsOperation(path, options?.method ?? "GET");
+  return measureProductRequest(operation, attemptId =>
+    observeApiRequest(path, options, attemptId, observation => unmeasuredApiFetch(path, options, decode, observation)),
+    operation ? diagnosticEndpoint(path) : undefined);
 }
 
 async function unmeasuredApiFetch<T>(
   path: string,
-  options?: RequestInit,
-  decode?: (response:Response) => Promise<T>,
+  options: RequestInit | undefined,
+  decode: ((response: Response) => Promise<T>) | undefined,
+  observation: RequestObservation,
 ): Promise<T> {
   if (typeof window === "undefined" && process.env.NEXT_RUNTIME) {
     throw new Error(
@@ -149,12 +155,15 @@ async function unmeasuredApiFetch<T>(
     headers['Idempotency-Key']=id;
   }
   const url = resolveApiUrl(path);
+  observation.stage = "transport";
   const res = await fetch(url, {
     ...options,
     ...(path === "/api/agent-profiles/anonymous" ? { credentials: "include" as const } : {}),
     headers,
   });
+  observation.response = res;
   if (!res.ok) {
+    observation.stage = "http";
     const text = await readApiErrorBody(res, true);
     if (res.status === 401 && typeof window !== "undefined" && token && token === getAuthToken() && requestGeneration === window.localStorage.getItem("influence_auth_generation")) {
       window.dispatchEvent(new CustomEvent("auth:expired"));
@@ -167,6 +176,7 @@ async function unmeasuredApiFetch<T>(
     }
     throw apiErrorFromResponse(res, text);
   }
+  observation.stage = "decode";
   const result = decode ? await decode(res) : await res.json() as T;
   if(requestIdentity) window.sessionStorage.removeItem(requestIdentity);
   return result;
@@ -184,21 +194,27 @@ export async function providerAuthFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const isFormData = options?.body instanceof FormData;
-  const headers: Record<string, string> = {
-    ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...(options?.headers as Record<string, string> | undefined),
-  };
-  const url = resolveApiUrl(path);
-  const res = await fetch(url, {
-    ...options,
-    headers,
+  return observeApiRequest(path, options, undefined, async observation => {
+    const isFormData = options?.body instanceof FormData;
+    const headers: Record<string, string> = {
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(options?.headers as Record<string, string> | undefined),
+    };
+    const url = resolveApiUrl(path);
+    observation.stage = "transport";
+    const res = await fetch(url, {
+      ...options,
+      headers,
+    });
+    observation.response = res;
+    if (!res.ok) {
+      observation.stage = "http";
+      const text = await readApiErrorBody(res, true);
+      throw apiErrorFromResponse(res, text);
+    }
+    observation.stage = "decode";
+    return res.json() as Promise<T>;
   });
-  if (!res.ok) {
-    const text = await readApiErrorBody(res, true);
-    throw apiErrorFromResponse(res, text);
-  }
-  return res.json() as Promise<T>;
 }
 
 function apiErrorFromResponse(response: Response, body: string): ApiError {
@@ -929,24 +945,30 @@ export interface FillGameResult {
 }
 
 export async function fillGame(id: string): Promise<FillGameResult> {
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  const url = `${API_BASE}/api/games/${id}/fill`;
-  console.log(`API POST ${url}`);
-  const res = await fetch(url, { method: "POST", headers });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    if (res.status === 401 && typeof window !== "undefined" && token) {
-      window.dispatchEvent(new CustomEvent("auth:expired"));
+  const path = `/api/games/${id}/fill`;
+  return observeApiRequest(path, { method: "POST" }, undefined, async observation => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
-    throw new ApiError(res.status, text);
-  }
-  return res.json() as Promise<FillGameResult>;
+    const url = `${API_BASE}/api/games/${id}/fill`;
+    observation.stage = "transport";
+    const res = await fetch(url, { method: "POST", headers });
+    observation.response = res;
+    if (!res.ok) {
+      observation.stage = "http";
+      const text = await res.text().catch(() => res.statusText);
+      if (res.status === 401 && typeof window !== "undefined" && token) {
+        window.dispatchEvent(new CustomEvent("auth:expired"));
+      }
+      throw new ApiError(res.status, text);
+    }
+    observation.stage = "decode";
+    return res.json() as Promise<FillGameResult>;
+  });
 }
 
 export interface CognitiveArtifactIndexEntry {

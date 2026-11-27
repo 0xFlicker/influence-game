@@ -1,3 +1,4 @@
+import { operationalError } from "@influence/engine/operational-errors";
 import { notifyChampionshipGameCompletion } from "./championship-runtime.js";
 import { providerRequestTimeoutMs } from "./provider-request-timeout.js";
 import { readModelLifecycle } from "./model-lifecycle-settings.js";
@@ -999,7 +1000,8 @@ async function runGameAsync(
     if (err instanceof ProviderDeferredError && ownerEpoch && !runner.aborted) { await deferProviderGame(db, gameId, ownerEpoch, err); return; }
     if (err instanceof LiveAudioBlocked && ownerEpoch) { await pauseLiveAudio(db, gameId, ownerEpoch); return; }
     if (err instanceof ContextSourceConflictError && ownerEpoch && !runner.aborted) {
-      console.error(`[game-lifecycle] Context integrity conflict for ${gameId}:`, err.message);
+      console.error("[worker-error]", operationalError("game-worker", "context_source_conflict",
+        "Saved context changed and game execution needs repair.", err, { game_id: gameId }));
       if (await markDurableContextConflict(db, gameId, ownerEpoch)) {
         await relinquishDurableGameRunOwner(db, gameId, ownerEpoch, "context_source_conflict");
         await tryRefreshGameWatchStateSummary(db, gameId, "context_source_conflict");
@@ -1024,8 +1026,10 @@ async function runGameAsync(
       if (current?.status === "in_progress" && ownerEpoch) await relinquishInterruptedGame(db, gameId, ownerEpoch);
       return;
     }
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    console.error(`[game-lifecycle] Durable runner for ${gameId} stopped:`, errorMessage);
+    if (!runner.aborted) {
+      console.error("[worker-error]", operationalError("game-worker", "durable_runner_failed",
+        "The durable game runner stopped.", err, { game_id: gameId }));
+    }
 
 
     if (ownerEpoch) {
@@ -1049,10 +1053,8 @@ async function runGameAsync(
           ));
         }
       } catch (transitionError) {
-        console.error(
-          `[game-lifecycle] Failed to inspect completion settlement state for game ${gameId}:`,
-          transitionError,
-        );
+        console.error("[worker-error]", operationalError("game-worker", "settlement_check_failed",
+          "The game completion settlement could not be checked.", transitionError, { game_id: gameId }));
       }
     }
 

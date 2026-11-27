@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { observeApiResponse } from "@/lib/request-diagnostics";
 import { useAuth } from "@/hooks/use-auth";
 import { getAuthToken, resolveApiUrl } from "@/lib/api";
 
@@ -28,21 +29,27 @@ export function ResultsBanner({ gameId, token }: { gameId: string; token: string
       const current = new AbortController(); controller = current;
       const options = { headers, signal: current.signal, cache: "no-store" as const, redirect: "error" as const };
       try {
-        const response = await fetch(resolveApiUrl(`${base}?label=banner&limit=100`), options);
-        if (response.status === 404) {
+        const assetListPath = `${base}?label=banner&limit=100`;
+        const assets = await observeApiResponse(assetListPath, options, () => fetch(resolveApiUrl(assetListPath), options), async response => {
+          if (response.status === 404) return null;
+          if (!response.ok) throw new Error("Banner lookup failed");
+          const data = await response.json() as { assets: BannerAsset[] };
+          return data.assets;
+        });
+        if (assets === null) {
           if (!mounted || current.signal.aborted) return;
           if (objectUrl) URL.revokeObjectURL(objectUrl); objectUrl = undefined;
           if (mounted && !current.signal.aborted) { setImage(null); setFailed(false); }
           return;
         }
-        if (!response.ok) throw new Error("Banner lookup failed");
-        const { assets } = await response.json() as { assets: BannerAsset[] };
         const banner = assets[0];
         let nextUrl: string | undefined;
         if (banner) {
-          const content = await fetch(resolveApiUrl(`${base}/${encodeURIComponent(banner.id)}/content`), options);
-          if (!content.ok) throw new Error("Banner download failed");
-          const blob = await content.blob();
+          const contentPath = `${base}/${encodeURIComponent(banner.id)}/content`;
+          const blob = await observeApiResponse(contentPath, options, () => fetch(resolveApiUrl(contentPath), options), async content => {
+            if (!content.ok) throw new Error("Banner download failed");
+            return content.blob();
+          });
           if (mounted && !current.signal.aborted) nextUrl = URL.createObjectURL(blob);
         }
         if (!mounted || current.signal.aborted) { if (nextUrl) URL.revokeObjectURL(nextUrl); return; }

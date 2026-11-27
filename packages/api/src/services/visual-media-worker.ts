@@ -1,3 +1,4 @@
+import { operationalError } from "@influence/engine/operational-errors";
 import { Hydrated, loadPayloads } from "./payload-storage.js";
 import { resolveCharacterVariants } from "./visual-character-variants.js";
 import { randomUUID } from "node:crypto";
@@ -82,6 +83,7 @@ export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: Abo
   } catch (error) {
     const attempts = await mediaAttempts(db, `media:${job.id}`, job.gameId);
     const uncertain = attempts.some(({ attempt: a }) => !a.reconciliation && (!a.receipt || a.receipt.chargeUncertain));
+    console.error("[worker-error]", operationalError("visual-media-worker", "media_job_failed", "Visual media preparation failed.", error, { job_id: job.id }));
     // Losing ownership never allows an old worker to overwrite its successor.
     await db.update(jobs).set({ status: uncertain ? "needs_reconciliation" : "failed", failure: error instanceof Error ? error.message : "Repair failed", finishedAt: now(), owner: null, leaseUntil: null })
       .where(and(eq(jobs.id, job.id), eq(jobs.owner, job.owner!)));
@@ -102,7 +104,7 @@ export function startVisualMediaWorker(db: DrizzleDB, canClaim: () => boolean) {
       }
       controller = new AbortController();
       const current = controller;
-      const heartbeat = setInterval(() => { void db.update(jobs).set({ leaseUntil: expiry() }).where(and(eq(jobs.id, job.id), eq(jobs.owner, job.owner!), sql`${jobs.leaseUntil}::timestamptz > now()`)).returning().then(rows => { if (!rows.length) current.abort(new Error("Media lease expired")); }).catch(error => { console.error("[visual-media] heartbeat failed", error); current.abort(error); }); }, 15_000);
+      const heartbeat = setInterval(() => { void db.update(jobs).set({ leaseUntil: expiry() }).where(and(eq(jobs.id, job.id), eq(jobs.owner, job.owner!), sql`${jobs.leaseUntil}::timestamptz > now()`)).returning().then(rows => { if (!rows.length) current.abort(new Error("Media lease expired")); }).catch(error => { console.error("[worker-error]", operationalError("visual-media-worker", "media_heartbeat_failed", "The media worker could not renew its lease.", error, { job_id: job.id })); current.abort(error); }); }, 15_000);
       const timeout = setTimeout(() => current.abort(new Error("Media repair timed out")), 15 * 60_000);
       // A non-cooperating provider cannot hold this lease forever. Late evidence stays in its journal.
       const abort = new Promise<void>(resolve => current.signal.addEventListener("abort", () => resolve(), { once: true }));
@@ -112,7 +114,7 @@ export function startVisualMediaWorker(db: DrizzleDB, canClaim: () => boolean) {
       if (current.signal.aborted) {
         await db.update(jobs).set({ leaseUntil: now() }).where(and(eq(jobs.id, job.id), eq(jobs.owner, job.owner!)));
       }
-    })().catch(error => console.error("[visual-media] worker failed", error)).finally(() => { running = null; });
+    })().catch(error => console.error("[worker-error]", operationalError("visual-media-worker", "media_iteration_failed", "The media worker iteration failed.", error))).finally(() => { running = null; });
   };
   const timer = setInterval(tick, 2000); timer.unref(); tick();
   return { async stop() { stopped = true; clearInterval(timer); controller?.abort(new Error("Media worker shutdown")); await running; } };

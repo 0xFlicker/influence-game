@@ -11,22 +11,33 @@ const initial = { accountAllowed: null as boolean | null, accountAdvertisingAllo
 let state = initial;
 let loading: Promise<void> | null = null;
 
+function notifyListeners() {
+  for (const listener of listeners) {
+    try { listener(); }
+    catch { console.warn("[Analytics] Consent listener failed"); }
+  }
+}
+
 function refresh(fromStorage = false) {
   let choice: AnalyticsChoice | null = null;
-  let blocked = navigator.doNotTrack === "1" || (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true;
+  let blocked = false;
   let seen = state.notice.seen;
   try {
+    blocked = navigator.doNotTrack === "1" || (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true;
     choice = parseAnalyticsChoice(localStorage.getItem(key));
     seen = localStorage.getItem(noticeKey) === "true";
   }
-  catch { blocked = true; }
+  catch {
+    blocked = true;
+    console.warn("[Analytics] Browser preferences unavailable");
+  }
   const changed = fromStorage && choice?.advertising !== undefined && JSON.stringify(choice) !== JSON.stringify(state.choice);
   const accountAllowed = changed ? null : state.accountAllowed;
   const accountAdvertisingAllowed = changed ? null : state.accountAdvertisingAllowed;
   state = { ...state, accountAllowed, accountAdvertisingAllowed, choiceRevision: state.choiceRevision + (changed ? 1 : 0),
     choice, blocked, notice: { ...state.notice, seen }, ...permissions(choice, blocked, accountAllowed, accountAdvertisingAllowed) };
   if (!state.analytics && !state.advertising) clearCampaignAttribution();
-  listeners.forEach(listener => listener());
+  notifyListeners();
 }
 
 export function getAnalyticsConsent() { return state; }
@@ -37,15 +48,27 @@ export function loadAnalyticsConsent(): Promise<void> {
   if (loading) return loading;
   loading = (async () => {
     let country: string | null = null;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const response = await fetch("/analytics-region", { cache: "no-store", signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`Region lookup: ${response.status}`);
+      const controller = new AbortController();
+      timeout = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch("/analytics-region", { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error("Region request failed");
       const data = await response.json();
-      country = typeof data.country === "string" && /^[A-Z]{2}$/.test(data.country) ? data.country : null;
-    } catch { console.warn("[Analytics] Region unavailable; consent required"); }
+      country = typeof data?.country === "string" && /^[A-Z]{2}$/.test(data.country) ? data.country : null;
+    } catch { console.warn("[Analytics] Region unavailable; explicit preference required"); }
+    finally { clearTimeout(timeout); }
     state = { ...state, ready: true, country };
+    try {
+      window.addEventListener("storage", event => { if (event.key === key || event.key === noticeKey || event.key === null) refresh(true); });
+    } catch {
+      state = { ...state, blocked: true, analytics: false, advertising: false, recordings: false };
+      clearCampaignAttribution();
+      notifyListeners();
+      console.warn("[Analytics] Consent change listener unavailable");
+      return;
+    }
     refresh();
-    window.addEventListener("storage", event => { if (event.key === key || event.key === noticeKey || event.key === null) refresh(true); });
   })();
   return loading;
 }
@@ -57,12 +80,12 @@ export function showAnalyticsNotice(pathname: string): void {
   try { localStorage.setItem(noticeKey, "true"); }
   catch { console.warn("[Analytics] Notice acknowledgement could not be saved"); }
   state = { ...state, notice };
-  listeners.forEach(listener => listener());
+  notifyListeners();
 }
 
 export function dismissAnalyticsNotice(): void {
   state = { ...state, notice: { seen: true, path: null } };
-  listeners.forEach(listener => listener());
+  notifyListeners();
 }
 
 /** Updates in memory even if persistence is unavailable. Never reload an unsaved agent form. */
@@ -73,7 +96,7 @@ export function saveAnalyticsChoice(choice: AnalyticsChoice & { advertising: boo
   state = { ...state, choice, accountAllowed: null, accountAdvertisingAllowed: null, choiceRevision: state.choiceRevision + 1,
     ...analyticsPermission(state.country, choice, state.blocked) };
   if (!state.analytics && !state.advertising) clearCampaignAttribution();
-  listeners.forEach(listener => listener());
+  notifyListeners();
   return saved;
 }
 
@@ -83,7 +106,7 @@ export function setAccountAnalyticsAllowed(allowed: boolean | null, advertising:
   state = { ...state, accountAllowed: allowed, accountAdvertisingAllowed: advertising,
     ...permissions(state.choice, state.blocked, allowed, advertising) };
   if (!state.analytics && !state.advertising) clearCampaignAttribution();
-  listeners.forEach(listener => listener());
+  notifyListeners();
 }
 
 function permissions(choice: AnalyticsChoice | null, blocked: boolean, analytics = state.accountAllowed, advertising = state.accountAdvertisingAllowed) {

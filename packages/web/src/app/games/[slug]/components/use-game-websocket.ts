@@ -1,5 +1,6 @@
 "use client";
 
+import { captureProductException } from "@/lib/product-analytics";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type GameStatus,
@@ -158,6 +159,9 @@ export function useGameWebSocket(
       ws.onclose = (event) => {
         if (cancelled) return;
         if (event.code === 1008) { setStatus("unavailable"); return; }
+        if (event.code !== 1000 && event.code !== 1001 && retryDelay === 1000) {
+          captureProductException(null, "game_socket_closed");
+        }
         // Add ±10% jitter to avoid thundering herd when multiple viewers reconnect
         const jitter = retryDelay * 0.1 * (Math.random() * 2 - 1);
         const delay = retryDelay + jitter;
@@ -168,9 +172,9 @@ export function useGameWebSocket(
         }, delay);
       };
 
-      ws.onerror = (event) => {
-        console.warn(`[useGameWebSocket] WebSocket error for game ${canonicalGameId}:`, event);
-        // onclose always follows onerror — let onclose handle status transition & reconnect
+      ws.onerror = () => {
+        // onclose handles status, reconnection, and permitted diagnostics.
+        if (retryDelay === 1000) console.warn("[useGameWebSocket] live_connection_failed");
       };
 
       ws.onmessage = (ev) => {
@@ -179,7 +183,8 @@ export function useGameWebSocket(
           for (const event of catchUp.accept(data)) onEventRef.current(event);
           if (catchUp.ready) setStatus("live");
         } catch (err) {
-          console.warn(`[useGameWebSocket] Malformed WebSocket frame for game ${canonicalGameId}:`, err, ev.data);
+          console.warn("[useGameWebSocket] live_message_failed");
+          captureProductException(err, "game_socket_message");
         }
       };
     }

@@ -1,3 +1,4 @@
+import { operationalError } from "@influence/engine/operational-errors";
 import { Hydrated, loadPayloads, storeFields } from "./payload-storage.js";
 import { currentReviewIdentity } from "./owner-learning-game.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -2461,8 +2462,8 @@ export function startOwnerLearningWorkerLoop(
     } catch (error) {
       if (!controller.signal.aborted) {
         console.error(
-          "[owner-learning] Worker iteration failed",
-          sanitizeOwnerLearningFailureExceptionForLog(error),
+          "[worker-error]",
+          operationalError("owner-learning-worker", "owner_learning_iteration_failed", "The owner learning worker iteration failed.", error),
         );
         schedule(pollIntervalMs);
       }
@@ -2525,8 +2526,8 @@ export function startOwnerLearningFailureReconciliationLoop(
       await (options.reconcile?.() ?? reconcileOwnerLearningFailureEvidence(db, { limit: 1 }));
     } catch (error) {
       console.error(
-        "[owner-learning] Failure evidence reconciliation failed",
-        sanitizeOwnerLearningFailureExceptionForLog(error),
+        "[worker-error]",
+        operationalError("owner-learning-worker", "evidence_reconciliation_failed", "Owner learning evidence reconciliation failed.", error),
       );
     } finally {
       running = false;

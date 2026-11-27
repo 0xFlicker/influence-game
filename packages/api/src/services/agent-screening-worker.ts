@@ -1,3 +1,4 @@
+import { operationalError } from "@influence/engine/operational-errors";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import sharp from "sharp";
@@ -166,7 +167,7 @@ export function startAgentScreeningWorker(db: DrizzleDB, provider: ScreeningProv
       }, 15_000);
       try { await executeAgentScreening(db, job, provider, current.signal); }
       finally { clearInterval(heartbeat); controller = null; }
-    })().catch(error => console.error("[agent-screening] Worker failed", error)).finally(() => { running = null; });
+    })().catch(error => console.error("[worker-error]", operationalError("agent-screening-worker", "screening_iteration_failed", "The screening worker iteration failed.", error))).finally(() => { running = null; });
   };
   const timer = setInterval(tick, 3000); timer.unref(); tick();
   return { async stop() { stopped = true; clearInterval(timer); controller?.abort(); await running; } };

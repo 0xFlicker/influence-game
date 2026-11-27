@@ -1,3 +1,4 @@
+import { operationalError, safeErrorField, uuid } from "@influence/engine/operational-errors";
 import { renderExecutionConfig, isLocalRenderExecution, localRendererDigest, type RenderExecution } from "@influence/engine/render-execution-config";
 import { mkdir, mkdtemp, readdir, rename, rm, statfs, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -268,7 +269,7 @@ export async function runHouseHighlightsMediaWorker(
 ): Promise<void> {
   const maxIterations = options.maxIterations ?? Number.POSITIVE_INFINITY;
   const random = options.random ?? Math.random;
-  const onError = options.onError ?? ((code) => console.error(`[postgame-media-worker] ${code}`));
+  const onError = options.onError;
   const drainController = options.drainController ?? new HouseHighlightsMediaWorkerDrainController();
   const runOnce = options.runOnceImpl ?? (() => runHouseHighlightsMediaWorkerOnce(config, fetchImpl));
   const now = options.nowImpl ?? (() => performance.now());
@@ -308,7 +309,9 @@ export async function runHouseHighlightsMediaWorker(
       // indefinitely polling local worker after auth, control or claim errors.
       if (remote) throw error;
       consecutiveFailures += 1;
-      onError(safePollFailureCode(error));
+      const code = safePollFailureCode(error);
+      if (onError) onError(code);
+      else console.error("[worker-error]", operationalError("render-worker", code, "The render worker could not poll for work.", error));
       const baseDelay = Math.min(MAX_POLL_BACKOFF_MS, config.pollIntervalMs * 2 ** Math.min(consecutiveFailures - 1, 6));
       delayMs = Math.min(MAX_POLL_BACKOFF_MS, baseDelay + Math.floor(baseDelay * 0.2 * random()));
     } finally {
@@ -430,7 +433,11 @@ export async function renderClaim(config: HouseHighlightsMediaWorkerConfig, clai
       });
       return "waiting_music";
     }
-    await reportFailure(config, claim, categorizedFailure(error), fetchImpl);
+    const failure = categorizedFailure(error);
+    console.error("[worker-error]", operationalError("render-worker", failure.code, failure.message, error, {
+      game_id: uuid(claim.gameId), attempt_number: claim.attemptNumber,
+    }));
+    await reportFailure(config, claim, { category: failure.category, message: failure.message }, fetchImpl);
     return "failed";
   } finally {
     heartbeat.stop();
@@ -611,8 +618,11 @@ async function reportFailure(config: HouseHighlightsMediaWorkerConfig, claim: Wo
       method: "POST",
       body: JSON.stringify({ attemptNumber: claim.attemptNumber, leaseToken: claim.leaseToken, ...failure }),
     }, fetchImpl);
-  } catch {
-    // The lease may have expired; never print a response that could contain a token or signed URL.
+  } catch (error) {
+    console.warn("[worker-error]", operationalError("render-worker", "render_failure_report_failed",
+      "The render failure could not be recorded by the API.", error, {
+        game_id: uuid(claim.gameId), attempt_number: claim.attemptNumber,
+      }));
   }
 }
 
@@ -649,7 +659,16 @@ function artifactMetadata(claim: WorkerClaim, bundle: Awaited<ReturnType<typeof 
 function artifactRecord(target: UploadTarget, artifact: HouseHighlightsTrailerBundleArtifact) { return { publicUrl: target.publicUrl, objectKey: target.objectKey, contentType: artifact.contentType, byteLength: artifact.byteLength, sha256: artifact.sha256 }; }
 function targetFor(targets: readonly UploadTarget[], artifact: string): UploadTarget { const target = targets.find((candidate) => candidate.artifact === artifact); if (!target) throw new Error(`missing_upload_target_${artifact}`); return target; }
 function publicArtifactFor(claim: WorkerClaim, artifact: string): WorkerClaim["publicArtifacts"][number] { const target = claim.publicArtifacts.find((candidate) => candidate.artifact === artifact); if (!target) throw new Error(`missing_public_artifact_${artifact}`); return target; }
-function categorizedFailure(error: unknown): { category: string; message: string } { const message = error instanceof Error ? error.message : "unknown worker failure"; return { category: message.startsWith("artifact_upload") ? "upload" : message.startsWith("worker_api") ? "api" : "render", message: message.slice(0, 240) }; }
+function categorizedFailure(error: unknown) {
+  const message = safeErrorField(error, "message") ?? "";
+  if (/^artifact_upload_(?:[1-5]\d{2}|request_failed)$/.test(message)) {
+    return { category: "upload", code: message, message: "The render worker could not upload an artifact." };
+  }
+  if (/^worker_api_(?:[1-5]\d{2}|request_failed|timeout)$/.test(message)) {
+    return { category: "api", code: message, message: "The render worker API request failed." };
+  }
+  return { category: "render", code: "render_attempt_failed", message: "The worker could not render the requested media." };
+}
 function positiveInt(value: string | undefined, fallback: number): number { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; }
 function requiredIdentity(value: string | undefined, name: string): string {
   if (!value?.trim() || value !== value.trim() || /[\r\n]/.test(value)) throw new Error(`${name} is required and must be a single header value in remote mode`);
@@ -665,8 +684,8 @@ function isWorkerResult(value: unknown): value is HouseHighlightsMediaWorkerResu
   return value === "idle" || value === "completed" || value === "waiting_music" || value === "failed" || value === "drained";
 }
 function safePollFailureCode(error: unknown): string {
-  const message = error instanceof Error ? error.message : "unknown";
-  if (/^(?:worker_api|worker_temp_space_low_)[a-z0-9_]+$/i.test(message)) return `poll_failed:${message}`;
+  const message = safeErrorField(error, "message") ?? "";
+  if (/^(?:worker_api_(?:[1-5]\d{2}|request_failed|timeout|invalid_control|invalid_assignment)|worker_temp_space_low_\d+)$/.test(message)) return `poll_failed:${message}`;
   return "poll_failed:unexpected";
 }
 function runCommandQuietly(command: string, args: readonly string[]): Promise<void> { return new Promise((resolvePromise, reject) => { const child = spawn(command, args, { stdio: "ignore" }); child.on("error", (error) => reject(new Error(`${command} failed to start: ${error.message}`))); child.on("close", (code) => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with code ${code}`))); }); }
@@ -680,10 +699,12 @@ async function fetchWithTimeout(fetchImpl: typeof fetch, input: RequestInfo | UR
 }
 
 if (import.meta.main) {
-  const mode = parseHouseHighlightsMediaWorkerArgs(Bun.argv.slice(2));
-  const config = houseHighlightsMediaWorkerConfig();
-  const drainAcknowledgementFile = process.env.POSTGAME_MEDIA_DRAIN_ACK_FILE;
+  let stage = "startup";
   const run = async () => {
+    const mode = parseHouseHighlightsMediaWorkerArgs(Bun.argv.slice(2));
+    const config = houseHighlightsMediaWorkerConfig();
+    const drainAcknowledgementFile = process.env.POSTGAME_MEDIA_DRAIN_ACK_FILE;
+    stage = mode;
     if (mode === "health") {
       await checkHouseHighlightsMediaWorkerHealth(config);
       console.log("House Highlights media worker health check passed.");
@@ -723,5 +744,8 @@ if (import.meta.main) {
   // Completion means finalize/failure reporting, temporary cleanup and drain
   // acknowledgement have settled. Do not let renderer-owned handles keep this
   // CLI process alive; Remotion's exit handlers retire its browser children.
-  run().then(() => process.exit(0)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });
+  run().then(() => process.exit(0)).catch(error => {
+    console.error("[worker-error]", operationalError("render-worker", "worker_process_failed", "The render worker exited unsuccessfully.", error, { stage }));
+    process.exit(1);
+  });
 }

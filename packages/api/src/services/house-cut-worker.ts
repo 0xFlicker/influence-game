@@ -1,3 +1,4 @@
+import { operationalError } from "@influence/engine/operational-errors";
 import { loadPayloads, storeFields } from "./payload-storage.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -56,11 +57,11 @@ export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAuto
       if (requeued) return true;
     }
     await db.update(table).set({ status: "failed", failure: error instanceof Error ? error.message : "House Cuts failed", leaseToken: null, leaseUntil: null, updatedAt: new Date() }).where(guard);
-    console.error("[house-cuts] Job failed", { gameId: job.gameId, audience: job.audience, failure: error instanceof Error ? error.message : "unknown" });
+    console.error("[worker-error]", operationalError("house-cut-worker", "cut_job_failed", "The House Cut could not be published.", error, { game_id: job.gameId, audience: job.audience }));
   }
   if (job.audience === "mystery") {
     try { await reconcilePostgameMediaForGame(db, job.gameId); }
-    catch (error) { console.error("[postgame-media] Reconciliation deferred after House Cuts", { gameId: job.gameId, error: error instanceof Error ? error.message : "unknown" }); }
+    catch (error) { console.error("[worker-error]", operationalError("house-cut-worker", "media_reconciliation_failed", "Postgame media reconciliation was deferred.", error, { game_id: job.gameId })); }
   }
   return true;
 }
@@ -70,7 +71,7 @@ export function startHouseCutWorker(db: DrizzleDB, canClaim: () => boolean) {
   const tick = () => {
     if (controller.signal.aborted || pending || !canClaim() || !process.env.OPENAI_API_KEY) return;
     pending = runHouseCutJob(db, runAutomaticCutTrial, controller.signal)
-      .catch(error => console.error("[house-cuts] Worker unavailable", error instanceof Error ? error.name : "unknown"))
+      .catch(error => console.error("[worker-error]", operationalError("house-cut-worker", "cut_iteration_failed", "The House Cut worker iteration failed.", error)))
       .finally(() => { pending = null; });
   };
   const timer = setInterval(tick, 10_000); timer.unref(); tick();
