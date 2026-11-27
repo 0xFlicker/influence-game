@@ -52,10 +52,12 @@ export async function deleteAccountInTransaction(tx: Transaction, userId: string
   await tx.delete(schema.userRoles).where(eq(schema.userRoles.userId, userId));
   await tx.delete(schema.userAnalyticsPreferences).where(eq(schema.userAnalyticsPreferences.userId, userId));
   await tx.delete(schema.userCampaignAttribution).where(eq(schema.userCampaignAttribution.userId, userId));
+  await tx.update(schema.houseShareLinks).set({ ownerId: null }).where(eq(schema.houseShareLinks.ownerId, userId));
+  await tx.delete(schema.houseShareAccounts).where(eq(schema.houseShareAccounts.userId, userId));
   // Keep authoritative conversion totals and campaign labels. Remove the
   // identifiers used for advertising delivery, and stop all future delivery.
   await tx.execute(sql`UPDATE campaign_conversion_events SET
-    public_id = '', client_user_agent = NULL, posthog_session_id = NULL, mcp_client_id = NULL,
+    public_id = '', client_user_agent = NULL, posthog_session_id = NULL, share_open_id = NULL, mcp_client_id = NULL,
     attribution = attribution - ARRAY['click_id','click_id_param','gclid','fbclid','msclkid','ttclid','twclid','dclid','gbraid','wbraid'],
     posthog_status = 'suppressed', platform_status = 'suppressed', google_status = 'suppressed',
     tiktok_status = 'suppressed', x_status = 'suppressed', google_ad_user_data_granted = false,

@@ -1,11 +1,12 @@
 import { diagnosticEndpoint } from "./diagnostic-endpoint";
 import { observeApiRequest, type RequestObservation } from "./request-diagnostics";
 import { requestSignupStep, waitForCampaignRedemption } from "./signup-verification";
-import { getAnalyticsConsent } from "./analytics-consent";
+import { getAnalyticsConsent, loadAnalyticsConsent } from "./analytics-consent";
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
 import { analyticsOperation, getConversionSessionId, measureProductRequest } from "@/lib/product-analytics";
 import { getStoredCampaignAttribution } from "@/lib/campaign-attribution";
+import { getFirstShareOpen, hasShareOpenTicket, removeShareOpenTicket, retainFirstShareOpen } from "@/lib/share-attribution";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
@@ -1831,6 +1832,11 @@ async function signupFetch<T>(
   refreshToken?: () => Promise<string>,
 ): Promise<T> {
   await waitForCampaignRedemption();
+  // Farcaster can start signup automatically before the page analytics effect.
+  if (typeof location !== "undefined" && location.hostname === "thehouse.game" && hasShareOpenTicket()) {
+    await loadAnalyticsConsent();
+    await recordCurrentShareLinkOpen();
+  } else if (getAnalyticsConsent().analytics) await pendingShareOpen;
   let turnstileToken: string | undefined;
   let refreshedToken: string | undefined;
   for (;;) {
@@ -1884,10 +1890,7 @@ export async function loginWithPrivyToken(
   const body = () => ({
     token: privyToken,
     intent: request.intent,
-    analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
-    advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
-    advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
-    analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
+    ...authenticationTrackingPreferences(),
     ...(request.intent === "create_account"
       ? {
         ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
@@ -1895,9 +1898,7 @@ export async function loginWithPrivyToken(
         posthogSessionId: getConversionSessionId(),
         // First-touch campaign attribution (identities only, never prompt
         // text). The server re-validates every field; absent stays unknown.
-        ...(permittedCampaignAttribution().firstTouch
-          ? { attribution: permittedCampaignAttribution().firstTouch }
-          : {}),
+        attribution: signupAttribution(),
       }
       : {}),
   });
@@ -1914,7 +1915,10 @@ export async function loginWithFarcasterToken(
   token: string;
   user: Omit<AuthMe, "isAdmin">;
 }> {
-  return signupFetch("/api/auth/farcaster/login", () => ({ token: farcasterToken, inviteCode }), undefined, refreshToken);
+  return signupFetch("/api/auth/farcaster/login", () => ({
+    token: farcasterToken, inviteCode, ...authenticationTrackingPreferences(),
+    attribution: signupAttribution(), posthogSessionId: getConversionSessionId(),
+  }), undefined, refreshToken);
 }
 
 export type InfluenceSessionResult = {
@@ -1944,19 +1948,63 @@ export async function createManagedAuthentication(
     ...(inviteCode ? { inviteCode } : {}),
     ...PRESENTED_LEGAL_ACCEPTANCE,
     posthogSessionId: getConversionSessionId(),
-    analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
-    advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
-    advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
-    analyticsExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.analytics === true : undefined,
-    ...(permittedCampaignAttribution().firstTouch
-      ? { attribution: permittedCampaignAttribution().firstTouch }
-      : {}),
+    ...authenticationTrackingPreferences(),
+    attribution: signupAttribution(),
   }), correlationId ? { "x-correlation-id": correlationId } : undefined, refreshToken);
+}
+
+function authenticationTrackingPreferences() {
+  const { ready, analytics, advertising, choice } = getAnalyticsConsent();
+  return ready ? { analytics, advertising, analyticsExplicit: choice?.analytics === true, advertisingExplicit: choice?.advertising === true } : {};
 }
 
 function permittedCampaignAttribution() {
   const consent = getAnalyticsConsent();
   return consent.ready && (consent.analytics || consent.advertising) ? getStoredCampaignAttribution() : { firstTouch: null, lastNonDirectTouch: null };
+}
+
+function signupAttribution() {
+  const { firstTouch } = permittedCampaignAttribution();
+  const shareOpenId = getAnalyticsConsent().analytics ? getFirstShareOpen() : undefined;
+  return firstTouch || shareOpenId ? { ...firstTouch, shareOpenId } : undefined;
+}
+
+type ShareOpen = { openId: string; share_link_id: string; sharing_account_id: string; openedAt: string | null };
+let pendingShareOpen: Promise<void> | undefined;
+let shareOpenEvent: { properties: Pick<ShareOpen, "share_link_id" | "sharing_account_id">; timestamp: Date; token: string | null; revision: number } | undefined;
+
+export function takeShareLinkOpenEvent() {
+  const event = shareOpenEvent;
+  shareOpenEvent = undefined;
+  const consent = getAnalyticsConsent();
+  if (event && consent.analytics && event.revision === consent.choiceRevision && (!event.token || event.token === getAuthToken())) return event;
+}
+
+export function recordCurrentShareLinkOpen() {
+  const ticket = removeShareOpenTicket();
+  if (!ticket) return pendingShareOpen;
+  const consent = getAnalyticsConsent();
+  if (!consent.analytics || location.hostname !== "thehouse.game") return;
+  const token = getAuthToken();
+  const eligibleForSignup = !token && !getStoredCampaignAttribution().firstTouch;
+  const request = apiFetch<ShareOpen | null>("/api/share-links/open", {
+    method: "POST",
+    body: JSON.stringify({ ticket, analytics: true }),
+    keepalive: true,
+    signal: AbortSignal.timeout(2500),
+  }).then(result => {
+    const current = getAnalyticsConsent();
+    if (!result || !current.analytics || current.choiceRevision !== consent.choiceRevision || getAuthToken() !== token) return;
+    if (eligibleForSignup && !getStoredCampaignAttribution().firstTouch) retainFirstShareOpen(result.openId);
+    if (result.openedAt) {
+      shareOpenEvent = { properties: { share_link_id: result.share_link_id, sharing_account_id: result.sharing_account_id },
+        timestamp: new Date(result.openedAt), token, revision: consent.choiceRevision };
+    }
+  }).catch(() => {
+    console.warn("[Analytics] Share link open could not be recorded");
+  }).finally(() => { if (pendingShareOpen === request) pendingShareOpen = undefined; });
+  pendingShareOpen = request;
+  return request;
 }
 
 /** Sync even denials and empty attribution. Capture the session before starting the request. */

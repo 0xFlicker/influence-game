@@ -1,6 +1,7 @@
 "use client";
 
 import { clearCampaignAttribution } from "./campaign-attribution";
+import { clearShareAttribution } from "./share-attribution";
 import { useSyncExternalStore } from "react";
 import { analyticsPermission, parseAnalyticsChoice, visitAnalyticsNotice, type AnalyticsChoice, type AnalyticsNotice } from "./analytics-policy";
 
@@ -12,6 +13,7 @@ let state = initial;
 let loading: Promise<void> | null = null;
 
 function notifyListeners() {
+  if (!state.analytics) clearShareAttribution();
   for (const listener of listeners) {
     try { listener(); }
     catch { console.warn("[Analytics] Consent listener failed"); }

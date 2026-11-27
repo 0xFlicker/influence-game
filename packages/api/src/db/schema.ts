@@ -74,12 +74,31 @@ import { canonicalMcpOAuthScopeCheck } from "../services/mcp-scope-policy.js";
 
 export type PostgameMediaType = "house_highlights_trailer";
 
+/** Stable analytics identity with no public profile route. */
+export const houseShareAccounts = pgTable("house_share_accounts", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  analyticsId: uuid("analytics_id").defaultRandom().notNull().unique(),
+});
+
 /** Immutable public share coordinates, never an authorization grant. */
 export const houseShareLinks = pgTable("house_share_links", {
   code: text("code").primaryKey(),
   path: text("path").notNull(),
+  ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
+  analyticsId: uuid("analytics_id").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, table => [uniqueIndex("house_share_links_path_unique").on(table.path)]);
+}, table => [
+  uniqueIndex("house_share_links_path_unique").on(table.path).where(sql`${table.analyticsId} IS NULL`),
+  uniqueIndex("house_share_links_owner_path_unique").on(table.ownerId, table.path).where(sql`${table.ownerId} IS NOT NULL`),
+]);
+
+/** One eligible browser navigation. The receipt carries no visitor identity. */
+export const houseShareOpens = pgTable("house_share_opens", {
+  id: uuid("id").primaryKey(),
+  linkCode: text("link_code").notNull().references(() => houseShareLinks.code),
+  openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+  claimed: boolean("claimed").notNull().default(false),
+}, table => [index("house_share_opens_link_idx").on(table.linkCode)]);
 
 export const houseShareRateLimits = pgTable("house_share_rate_limits", {
   key: text("key").primaryKey(),
@@ -326,6 +345,7 @@ export const campaignConversionEvents = pgTable("campaign_conversion_events", {
   channel: text("channel").notNull().$type<"web" | "mcp" | "api">(),
   mcpClientId: text("mcp_client_id"),
   attribution: jsonb("attribution").$type<Record<string, string>>(),
+  shareOpenId: uuid("share_open_id").references(() => houseShareOpens.id),
   posthogSessionId: uuid("posthog_session_id"),
   clientUserAgent: text("client_user_agent"),
   occurredAt: text("occurred_at").notNull().default(sql`now()::text`),
@@ -359,6 +379,10 @@ export const campaignConversionEvents = pgTable("campaign_conversion_events", {
   deliveredAt: text("delivered_at"),
 }, (table) => [
   index("campaign_conversion_events_name_time_idx").on(table.eventName, table.occurredAt),
+  uniqueIndex("campaign_conversion_events_signup_share_open_unique").on(table.shareOpenId)
+    .where(sql`${table.eventName} = 'signup_completed' AND ${table.shareOpenId} IS NOT NULL`),
+  index("campaign_conversion_events_share_open_idx").on(table.shareOpenId, table.eventName)
+    .where(sql`${table.shareOpenId} IS NOT NULL`),
   index("campaign_conversion_events_delivery_idx").on(table.posthogStatus, table.platformStatus),
   check("campaign_conversion_events_channel_check", sql`${table.channel} IN ('web', 'mcp', 'api')`),
   check(

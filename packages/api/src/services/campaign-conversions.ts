@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
 import { uuid } from "@influence/engine/operational-errors";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -150,6 +150,7 @@ export async function syncAnalyticsPreference(
   if (!allowed) {
     await db.delete(schema.campaignAgentReadySessions).where(eq(schema.campaignAgentReadySessions.userId, userId));
     await db.update(schema.campaignConversionEvents).set({
+      shareOpenId: null,
       posthogSessionId: null,
       posthogStatus: sql`CASE WHEN posthog_status = 'delivered' THEN posthog_status ELSE 'suppressed' END`,
     }).where(eq(schema.campaignConversionEvents.userId, userId));
@@ -245,6 +246,8 @@ export interface ConversionInput {
   channel: CampaignChannel;
   mcpClientId?: string | null;
   posthogSessionId?: string;
+  /** Candidate receipt supplied on signup. The server resolves and claims it. */
+  shareOpenId?: string;
   occurredAt?: string;
   suppressDelivery?: boolean;
 }
@@ -259,6 +262,8 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
     const adsAllowed = !account.deletedAt && !input.suppressDelivery && await accountAnalyticsAllowed(tx, input.userId, "advertising");
     const [preference] = await tx.select().from(schema.userAnalyticsPreferences)
       .where(eq(schema.userAnalyticsPreferences.userId, input.userId));
+    const attribution = allowed || adsAllowed ? await retainedAttribution(tx, input.userId) : null;
+    const shareOpenId = allowed ? await shareOpenForConversion(tx, input, attribution) : null;
     const inserted = await tx
       .insert(schema.campaignConversionEvents)
       .values({
@@ -270,7 +275,8 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
         seasonId: input.seasonId ?? null,
         channel: input.channel,
         mcpClientId: account.deletedAt ? null : input.mcpClientId ?? null,
-        attribution: allowed || adsAllowed ? await retainedAttribution(tx, input.userId) : null,
+        attribution,
+        shareOpenId,
         posthogSessionId: allowed && input.channel !== "mcp" ? uuid(input.posthogSessionId) ?? null : null,
         clientUserAgent: adsAllowed && input.channel === "web" ? preference?.webUserAgent ?? null : null,
         occurredAt: input.occurredAt,
@@ -283,6 +289,9 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
       })
       .onConflictDoNothing()
       .returning({ id: schema.campaignConversionEvents.id });
+    if (inserted.length && input.eventName === "signup_completed" && shareOpenId) {
+      await tx.update(schema.houseShareOpens).set({ claimed: true }).where(eq(schema.houseShareOpens.id, shareOpenId));
+    }
     return inserted.length > 0;
   });
 }
@@ -306,6 +315,24 @@ async function retainedAttribution(db: DbOrTx, userId: string): Promise<Record<s
   return row?.firstTouch ?? null;
 }
 
+async function shareOpenForConversion(tx: Tx, input: ConversionInput, attribution: Record<string, string> | null) {
+  if (input.eventName !== "signup_completed") {
+    const [signup] = await tx.select({ shareOpenId: schema.campaignConversionEvents.shareOpenId })
+      .from(schema.campaignConversionEvents).where(eq(schema.campaignConversionEvents.id, `signup:${input.userId}`));
+    return signup?.shareOpenId ?? null;
+  }
+  if (!input.shareOpenId) return null;
+  // Row lock makes the single signup claim durable even when analytics withdrawal
+  // later clears the conversion's link to this receipt.
+  const [open] = await tx.select({ openedAt: schema.houseShareOpens.openedAt, claimed: schema.houseShareOpens.claimed }).from(schema.houseShareOpens)
+    .innerJoin(schema.houseShareLinks, eq(schema.houseShareLinks.code, schema.houseShareOpens.linkCode))
+    .innerJoin(schema.users, eq(schema.users.id, schema.houseShareLinks.ownerId))
+    .where(and(eq(schema.houseShareOpens.id, input.shareOpenId), ne(schema.users.id, input.userId), isNull(schema.users.deletedAt)))
+    .for("update", { of: schema.houseShareOpens });
+  if (!open || open.claimed || (attribution && !(Date.parse(attribution.touch_at ?? "") > open.openedAt.getTime()))) return null;
+  return input.shareOpenId;
+}
+
 /** New-account signup only. Call solely when account creation committed. */
 export async function recordSignupCompleted(
   db: DbOrTx,
@@ -326,6 +353,9 @@ export async function recordSignupCompleted(
     publicId: await publicIdFor(db, input.userId),
     channel: input.channel,
     posthogSessionId: input.posthogSessionId,
+    shareOpenId: input.channel === "web" && input.attribution && typeof input.attribution === "object"
+      ? uuid(Reflect.get(input.attribution, "shareOpenId"))
+      : undefined,
   });
 }
 
@@ -538,9 +568,18 @@ export interface DeliverySummary {
   failed: number;
 }
 
-function eventProperties(row: ConversionRow): Record<string, unknown> {
+async function posthogEventProperties(db: DbOrTx, row: ConversionRow): Promise<Record<string, unknown>> {
+  const [share] = row.shareOpenId ? await db.select({
+    share_link_id: schema.houseShareLinks.analyticsId,
+    sharing_account_id: schema.houseShareAccounts.analyticsId,
+  }).from(schema.houseShareOpens)
+    .innerJoin(schema.houseShareLinks, eq(schema.houseShareLinks.code, schema.houseShareOpens.linkCode))
+    .innerJoin(schema.users, eq(schema.users.id, schema.houseShareLinks.ownerId))
+    .innerJoin(schema.houseShareAccounts, eq(schema.houseShareAccounts.userId, schema.houseShareLinks.ownerId))
+    .where(and(eq(schema.houseShareOpens.id, row.shareOpenId), isNull(schema.users.deletedAt))) : [];
   return {
     ...(row.attribution ?? {}),
+    ...share,
     ...(row.posthogSessionId ? { $session_id: row.posthogSessionId } : {}),
     channel: row.channel,
     environment: "production",
@@ -656,7 +695,7 @@ export async function deliverPendingConversions(
             const response = await fetchFn(`${env.posthogHost ?? "https://us.i.posthog.com"}/i/v0/e/`, {
               method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(5000),
               body: JSON.stringify({ api_key: env.posthogProjectToken, uuid,
-                event: row.eventName, distinct_id: row.publicId, properties: eventProperties(row), timestamp: row.occurredAt }),
+                event: row.eventName, distinct_id: row.publicId, properties: await posthogEventProperties(tx, row), timestamp: row.occurredAt }),
             });
             if (!response.ok) throw new Error("Delivery rejected");
             posthogStatus = "delivered";

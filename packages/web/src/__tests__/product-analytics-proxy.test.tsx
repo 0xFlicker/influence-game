@@ -23,6 +23,12 @@ test("production analytics initializes the SDK through the proxy only when allow
   let pathname = "/";
   let internal = false;
   const calls: Array<{ key: string; host: string; uiHost: string }> = [];
+  const events: Array<{ name: string; properties: unknown; timestamp?: Date }> = [];
+  const shareOpen = {
+    properties: { share_link_id: "link-analytics-id", sharing_account_id: "sharing-account-id" },
+    timestamp: new Date("2026-11-27T08:00:00.000Z"),
+  };
+  let pendingShareOpen: typeof shareOpen | undefined;
   mock.module("next/navigation", () => ({ usePathname: () => pathname }));
   mock.module("@/hooks/use-auth", () => ({ useAuth: () => ({ ready: true, account: internal ? { isAdmin: true, roles: [] } : null }) }));
   mock.module("@/lib/runtime-config", () => ({ useRuntimeConfig: () => ({ ready: true, POSTHOG_PROJECT_TOKEN: "project-token" }) }));
@@ -34,13 +40,22 @@ test("production analytics initializes the SDK through the proxy only when allow
     dismissAnalyticsNotice: () => {},
     setAccountAnalyticsAllowed: () => {},
   }));
-  mock.module("@/lib/api", () => ({ getAuthToken: () => null }));
+  mock.module("@/lib/api", () => ({
+    getAuthToken: () => null,
+    recordCurrentShareLinkOpen: () => undefined,
+    takeShareLinkOpenEvent: () => {
+      const event = pendingShareOpen;
+      pendingShareOpen = undefined;
+      return event;
+    },
+  }));
   mock.module("../components/analytics-preference", () => ({ AnalyticsPreference: () => null }));
   mock.module("posthog-js", () => ({ default: {
     init: (key: string, config: { api_host: string; ui_host: string }) => calls.push({ key, host: config.api_host, uiHost: config.ui_host }),
     stopSessionRecording: () => {}, startSessionRecording: () => {}, opt_out_capturing: () => {},
     opt_in_capturing: () => {}, clear_opt_in_out_capturing: () => {}, get_property: () => null,
-    capture: () => {}, identify: () => {}, reset: () => {},
+    capture: (name: string, properties: unknown, options?: { timestamp?: Date }) => events.push({ name, properties, timestamp: options?.timestamp }),
+    identify: () => {}, reset: () => {},
   } }));
   const { render, cleanup, waitFor } = await import("@testing-library/react/pure");
   const { ProductAnalytics } = await import("../components/product-analytics");
@@ -61,9 +76,14 @@ test("production analytics initializes the SDK through the proxy only when allow
     expect(calls).toEqual([]);
     dom.location.href = "https://thehouse.game/";
     // Trigger the effect again after changing the location.
+    pendingShareOpen = shareOpen;
     pathname = "/games";
     view.rerender(<ProductAnalytics />);
     await waitFor(() => expect(calls).toEqual([{ key: "project-token", host: "https://k.thehouse.game", uiHost: "https://us.posthog.com" }]));
+    expect(events.filter(event => event.name === "share_link_opened")).toEqual([{
+      name: "share_link_opened", timestamp: shareOpen.timestamp,
+      properties: { ...shareOpen.properties, channel: "web", environment: "production" },
+    }]);
   } finally {
     cleanup();
     dom.close();

@@ -61,7 +61,7 @@ test("purpose controls, disclosure, footer access, and advertising-only retentio
     mock.module("next/navigation", () => ({ usePathname: () => pathname }));
     mock.module("@/hooks/use-auth", () => ({ useAuth: () => ({ ready: true, account: account ? { publicId: account, roles: [], isAdmin: false } : null }) }));
     mock.module("@/lib/runtime-config", () => ({ useRuntimeConfig: () => ({ ready: true, POSTHOG_PROJECT_TOKEN: "" }) }));
-    mock.module("@/lib/api", () => ({ getAuthToken: () => account, retainCampaignAttribution: async () => {
+    mock.module("@/lib/api", () => ({ getAuthToken: () => account, recordCurrentShareLinkOpen: () => undefined, retainCampaignAttribution: async () => {
       const { analytics, advertising } = consent.getAnalyticsConsent();
       writes.push({ account, analytics, advertising, campaign: attribution.getStoredCampaignAttribution().firstTouch?.campaign });
       return { analytics, advertising, version: "v1" };

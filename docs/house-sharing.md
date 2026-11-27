@@ -16,9 +16,11 @@ external URLs, duplicate settings and unknown query parameters are rejected.
 Replay settings use the same parser as the player. Influence Cuts use the `public`
 audience; Werewolf uses `mystery` or `omniscient`.
 
-`house_share_links` stores only the code, normalized relative destination and
-creation timestamp in PostgreSQL. Its unique destination index makes concurrent
-identical requests reuse a link. Collision handling never overwrites a code.
+`house_share_links` stores the code, normalized relative destination and
+creation timestamp in PostgreSQL. Signed-in creation associates the link with
+the authenticated account and reuses it for the same account and destination.
+Signed-out creation reuses a destination-wide link. Existing codes still resolve
+and have no sharing account. Collision handling never overwrites a code.
 There is no edit endpoint or automatic expiry. The route does not grant access:
 creation and resolution check game visibility/status and public profile identity.
 Unlisted games retain their existing link-access semantics; hidden games do not
@@ -109,12 +111,30 @@ time, speed, audience or settings. The full app retains its existing navigation 
 authentication. Native host sign-in/wallet behavior still needs live host testing;
 browser metadata/replay tests do not prove that integration.
 
+## Share attribution
+
+Account-owned links and sharing accounts have separate analytics UUIDs. Browser navigation can
+record a consented open using a signed, short-lived receipt issued by the resolver.
+Metadata and preview requests leave open counts untouched. Browser navigation
+consumes the receipt and cleans the address while preserving the saved target,
+playback settings and Mini App hint. Forwarded links continue to credit the
+account that generated them.
+
+The first eligible share visit can earn signup credit. A share visit after an
+eligible campaign touch counts as an open and leaves signup credit with that
+campaign. An existing account can still contribute an open. The House joins
+attributed signups to later outcomes for [share attribution reporting](product-analytics.md#share-attribution).
+
 ## Deployment and verification
 
 Migration `0126_house_share_links.sql` adds two tables and indexes. It does not
-rewrite existing game data or alter existing tables; old API versions remain valid
-rollback targets. No environment variables, providers, buckets or background
-workers are added. Deploy through the ordinary staging/production release gates.
+rewrite existing game data or alter existing tables. Migration
+`0178_house_share_attribution.sql` adds account ownership, open receipts and a
+reference from conversion events. Apply it before the updated API, web app and
+conversion workers receive traffic. Keep old API instances away from share
+creation once account-owned codes are being generated, since earlier writers
+assume one code per destination. Deploy through the ordinary staging/production
+release gates.
 
 Focused tests cover route rejection, coordinate normalization, concurrent reuse,
 distributed admission and expiry, hidden targets, spoofed headers, icon controls,

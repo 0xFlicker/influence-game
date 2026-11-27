@@ -30,6 +30,8 @@ test("account sync serializes withdrawal and does not leak attribution across ac
   const attribution = await import("../lib/campaign-attribution");
   mock.module("@/lib/api", () => ({
     getAuthToken: () => account,
+    recordCurrentShareLinkOpen: () => undefined,
+    takeShareLinkOpenEvent: () => undefined,
     retainCampaignAttribution: (explicit = false, expectedVersion?: string) => new Promise<{ analytics: boolean; advertising: boolean; version: string }>(resolve => {
       pending.push({ account, analytics: consent.getAnalyticsConsent().analytics, advertising: consent.getAnalyticsConsent().advertising, explicit, expectedVersion,
         attribution: attribution.getStoredCampaignAttribution(), resolve });

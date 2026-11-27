@@ -4,12 +4,14 @@ import { bodyLimit } from "hono/body-limit";
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
 import { parseHouseShareTarget, SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
 import type { DrizzleDB } from "../db/index.js";
-import { admitShareCreation, resolveShareLink, saveShareLink, ShareRateLimitError, validateShareTarget } from "../services/house-share-links.js";
+import { optionalAuth, type AuthEnv } from "../middleware/auth.js";
+import { accountAnalyticsAllowed } from "../services/campaign-conversions.js";
+import { admitShareCreation, recordShareOpen, resolveShareLink, saveShareLink, ShareRateLimitError, validateShareTarget } from "../services/house-share-links.js";
 
 export function createHouseShareRoutes(db: DrizzleDB) {
-  const app = new Hono<{ Bindings: { clientAddress?: string } }>();
+  const app = new Hono<AuthEnv & { Bindings: { clientAddress?: string } }>();
   app.use("/api/share-links", bodyLimit({ maxSize: 4096 }));
-  app.post("/api/share-links", async c => {
+  app.post("/api/share-links", optionalAuth(db), async c => {
     c.header("Cache-Control", "private, no-store");
     const secret = process.env.JWT_SECRET;
     if (!secret) throw new Error("JWT_SECRET must be set");
@@ -40,15 +42,29 @@ export function createHouseShareRoutes(db: DrizzleDB) {
       target = parseHouseShareTarget(body.path);
     } catch { return c.json({ error: "Unsupported House share link." }, 400); }
     if (!await validateShareTarget(db, target)) return c.json({ error: "This share destination is unavailable." }, 404);
-    const link = await saveShareLink(db, target);
+    const link = await saveShareLink(db, target, c.get("user")?.id);
     return c.json({ code: link.code, path: `/s/${link.code}` });
+  });
+  app.post("/api/share-links/open", bodyLimit({ maxSize: 1024 }), optionalAuth(db), async c => {
+    c.header("Cache-Control", "private, no-store");
+    const user = c.get("user");
+    if (c.req.header("Sec-GPC") === "1" || c.req.header("DNT") === "1" ||
+        (user && !await accountAnalyticsAllowed(db, user.id))) return c.json(null);
+    let body: { ticket?: unknown; analytics?: unknown } | null;
+    try { body = await c.req.json(); }
+    catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      return c.json({ error: "Invalid JSON share request." }, 400);
+    }
+    if (body?.analytics !== true) return c.json(null);
+    return c.json(await recordShareOpen(db, body.ticket, user?.id));
   });
   app.get("/api/share-links/:code", async c => {
     // Resolution never consumes creation allowance; availability remains current.
     c.header("Cache-Control", "no-store");
     const code = c.req.param("code");
     if (!SHARE_CODE_PATTERN.test(code)) return c.json({ error: "Share link not found." }, 404);
-    const link = await resolveShareLink(db, code);
+    const link = await resolveShareLink(db, code, true);
     return link ? c.json(link) : c.json({ error: "Share link not found." }, 404);
   });
   return app;

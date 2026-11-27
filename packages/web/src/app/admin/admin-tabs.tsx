@@ -12,6 +12,7 @@ import { FreeQueuePanel } from "./free-queue-panel";
 import { AdminOwnerLearningReviews } from "./admin-owner-learning-reviews";
 import { AdminProviderHealth } from "./admin-provider-health-view";
 import { AdminModelLifecycle } from "./admin-model-lifecycle";
+import { ShareAttributionPanel } from "./share-attribution-panel";
 import { type AdminTab } from "./admin-sections";
 
 export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
@@ -29,6 +30,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
       {activeTab === "users" && <UserDirectory />}
       {activeTab === "invites" && <><InviteCodesPanel /><SignupCampaigns /></>}
       {activeTab === "signups" && <SignupSettings />}
+      {activeTab === "share-attribution" && <ShareAttributionPanel />}
     </div>
   );
 }

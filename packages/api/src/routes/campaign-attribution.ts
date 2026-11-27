@@ -16,10 +16,12 @@
  */
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
+import { uuid } from "@influence/engine/operational-errors";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { getShareAttributionReport } from "../services/share-attribution-report.js";
 import {
   getCampaignReport,
   retainUserAttribution,
@@ -73,6 +75,19 @@ export function createCampaignAttributionRoutes(db: DrizzleDB) {
       }
     }
     return c.json({ rows: await getCampaignReport(db, { spendByCampaign }) });
+  });
+
+  app.get("/api/admin/share-attribution", requireAuth(db), requirePermission("view_admin"), async (c) => {
+    c.header("Cache-Control", "private, no-store");
+    const rawOwner = c.req.query("account");
+    const owner = uuid(rawOwner);
+    const page = Number(c.req.query("page") ?? 1);
+    if ((rawOwner !== undefined && !owner) || !Number.isSafeInteger(page) || page < 1 || page > 1_000_000) {
+      return c.json({ error: "Invalid sharing account or page" }, 400);
+    }
+    const report = await getShareAttributionReport(db, owner, page);
+    if (report.level === "link" && !report.account) return c.json({ error: "Sharing account not found" }, 404);
+    return c.json(report);
   });
 
   return app;
