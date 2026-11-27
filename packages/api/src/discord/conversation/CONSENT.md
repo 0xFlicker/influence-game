@@ -2,6 +2,8 @@
 
 Interpret only the supplied Discord conversation data. Emit the exact typed
 decision. Use meaning and context. Never classify intent by a text pattern.
+The reply turn writes the member's message after the gateway applies the
+decision. Return only intent here.
 
 Set `intent` to `direct` only when the current message itself clearly requests a
 live reveal about the specified game. In an owner DM, the live reveal is the

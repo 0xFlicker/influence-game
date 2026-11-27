@@ -22,8 +22,8 @@ the exchange, the reply uses the official result under the current grant.
 The tool-free consent turn distinguishes a direct request from acceptance of
 an existing offer. The grant binds the game, verified account, conversation and
 triggering message. The shared room conceals live reveal text and attachments
-with Discord spoiler formatting. Later room turns receive a marker in place of
-the earlier live reveal text. An owner DM can reveal saved thinking from the
+with Discord spoiler formatting. Later turns see only that an earlier House
+message was marked as a spoiler. An owner DM can reveal saved thinking from the
 member’s own agents. Its replay and artwork remain in Mystery.
 
 ## House links
@@ -69,6 +69,9 @@ conversation grant. Every MCP read and final delivery recheck authority. Image
 references are opaque, scoped to the turn and revalidated when opened. House
 services resolve publication and visibility against existing object storage
 before returning bytes. The gateway can attach up to two inspected images.
+Codex authors all conversation text, including spoiler offers and follow-up
+explanations. The gateway supplies the current decision as structured context
+and handles eligibility, spoiler formatting and delivery.
 
 The ARM gateway connects to Discord continuously. It queues at most 12
 messages, runs one Codex query at a time, and discards expired work. SQLite

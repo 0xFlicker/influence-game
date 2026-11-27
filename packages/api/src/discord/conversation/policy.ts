@@ -1,6 +1,8 @@
 export const snowflake = /^[0-9]{17,20}$/;
 export const gameReference = /^[A-Za-z0-9_-]{1,128}$/;
-const roomSpoilerHeading = "**Live Werewolf spoiler for this room.**";
+const legacyRoomSpoilerHeading = "**Live Werewolf spoiler for this room.**";
+const attachmentSpoilerFlag = 1 << 3;
+const newline = /\r\n?|\n/;
 
 export interface DiscordMessage {
   id: string;
@@ -10,25 +12,42 @@ export interface DiscordMessage {
   type: number;
   content: string;
   author: { id: string; username?: string; bot?: boolean; system?: boolean };
+  attachments?: Array<{ flags?: number }>;
   message_reference?: { message_id?: string; channel_id?: string; type?: number };
+}
+
+type RoomMessage = { id: string } & (
+  | { speaker: "house" | "requesting_member" | "room_member"; text: string; disclosure?: never }
+  | { speaker: "house"; disclosure: "live_werewolf_spoiler"; text?: never }
+);
+
+function containsHouseDisclosure(message: DiscordMessage) {
+  if (Array.isArray(message.attachments) && message.attachments.some(attachment =>
+    typeof attachment?.flags === "number" && Boolean(attachment.flags & attachmentSpoilerFlag))) return true;
+  const lines = message.content.split(newline).filter(line => line.trim());
+  // The old heading is recognized only when reading historical House messages.
+  return lines[0] === legacyRoomSpoilerHeading || lines.length > 0
+    && lines.every(line => line.length > 4 && line.startsWith("||") && line.endsWith("||"));
 }
 
 export function roomContext(current: DiscordMessage, messages: DiscordMessage[], botId: string | undefined) {
   const cutoff = discordMessageTime(current.id) - 30 * 60_000;
   const seen = new Set<string>();
-  const context = messages.flatMap(message => {
+  const context = messages.flatMap<RoomMessage>(message => {
     if (!message || message.channel_id !== current.channel_id || message.webhook_id
       || (message.type !== 0 && message.type !== 19) || !message.author || message.author.system
       || !snowflake.test(message.id) || BigInt(message.id) >= BigInt(current.id)
       || discordMessageTime(message.id) < cutoff || seen.has(message.id)
-      || typeof message.content !== "string" || !message.content.trim()) return [];
+      || typeof message.content !== "string") return [];
     const house = message.author.id === botId;
     if (message.author.bot && !house) return [];
-    const liveReveal = house && (message.content === roomSpoilerHeading || message.content.startsWith(roomSpoilerHeading + "\n"));
+    const liveReveal = house && containsHouseDisclosure(message);
+    if (!liveReveal && !message.content.trim()) return [];
     seen.add(message.id);
+    if (liveReveal) return [{ id: message.id, speaker: "house", disclosure: "live_werewolf_spoiler" }];
     return [{ id: message.id,
       speaker: house ? "house" : message.author.id === current.author.id ? "requesting_member" : "room_member",
-      text: liveReveal ? "The House posted a live Werewolf spoiler here." : message.content.slice(0, 1200) }];
+      text: message.content.slice(0, 1200) }];
   }).sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
   return { recent: context.slice(-12), repliedTo: context.find(message => message.id === directReplyId(current)) };
 }
@@ -232,19 +251,20 @@ export function discordReplyForm(
   images: Array<{ mimeType: string; data: string }>,
   liveRoomSpoiler: boolean,
 ) {
-  if (!text && !images.length) return null;
   let content = text;
   if (liveRoomSpoiler) {
-    content = roomSpoilerHeading;
-    for (const line of text.split(/\r\n?|\n/)) {
+    content = "";
+    for (const line of text.trim().split(newline)) {
       // Keep arbitrary model prose from closing a spoiler or opening code formatting.
       const safe = line.trim().replaceAll("|", "¦").replaceAll("`", "′").replaceAll("\\", "＼");
-      const wrapped = safe ? `\n||${safe}||` : "\n";
-      if (content.length + wrapped.length > 2000) break;
-      content += wrapped;
+      const wrapped = safe ? `||${safe}||` : "";
+      const withLine = content ? `${content}\n${wrapped}` : wrapped;
+      if (withLine.length > 2000) break;
+      content = withLine;
     }
     content = content.trimEnd();
   }
+  if (!content.trim() && !images.length) return null;
   const filename = (id: number) => `house-${id + 1}.png`;
   const attachments = images.map((_, id) => ({ id, filename: filename(id), ...(liveRoomSpoiler && { is_spoiler: true }) }));
   const payload = {
@@ -298,7 +318,7 @@ export function prepareReply(content: string, origin: string) {
         continue;
       }
     }
-    parts.push((label || "[link removed]") + trailing);
+    parts.push((label ?? "") + trailing);
   }
   if (offset < replyLimit) parts.push(source.slice(offset, replyLimit));
 
@@ -310,7 +330,7 @@ export function prepareReply(content: string, origin: string) {
         if (typeof part === "string") {
           text += part.slice(0, replyLimit - text.length);
         } else {
-          const fallback = part.label || "[link removed]";
+          const fallback = part.label ?? "";
           const value = part.needsValidation && !allowed.has(part.href) ? fallback
             : part.label === undefined ? part.href : `[${part.label}](${part.href})`;
           if (text.length + value.length > replyLimit) break;
@@ -417,10 +437,4 @@ export async function decideSpoilerTurn(
   if (current.settled) return { action: "settled", target: current };
   if (intent === "direct" || (intent === "matching_offer" && matching())) return { action: "reveal", target: current };
   return outstanding() ? { action: "offer_pending" } : { action: "ask_explicitly" };
-}
-
-export function spoilerOfferText(lane: TurnAuthority["lane"], slug: string) {
-  if (lane === "owner") return "Shall I reveal saved thinking from your own agents in **" + slug + "**? It may contain live Werewolf spoilers.";
-  const question = "Shall I open the Omniscient view for **" + slug + "**?";
-  return lane === "room" ? question + " The answer will be visible to this room." : question;
 }

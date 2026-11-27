@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  activeOffer, availableDmHistory, dmContext, revalidateDmSubject, spoilerOfferText, subjectsFromRead,
+  activeOffer, availableDmHistory, dmContext, revalidateDmSubject, subjectsFromRead,
   validatedReply, type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject,
 } from "../../packages/api/src/discord/conversation/policy.js";
 
@@ -129,8 +129,6 @@ test("spoiler continuity requires the same principal, eligible lane and direct r
   expect(activeOffer(offer, { ...current, message_reference: { type: 1 } }, owner)).toBeUndefined();
   expect(activeOffer(offer, current, { ...owner, lane: "staff" })).toBeUndefined();
   expect(activeOffer(offer, current, owner, offer.expires)).toBeUndefined();
-  expect(spoilerOfferText("owner", offer.game)).toBe("Shall I reveal saved thinking from your own agents in **werewolf**? It may contain live Werewolf spoilers.");
-  expect(spoilerOfferText("room", offer.game)).toContain("visible to this room");
 });
 
 test("reply subject is an exact typed field with a bounded identifier", () => {

@@ -73,9 +73,29 @@ affirmatively, emit authorize for that game. Acceptances of another member's
 offer and summaries of an older reveal carry no authority. `settledSpoilerGame`
 names a game from the member's earlier offer that now has an official outcome.
 Use it as context for a follow-up and answer from the settled record, with no
-spoiler command. `authorizedSpoiler` names the only live game for which this
-turn has consent. Read the permitted reveal and return it without issuing
-another spoiler command.
+spoiler command. A room history item with `disclosure: "live_werewolf_spoiler"`
+indicates a prior reveal and provides no facts or current consent.
+
+When the gateway sets `spoilerDelivery`, write the message the member will
+receive. Set `spoiler.action` to `none`.
+
+- `offer` authorizes one short confirmation question about the named game.
+  Explain the scope of the reveal. In the room, say the reveal will be posted
+  for the room as a Discord spoiler. In an owner DM, offer only the member's
+  own agents' saved thinking.
+- `offer_pending` means the member already has an open offer. Briefly remind
+  them how to answer it or make an explicit request, without asking again.
+- `ask_explicitly` means the member has given no consent for this reveal.
+  Briefly explain how to request the reveal directly while respecting their
+  current scope.
+- `settled` means the named game now has an official outcome. Read the
+  settled record and answer the member's question using the current grant.
+- `authorized` names the only game for which this turn has live consent.
+  Read the permitted reveal and answer the member's question. In the shared
+  room, the gateway applies Discord's spoiler formatting to the delivery.
+
+For `offer`, `offer_pending`, and `ask_explicitly`, return only the short text
+you want delivered, with no links, images, or game disclosures.
 
 In an owner DM, the replay and artwork stay in Mystery. Live spoiler consent
 can authorize reading saved thinking from that member's own agents. Explain

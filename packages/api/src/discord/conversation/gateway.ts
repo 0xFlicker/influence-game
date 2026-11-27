@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   activeOffer, availableDmHistory, decideSpoilerTurn, destination, directReplyId, discordMessageTime, discordReplyForm,
-  dmContext, prepareReply, readSpoilerTarget, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext, spoilerOfferText,
+  dmContext, prepareReply, readSpoilerTarget, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext,
   subjectKey, subjectsFromRead, validatedConsent, validatedReply, withTurnFeedback,
   type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject, type TurnAuthority,
 } from "./policy.js";
@@ -110,6 +110,9 @@ async function send(m: DiscordMessage, content: string, images: Array<{ mimeType
 
 interface Turn extends TurnAuthority { grant: string; publicId: string }
 interface TurnBinding { discordId: string; channelId: string; messageId: string; kind: "room" | "dm" }
+type SpoilerDelivery =
+  | { action: "offer" | "settled" | "authorized"; game: string; slug: string }
+  | { action: "offer_pending" | "ask_explicitly" };
 interface TurnProgress {
   stage: "eligibility" | "grant" | "catalog" | "codex" | "reply" | "spoiler" | "attachment" | "revalidate" | "delivery";
 }
@@ -165,16 +168,23 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     return new Set(links.filter(link => allowedLinks.has(link)));
   };
 
-  const generate = async (spoiler?: { revealed?: string; settled?: string }) => {
+  const generate = async (spoilerDelivery?: SpoilerDelivery) => {
     observedSubjects.clear();
-    progress.stage = "catalog";
-    const tools = await api("mcp", { grant: turn.grant, method: "tools/list" });
-    if (!tools.ok) throw new Error("House catalog unavailable");
-    const catalog = await tools.json() as { tools: Array<{ name: string }> };
-    const prompt = JSON.stringify({
-      conversation: kind, access: turn.lane, memberPublicId: turn.publicId, houseOrigin: house.origin,
-      activeSpoilerOffer: spoiler?.settled || spoiler?.revealed ? undefined : spoilerContext?.offer?.game,
-      authorizedSpoiler: spoiler?.revealed, settledSpoilerGame: spoiler?.settled ?? spoilerContext?.settledGame,
+    inspected.clear();
+    const copyOnly = spoilerDelivery?.action === "offer" || spoilerDelivery?.action === "offer_pending" || spoilerDelivery?.action === "ask_explicitly";
+    let toolNames: string[] = [];
+    if (!copyOnly) {
+      progress.stage = "catalog";
+      const tools = await api("mcp", { grant: turn.grant, method: "tools/list" });
+      if (!tools.ok) throw new Error("House catalog unavailable");
+      const catalog = await tools.json() as { tools: Array<{ name: string }> };
+      toolNames = catalog.tools.map(tool => tool.name);
+    }
+    const deliveryContext = { conversation: kind, access: turn.lane, spoilerDelivery };
+    const prompt = JSON.stringify(copyOnly ? deliveryContext : {
+      ...deliveryContext, memberPublicId: turn.publicId, houseOrigin: house.origin,
+      activeSpoilerOffer: spoilerDelivery ? undefined : spoilerContext?.offer?.game,
+      settledSpoilerGame: spoilerDelivery ? undefined : spoilerContext?.settledGame,
       recentMemberMessages: recent,
       recentRoomMessages: roomHistory?.recent, repliedToRoomMessage: roomHistory?.repliedTo,
       recentDmSubjects: dmHistory?.recentSubjects, repliedToDmMessage: dmHistory?.repliedTo,
@@ -182,7 +192,8 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       currentMemberMessage: current,
     });
     progress.stage = "codex";
-    const result = await runCodex(sandbox, "reply", prompt, catalog.tools.map(tool => tool.name), async body => {
+    const result = await runCodex(sandbox, "reply", prompt, toolNames, async body => {
+      if (copyOnly) return body.method === "tools/list" ? Response.json({ tools: [] }) : new Response(null, { status: 403 });
       const response = await api("mcp", { ...body, grant: turn.grant });
       if (response.ok && body.method === "tools/call") {
         const args = body.args as Record<string, unknown> | undefined;
@@ -201,11 +212,14 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       return response;
     });
     progress.stage = "reply";
-    return validatedReply(result);
+    const reply = validatedReply(result);
+    if (spoilerDelivery && reply.spoiler.action !== "none") throw new Error("Unexpected spoiler command for delivery");
+    if (copyOnly && (!reply.text.trim() || reply.imageRefs.length)) throw new Error("Expected spoiler response text");
+    return reply;
   };
 
   let reply = await generate();
-  let liveRoomSpoiler = false;
+  let spoilerDelivery: SpoilerDelivery | undefined;
   if (reply.spoiler.action !== "none") {
     progress.stage = "spoiler";
     const decision = await decideSpoilerTurn({ action: reply.spoiler.action, game: reply.spoiler.game }, {
@@ -221,8 +235,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     if (decision.action === "unavailable") return "spoiler_unavailable";
     if ("target" in decision) games.add(decision.target.gameId);
     if (decision.action === "settled") {
-      inspected.clear();
-      reply = await generate({ settled: decision.target.gameId });
+      spoilerDelivery = { action: "settled", game: decision.target.gameId, slug: decision.target.slug };
     } else if (decision.action === "reveal") {
       if (!(await finish())) return "authority_changed";
       progress.stage = "spoiler";
@@ -231,27 +244,22 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       const elevated = await grant.json() as Turn;
       if (elevated.link !== turn.link || elevated.lane !== turn.lane) return "authority_changed";
       turn = elevated;
-      inspected.clear();
-      reply = await generate({ revealed: decision.target.gameId });
-      liveRoomSpoiler = kind === "room";
-      if (offers.get(key)?.game === decision.target.gameId) offers.delete(key);
+      spoilerDelivery = { action: "authorized", game: decision.target.gameId, slug: decision.target.slug };
+    } else if (decision.action === "offer") {
+      spoilerDelivery = { action: "offer", game: decision.target.gameId, slug: decision.target.slug };
     } else {
-      if (!(await finish())) return "authority_changed";
-      progress.stage = "delivery";
-      if (decision.action !== "offer") {
-        const text = decision.action === "offer_pending"
-          ? "My earlier offer is still open. You can reply to it or ask for a live reveal directly."
-          : "Ask me directly for a live reveal if you want one.";
-        await send(m, text);
-        return "spoiler_not_authorized";
-      }
-      const text = prepareReply(spoilerOfferText(turn.lane, decision.target.slug), house.origin).render(new Set());
-      const sent = await send(m, text);
-      if (sent) offers.set(key, { game: decision.target.gameId, member: m.author.id, channel: m.channel_id, link: turn.link, lane: turn.lane,
-        reply: sent, expires: Date.now() + 5 * 60_000 });
-      return "spoiler_offered";
+      spoilerDelivery = { action: decision.action };
     }
-    if (reply.spoiler.action !== "none") return "spoiler_unavailable";
+    reply = await generate(spoilerDelivery);
+    if (spoilerDelivery.action === "offer") {
+      progress.stage = "spoiler";
+      const currentTarget = await readSpoilerTarget(spoilerDelivery.game, turn.grant, api);
+      if (currentTarget?.gameId !== spoilerDelivery.game) return "spoiler_unavailable";
+      if (currentTarget.settled) {
+        spoilerDelivery = { action: "settled", game: currentTarget.gameId, slug: currentTarget.slug };
+        reply = await generate(spoilerDelivery);
+      }
+    }
   }
 
   const images: Array<{ mimeType: string; data: string }> = [];
@@ -267,8 +275,17 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   const replyLinks = await finish(prepared.links);
   if (!replyLinks) return "authority_changed";
   progress.stage = "delivery";
+  const liveRoomSpoiler = spoilerDelivery?.action === "authorized" && kind === "room";
   const sent = await send(m, prepared.render(replyLinks), images, liveRoomSpoiler);
   if (!sent) return "empty_reply";
+  if (spoilerDelivery?.action === "offer") {
+    if (!snowflake.test(sent)) return "spoiler_unavailable";
+    offers.set(key, { game: spoilerDelivery.game, member: m.author.id, channel: m.channel_id, link: turn.link, lane: turn.lane,
+      reply: sent, expires: Date.now() + 5 * 60_000 });
+    return "spoiler_offered";
+  }
+  if (spoilerDelivery?.action === "ask_explicitly" || spoilerDelivery?.action === "offer_pending") return "spoiler_not_authorized";
+  if (spoilerDelivery?.action === "authorized" && offers.get(key)?.game === spoilerDelivery.game) offers.delete(key);
   if (kind === "dm" && snowflake.test(sent)) {
     const subject = reply.subject.kind === "none" ? undefined : observedSubjects.get(subjectKey(reply.subject));
     history.set(key, {

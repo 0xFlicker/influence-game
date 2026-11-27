@@ -103,7 +103,7 @@ test("season queue exposes public counts and draw times without queue identities
   });
   const link = "https://thehouse.game/seasons?season=season-one";
   expect(prepareReply(link, "https://thehouse.game").render(new Set())).toBe(link);
-  expect(prepareReply(link + "&token=bad", "https://thehouse.game").render(new Set())).toBe("[link removed]");
+  expect(prepareReply(link + "&token=bad", "https://thehouse.game").render(new Set())).toBe("");
 });
 
 test("the verified owner sees only their games and private agent details while the room is egalitarian", async () => {

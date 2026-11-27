@@ -105,7 +105,7 @@ test("live room deliveries spoiler every nonblank line and mark attached art to 
   const image = { mimeType: "image/png", data: "aW1hZ2U=" };
   const form = discordReplyForm(current, text, [image], true)!;
   expect(JSON.parse(form.get("payload_json") as string)).toMatchObject({
-    content: "**Live Werewolf spoiler for this room.**\n||A ¦¦delimiter made from ′code′.||\n\n||Second paragraph＼||",
+    content: "||A ¦¦delimiter made from ′code′.||\n\n||Second paragraph＼||",
     flags: 4,
     attachments: [{ id: 0, filename: "house-1.png", is_spoiler: true }],
     message_reference: { message_id: current.id, channel_id: current.channel_id, fail_if_not_exists: true },
@@ -114,23 +114,35 @@ test("live room deliveries spoiler every nonblank line and mark attached art to 
   const plain = discordReplyForm(current, text, [image], false)!;
   expect(JSON.parse(plain.get("payload_json") as string)).toMatchObject({ content: text, attachments: [{ id: 0, filename: "house-1.png" }] });
   expect(JSON.parse(plain.get("payload_json") as string).attachments[0]).not.toHaveProperty("is_spoiler");
+  const artOnly = discordReplyForm(current, "", [image], true)!;
+  expect(JSON.parse(artOnly.get("payload_json") as string)).toMatchObject({
+    content: "", attachments: [{ id: 0, filename: "house-1.png", is_spoiler: true }],
+  });
+  expect(discordReplyForm(current, "  ", [], true)).toBeNull();
   const veryLong = discordReplyForm(current, "a\n".repeat(940), [], true)!;
   const content = JSON.parse(veryLong.get("payload_json") as string).content as string;
   expect(content.length).toBeLessThanOrEqual(2000);
-  expect(content.split("\n").slice(1).every(line => line === "||a||")).toBe(true);
+  expect(content.split("\n").every(line => line === "||a||")).toBe(true);
 });
 
 test("room context masks prior House live reveals, including explicit reply targets after replacement", () => {
   const prior: DiscordMessage = {
     ...current, id: offerMessage, author: { id: bot, bot: true },
-    content: "**Live Werewolf spoiler for this room.**\n||The only wolf is the secret contestant.||",
+    content: "||The only wolf is the secret contestant.||\n\n||The replay confirms it.||",
   };
   const context = roomContext(current, [prior, { ...prior, id: "1521921716224393444", content: "The canonical game link is ready." }], bot);
-  expect(context.repliedTo?.text).toBe("The House posted a live Werewolf spoiler here.");
+  const marker = { id: offerMessage, speaker: "house", disclosure: "live_werewolf_spoiler" };
+  expect(context.repliedTo).toEqual(marker);
+  expect(context.recent.at(-1)).toEqual(marker);
   expect(JSON.stringify(context)).not.toContain("secret contestant");
   expect(context.recent[0]?.text).toBe("The canonical game link is ready.");
   const impersonated = { ...prior, author: { id: otherMember } };
   expect(roomContext(current, [impersonated], bot).repliedTo?.speaker).toBe("room_member");
+  const attachmentOnly = { ...prior, content: "", attachments: [{ flags: 1 << 3 }] };
+  expect(roomContext(current, [attachmentOnly], bot).repliedTo).toEqual(marker);
+  const plainAttachment = { ...prior, content: "", attachments: [{ flags: 1 << 5 }] };
+  expect(roomContext(current, [plainAttachment], bot).repliedTo).toBeUndefined();
   const olderFormat = { ...prior, content: "**Live Werewolf spoiler for this room.**\nUnformatted old spoiler." };
-  expect(roomContext(current, [olderFormat], bot).repliedTo?.text).toBe("The House posted a live Werewolf spoiler here.");
+  expect(roomContext(current, [olderFormat], bot).repliedTo).toEqual(marker);
+  expect(roomContext(current, [{ ...olderFormat, author: { id: otherMember } }], bot).repliedTo?.disclosure).toBeUndefined();
 });

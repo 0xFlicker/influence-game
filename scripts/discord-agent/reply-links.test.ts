@@ -12,7 +12,7 @@ test("only exact currently authorized House resource URLs are rendered", () => {
   const prep = prepareReply(`[Open the replay](${replay})\n${changed}\n${unknown}\n${profile}\n${season}`, origin);
   expect(prep.links).toEqual([replay, changed, unknown, profile]);
   expect(prep.render(new Set([replay, profile]))).toBe(
-    `[Open the replay](${replay})\n[link removed]\n[link removed]\n${profile}\n${season}`,
+    `[Open the replay](${replay})\n\n\n${profile}\n${season}`,
   );
 });
 
@@ -22,7 +22,9 @@ test("the reply keeps its explanation when pasted links fail validation", () => 
   const short = `${origin}/s/Lk3WEcewWi`;
   const prep = prepareReply(`I could not read [that replay](${unavailable}). ${external} ${short}`, origin);
   expect(prep.links).toEqual([unavailable]);
-  expect(prep.render(new Set())).toBe("I could not read that replay. [link removed] [link removed]");
+  expect(prep.render(new Set())).toBe("I could not read that replay.");
+  expect(prepareReply(unavailable, origin).render(new Set())).toBe("");
+  expect(prepareReply(external, origin).render(new Set())).toBe("");
 });
 
 test("a truncated reply never creates a partial resource URL", () => {

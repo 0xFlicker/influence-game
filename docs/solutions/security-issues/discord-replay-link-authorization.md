@@ -34,6 +34,7 @@ Classify a clear new reveal request separately from acceptance of a pending
 offer. The gateway only accepts the existing offer from its original requester
 within the verified link, lane, reply target and expiry. If the game settles,
 keep the game reference for the next read and use the official result with
-the current grant. Keep shared live spoiler text and attachments concealed in
-Discord. Replace the gateway-marked text with a neutral marker when loading
-later room context.
+the current grant. Codex writes the offer and any follow-up explanation from
+the typed decision. Keep shared live spoiler text and attachments concealed in
+Discord. Carry only a typed spoiler marker from those bot messages into later
+room context.
