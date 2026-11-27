@@ -18,6 +18,12 @@ withdrawal and delivery share the account row lock. Withdrawal permanently
 suppresses unfinished deliveries for its purpose; re-enabling affects new events.
 Google's affirmative grant comes only from advertising-choice metadata.
 
+Test through the signup HTTP route as well as the conversion service. When
+the auth request parser rebuilds the body without the allowed tracking fields,
+signup still succeeds but both destinations suppress the conversion. Verify
+the persisted consent, attribution and delivery states before any signed-in
+preference sync runs.
+
 Campaign attribution supports either permitted measurement purpose. Clear shared
 attribution when both are off, and advertising-only browser metadata when ads
 are off. Keep browser acquisition independent of PostHog initialization so

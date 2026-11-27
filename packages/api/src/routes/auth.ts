@@ -830,6 +830,11 @@ async function readStrictTokenRequest(
       termsVersion: body.termsVersion as string | undefined,
       privacyVersion: body.privacyVersion as string | undefined,
       deploymentSha: body.deploymentSha as string | undefined,
+      attribution: body.attribution,
+      analytics: body.analytics,
+      analyticsExplicit: body.analyticsExplicit,
+      advertising: body.advertising,
+      advertisingExplicit: body.advertisingExplicit,
     },
   };
 }

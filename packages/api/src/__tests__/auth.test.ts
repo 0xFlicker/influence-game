@@ -1099,6 +1099,74 @@ describe("managed authentication routes", () => {
     expect(await db.select().from(schema.users)).toHaveLength(0);
   });
 
+  test.each([
+    { name: "both purposes allowed", analytics: true, advertising: true, gpc: false },
+    { name: "advertising only", analytics: false, advertising: true, gpc: false },
+    { name: "GPC overrides both choices", analytics: true, advertising: true, gpc: true },
+  ])("managed signup records its tracking choices and attribution: $name", async ({ analytics, advertising, gpc }) => {
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => verifiedClerk("clerk-tracking", "tracking@example.com")),
+    }));
+    const userAgent = "House signup integration test";
+    const response = await app.request("/api/auth/managed/create", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "user-agent": userAgent,
+        ...(gpc ? { "sec-gpc": "1" } : {}),
+      },
+      body: JSON.stringify({
+        token: "completed",
+        turnstileToken: crypto.randomUUID(),
+        ...CURRENT_LEGAL_CONSENT,
+        analytics,
+        analyticsExplicit: analytics,
+        advertising,
+        advertisingExplicit: advertising,
+        attribution: {
+          source: "facebook",
+          campaign: "house-signup",
+          creative: "silas",
+          clickId: "test-meta-click",
+          clickIdParam: "fbclid",
+          touchedAt: "2026-11-25T12:00:00.000Z",
+          prompt: "never retained",
+        },
+      }),
+    });
+    expect(response.status).toBe(200);
+
+    const analyticsAllowed = analytics && !gpc;
+    const advertisingAllowed = advertising && !gpc;
+    const preferences = await db.select().from(schema.userAnalyticsPreferences);
+    expect(preferences).toHaveLength(1);
+    expect(preferences[0]).toMatchObject({
+      analytics: analyticsAllowed,
+      analyticsExplicit: analyticsAllowed,
+      advertising: advertisingAllowed,
+      advertisingExplicit: advertisingAllowed,
+    });
+    const conversions = await db.select().from(schema.campaignConversionEvents)
+      .where(eq(schema.campaignConversionEvents.eventName, "signup_completed"));
+    expect(conversions).toHaveLength(1);
+    expect(conversions[0]).toMatchObject({
+      userId: preferences[0]!.userId,
+      channel: "web",
+      posthogStatus: analyticsAllowed ? "pending" : "suppressed",
+      platformStatus: advertisingAllowed ? "pending" : "suppressed",
+      clientUserAgent: advertisingAllowed ? userAgent : null,
+    });
+    expect(conversions[0]?.attribution).toEqual(analyticsAllowed || advertisingAllowed ? {
+      utm_source: "facebook",
+      utm_campaign: "house-signup",
+      utm_content: "silas",
+      fbclid: "test-meta-click",
+      touch_at: "2026-11-25T12:00:00.000Z",
+    } : null);
+  });
+
   test("unknown completed session requires explicit create and then exchanges repeatably", async () => {
     const verifier = clerkVerifier(async () => (
       verifiedClerk("clerk-create", "created@example.com")
