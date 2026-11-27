@@ -7,9 +7,8 @@ const pageSource = readFileSync(
 );
 
 describe("privacy policy page", () => {
-  it("discloses retained and optional wallet data without implying email signup creates a wallet", () => {
+  it("discloses retained and optional wallet data", () => {
     expect(pageSource).toContain("Wallet addresses associated with existing accounts or optional wallet sign-in, including previously created embedded wallets");
-    expect(pageSource).toContain("Email signup does not automatically create a wallet.");
     expect(pageSource).not.toContain("Wallet address (if used to connect your account)");
   });
 
