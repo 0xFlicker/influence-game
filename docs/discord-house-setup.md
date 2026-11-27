@@ -320,12 +320,17 @@ The Discord reply container loads its game identity from
 Use the public profile and shared game views for those questions, alongside
 the current conversation's access and spoiler rules.
 
-Room replies use up to 12 messages from the last 30 minutes of the same
-channel, plus an explicit reply target in that window. This includes prior
-House replies and survives worker replacement. DMs use the requesting
-member's recent messages from the current verified link. Historical messages
+Room replies use the full text of up to 12 eligible messages from the last
+30 minutes of the same channel, plus an explicit reply target in that window.
+This includes prior House replies and survives worker replacement. DMs use the
+requesting member's recent messages from the current verified link. Historical messages
 provide conversational context. House reads and spoiler consent retain their
 own current authorization checks.
+
+Use a synthetic long reply to check that Codex's chosen split is delivered in
+order and every part fits Discord's 2,000-character limit, including spoiler
+formatting. Confirm that a follow-up can reply to any part of a DM response and
+duplicate delivery attempts use the same part-specific nonce.
 
 The Discord profile read resolves House short links through the existing share
 service. It also accepts canonical profile URLs, handles, public IDs, and exact

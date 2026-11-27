@@ -24,17 +24,49 @@ import {
 
 const DEFAULT_EXPORT_LIMIT = 1_000;
 const MAX_EXPORT_LIMIT = 5_000;
+export const PUBLIC_SEASON_GAME_PAGE_SIZE = 24;
+
+export interface SeasonGamePosition {
+  rank: number;
+  createdAt: string;
+  id: string;
+}
 
 /** Small discovery projection: no transcripts, media, provider inputs or results spoilers. */
-export async function getPublicSeasonGames(db: DrizzleDB, idOrSlug: string, allowedGameIds?: string[]) {
+export async function getPublicSeasonGames(db: DrizzleDB, idOrSlug: string) {
   const season = await resolveSeason(db, idOrSlug);
   if (!season) return null;
-  const games = await db.select({ id: schema.games.id, slug: schema.games.slug, gameKind: schema.games.gameKind,
-    status: schema.games.status, createdAt: schema.games.createdAt, startedAt: schema.games.startedAt, endedAt: schema.games.endedAt })
-    .from(schema.games).where(and(eq(schema.games.seasonId, season.id), publicGameFilter(),
-      allowedGameIds ? inArray(schema.games.id, allowedGameIds) : undefined))
-    .orderBy(sql`CASE WHEN ${schema.games.status} = 'in_progress' THEN 0 WHEN ${schema.games.status} = 'completed' THEN 1 WHEN ${schema.games.status} = 'waiting' THEN 2 ELSE 3 END`, desc(schema.games.createdAt), desc(schema.games.id)).limit(24);
+  const { games } = await readSeasonGamePage(db, season.id);
   return { seasonId: season.id, games };
+}
+
+export async function readSeasonGamePage(
+  db: DrizzleDB,
+  seasonId: string,
+  after?: SeasonGamePosition,
+  allowedGameIds?: string[],
+) {
+  const game = schema.games;
+  const rank = sql<number>`CASE ${game.status} WHEN 'in_progress' THEN 0 WHEN 'completed' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END`;
+  // Keep discovery's live status ordering and compare the exact stored sort values.
+  const seek = after ? sql`(
+    ${rank} > ${after.rank}
+    OR (${rank} = ${after.rank} AND (${game.createdAt}, ${game.id}) < (${after.createdAt}, ${after.id}))
+  )` : undefined;
+  const rows = await db.select({
+    id: game.id, slug: game.slug, gameKind: game.gameKind, status: game.status,
+    createdAt: game.createdAt, startedAt: game.startedAt, endedAt: game.endedAt, rank,
+  }).from(game).where(and(eq(game.seasonId, seasonId), publicGameFilter(),
+    allowedGameIds ? inArray(game.id, allowedGameIds) : undefined, seek))
+    .orderBy(asc(rank), desc(game.createdAt), desc(game.id)).limit(PUBLIC_SEASON_GAME_PAGE_SIZE + 1);
+  const page = rows.slice(0, PUBLIC_SEASON_GAME_PAGE_SIZE);
+  const last = page.at(-1);
+  return {
+    games: page.map(({ rank: _rank, ...game }) => game),
+    nextPosition: last && rows.length > PUBLIC_SEASON_GAME_PAGE_SIZE
+      ? { rank: last.rank, createdAt: last.createdAt, id: last.id }
+      : null,
+  };
 }
 
 export interface PublicSeasonIdentity {

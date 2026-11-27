@@ -28,10 +28,21 @@ docker logs "$probe" 2>&1 | grep -Fxq READY
 for mode in reply consent; do
   model=gpt-6.1-terra
   if [[ "$mode" == consent ]]; then model=gpt-6-luna; fi
-  printf 'synthetic %s\n' "$mode" | docker run --rm -i --pull never --network none --read-only \
+  output="$(printf 'synthetic %s\n' "$mode" | docker run --rm -i --pull never --network none --read-only \
     --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=96 --memory=768m --memory-swap=768m --cpus=1 \
     --user=10004:10004 --mount "type=volume,source=$volume,target=/bridge,readonly" --tmpfs /tmp:rw,nosuid,nodev,size=32m,mode=1777 \
-    "$image" "$mode" "$model"
+    "$image" "$mode" "$model")"
+  printf '%s\n' "$output"
+  if [[ "$mode" == reply ]]; then
+    printf '%s\n' "$output" | bun -e '
+      const { messages } = JSON.parse(await Bun.stdin.text());
+      if (!Array.isArray(messages) || messages.length !== 2
+        || messages[0] !== "[Open the replay](https://thehouse.game/games/copper-fox/replay?audience=mystery&cursor=8)"
+        || messages[1] !== "The second part keeps its complete wording.") {
+        throw new Error("ARM probe lost or reordered a model-authored reply part");
+      }
+    '
+  fi
 done
 docker logs "$probe" | grep -Fx 'MCP IMAGE IN MODEL INPUT'
 docker logs "$probe" | grep -Fx 'MCP REPLAY URL IN MODEL INPUT'

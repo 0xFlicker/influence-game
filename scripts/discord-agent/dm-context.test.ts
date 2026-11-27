@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  activeOffer, availableDmHistory, dmContext, revalidateDmSubject, revalidateSpoilerOffer, spoilerOfferText, subjectsFromRead,
+  activeOffer, availableDmHistory, dmContext, revalidateDmSubject, subjectsFromRead,
   validatedReply, type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject,
 } from "../../packages/api/src/discord/conversation/policy.js";
 
@@ -15,8 +15,10 @@ const newGame = { kind: "game", id: "new-game" } as const;
 const history: DmHistory = {
   ...owner, channel, member,
   entries: [
-    { messageId: "1521921716224393441", replyId: "1521921716224393442", memberText: "How did the first game end?", subject: oldGame, expires: 100 },
-    { messageId: "1521921716224393443", replyId: "1521921716224393444", memberText: "Tell me about the second game.", subject: newGame, expires: 150 },
+    { messageId: "1521921716224393441", replyIds: ["1521921716224393442", "1521921716224393443"],
+      memberText: "How did the first game end? ".repeat(130) + "Here is the final question.", subject: oldGame, expires: 100 },
+    { messageId: "1521921716224393444", replyIds: ["1521921716224393445"],
+      memberText: "Tell me about the second game.", subject: newGame, expires: 150 },
   ],
 };
 
@@ -29,12 +31,14 @@ function toolResult(value: object) {
 }
 
 test("DM context keeps a checked explicit parent and bounded recent subjects in order", async () => {
-  const firstReply = replyingTo(history.entries[0].replyId);
+  const firstReply = replyingTo(history.entries[0].replyIds[1]!);
   const checked: Subject[] = [];
   const context = await dmContext(availableDmHistory(history, firstReply, owner, 99), firstReply, async reference => {
     checked.push(reference);
     return true;
   });
+  const firstPart = replyingTo(history.entries[0].replyIds[0]!);
+  expect((await dmContext(history.entries, firstPart, async () => true)).repliedTo).toEqual(context.repliedTo);
   expect(checked).toEqual([oldGame, newGame]);
   expect(context).toEqual({
     memberMessages: history.entries.map(entry => entry.memberText),
@@ -47,7 +51,7 @@ test("DM context keeps a checked explicit parent and bounded recent subjects in 
 });
 
 test("DM context excludes unavailable, expired, future and mismatched history", async () => {
-  const firstReply = replyingTo(history.entries[0].replyId);
+  const firstReply = replyingTo(history.entries[0].replyIds[1]!);
   const context = await dmContext(history.entries, firstReply, async reference => reference.id !== oldGame.id);
   expect(context.repliedTo).toBeUndefined();
   expect(context.recentSubjects).toEqual([newGame]);
@@ -56,7 +60,7 @@ test("DM context excludes unavailable, expired, future and mismatched history", 
   expect(availableDmHistory(history, current, { ...owner, lane: "staff" }, 99)).toEqual([]);
   expect(availableDmHistory(history, current, { ...owner, link: "relinked" }, 99)).toEqual([]);
   expect(availableDmHistory(history, { ...current, author: { id: channel } }, owner, 99)).toEqual([]);
-  const otherChannel = replyingTo(history.entries[0].replyId, "1521921716224393460");
+  const otherChannel = replyingTo(history.entries[0].replyIds[1]!, "1521921716224393460");
   expect((await dmContext(history.entries, otherChannel, async () => true)).repliedTo).toBeUndefined();
   const betweenTurns = { ...current, id: "1521921716224393444" };
   expect((await dmContext(history.entries, betweenTurns, async () => true)).recentSubjects).toEqual([oldGame]);
@@ -106,7 +110,7 @@ test("a reply to an earlier replay keeps its exact moment only while the fresh g
   expect(await subjectsFromRead("resolve_house_link", {}, toolResult({ status: "not_found" }))).toEqual([]);
   const mystery = { ...reveal!, replayUrl: mysteryUrl };
   const entries = [{ ...history.entries[0]!, subject: reveal }, { ...history.entries[1]!, subject: mystery }];
-  const firstReply = replyingTo(entries[0]!.replyId);
+  const firstReply = replyingTo(entries[0]!.replyIds[1]!);
   const freshGrant = async (action: string, body: object) => {
     expect(action).toBe("validate");
     expect(body).toMatchObject({ grant: "fresh-grant", games: ["wolf"] });
@@ -120,33 +124,34 @@ test("a reply to an earlier replay keeps its exact moment only while the fresh g
   expect(permitted.recentSubjects).toEqual([reveal, mystery]);
 });
 
-test("spoiler continuity requires the same principal, eligible lane, direct reply and live game", async () => {
-  const offer: SpoilerOffer = { ...owner, channel, member, game: "werewolf", reply: history.entries[0].replyId, expires: Date.now() + 30_000 };
+test("spoiler continuity requires the same principal, eligible lane and direct reply", () => {
+  const offer: SpoilerOffer = { ...owner, channel, member, game: "werewolf", reply: history.entries[0].replyIds[0]!, expires: Date.now() + 30_000 };
   expect(activeOffer(offer, current, owner)).toBe(offer);
   expect(activeOffer(offer, replyingTo(offer.reply), owner)).toBe(offer);
-  expect(activeOffer(offer, replyingTo(history.entries[1].replyId), owner)).toBeUndefined();
+  expect(activeOffer(offer, replyingTo(history.entries[1].replyIds[0]!), owner)).toBeUndefined();
   expect(activeOffer(offer, replyingTo(offer.reply, "1521921716224393460"), owner)).toBeUndefined();
   expect(activeOffer(offer, { ...current, message_reference: { type: 1 } }, owner)).toBeUndefined();
   expect(activeOffer(offer, current, { ...owner, lane: "staff" })).toBeUndefined();
   expect(activeOffer(offer, current, owner, offer.expires)).toBeUndefined();
-  const reply = (settled: boolean) => async (action: string, body: object) => {
-    expect(action).toBe("spoiler");
-    expect(body).toEqual({ grant: "fresh-grant", game: offer.game });
-    return Response.json({ gameId: offer.game, settled });
-  };
-  expect(await revalidateSpoilerOffer(offer, "fresh-grant", reply(false))).toBe(offer);
-  expect(await revalidateSpoilerOffer(offer, "fresh-grant", reply(true))).toBeUndefined();
-  expect(await revalidateSpoilerOffer(offer, "fresh-grant", async () => new Response(null, { status: 403 }))).toBeUndefined();
-  expect(spoilerOfferText("owner", offer.game)).toBe("Shall I reveal saved thinking from your own agents in **werewolf**? It may contain live Werewolf spoilers.");
-  expect(spoilerOfferText("room", offer.game)).toContain("visible to this room");
 });
 
 test("reply subject is an exact typed field with a bounded identifier", () => {
-  const envelope = { text: "The result is official.", imageRefs: [], spoiler: { action: "none", game: "" } };
+  const envelope = { messages: ["The result is official.", "Here is how it happened."], imageRefs: [], spoiler: { action: "none", game: "" } };
   expect(validatedReply({ ...envelope, subject: newGame }).subject).toEqual(newGame);
   expect(validatedReply({ ...envelope, subject: { kind: "none", id: "" } }).subject.kind).toBe("none");
   for (const subject of [undefined, {}, { kind: "game", id: "https://thehouse.game/games/game" },
     { kind: "none", id: "game" }, { kind: "account", id: "private" }, { ...newGame, cursor: "old-evidence" }]) {
     expect(() => validatedReply({ ...envelope, subject })).toThrow("Invalid reply");
   }
+});
+
+test("the reply schema preserves model-authored order and rejects malformed message parts", () => {
+  const messages = ["A long answer. ".repeat(180) + "End of draft.", "\nSecond part with intentional whitespace.  "];
+  const envelope = { messages, imageRefs: [], spoiler: { action: "none", game: "" }, subject: { kind: "none", id: "" } };
+  expect(validatedReply(envelope).messages).toEqual(messages);
+  expect(validatedReply({ ...envelope, messages: [] }).messages).toEqual([]);
+  for (const invalid of [undefined, "legacy text", ["valid", 1], ["first", " \n "]]) {
+    expect(() => validatedReply({ ...envelope, messages: invalid })).toThrow("Invalid reply");
+  }
+  expect(() => validatedReply({ ...envelope, text: "legacy text" })).toThrow("Invalid reply");
 });

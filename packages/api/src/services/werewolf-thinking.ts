@@ -10,8 +10,8 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
 import { sha256StableJson } from "./stable-hash.js";
 
-/** Explicit opt-in surface. Never return prompts, native reasoning, or pending calls. */
-export async function readWerewolfThinking(db: Pick<DrizzleDB, "select">, id: string, audience: string, cursor: number): Promise<WerewolfThinking> {
+/** Explicit opt-in surface. Omit the cursor for the latest audio-ready prefix. Never return prompts, native reasoning, or pending calls. */
+export async function readWerewolfThinking(db: Pick<DrizzleDB, "select">, id: string, audience: string, cursor?: number): Promise<WerewolfThinking> {
   const result = await readWerewolfProductionThinking(db, id, audience, cursor);
   // Public reasoning remains audience-local. Canonical private sequence gaps
   // belong only to the separately authorized production source read.
@@ -23,7 +23,7 @@ export interface WerewolfProductionThinking { cursor: number; entries: WerewolfP
 
 /** Producer-source evidence, batched once for a fixed accepted prefix. Route
  * authorization is required separately; this never widens Mystery visibility. */
-export async function readWerewolfProductionThinking(db: Pick<DrizzleDB, "select">, id: string, audience: string, cursor: number, options: { throughEventSequence?: number; includeHidden?: boolean } = {}): Promise<WerewolfProductionThinking> {
+export async function readWerewolfProductionThinking(db: Pick<DrizzleDB, "select">, id: string, audience: string, cursor: number | undefined, options: { throughEventSequence?: number; includeHidden?: boolean } = {}): Promise<WerewolfProductionThinking> {
   if (audience !== "omniscient") throw new WerewolfGameError("Thinking is available only in Omniscient mode", 403);
   const [game] = await db.select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, startedAt: schema.games.startedAt }).from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), options.includeHidden ? undefined : isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(options.includeHidden ? { ...game, hiddenAt: null } : game)) throw new WerewolfGameError("Game not found", 404);

@@ -26,4 +26,18 @@ before delivery. A previous reply can identify the subject. Current House
 records supply the facts and ensure the text, link and image use the same
 audience.
 
+When Codex splits a reply, check the authorized links across every part and
+associate each delivered Discord message ID with the original DM exchange.
+
 [House conversation contract](../../discord-house-conversations.md)
+
+## Live spoiler follow-ups
+
+Classify a clear new reveal request separately from acceptance of a pending
+offer. The gateway only accepts the existing offer from its original requester
+within the verified link, lane, reply target and expiry. If the game settles,
+keep the game reference for the next read and use the official result with
+the current grant. Codex writes the offer and any follow-up explanation from
+the typed decision. Keep shared live spoiler text and attachments concealed in
+Discord. Carry only a typed spoiler marker from those bot messages into later
+room context.
