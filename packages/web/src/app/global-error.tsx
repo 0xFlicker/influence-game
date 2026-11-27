@@ -26,23 +26,11 @@ export default function GlobalError({ error, reset }: { error: Error; reset: () 
             <a href="/" aria-label="The House home">{HOUSE_VENUE.name}</a>
           </header>
           <main className="house-error-stage" aria-labelledby="house-error-heading">
-            <div className="house-error-portrait">
-              {/* The fallback uses a static file instead of the Next.js image optimizer. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/error/house-host-curious.webp" width={1200} height={1200} alt="" />
-            </div>
             <div className="house-error-content">
               <div role="alert">
                 <h1 id="house-error-heading">The House hit a snag.</h1>
                 <p className="house-error-lead">Something went wrong while loading this page.</p>
               </div>
-              <blockquote className="house-error-message">
-                <p>
-                  <strong aria-hidden="true">#^$%$!</strong>
-                  <span className="house-error-sr-only">Censored exclamation.</span>
-                  {" "}That definitely wasn’t in the script.
-                </p>
-              </blockquote>
               <div className="house-error-actions">
                 <button type="button" onClick={retry}>Try again</button>
                 <a href="/">Back to home</a>
@@ -52,6 +40,20 @@ export default function GlobalError({ error, reset }: { error: Error; reset: () 
                 <a href={`mailto:${FALSE_FLOOR.supportEmail}`}>Email support</a>
                 <a href={HOUSE_DISCORD_URL}>Join Discord <span aria-hidden="true">↗</span></a>
               </footer>
+            </div>
+            <div className="house-error-portrait">
+              <blockquote className="house-error-message">
+                <p>
+                  <strong aria-hidden="true">#^$%$!</strong>
+                  <span className="house-error-sr-only">Censored exclamation.</span>
+                  {" "}That definitely wasn’t in the script.
+                </p>
+              </blockquote>
+              <div className="house-error-avatar">
+                {/* The fallback uses a static file instead of the Next.js image optimizer. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/error/house-host-curious.webp" width={1200} height={1200} alt="" />
+              </div>
             </div>
           </main>
         </div>

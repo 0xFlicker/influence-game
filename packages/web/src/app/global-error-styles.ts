@@ -63,7 +63,10 @@ export const globalErrorStyles = `
   .house-error-portrait {
     grid-area: portrait;
     position: relative;
-    min-height: 26rem;
+    display: grid;
+    grid-template-rows: auto minmax(13rem, 1fr);
+    min-height: 33rem;
+    padding: 1.7rem clamp(1.2rem, 2.75vw, 2rem) 1.15rem;
     border-inline-start: 1px solid var(--error-border);
     isolation: isolate;
     background:
@@ -81,19 +84,24 @@ export const globalErrorStyles = `
     pointer-events: none;
   }
 
-  .house-error-portrait img {
+  .house-error-avatar { position: relative; }
+
+  .house-error-avatar img {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    padding: clamp(.65rem, 1.5vw, 1.3rem);
     object-fit: contain;
+    object-position: center top;
     filter: drop-shadow(0 16px 22px #0009);
   }
 
   .house-error-content {
     grid-area: content;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     padding: clamp(1.5rem, 4.25vw, 4rem);
   }
 
@@ -113,28 +121,32 @@ export const globalErrorStyles = `
   }
 
   .house-error-message {
-    --bubble-fill: #2b1e31;
-    --bubble-border: #70535b;
+    --bubble-fill: #211727;
+    --bubble-border: #e0bf91;
 
     position: relative;
-    margin: 1.6rem 0 1.55rem;
-    padding: 1rem 1.15rem;
-    border: 1px solid var(--bubble-border);
-    border-radius: .85rem;
+    z-index: 1;
+    justify-self: center;
+    margin: 0;
+    padding: .75rem 1rem;
+    border: 2px solid var(--bubble-border);
+    border-radius: 1rem;
     background: var(--bubble-fill);
+    text-align: center;
+    box-shadow: 0 8px 20px #0006;
   }
 
   .house-error-message::after {
     content: "";
     position: absolute;
-    inset-block-start: 50%;
-    inset-inline-end: -.45rem;
-    width: .85rem;
-    height: .85rem;
+    inset-block-end: -.8rem;
+    inset-inline-start: 50%;
+    width: 1.5rem;
+    height: 1.5rem;
     border: solid var(--bubble-border);
-    border-width: 1px 1px 0 0;
+    border-width: 0 2px 2px 0;
     background: var(--bubble-fill);
-    transform: translateY(-50%) rotate(45deg);
+    transform: translateX(-50%) rotate(45deg);
     pointer-events: none;
   }
 
@@ -152,6 +164,8 @@ export const globalErrorStyles = `
     align-items: center;
     gap: .65rem 1rem;
   }
+
+  .house-error-actions { margin-top: 1.65rem; }
 
   .house-error-actions button,
   .house-error-actions a {
@@ -221,8 +235,7 @@ export const globalErrorStyles = `
     }
 
     .house-error-portrait {
-      min-height: 0;
-      height: clamp(13rem, 57vw, 20rem);
+      min-height: clamp(18rem, 72vw, 24rem);
       border-inline-start: 0;
     }
 
@@ -230,14 +243,6 @@ export const globalErrorStyles = `
 
     .house-error-content h1 { max-width: none; }
     .house-error-lead { font-size: 1rem; }
-    .house-error-message { margin-block: 1.15rem; }
-    .house-error-message::after {
-      inset-block-start: -.45rem;
-      inset-inline: 50% auto;
-      border-width: 1px 0 0 1px;
-      transform: translateX(-50%) rotate(45deg);
-    }
-
     .house-error-help { margin-top: 1.15rem; gap: 0 .85rem; }
   }
 `;
