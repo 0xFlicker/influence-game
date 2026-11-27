@@ -7,6 +7,7 @@ import sharp from "sharp";
 import { completedWerewolfResultsFixture, werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { planVisualScene } from "@influence/engine/visual-scene-plan";
 import { projectWerewolfPresentation } from "@influence/engine/werewolf/presentation";
+import { werewolfThinkingActions, type WerewolfThinkingEntry } from "@influence/engine/werewolf/thinking";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createDiscordAgentRoutes } from "../routes/discord-agent.js";
@@ -298,6 +299,95 @@ test("Werewolf defaults to Mystery until canonically resolved and fences live re
   expect(await (await request("spoiler", { grant: normal, game: id })).json()).toMatchObject({ settled: true });
 });
 
+test("Werewolf thinking pages keep the canonical release order and respect live consent and actor ownership", async () => {
+  const id = "wolf-thinking";
+  const events = await werewolfResultsFixture("wolves", id);
+  const start = events[0];
+  const outcome = events.at(-1);
+  if (start?.type !== "werewolf.started" || outcome?.type !== "werewolf.completed") throw new Error("Invalid Werewolf fixture");
+  const alicePlayer = start.payload.players[0]!;
+  const bobPlayer = start.payload.players[2]!;
+  alicePlayer.agentProfileId = "alice-thinker";
+  bobPlayer.agentProfileId = "bob-thinker";
+  alicePlayer.contentRevisionId = "alice-frozen-revision";
+  const claim = "I won this game for the village.";
+  const intro = events[1];
+  if (intro?.type !== "werewolf.action_accepted" || intro.payload.decision.kind !== "speech") throw new Error("Missing Werewolf introduction");
+  intro.payload.decision.text = claim;
+  const live = events.slice(0, -1);
+  for (const event of live) {
+    if (event.type === "werewolf.action_accepted" && event.payload.decision.kind === "target") {
+      event.payload.decision.thinking = `Saved thought from ${event.payload.actorId} at ${event.sequence}`;
+    }
+  }
+  await db.insert(schema.agentProfiles).values([
+    { id: "alice-thinker", userId: "alice", name: "Alice's updated name", personality: "Alice's private profile" },
+    { id: "bob-thinker", userId: "bob", name: "Bob's updated name", personality: "Bob's private profile" },
+  ]);
+  await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "in_progress", startedAt: "now", config: "{}" });
+  await db.insert(schema.werewolfEvents).values(live.map(event => ({ gameId: id, sequence: event.sequence, event })));
+
+  const shared = await grant("room");
+  const wrongReveal = await grant("room", alice, "different-game");
+  const reveal = await grant("room", alice, id);
+  const owner = await grant("dm", alice);
+  const ownerReveal = await grant("dm", alice, id);
+  const otherOwnerReveal = await grant("dm", bob, id);
+  for (const session of [shared, wrongReveal, owner]) {
+    expect((await tool(session, "read_thinking", { game: id })).status).toBe(403);
+  }
+  const readThinking = async (session: string, after?: number): Promise<{ entries: WerewolfThinkingEntry[]; nextAfter: number | null }> =>
+    content(await tool(session, "read_thinking", { game: id, after }));
+  const known = werewolfThinkingActions(live, projectWerewolfPresentation(live, "omniscient").latestCursor).flatMap(({ cursor, day, event }) => {
+    const { actorId, action, decision } = event.payload;
+    return decision.kind === "target" ? [{ cursor, day, actorId, action, thinking: decision.thinking }] : [];
+  });
+  // A fixed eight-entry cut would split this historical sealed vote release.
+  expect(known).toHaveLength(22);
+  expect(known[7]?.cursor).toBe(known[8]?.cursor);
+  const received: WerewolfThinkingEntry[] = [];
+  let after: number | null = 0;
+  for (let index = 0; index < known.length && after !== null; index++) {
+    const page = await readThinking(reveal, after);
+    if (page.nextAfter !== null) {
+      expect(page.entries.at(-1)?.cursor).toBe(page.nextAfter);
+      expect(page.nextAfter).toBeGreaterThan(after);
+    }
+    received.push(...page.entries);
+    after = page.nextAfter;
+  }
+  expect(after).toBeNull();
+  expect(received).toEqual(known);
+  expect(await readThinking(ownerReveal)).toEqual({ entries: known.filter(entry => entry.actorId === alicePlayer.id), nextAfter: null });
+  expect(await readThinking(otherOwnerReveal)).toEqual({ entries: known.filter(entry => entry.actorId === bobPlayer.id), nextAfter: null });
+  expect((await tool(await grant("dm", bob, "different-game"), "read_thinking", { game: id })).status).toBe(403);
+
+  let mystery = await content(await tool(shared, "read_game", { game: id }));
+  expect(JSON.stringify(mystery)).toContain(claim);
+  for (let index = 0; index < live.length; index++) {
+    expect(mystery.audience).toBe("mystery");
+    expect(mystery.snapshot.outcome).toBeNull();
+    expect(JSON.stringify(mystery)).not.toContain("Saved thought from");
+    if (!mystery.nextCursor) break;
+    mystery = await content(await tool(shared, "read_game", { game: id, cursor: mystery.nextCursor }));
+  }
+  expect(mystery.nextCursor).toBeNull();
+  expect((await tool(shared, "read_results", { game: id })).status).toBe(403);
+  const frozen = await content(await tool(shared, "read_frozen_roster", { game: id }));
+  expect(frozen.find((actor: { id: string }) => actor.id === alicePlayer.id)).toMatchObject({
+    name: alicePlayer.name, agentId: alicePlayer.agentProfileId, revisionId: alicePlayer.contentRevisionId,
+  });
+  expect(JSON.stringify(frozen)).not.toContain("private profile");
+  await db.insert(schema.werewolfEvents).values({ gameId: id, sequence: outcome.sequence, event: outcome });
+  const results = await content(await tool(shared, "read_results", { game: id }));
+  expect(results.result.results.outcome).toEqual(outcome.payload);
+  expect(JSON.stringify(results)).not.toContain(claim);
+  const url = `https://thehouse.game/games/${id}/results`;
+  expect(await contentForLink(shared, url)).toMatchObject({ status: "found", reference: id, url });
+  expect((await readThinking(shared)).entries).toEqual((await readThinking(reveal)).entries);
+  expect((await readThinking(owner)).entries).toEqual(known.filter(entry => entry.actorId === alicePlayer.id));
+});
+
 test("an explicit Mystery replay keeps text, continuation and published scene inspection at that audience", async () => {
   const id = "wolf-audience";
   const events = await completedWerewolfResultsFixture("village", id);
@@ -316,6 +406,9 @@ test("an explicit Mystery replay keeps text, continuation and published scene in
   await db.insert(schema.visualMediaVersions).values({ id, gameId: id, sceneId: scene.id, version: 1, plan, imageArtifactId: image, annotatedArtifactId: image,
     localization: { count: cast.length, verifiedParticipantIds: cast.map(player => player.id), anchors: [] }, verificationVersion: "fixture", createdAt });
   await db.insert(schema.visualMediaPublications).values({ id, gameId: id, sceneId: scene.id, versionId: id, revision: 1, operatorId: "fixture", createdAt });
+  await db.insert(schema.gameAssets).values({ id: "settled-editorial", gameId: id, label: "banner", visibility: "spoiler",
+    altText: "Outcome artwork", objectKey: "fixture-editorial-object", sha256: "test", byteLength: 1, width: 1, height: 1,
+    createdById: "alice", updatedById: "alice", createdAt, updatedAt: createdAt });
 
   const shared = await grant("room");
   await role("producer");
@@ -330,6 +423,8 @@ test("an explicit Mystery replay keeps text, continuation and published scene in
     expect(first.nextCursor).toBeString();
     expect((await content(await tool(session, "read_game", { ...args, cursor: first.nextCursor }))).audience).toBe("mystery");
     expect((await tool(session, "read_game", { game: id, cursor: first.nextCursor })).status).toBe(403);
+    expect(await content(await tool(session, "list_game_images", { game: id }))).toHaveLength(1);
+    expect(await content(await tool(session, "list_game_images", args))).toEqual([]);
     expect(await content(await tool(session, "list_scene_images", { game: id, after }))).toEqual([]);
     const scenes = await content(await tool(session, "list_scene_images", { ...args, after }));
     expect(scenes).toHaveLength(1);
@@ -403,16 +498,25 @@ test("public profile lookup resolves a House share link and a display name to th
   const canonical = origin + "/profile/thehouse";
   const short = origin + "/s/Lk3WEcewWi";
   await db.update(schema.users).set({ displayName: "The House", handle: "thehouse" }).where(eq(schema.users.id, "alice"));
+  await db.insert(schema.agentProfiles).values([
+    { id: "house-public-agent", userId: "alice", name: "Public Agent", personality: "private strategy marker" },
+    { id: "house-unreviewed-agent", userId: "alice", name: "Unreviewed Agent", personality: "pending persona", moderationRequired: true },
+  ]);
   await db.insert(schema.houseShareLinks).values([
     { code: "Lk3WEcewWi", path: "/profile/thehouse" },
     { code: "Lk3WEcewWj", path: "/about" },
   ]);
   const shared = await grant("room", bob);
   for (const player of [short, canonical, "The House", "@thehouse"]) {
-    expect(await content(await tool(shared, "read_player", { player }))).toMatchObject({
-      status: "found", profileUrl: canonical, profile: { identity: { displayName: "The House", handle: "thehouse" } },
+    const found = await content(await tool(shared, "read_player", { player }));
+    expect(found).toMatchObject({
+      status: "found", profileUrl: canonical,
+      profile: { identity: { displayName: "The House", handle: "thehouse" }, agents: [{ agentId: "house-public-agent", name: "Public Agent" }] },
     });
+    expect(JSON.stringify(found)).not.toContain("private strategy marker");
   }
+  const dmProfile = await content(await tool(await grant("dm", bob), "read_player", { player: "@thehouse" }));
+  expect(dmProfile.profile.agents.map((agent: { agentId: string }) => agent.agentId)).toEqual(["house-public-agent"]);
   for (const player of ["https://elsewhere.example/profile/thehouse", origin + "/s/Lk3WEcewWj"]) {
     expect(await content(await tool(shared, "read_player", { player }))).toMatchObject({ status: "not_found" });
   }

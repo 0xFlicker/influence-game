@@ -14,7 +14,10 @@ import { loadPayloads } from "../services/payload-storage.js";
 import { getPublicPlayerProfile, PUBLIC_PLAYER_NOT_FOUND } from "../services/public-player-profile.js";
 import { findPublicPlayersByDisplayName, resolvePublicPlayer, type PublicPlayerIdentityRef } from "../services/public-player-identity.js";
 import { resolveShareLink } from "../services/house-share-links.js";
-import { getPublicSeasonGames, getPublicSeasonIdentity, listPublicSeasons, readSeasonEnrollment } from "../services/season-read-model.js";
+import {
+  getPublicSeasonIdentity, listPublicSeasons, PUBLIC_SEASON_GAME_PAGE_SIZE, readSeasonEnrollment,
+  readSeasonGamePage, type SeasonGamePosition,
+} from "../services/season-read-model.js";
 import { getPublicAgentProfile, readPublicAgentIdentity } from "../services/public-agent-profile.js";
 import { readWerewolfEvents } from "../services/werewolf-games.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
@@ -40,15 +43,15 @@ function tool(name: string, description: string, properties: object = {}, requir
 
 export const discordReadTools = [
   tool("list_seasons", "Discover House seasons and their lifecycle status. Use the returned slug with read_season for queue and entry status."),
-  tool("read_season", "Read a season's entry status, public queue count, next scheduled draw, and up to 24 public games. Pass an exact season slug or ID from list_seasons.", { season: string }, ["season"]),
+  tool("read_season", "Read a season's entry status, public queue count, next scheduled draw, and up to 24 public games in this conversation's scope. Pass an exact season slug or ID from list_seasons. To read more games, pass the returned nextCursor as cursor with the same season.", { season: string, cursor: { ...page.cursor, minLength: 1 } }, ["season"]),
   tool("get_rules", "Read House rules for Influence or Werewolf.", { gameKind }, ["gameKind"]),
   tool("list_games", "List games available in this conversation, most recent first. Use nextAfter to continue.", { gameKind, ...range }),
   tool("read_game", "Read canonical board and replay. Use the game ID for follow-ups. For a Mystery Werewolf view, pass audience mystery and keep it on continuation calls; otherwise the House assigns the authorized audience.", { ...game, ...page, ...mysteryView }, ["game"]),
   tool("read_results", "Read official settled results for an available completed game.", game, ["game"]),
   tool("read_speech", "Read accepted Influence dialogue, in pages. Werewolf speech is in read_game.", { ...game, ...range }, ["game"]),
-  tool("read_thinking", "Read authorized saved gameplay thinking. For Werewolf use a replay position as after (omit it for the beginning).", { ...game, ...range }, ["game"]),
+  tool("read_thinking", "Read authorized saved gameplay thinking. Use nextAfter as after to continue. Werewolf thinking uses Omniscient replay positions.", { ...game, ...range }, ["game"]),
   tool("resolve_house_link", "Resolve a complete first-party House link, including a short or timestamped replay link, to an authorized player, agent, game or replay. Use the returned reference with the specialized readers and use the returned URL in replies. A replay position is navigation context, never permission for a spoiler or an opaque read_game continuation.", { url: { ...string, maxLength: 2048 } }, ["url"]),
-  tool("read_player", "Look up a public House profile by display name, handle, public ID, or first-party profile or share link. Pass the complete link if given. Returns the canonical profile link, record, and public roster.", {
+  tool("read_player", "Look up a public House profile by display name, handle, public ID, or first-party profile or share link. Pass the complete link if given. Returns the canonical profile link, record, and roster with public agent IDs.", {
     player: { ...string, maxLength: 2048 },
   }, ["player"]),
   tool("list_agents", "List private agents in an owner or staff DM. Staff can specify a House public user ID.", { player: string }),
@@ -56,7 +59,7 @@ export const discordReadTools = [
   tool("read_frozen_roster", "Read frozen public character identity and art for a game.", game, ["game"]),
   tool("read_account", "Read a House account record by handle or public ID in a staff DM.", { player: string }, ["player"]),
   tool("list_scene_images", "Find published replay images at the authorized audience. Pass audience mystery for a Mystery Werewolf view. For Werewolf, after is the optional replay cursor in the selected audience.", { ...game, ...range, ...mysteryView }, ["game"]),
-  tool("list_game_images", "Find existing editorial images for a game.", game, ["game"]),
+  tool("list_game_images", "Find existing editorial images for a game. Pass audience mystery for a Mystery Werewolf view, which excludes editorial images.", { ...game, ...mysteryView }, ["game"]),
   tool("inspect_image", "View an authorized image using an imageRef from another House tool. Return that exact imageRef in the reply to attach it.", { imageRef: { type: "string", maxLength: 2048 } }, ["imageRef"]),
   tool("list_game_reasoning", "List stored private reasoning receipts for one game in an authorized staff DM.", { ...game, ...page, ...evidence }, ["game"]),
   tool("read_game_reasoning", "Read stored private reasoning for an exact receipt in an authorized staff DM.", { ...game, manifest: { ...string, maxLength: 160 }, ...range, ...evidence }, ["game", "manifest"]),
@@ -324,11 +327,24 @@ async function readDiscordPlayer(db: DrizzleDB, grant: DiscordGrant, reference: 
   }
   if (result.status !== "found") return result;
   const { recentResults: _recent, ...profile } = result.profile;
+  const agents = await Promise.all(profile.agents.map(async agent => {
+    const target = agent.profileHref ? await readHouseLinkTarget(db, agent.profileHref) : null;
+    return target?.kind === "agent" ? { ...agent, agentId: target.identifier } : agent;
+  }));
   return {
     ...result,
-    profile: withoutArt(grant.lane === "owner" ? profile : result.profile),
+    profile: withoutArt({ ...(grant.lane === "owner" ? profile : result.profile), agents }),
     profileUrl: profileUrl(result.profile.identity),
   };
+}
+
+interface SeasonPageCursor {
+  seasonId: string;
+  lane: DiscordGrant["lane"];
+  channelId: string;
+  connectionId: string;
+  userId: string;
+  after: SeasonGamePosition;
 }
 
 export async function discordRead(db: DrizzleDB, grant: DiscordGrant, secret: string, name: string, input: Record<string, unknown>) {
@@ -340,11 +356,19 @@ export async function discordRead(db: DrizzleDB, grant: DiscordGrant, secret: st
   if (name === "read_season") {
     const season = await getPublicSeasonIdentity(db, String(input.season));
     if (!season) return { status: "not_found" };
+    const binding = {
+      seasonId: season.id, lane: grant.lane, channelId: grant.channelId,
+      connectionId: grant.connectionId, userId: grant.userId,
+    };
+    const continuation = cursor === undefined ? undefined : verifyDiscordRef(cursor, secret, "season-page") as SeasonPageCursor;
+    if (continuation && (continuation.seasonId !== binding.seasonId || continuation.lane !== binding.lane
+      || continuation.channelId !== binding.channelId || continuation.connectionId !== binding.connectionId
+      || continuation.userId !== binding.userId)) return discordUnavailable();
     const [enrollment, feed] = await Promise.all([
       readSeasonEnrollment(db, season, false),
       grant.lane === "owner"
-        ? houseOwnedGameIds(db, grant.userId, false).then(ids => getPublicSeasonGames(db, season.id, [...ids]))
-        : getPublicSeasonGames(db, season.id),
+        ? houseOwnedGameIds(db, grant.userId, false).then(ids => readSeasonGamePage(db, season.id, continuation?.after, [...ids]))
+        : readSeasonGamePage(db, season.id, continuation?.after),
     ]);
     const nextDrawAt = enrollment && (!season.admissionClosesAt
       || Date.parse(enrollment.nextDrawAt) < Date.parse(season.admissionClosesAt))
@@ -358,8 +382,9 @@ export async function discordRead(db: DrizzleDB, grant: DiscordGrant, secret: st
       nextDrawAt,
       drawTimeZone: "America/Denver",
       gameScope: grant.lane === "owner" ? "public_games_your_agents_played" : "public",
-      publicGames: (feed?.games ?? []).map(game => ({ ...game, gameUrl: publicOrigin + "/games/" + encodeURIComponent(game.slug) })),
-      publicGameLimit: 24,
+      publicGames: feed.games.map(game => ({ ...game, gameUrl: publicOrigin + gameHref(game.slug) })),
+      publicGameLimit: PUBLIC_SEASON_GAME_PAGE_SIZE,
+      nextCursor: feed.nextPosition ? signDiscordRef({ ...binding, after: feed.nextPosition }, secret, "season-page") : null,
     };
   }
   if (name === "resolve_house_link") return resolveDiscordHouseLink(db, grant, String(input.url));
@@ -423,7 +448,7 @@ export async function discordRead(db: DrizzleDB, grant: DiscordGrant, secret: st
     }));
   }
   if (name === "list_game_images") {
-    if (match.audience === "mystery" || (match.row.gameKind === "werewolf" && grant.lane === "owner")) return [];
+    if (discordWatchAudience(grant, match, input.audience) === "mystery") return [];
     const a = schema.gameAssets;
     const assets = await db.select({ id: a.id, revision: a.revision, label: a.label, altText: a.altText })
       .from(a).where(and(eq(a.gameId, id), isNull(a.deletedAt))).orderBy(desc(a.updatedAt)).limit(10);
@@ -470,10 +495,16 @@ export async function discordRead(db: DrizzleDB, grant: DiscordGrant, secret: st
     const profiles = owned ? await db.select({ id: schema.agentProfiles.id }).from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.userId, grant.userId)) : [];
     const ownedProfiles = new Set(profiles.map(p => p.id));
-    const all = await readWerewolfThinking(db, id, "omniscient", 0);
+    const all = await readWerewolfThinking(db, id, "omniscient");
     const entries = all.entries.filter(entry => entry.cursor > after && (!owned
       || [...owned].some(([actor, profile]) => actor === entry.actorId && ownedProfiles.has(profile))));
-    const page = entries.slice(0, 8);
+    // Keep thoughts released at the same audience-local cursor on one page.
+    let page = entries.slice(0, 8);
+    const overflow = entries[page.length]?.cursor;
+    if (overflow !== undefined && page.at(-1)?.cursor === overflow) {
+      const complete = page.filter(entry => entry.cursor < overflow);
+      page = complete.length ? complete : entries.filter(entry => entry.cursor === overflow);
+    }
     return { entries: page.map(r => ({ ...r, thinking: text(r.thinking) })), nextAfter: entries.length > page.length ? page.at(-1)?.cursor : null };
   }
 

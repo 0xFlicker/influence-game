@@ -31,14 +31,16 @@ function referenceKey(secret: string, purpose: string) {
   return createHmac("sha256", secret).update("house-discord-v1:").update(purpose).digest();
 }
 
-export function signDiscordRef(value: object, secret: string, purpose: "turn" | "art") {
+type DiscordReferencePurpose = "turn" | "art" | "season-page";
+
+export function signDiscordRef(value: object, secret: string, purpose: DiscordReferencePurpose) {
   const nonce = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", referenceKey(secret, purpose), nonce);
   const data = Buffer.concat([cipher.update(JSON.stringify(value)), cipher.final()]);
   return Buffer.concat([nonce, cipher.getAuthTag(), data]).toString("base64url");
 }
 
-export function verifyDiscordRef(token: string, secret: string, purpose: "turn" | "art"): unknown {
+export function verifyDiscordRef(token: string, secret: string, purpose: DiscordReferencePurpose): unknown {
   if (token.length > 2048) return discordUnavailable();
   const data = Buffer.from(token, "base64url");
   if (data.length <= 28 || data.toString("base64url") !== token) return discordUnavailable();
