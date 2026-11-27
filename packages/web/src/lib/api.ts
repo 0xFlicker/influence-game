@@ -3418,6 +3418,7 @@ export interface UserRoleAssignment {
 }
 
 export interface AdminUser {
+  canManageRoles: boolean;
   id: string;
   publicId: string;
   handle: string | null;
@@ -3523,27 +3524,24 @@ export async function listRoles(): Promise<AdminRole[]> {
   return apiFetch("/api/admin/roles");
 }
 
-export async function listUserRoles(): Promise<UserRoleAssignment[]> {
-  return apiFetch("/api/admin/user-roles");
-}
-
+type RoleAssignmentTarget = { userId: string } | { publicId: string };
 export async function assignRole(
-  userId: string,
+  target: RoleAssignmentTarget,
   roleId: string,
 ): Promise<UserRoleAssignment> {
   return apiFetch("/api/admin/user-roles", {
     method: "POST",
-    body: JSON.stringify({ userId, roleId }),
+    body: JSON.stringify({ ...target, roleId }),
   });
 }
 
 export async function revokeRole(
-  userId: string,
+  target: RoleAssignmentTarget,
   roleId: string,
 ): Promise<void> {
   await apiFetch("/api/admin/user-roles", {
     method: "DELETE",
-    body: JSON.stringify({ userId, roleId }),
+    body: JSON.stringify({ ...target, roleId }),
   });
 }
 

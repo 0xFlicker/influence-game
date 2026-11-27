@@ -34,8 +34,11 @@ restricted to the API environment.
 ## Account support
 
 People → Users accepts an exact email lookup and opens the account by its public
-ID. A conflict requires resolving the account outside this lookup flow. Use the
-account page and type its current confirmation name to close the account. Only
+ID. The directory sorts by join date, newest first by default. Accounts with
+`manage_roles` can grant and revoke roles from the directory row or the
+account's Roles section. A conflict requires resolving the account outside the
+lookup flow. Use the account page and type its current confirmation name to
+close the account. Only
 sysops can close another admin or sysop account. The last sysop and service
 principals are protected from deletion. See [account deletion](../account-deletion.md)
 for preservation of games and asynchronous provider cleanup.

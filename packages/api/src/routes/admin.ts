@@ -27,6 +27,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { isUuidShapedPublicIdentity } from "../lib/public-player-identity.js";
 import { generateInviteCode } from "../lib/invite-codes.js";
 import { getRedactedKernelHealthByGameId } from "../services/game-kernel-health.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
@@ -420,30 +421,33 @@ export function createAdminRoutes(
 
   app.on(["POST", "DELETE"], "/api/admin/user-roles", requireRoleManagement, async (c) => {
     const body = await parseJsonBody(c, "Account role assignment");
-    if (!body || typeof body.userId !== "string" || !body.userId.trim()
-      || typeof body.roleId !== "string" || !body.roleId.trim()) {
-      return c.json({ error: "userId and roleId are required" }, 400);
+    const { userId, publicId, roleId } = body ?? {};
+    const byPublicId = typeof publicId === "string" && isUuidShapedPublicIdentity(publicId) && userId === undefined;
+    const byUserId = typeof userId === "string" && Boolean(userId.trim()) && publicId === undefined;
+    if ((!byPublicId && !byUserId) || typeof roleId !== "string" || !roleId.trim()) {
+      return c.json({ error: "Provide one account identifier and a roleId" }, 400);
     }
-    const userId = body.userId;
-    const roleId = body.roleId;
+    const account = byPublicId ? eq(schema.users.publicId, publicId) : eq(schema.users.id, userId);
     const granterId = c.get("user").id;
     return db.transaction(async tx => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('influence:role-management', 0))`);
       const authority = await getPermissionsForUser(tx, granterId);
       if (!authority.permissions.includes("manage_roles")) return c.json({ error: "Insufficient permissions" }, 403);
-      const [target] = await tx.select().from(schema.users).where(eq(schema.users.id, userId));
+      const [target] = await tx.select().from(schema.users).where(account).for("no key update");
       if (!target) return c.json({ error: "User not found" }, 404);
-      const [service] = await tx.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, userId));
+      const targetUserId = target.id;
+      const [service] = await tx.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, targetUserId));
       if (service || target.walletAddress?.toLowerCase() === "0x0000000000000000000000000000000000000000") {
         return c.json({ error: "Service principals cannot receive human roles" }, 400);
       }
       const [role] = await tx.select().from(schema.roles).where(eq(schema.roles.id, roleId));
       if (!role) return c.json({ error: "Role not found" }, 404);
-      const condition = and(eq(schema.userRoles.userId, userId), eq(schema.userRoles.roleId, roleId));
+      const condition = and(eq(schema.userRoles.userId, targetUserId), eq(schema.userRoles.roleId, roleId));
       const [existing] = await tx.select().from(schema.userRoles).where(condition);
       if (c.req.method === "POST") {
+        if (target.deletedAt) return c.json({ error: "This account is closed." }, 409);
         if (existing) return c.json({ error: "Role already assigned to this account" }, 409);
-        const [assignment] = await tx.insert(schema.userRoles).values({ userId, roleId, grantedBy: granterId }).returning();
+        const [assignment] = await tx.insert(schema.userRoles).values({ userId: targetUserId, roleId, grantedBy: granterId }).returning();
         return c.json({ ...assignment, roleName: role.name }, 201);
       }
       if (!existing) return c.json({ error: "Role assignment not found" }, 404);
@@ -465,6 +469,7 @@ export function createAdminRoutes(
   app.get("/api/admin/users", (c, next) =>
     c.get("userPermissions").includes("manage_roles") ? next() : requireRole("admin", "sysop")(c, next), async (c) => {
     c.header("Cache-Control", "private, no-store");
+    const canManageRoles = c.get("userPermissions").includes("manage_roles");
     const allUsers = await db.select({
       id: schema.users.id,
       publicId: schema.users.publicId,
@@ -473,11 +478,14 @@ export function createAdminRoutes(
       walletAddress: schema.users.walletAddress,
       displayName: schema.users.displayName,
       createdAt: schema.users.createdAt,
-    }).from(schema.users);
+      serviceId: schema.servicePrincipals.userId,
+    }).from(schema.users)
+      .leftJoin(schema.servicePrincipals, eq(schema.servicePrincipals.userId, schema.users.id));
 
     const usersWithRoles = await Promise.all(allUsers.map(async (user) => {
       const {
         publicId,
+        serviceId,
         ...serializedUser
       } = user;
       const resolved = await getPermissionsForUser(db, user.id);
@@ -487,6 +495,8 @@ export function createAdminRoutes(
         publicId,
         publicProfileId: isImportedSyntheticPlayer(user.walletAddress) ? null : publicId,
         displayName: containsEmailLike(user.displayName) ? "Anonymous" : user.displayName,
+        canManageRoles: canManageRoles && !user.deletedAt && !serviceId
+          && user.walletAddress?.toLowerCase() !== "0x0000000000000000000000000000000000000000",
         roles: resolved.roles,
         permissions: resolved.permissions,
       };

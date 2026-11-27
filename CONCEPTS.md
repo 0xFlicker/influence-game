@@ -512,6 +512,13 @@ trims whitespace and lowercases while preserving dots and plus-tags. Provider
 linking compares claim digests. Account support can also match the migrated
 legacy metadata digest for an exact lookup.
 
+## Users directory
+
+The People → Users list shows accounts with their join date and current roles.
+Operators open account details by public ID. Role managers can edit a user's
+grants from the directory row. The role-management API resolves the public ID
+to the private account and rechecks authorization before each mutation.
+
 ## Signup capacity
 
 An aggregate PostgreSQL bucket for committed new accounts. The configured rate

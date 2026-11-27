@@ -40,16 +40,16 @@ test("walletless account can receive an existing least-privilege role and immedi
   await db.insert(schema.authenticationCredentials).values({ userId: target, provider: "clerk", providerSubject: "clerk-walletless" });
   const [gamer] = await db.select().from(schema.roles).where(eq(schema.roles.name, "gamer"));
   const oldToken = await createSessionToken(target);
-  const response = await request("POST", { userId: target, roleId: gamer!.id });
+  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, target));
+  const response = await request("POST", { publicId: user!.publicId, roleId: gamer!.id });
   expect(response.status).toBe(201); expect(await response.json()).toMatchObject({ userId: target, grantedBy: sysop });
   expect((await request("POST", { userId: target, roleId: gamer!.id })).status).toBe(409);
   expect((await app.request("/human", { headers: headers(oldToken) })).status).toBe(200);
-  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, target));
   const session = await issueInfluenceSession(db, user!);
   expect(session.user.roles).toEqual(["gamer"]); expect(session.user.permissions.sort()).toEqual(["create_game", "fill_game", "start_game"]);
   expect(session.user.loginMethods.emailPassword).toBe(true);
   expect((await request("POST", { userId: sysop, roleId: gamer!.id }, oldToken)).status).toBe(403);
-  expect((await request("DELETE", { userId: target, roleId: gamer!.id })).status).toBe(200);
+  expect((await request("DELETE", { publicId: user!.publicId, roleId: gamer!.id })).status).toBe(200);
   expect((await app.request("/human", { headers: headers(session.token) })).status).toBe(403);
   expect(await (await app.request("/optional", { headers: headers(session.token) })).json()).toEqual({ permissions: [] });
 });
@@ -70,8 +70,13 @@ test("rejects invalid targets, forged role claims, and the last sysop revoke", a
   expect((await request("POST", { userId: "missing", roleId: role!.id })).status).toBe(404);
   expect((await request("POST", { walletAddress: zero, roleId: role!.id })).status).toBe(400);
   expect((await request("POST", { userId: target, roleId: "missing" })).status).toBe(404);
+  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, target));
+  expect((await request("POST", { publicId: "bad", roleId: role!.id })).status).toBe(400);
+  expect((await request("POST", { publicId: user!.publicId, userId: sysop, roleId: role!.id })).status).toBe(400);
   const forged = await createSessionToken(target, { roles: ["sysop"], permissions: ["manage_roles"] });
-  expect((await request("POST", { userId: target, roleId: role!.id }, forged)).status).toBe(403);
+  expect((await request("POST", { publicId: user!.publicId, roleId: role!.id }, forged)).status).toBe(403);
+  await db.update(schema.users).set({ deletedAt: new Date().toISOString() }).where(eq(schema.users.id, target));
+  expect((await request("POST", { publicId: user!.publicId, roleId: role!.id })).status).toBe(409);
   expect((await request("DELETE", { userId: sysop, roleId: role!.id })).status).toBe(403);
 });
 
@@ -94,7 +99,8 @@ test("legacy scheduler token is restricted by explicit principal state and signe
   expect((await app.request("/human", { headers: headers(legacy) })).status).toBe(403);
   expect((await app.request("/api/admin/users", { headers: headers(legacy) })).status).toBe(403);
   const [gamer] = await db.select().from(schema.roles).where(eq(schema.roles.name, "gamer"));
-  expect((await request("POST", { userId: scheduler, roleId: gamer!.id })).status).toBe(400);
+  const [schedulerUser] = await db.select().from(schema.users).where(eq(schema.users.id, scheduler));
+  expect((await request("POST", { publicId: schedulerUser!.publicId, roleId: gamer!.id })).status).toBe(400);
   expect(await (await app.request("/optional", { headers: headers(legacy) })).json()).toEqual({ permissions: [] });
   const noScope = await createSessionToken(scheduler);
   expect((await app.request("/queue", { method: "POST", headers: headers(noScope) })).status).toBe(403);

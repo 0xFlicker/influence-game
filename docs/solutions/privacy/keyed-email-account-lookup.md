@@ -21,3 +21,7 @@ An operator lookup resolves a public account ID. The separate deletion request
 checks that ID, the current profile confirmation, and the operator's current
 role. Keep the entered email out of URLs, responses, deletion records, and
 logs. See the [signup and cutover runbook](../../authentication/signup-admission.md).
+
+Keep role actions in the same Users directory and its account detail page.
+Pass the public account ID to role mutations and enforce the existing
+`manage_roles` permission on the server.
