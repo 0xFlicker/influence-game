@@ -1,5 +1,6 @@
 export const snowflake = /^[0-9]{17,20}$/;
 export const gameReference = /^[A-Za-z0-9_-]{1,128}$/;
+const roomSpoilerHeading = "**Live Werewolf spoiler for this room.**";
 
 export interface DiscordMessage {
   id: string;
@@ -23,10 +24,11 @@ export function roomContext(current: DiscordMessage, messages: DiscordMessage[],
       || typeof message.content !== "string" || !message.content.trim()) return [];
     const house = message.author.id === botId;
     if (message.author.bot && !house) return [];
+    const liveReveal = house && (message.content === roomSpoilerHeading || message.content.startsWith(roomSpoilerHeading + "\n"));
     seen.add(message.id);
     return [{ id: message.id,
       speaker: house ? "house" : message.author.id === current.author.id ? "requesting_member" : "room_member",
-      text: message.content.slice(0, 1200) }];
+      text: liveReveal ? "The House posted a live Werewolf spoiler here." : message.content.slice(0, 1200) }];
   }).sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
   return { recent: context.slice(-12), repliedTo: context.find(message => message.id === directReplyId(current)) };
 }
@@ -195,9 +197,11 @@ export const replySchema = {
     },
   },
 };
+const consentIntents = ["none", "direct", "matching_offer"] as const;
+type ConsentIntent = typeof consentIntents[number];
 export const consentSchema = {
-  type: "object", additionalProperties: false, required: ["allowed"],
-  properties: { allowed: { type: "boolean" } },
+  type: "object", additionalProperties: false, required: ["intent"],
+  properties: { intent: { type: "string", enum: consentIntents } },
 };
 
 export function validatedReply(value: unknown): Reply {
@@ -216,9 +220,45 @@ export function validatedReply(value: unknown): Reply {
 }
 
 export function validatedConsent(value: unknown) {
-  if (typeof value !== "object" || value === null || Object.keys(value).length !== 1
-      || !("allowed" in value) || typeof value.allowed !== "boolean") throw new Error("Invalid spoiler decision");
-  return value.allowed;
+  const parsed = record(value);
+  const intent = consentIntents.find(intent => intent === parsed.intent);
+  if (Object.keys(parsed).length !== 1 || !intent) throw new Error("Invalid spoiler decision");
+  return intent;
+}
+
+export function discordReplyForm(
+  message: Pick<DiscordMessage, "id" | "channel_id">,
+  text: string,
+  images: Array<{ mimeType: string; data: string }>,
+  liveRoomSpoiler: boolean,
+) {
+  if (!text && !images.length) return null;
+  let content = text;
+  if (liveRoomSpoiler) {
+    content = roomSpoilerHeading;
+    for (const line of text.split(/\r\n?|\n/)) {
+      // Keep arbitrary model prose from closing a spoiler or opening code formatting.
+      const safe = line.trim().replaceAll("|", "¦").replaceAll("`", "′").replaceAll("\\", "＼");
+      const wrapped = safe ? `\n||${safe}||` : "\n";
+      if (content.length + wrapped.length > 2000) break;
+      content += wrapped;
+    }
+    content = content.trimEnd();
+  }
+  const filename = (id: number) => `house-${id + 1}.png`;
+  const attachments = images.map((_, id) => ({ id, filename: filename(id), ...(liveRoomSpoiler && { is_spoiler: true }) }));
+  const payload = {
+    content, flags: 4, nonce: message.id, enforce_nonce: true,
+    allowed_mentions: { parse: [], replied_user: false },
+    message_reference: { message_id: message.id, channel_id: message.channel_id, fail_if_not_exists: true },
+    ...(attachments.length && { attachments }),
+  };
+  const form = new FormData();
+  form.set("payload_json", JSON.stringify(payload));
+  images.forEach((image, id) => {
+    form.set(`files[${id}]`, new Blob([Buffer.from(image.data, "base64")], { type: image.mimeType }), filename(id));
+  });
+  return form;
 }
 
 const replyLimit = 1900;
@@ -327,16 +367,56 @@ export function activeOffer(offer: SpoilerOffer | undefined, m: DiscordMessage, 
   return !m.message_reference || directReplyId(m) === offer.reply ? offer : undefined;
 }
 
-export async function revalidateSpoilerOffer(offer: SpoilerOffer | undefined, grant: string, api: HouseApi) {
-  if (!offer) return undefined;
+interface SpoilerTarget { gameId: string; slug: string; settled: boolean }
+export async function readSpoilerTarget(game: string, grant: string, api: HouseApi): Promise<SpoilerTarget | undefined> {
   try {
-    const response = await api("spoiler", { grant, game: offer.game });
+    const response = await api("spoiler", { grant, game });
     if (!response.ok) return undefined;
-    const target = record(await response.json());
-    return target.gameId === offer.game && target.settled === false && offer.expires > Date.now() ? offer : undefined;
+    const { gameId, slug, settled } = record(await response.json());
+    if (typeof gameId === "string" && gameReference.test(gameId) && typeof slug === "string"
+      && gameReference.test(slug) && typeof settled === "boolean") return { gameId, slug, settled };
+    return undefined;
   } catch {
     return undefined;
   }
+}
+
+export async function spoilerOfferContext(offer: SpoilerOffer | undefined, grant: string, api: HouseApi) {
+  if (!offer) return undefined;
+  const target = await readSpoilerTarget(offer.game, grant, api);
+  if (target?.gameId !== offer.game || offer.expires <= Date.now()) return undefined;
+  return target.settled ? { settledGame: target.gameId } : { offer };
+}
+
+interface SpoilerOptions {
+  message: DiscordMessage;
+  authority: TurnAuthority;
+  offer: SpoilerOffer | undefined;
+  readTarget: (game: string) => Promise<SpoilerTarget | undefined>;
+  interpret: (target: SpoilerTarget, matchingOffer: boolean) => Promise<ConsentIntent>;
+  now?: () => number;
+}
+
+type SpoilerDecision = { action: "unavailable" | "ask_explicitly" | "offer_pending" }
+  | { action: "settled" | "offer" | "reveal"; target: SpoilerTarget };
+
+export async function decideSpoilerTurn(
+  command: { action: "offer" | "authorize"; game: string },
+  { message, authority, offer, readTarget, interpret, now = Date.now }: SpoilerOptions,
+): Promise<SpoilerDecision> {
+  const initial = await readTarget(command.game);
+  if (!initial) return { action: "unavailable" };
+  if (initial.settled) return { action: "settled", target: initial };
+  const outstanding = () => offer?.game === initial.gameId && offer.expires > now() && sameConversation(offer, message, authority);
+  if (command.action === "offer") return outstanding() ? { action: "offer_pending" } : { action: "offer", target: initial };
+
+  const matching = () => activeOffer(offer, message, authority, now())?.game === initial.gameId;
+  const intent = await interpret(initial, matching());
+  const current = await readTarget(initial.gameId);
+  if (current?.gameId !== initial.gameId) return { action: "unavailable" };
+  if (current.settled) return { action: "settled", target: current };
+  if (intent === "direct" || (intent === "matching_offer" && matching())) return { action: "reveal", target: current };
+  return outstanding() ? { action: "offer_pending" } : { action: "ask_explicitly" };
 }
 
 export function spoilerOfferText(lane: TurnAuthority["lane"], slug: string) {

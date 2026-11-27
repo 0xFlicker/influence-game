@@ -1,9 +1,10 @@
 import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-  activeOffer, availableDmHistory, destination, directReplyId, discordMessageTime, dmContext, prepareReply, revalidateDmSubject,
-  revalidateSpoilerOffer, roomContext, snowflake, spoilerOfferText, subjectKey, subjectsFromRead, validatedConsent,
-  validatedReply, withTurnFeedback, type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject, type TurnAuthority,
+  activeOffer, availableDmHistory, decideSpoilerTurn, destination, directReplyId, discordMessageTime, discordReplyForm,
+  dmContext, prepareReply, readSpoilerTarget, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext, spoilerOfferText,
+  subjectKey, subjectsFromRead, validatedConsent, validatedReply, withTurnFeedback,
+  type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject, type TurnAuthority,
 } from "./policy.js";
 import { runCodex } from "./sandbox.js";
 
@@ -92,19 +93,9 @@ async function readRoomContext(m: DiscordMessage) {
   return roomContext(m, messages, botId);
 }
 
-async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }> = []) {
-  const payload = {
-    content, flags: 4, nonce: m.id, enforce_nonce: true,
-    allowed_mentions: { parse: [], replied_user: false },
-    message_reference: { message_id: m.id, channel_id: m.channel_id, fail_if_not_exists: true },
-    ...(images.length && { attachments: images.map((_, id) => ({ id, filename: "house-" + (id + 1) + ".png" })) }),
-  };
-  if (!payload.content && !images.length) return null;
-  const form = new FormData();
-  form.set("payload_json", JSON.stringify(payload));
-  images.forEach((image, id) => {
-    form.set("files[" + id + "]", new Blob([Buffer.from(image.data, "base64")], { type: image.mimeType }), "house-" + (id + 1) + ".png");
-  });
+async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }> = [], liveRoomSpoiler = false) {
+  const form = discordReplyForm(m, content, images, liveRoomSpoiler);
+  if (!form) return null;
   const response = await discord("/channels/" + m.channel_id + "/messages", { method: "POST", body: form });
   if (!response.ok) {
     const rejection = await response.json().catch(() => null) as { code?: unknown } | null;
@@ -146,16 +137,17 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   if (!prior.length) history.delete(key);
   const lastOffer = offers.get(key);
   if (lastOffer && (lastOffer.link !== turn.link || lastOffer.lane !== turn.lane)) offers.delete(key);
-  const [roomHistory, dmHistory, offer] = await Promise.all([
+  const [roomHistory, dmHistory, spoilerContext] = await Promise.all([
     kind === "room" ? readRoomContext(m) : undefined,
     kind === "dm" ? dmContext(prior, m, reference => revalidateDmSubject(reference, turn.grant, api)) : undefined,
-    revalidateSpoilerOffer(activeOffer(offers.get(key), m, turn), turn.grant, api),
+    spoilerOfferContext(activeOffer(offers.get(key), m, turn), turn.grant, api),
   ]);
   const recent = roomHistory
     ? roomHistory.recent.filter(message => message.speaker === "requesting_member").map(message => message.text).slice(-4)
     : dmHistory?.memberMessages ?? [];
   const current = m.content.slice(0, 2500);
   const games = new Set<string>();
+  if (spoilerContext?.settledGame) games.add(spoilerContext.settledGame);
   const observedSubjects = new Map<string, Subject>();
   const inspected = new Set<string>();
   const finish = async (links: string[] = []) => {
@@ -173,7 +165,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     return new Set(links.filter(link => allowedLinks.has(link)));
   };
 
-  const generate = async (revealed?: string) => {
+  const generate = async (spoiler?: { revealed?: string; settled?: string }) => {
     observedSubjects.clear();
     progress.stage = "catalog";
     const tools = await api("mcp", { grant: turn.grant, method: "tools/list" });
@@ -181,7 +173,9 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     const catalog = await tools.json() as { tools: Array<{ name: string }> };
     const prompt = JSON.stringify({
       conversation: kind, access: turn.lane, memberPublicId: turn.publicId, houseOrigin: house.origin,
-      activeSpoilerOffer: offer?.game, authorizedSpoiler: revealed, recentMemberMessages: recent,
+      activeSpoilerOffer: spoiler?.settled || spoiler?.revealed ? undefined : spoilerContext?.offer?.game,
+      authorizedSpoiler: spoiler?.revealed, settledSpoilerGame: spoiler?.settled ?? spoilerContext?.settledGame,
+      recentMemberMessages: recent,
       recentRoomMessages: roomHistory?.recent, repliedToRoomMessage: roomHistory?.repliedTo,
       recentDmSubjects: dmHistory?.recentSubjects, repliedToDmMessage: dmHistory?.repliedTo,
       hasExplicitDmReply: kind === "dm" ? Boolean(m.message_reference) : undefined,
@@ -211,47 +205,53 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   };
 
   let reply = await generate();
+  let liveRoomSpoiler = false;
   if (reply.spoiler.action !== "none") {
     progress.stage = "spoiler";
-    const challenge = await api("spoiler", { grant: turn.grant, game: reply.spoiler.game });
-    if (!challenge.ok) return "spoiler_unavailable";
-    const target = await challenge.json() as { gameId: string; slug: string; settled: boolean };
-    if (target.settled) {
-      games.add(target.gameId);
-      reply = await generate();
-      if (reply.spoiler.action !== "none") return "spoiler_unavailable";
+    const decision = await decideSpoilerTurn({ action: reply.spoiler.action, game: reply.spoiler.game }, {
+      message: m, authority: turn, offer: offers.get(key),
+      readTarget: game => readSpoilerTarget(game, turn.grant, api),
+      async interpret(game, matchingOffer) {
+        const prompt = JSON.stringify({
+          currentMemberMessage: current, recentMemberMessages: recent, access: turn.lane, game, matchingOffer,
+        });
+        return validatedConsent(await runCodex(sandbox, "consent", prompt, [], async () => new Response(null, { status: 403 })));
+      },
+    });
+    if (decision.action === "unavailable") return "spoiler_unavailable";
+    if ("target" in decision) games.add(decision.target.gameId);
+    if (decision.action === "settled") {
+      inspected.clear();
+      reply = await generate({ settled: decision.target.gameId });
+    } else if (decision.action === "reveal") {
+      if (!(await finish())) return "authority_changed";
+      progress.stage = "spoiler";
+      const grant = await api("turn", { ...params, spoilerGame: decision.target.gameId });
+      if (!grant.ok) return "authority_changed";
+      const elevated = await grant.json() as Turn;
+      if (elevated.link !== turn.link || elevated.lane !== turn.lane) return "authority_changed";
+      turn = elevated;
+      inspected.clear();
+      reply = await generate({ revealed: decision.target.gameId });
+      liveRoomSpoiler = kind === "room";
+      if (offers.get(key)?.game === decision.target.gameId) offers.delete(key);
     } else {
-      const matchingOffer = offer?.game === target.gameId && offer.expires > Date.now();
-      const consentPrompt = JSON.stringify({
-        currentMemberMessage: current, recentMemberMessages: recent, game: target, matchingOffer,
-      });
-      const consent = reply.spoiler.action === "authorize"
-        ? await runCodex(sandbox, "consent", consentPrompt, [], async () => new Response(null, { status: 403 })) : null;
-      if (consent && validatedConsent(consent) && (!matchingOffer || offer.expires > Date.now())) {
-        if (!(await finish())) return "authority_changed";
-        progress.stage = "spoiler";
-        const grant = await api("turn", { ...params, spoilerGame: target.gameId });
-        if (!grant.ok) return "authority_changed";
-        const elevated = await grant.json() as Turn;
-        if (elevated.link !== turn.link || elevated.lane !== turn.lane) return "authority_changed";
-        turn = elevated;
-        games.add(target.gameId);
-        inspected.clear();
-        reply = await generate(target.gameId);
-        if (reply.spoiler.action !== "none") return "spoiler_unavailable";
-        if (kind === "room") reply.text = "**Live Werewolf spoiler for this room.**\n" + reply.text;
-        offers.delete(key);
-      } else {
-        games.add(target.gameId);
-        if (!(await finish())) return "authority_changed";
-        progress.stage = "delivery";
-        const text = prepareReply(spoilerOfferText(turn.lane, target.slug), house.origin).render(new Set());
-        const sent = await send(m, text);
-        if (sent) offers.set(key, { game: target.gameId, member: m.author.id, channel: m.channel_id, link: turn.link, lane: turn.lane,
-          reply: sent, expires: Date.now() + 5 * 60_000 });
-        return "spoiler_offered";
+      if (!(await finish())) return "authority_changed";
+      progress.stage = "delivery";
+      if (decision.action !== "offer") {
+        const text = decision.action === "offer_pending"
+          ? "My earlier offer is still open. You can reply to it or ask for a live reveal directly."
+          : "Ask me directly for a live reveal if you want one.";
+        await send(m, text);
+        return "spoiler_not_authorized";
       }
+      const text = prepareReply(spoilerOfferText(turn.lane, decision.target.slug), house.origin).render(new Set());
+      const sent = await send(m, text);
+      if (sent) offers.set(key, { game: decision.target.gameId, member: m.author.id, channel: m.channel_id, link: turn.link, lane: turn.lane,
+        reply: sent, expires: Date.now() + 5 * 60_000 });
+      return "spoiler_offered";
     }
+    if (reply.spoiler.action !== "none") return "spoiler_unavailable";
   }
 
   const images: Array<{ mimeType: string; data: string }> = [];
@@ -267,7 +267,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   const replyLinks = await finish(prepared.links);
   if (!replyLinks) return "authority_changed";
   progress.stage = "delivery";
-  const sent = await send(m, prepared.render(replyLinks), images);
+  const sent = await send(m, prepared.render(replyLinks), images, liveRoomSpoiler);
   if (!sent) return "empty_reply";
   if (kind === "dm" && snowflake.test(sent)) {
     const subject = reply.subject.kind === "none" ? undefined : observedSubjects.get(subjectKey(reply.subject));

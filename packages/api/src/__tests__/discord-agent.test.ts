@@ -349,8 +349,8 @@ test("structured consent rejects malformed output and cannot borrow another memb
   expect(activeOffer(offer, { ...m, author: { id: bob } }, authority, 999)).toBeUndefined();
   expect(activeOffer(offer, m, { ...authority, link: "relinked" }, 999)).toBeUndefined();
   expect(activeOffer(offer, m, authority, 1000)).toBeUndefined();
-  expect(validatedConsent({ allowed: true })).toBe(true);
-  for (const invalid of [null, {}, "yes", { allowed: "true" }, { allowed: true, role: "staff" }]) {
+  expect(validatedConsent({ intent: "direct" })).toBe("direct");
+  for (const invalid of [null, {}, "yes", { allowed: true }, { intent: "yes" }, { intent: "direct", role: "staff" }]) {
     expect(() => validatedConsent(invalid)).toThrow();
   }
   expect(() => validatedReply({ text: "yes", imageRefs: [], spoiler: { action: "authorize" } })).toThrow();

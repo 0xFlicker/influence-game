@@ -41,7 +41,7 @@ Bun.serve({ unix: "/bridge/turn.sock", async fetch(req) {
   console.log("PROVIDER TOOLS", JSON.stringify(filtered.tools.map(t => ({ name: t.name, tools: t.tools }))));
   const message = (content: object) => sse({ id: "msg1", type: "message", role: "assistant", status: "completed",
     content: [{ type: "output_text", annotations: [], text: JSON.stringify(content) }] }, model);
-  if (consent) return message({ allowed: true });
+  if (consent) return message({ intent: "matching_offer" });
   if (++calls === 1) return sse({ id: "item1", type: "function_call", namespace: "mcp__house", name: "resolve_house_link",
     call_id: "call1", arguments: '{"url":"https://thehouse.game/s/Lk3WEcewWi"}', status: "completed" }, model);
   if (calls === 2) {

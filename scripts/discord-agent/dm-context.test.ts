@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  activeOffer, availableDmHistory, dmContext, revalidateDmSubject, revalidateSpoilerOffer, spoilerOfferText, subjectsFromRead,
+  activeOffer, availableDmHistory, dmContext, revalidateDmSubject, spoilerOfferText, subjectsFromRead,
   validatedReply, type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject,
 } from "../../packages/api/src/discord/conversation/policy.js";
 
@@ -120,7 +120,7 @@ test("a reply to an earlier replay keeps its exact moment only while the fresh g
   expect(permitted.recentSubjects).toEqual([reveal, mystery]);
 });
 
-test("spoiler continuity requires the same principal, eligible lane, direct reply and live game", async () => {
+test("spoiler continuity requires the same principal, eligible lane and direct reply", () => {
   const offer: SpoilerOffer = { ...owner, channel, member, game: "werewolf", reply: history.entries[0].replyId, expires: Date.now() + 30_000 };
   expect(activeOffer(offer, current, owner)).toBe(offer);
   expect(activeOffer(offer, replyingTo(offer.reply), owner)).toBe(offer);
@@ -129,14 +129,6 @@ test("spoiler continuity requires the same principal, eligible lane, direct repl
   expect(activeOffer(offer, { ...current, message_reference: { type: 1 } }, owner)).toBeUndefined();
   expect(activeOffer(offer, current, { ...owner, lane: "staff" })).toBeUndefined();
   expect(activeOffer(offer, current, owner, offer.expires)).toBeUndefined();
-  const reply = (settled: boolean) => async (action: string, body: object) => {
-    expect(action).toBe("spoiler");
-    expect(body).toEqual({ grant: "fresh-grant", game: offer.game });
-    return Response.json({ gameId: offer.game, settled });
-  };
-  expect(await revalidateSpoilerOffer(offer, "fresh-grant", reply(false))).toBe(offer);
-  expect(await revalidateSpoilerOffer(offer, "fresh-grant", reply(true))).toBeUndefined();
-  expect(await revalidateSpoilerOffer(offer, "fresh-grant", async () => new Response(null, { status: 403 }))).toBeUndefined();
   expect(spoilerOfferText("owner", offer.game)).toBe("Shall I reveal saved thinking from your own agents in **werewolf**? It may contain live Werewolf spoilers.");
   expect(spoilerOfferText("room", offer.game)).toContain("visible to this room");
 });

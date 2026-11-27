@@ -15,13 +15,16 @@ actually returned and the House retained. The Discord role badge is a community
 access projection. The House API resolves the account’s current roles.
 
 Live Werewolf starts in Mystery. The game’s canonical outcome switches the
-default to Omniscient. A clear request for a live reveal can use Omniscient
-directly. For an ambiguous request, The House asks once and accepts a clear
-affirmative follow-up from the same member. It interprets meaning in a
-tool-free Codex turn with exact structured output. The resulting grant binds the
-game, verified account, conversation and triggering message. Shared live
-reveals visibly identify themselves as spoilers. Owner DMs stay within the
-member’s gameplay and agent access.
+default to Omniscient within the conversation’s access. A clear live reveal
+request can proceed directly. For an ambiguous request, The House asks once
+and accepts a clear affirmative from the same member. If the game ends during
+the exchange, the reply uses the official result under the current grant.
+The tool-free consent turn distinguishes a direct request from acceptance of
+an existing offer. The grant binds the game, verified account, conversation and
+triggering message. The shared room conceals live reveal text and attachments
+with Discord spoiler formatting. Later room turns receive a marker in place of
+the earlier live reveal text. An owner DM can reveal saved thinking from the
+member’s own agents. Its replay and artwork remain in Mystery.
 
 ## House links
 
