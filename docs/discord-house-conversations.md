@@ -70,16 +70,26 @@ references are opaque, scoped to the turn and revalidated when opened. House
 services resolve publication and visibility against existing object storage
 before returning bytes. The gateway can attach up to two inspected images.
 Codex authors all conversation text, including spoiler offers and follow-up
-explanations. The gateway supplies the current decision as structured context
-and handles eligibility, spoiler formatting and delivery.
+explanations. It chooses where to split a long reply into ordered Discord
+messages. Each message must fit Discord's 2,000-character limit after link and
+spoiler formatting. The gateway checks that every part fits before it starts
+delivery and rechecks authority as it posts the parts in order. If a part of
+a conversational answer is too long, Codex gets one chance to split it again
+while keeping the draft's words. The gateway posts only compliant parts of an
+accepted reply.
+[Discord message API](https://docs.discord.com/developers/resources/message#create-message)
 
 The ARM gateway connects to Discord continuously. It queues at most 12
 messages, runs one Codex query at a time, and discards expired work. SQLite
 retains only short-lived message IDs for reconnect deduplication. The shared
-room reads recent room messages and its explicit Discord reply target. In a DM,
-The House can follow a recent subject or a direct reply to the exchange where
-the subject came up. It keeps at most four exchanges for 15 minutes in memory,
-bound to the same channel, Discord member, verified link and House access lane.
+room fetches up to 20 previous messages and gives Codex the most recent 12
+eligible messages from the past 30 minutes, plus any explicit reply target in
+that window. Codex gets the full text of those messages and the current member
+message. Prior House spoiler disclosures are represented by a typed marker.
+In a DM, The House can follow a recent subject or a direct reply to any part of
+the exchange where the subject came up. It keeps at most four exchanges for 15
+minutes in memory, bound to the same channel, Discord member, verified link and
+House access lane.
 The gateway checks those subject references against the current grant. The next
 turn reads the current House record before answering. Prior bot replies, private
 tool results, images and spoiler grants stay out of DM history.
@@ -122,9 +132,9 @@ can recover a recent replay by replying to The House in a verified DM. Use an
 owned Unlisted game to check the DM and the room independently. Check a live
 Werewolf Mystery link, an authorized reveal where permitted, and reply links
 and artwork in the same audience. Use synthetic fixtures for role removal,
-disconnect, relinking and another owner’s game. Confirm one reply per message
-through worker replacement and check `/verify` independently. Record the
-active API revision, worker digests and observed delivery outcome.
+disconnect, relinking and another owner’s game. Confirm a reply's ordered parts
+appear once through worker replacement and check `/verify` independently.
+Record the active API revision, worker digests and observed delivery outcome.
 
 Live Discord acceptance uses `#ask-the-house` and consented DMs. House staging
 access needs a separate role decision.

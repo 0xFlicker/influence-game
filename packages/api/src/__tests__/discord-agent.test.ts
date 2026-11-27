@@ -448,7 +448,7 @@ test("structured consent rejects malformed output and cannot borrow another memb
   for (const invalid of [null, {}, "yes", { allowed: true }, { intent: "yes" }, { intent: "direct", role: "staff" }]) {
     expect(() => validatedConsent(invalid)).toThrow();
   }
-  expect(() => validatedReply({ text: "yes", imageRefs: [], spoiler: { action: "authorize" } })).toThrow();
+  expect(() => validatedReply({ messages: ["yes"], imageRefs: [], spoiler: { action: "authorize" }, subject: { kind: "none", id: "" } })).toThrow();
   const house = { type: "namespace", name: "mcp__house", tools: [{ type: "function", name: "get_rules" }] };
   const tools = [{ type: "web_search" }, { type: "custom", name: "apply_patch" }, house,
     { type: "function", name: "exec_command" }, { type: "namespace", name: "mcp__other", tools: house.tools }];

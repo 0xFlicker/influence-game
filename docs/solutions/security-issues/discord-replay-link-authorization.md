@@ -26,6 +26,9 @@ before delivery. A previous reply can identify the subject. Current House
 records supply the facts and ensure the text, link and image use the same
 audience.
 
+When Codex splits a reply, check the authorized links across every part and
+associate each delivered Discord message ID with the original DM exchange.
+
 [House conversation contract](../../discord-house-conversations.md)
 
 ## Live spoiler follow-ups

@@ -1,5 +1,6 @@
 export const snowflake = /^[0-9]{17,20}$/;
 export const gameReference = /^[A-Za-z0-9_-]{1,128}$/;
+export const discordContentLimit = 2000;
 const legacyRoomSpoilerHeading = "**Live Werewolf spoiler for this room.**";
 const attachmentSpoilerFlag = 1 << 3;
 const newline = /\r\n?|\n/;
@@ -47,7 +48,7 @@ export function roomContext(current: DiscordMessage, messages: DiscordMessage[],
     if (liveReveal) return [{ id: message.id, speaker: "house", disclosure: "live_werewolf_spoiler" }];
     return [{ id: message.id,
       speaker: house ? "house" : message.author.id === current.author.id ? "requesting_member" : "room_member",
-      text: message.content.slice(0, 1200) }];
+      text: message.content }];
   }).sort((a, b) => BigInt(a.id) < BigInt(b.id) ? -1 : 1);
   return { recent: context.slice(-12), repliedTo: context.find(message => message.id === directReplyId(current)) };
 }
@@ -158,7 +159,7 @@ export async function revalidateDmSubject(reference: Subject, grant: string, api
 export interface DmEntry {
   messageId: string;
   memberText: string;
-  replyId: string;
+  replyIds: string[];
   subject?: Subject;
   expires: number;
 }
@@ -171,7 +172,8 @@ export function availableDmHistory(history: DmHistory | undefined, message: Disc
 }
 
 export async function dmContext(entries: DmEntry[], message: DiscordMessage, allows: (reference: Subject) => Promise<boolean>) {
-  const earlier = entries.filter(entry => BigInt(entry.replyId) < BigInt(message.id));
+  const currentId = BigInt(message.id);
+  const earlier = entries.filter(entry => entry.replyIds.some(id => BigInt(id) < currentId));
   const subjects = new Map<string, Subject>();
   for (const { subject } of earlier) {
     if (!subject) continue;
@@ -183,12 +185,12 @@ export async function dmContext(entries: DmEntry[], message: DiscordMessage, all
   }));
   const available = earlier.filter(entry => !entry.subject || subjects.has(historySubjectKey(entry.subject)));
   const parentId = directReplyId(message);
-  const direct = parentId && available.find(entry => entry.replyId === parentId || entry.messageId === parentId);
+  const direct = parentId && available.find(entry => entry.messageId === parentId || entry.replyIds.includes(parentId));
   return {
     memberMessages: available.map(entry => entry.memberText),
     recentSubjects: [...subjects.values()],
     repliedTo: direct ? {
-      speaker: direct.replyId === parentId ? "house" : "requesting_member",
+      speaker: direct.messageId === parentId ? "requesting_member" : "house",
       memberMessage: direct.memberText,
       subject: direct.subject,
     } : undefined,
@@ -196,15 +198,15 @@ export async function dmContext(entries: DmEntry[], message: DiscordMessage, all
 }
 
 export interface Reply {
-  text: string;
+  messages: string[];
   imageRefs: string[];
   spoiler: { action: "none" | "offer" | "authorize"; game: string };
   subject: Subject | { kind: "none"; id: "" };
 }
 export const replySchema = {
-  type: "object", additionalProperties: false, required: ["text", "imageRefs", "spoiler", "subject"],
+  type: "object", additionalProperties: false, required: ["messages", "imageRefs", "spoiler", "subject"],
   properties: {
-    text: { type: "string" },
+    messages: { type: "array", items: { type: "string" } },
     imageRefs: { type: "array", items: { type: "string" } },
     spoiler: {
       type: "object", additionalProperties: false, required: ["action", "game"],
@@ -227,7 +229,8 @@ export function validatedReply(value: unknown): Reply {
   if (!value || typeof value !== "object") throw new Error("Invalid reply");
   const r = value as Partial<Reply>;
   if (Object.keys(r).length !== 4) throw new Error("Invalid reply");
-  if (typeof r.text !== "string" || !Array.isArray(r.imageRefs) || r.imageRefs.length > 2
+  if (!Array.isArray(r.messages) || !r.messages.every(text => typeof text === "string" && text.trim().length > 0)
+      || !Array.isArray(r.imageRefs) || r.imageRefs.length > 2
       || !r.imageRefs.every(x => typeof x === "string" && x.length <= 2048)
       || !r.spoiler || Object.keys(r.spoiler).length !== 2 || typeof r.spoiler.game !== "string" || !["none", "offer", "authorize"].includes(r.spoiler.action)
       || (r.spoiler.action !== "none" && !gameReference.test(r.spoiler.game))
@@ -245,30 +248,33 @@ export function validatedConsent(value: unknown) {
   return intent;
 }
 
+export function discordReplyContent(text: string, liveRoomSpoiler: boolean) {
+  if (!liveRoomSpoiler) return text;
+  return text.split(newline).map(line => {
+    if (!line.trim()) return line;
+    // Keep arbitrary model prose from closing a spoiler or opening code formatting.
+    const safe = line.replaceAll("|", "¦").replaceAll("`", "′").replaceAll("\\", "＼");
+    return `||${safe}||`;
+  }).join("\n");
+}
+
 export function discordReplyForm(
   message: Pick<DiscordMessage, "id" | "channel_id">,
   text: string,
   images: Array<{ mimeType: string; data: string }>,
   liveRoomSpoiler: boolean,
+  part = 0,
 ) {
-  let content = text;
-  if (liveRoomSpoiler) {
-    content = "";
-    for (const line of text.trim().split(newline)) {
-      // Keep arbitrary model prose from closing a spoiler or opening code formatting.
-      const safe = line.trim().replaceAll("|", "¦").replaceAll("`", "′").replaceAll("\\", "＼");
-      const wrapped = safe ? `||${safe}||` : "";
-      const withLine = content ? `${content}\n${wrapped}` : wrapped;
-      if (withLine.length > 2000) break;
-      content = withLine;
-    }
-    content = content.trimEnd();
-  }
+  const content = discordReplyContent(text, liveRoomSpoiler);
+  if (content.length > discordContentLimit) throw new RangeError("Discord message is too long");
   if (!content.trim() && !images.length) return null;
+  if (!Number.isSafeInteger(part) || part < 0) throw new RangeError("Invalid Discord reply part");
+  const nonce = part === 0 ? message.id : `${message.id}:${part.toString(36)}`;
+  if (nonce.length > 25) throw new RangeError("Discord reply nonce is too long");
   const filename = (id: number) => `house-${id + 1}.png`;
   const attachments = images.map((_, id) => ({ id, filename: filename(id), ...(liveRoomSpoiler && { is_spoiler: true }) }));
   const payload = {
-    content, flags: 4, nonce: message.id, enforce_nonce: true,
+    content, flags: 4, nonce, enforce_nonce: true,
     allowed_mentions: { parse: [], replied_user: false },
     message_reference: { message_id: message.id, channel_id: message.channel_id, fail_if_not_exists: true },
     ...(attachments.length && { attachments }),
@@ -281,37 +287,31 @@ export function discordReplyForm(
   return form;
 }
 
-const replyLimit = 1900;
-const linkLimit = 12;
 const replyLink = /\[([^\[\]\r\n]+)\]\((https?:\/\/[^\s<>\])]+)\)|https?:\/\/[^\s<>\])]+/gi;
 const resourcePaths = new Set(["agents", "games", "profile"]);
 
-export function prepareReply(content: string, origin: string) {
-  const source = content.trim();
+export function prepareReply(source: string, origin: string) {
   const links = new Set<string>();
   const parts: Array<string | { label?: string; href: string; needsValidation: boolean }> = [];
+  let removedLink = false;
   let offset = 0;
   for (const match of source.matchAll(replyLink)) {
     const start = match.index;
-    if (start >= replyLimit) break;
     parts.push(source.slice(offset, start));
     offset = start + match[0].length;
-    if (offset > replyLimit) break;
 
     const [, rawLabel, destination] = match;
     const label = rawLabel?.replace(replyLink, "");
     const raw = destination ?? match[0].replace(/[.,!?]+$/, "");
     const trailing = destination === undefined ? match[0].slice(raw.length) : "";
     const href = URL.canParse(raw) ? new URL(raw) : null;
-    if (href?.origin === origin && !href.username && !href.password) {
+    if (href?.origin === origin && href.href.length <= 2048 && !href.username && !href.password) {
       const [, section, id] = href.pathname.split("/");
       if (id && section && resourcePaths.has(section)) {
-        if (links.has(href.href) || links.size < linkLimit) {
-          links.add(href.href);
-          parts.push({ label, href: href.href, needsValidation: true });
-          if (trailing) parts.push(trailing);
-          continue;
-        }
+        links.add(href.href);
+        parts.push({ label, href: href.href, needsValidation: true });
+        if (trailing) parts.push(trailing);
+        continue;
       } else if (href.pathname === "/seasons" && /^\?season=[A-Za-z0-9_-]+$/.test(href.search) && !href.hash) {
         parts.push({ label, href: href.href, needsValidation: false });
         if (trailing) parts.push(trailing);
@@ -319,26 +319,23 @@ export function prepareReply(content: string, origin: string) {
       }
     }
     parts.push((label ?? "") + trailing);
+    removedLink = true;
   }
-  if (offset < replyLimit) parts.push(source.slice(offset, replyLimit));
+  parts.push(source.slice(offset));
 
   return {
     links: [...links],
     render(allowed: ReadonlySet<string>) {
-      let text = "";
-      for (const part of parts) {
-        if (typeof part === "string") {
-          text += part.slice(0, replyLimit - text.length);
-        } else {
-          const fallback = part.label ?? "";
-          const value = part.needsValidation && !allowed.has(part.href) ? fallback
-            : part.label === undefined ? part.href : `[${part.label}](${part.href})`;
-          if (text.length + value.length > replyLimit) break;
-          text += value;
+      let removed = removedLink;
+      const text = parts.map(part => {
+        if (typeof part === "string") return part;
+        if (part.needsValidation && !allowed.has(part.href)) {
+          removed = true;
+          return part.label ?? "";
         }
-        if (text.length === replyLimit) break;
-      }
-      return text.trim();
+        return part.label === undefined ? part.href : `[${part.label}](${part.href})`;
+      }).join("");
+      return removed ? text.trim() : text;
     },
   };
 }
@@ -384,7 +381,8 @@ export async function withTurnFeedback<T>(
 export interface SpoilerOffer extends ConversationAuthority { game: string; reply: string; expires: number }
 export function activeOffer(offer: SpoilerOffer | undefined, m: DiscordMessage, authority: TurnAuthority, now = Date.now()) {
   if (!offer || offer.expires <= now || !sameConversation(offer, m, authority)) return undefined;
-  return !m.message_reference || directReplyId(m) === offer.reply ? offer : undefined;
+  const parentId = directReplyId(m);
+  return !m.message_reference || parentId === offer.reply ? offer : undefined;
 }
 
 interface SpoilerTarget { gameId: string; slug: string; settled: boolean }

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  activeOffer, decideSpoilerTurn, discordReplyForm, roomContext, spoilerOfferContext, validatedConsent,
+  activeOffer, decideSpoilerTurn, discordContentLimit, discordReplyContent, discordReplyForm, roomContext, spoilerOfferContext, validatedConsent,
   type DiscordMessage, type SpoilerOffer, type TurnAuthority,
 } from "../../packages/api/src/discord/conversation/policy.js";
 
@@ -119,10 +119,35 @@ test("live room deliveries spoiler every nonblank line and mark attached art to 
     content: "", attachments: [{ id: 0, filename: "house-1.png", is_spoiler: true }],
   });
   expect(discordReplyForm(current, "  ", [], true)).toBeNull();
-  const veryLong = discordReplyForm(current, "a\n".repeat(940), [], true)!;
-  const content = JSON.parse(veryLong.get("payload_json") as string).content as string;
-  expect(content.length).toBeLessThanOrEqual(2000);
-  expect(content.split("\n").every(line => line === "||a||")).toBe(true);
+});
+
+test("full spoiler wrapping is measured before delivery, with no clipping to fit a multipart post", () => {
+  const longest = "x".repeat(discordContentLimit - 4);
+  const exact = discordReplyForm(current, longest, [], true)!;
+  expect(JSON.parse(exact.get("payload_json") as string).content).toBe(`||${longest}||`);
+  expect(discordReplyContent("  A complete line.  \n \t\n  The conclusion.", true))
+    .toBe("||  A complete line.  ||\n \t\n||  The conclusion.||");
+  const lines = Array.from({ length: 450 }, (_, index) => `Spoiler line ${index}`);
+  const text = lines.join("\n");
+  const wrapped = lines.map(line => `||${line}||`).join("\n");
+  expect(discordReplyContent(text, true)).toBe(wrapped);
+  expect(() => discordReplyForm(current, text, [], true)).toThrow(RangeError);
+  expect(() => discordReplyForm(current, longest + "y", [], true)).toThrow(RangeError);
+  expect(() => discordReplyForm(current, "x".repeat(discordContentLimit + 1), [], false)).toThrow(RangeError);
+});
+
+test("ordered parts use distinct stable Discord nonces and keep the original reply reference", () => {
+  const messages = ["First answer.\n\nA second paragraph.", "Next part includes words that must stay intact.", "Final words."];
+  const payloads = messages.map((text, part) => JSON.parse(discordReplyForm(current, text, [], false, part)!.get("payload_json") as string));
+  expect(payloads.map(payload => payload.content)).toEqual(messages);
+  const nonces = payloads.map(payload => payload.nonce);
+  expect(nonces[0]).toBe(current.id);
+  expect(new Set(nonces).size).toBe(messages.length);
+  expect(nonces.every(nonce => typeof nonce === "string" && nonce.length <= 25)).toBe(true);
+  for (const [part, payload] of payloads.entries()) {
+    expect(payload.message_reference).toEqual({ message_id: current.id, channel_id: current.channel_id, fail_if_not_exists: true });
+    expect(JSON.parse(discordReplyForm(current, messages[part]!, [], false, part)!.get("payload_json") as string).nonce).toBe(payload.nonce);
+  }
 });
 
 test("room context masks prior House live reveals, including explicit reply targets after replacement", () => {
@@ -130,12 +155,13 @@ test("room context masks prior House live reveals, including explicit reply targ
     ...current, id: offerMessage, author: { id: bot, bot: true },
     content: "||The only wolf is the secret contestant.||\n\n||The replay confirms it.||",
   };
-  const context = roomContext(current, [prior, { ...prior, id: "1521921716224393444", content: "The canonical game link is ready." }], bot);
+  const fullHistory = "The canonical game link is ready. ".repeat(65) + "This is the last sentence.";
+  const context = roomContext(current, [prior, { ...prior, id: "1521921716224393444", content: fullHistory }], bot);
   const marker = { id: offerMessage, speaker: "house", disclosure: "live_werewolf_spoiler" };
   expect(context.repliedTo).toEqual(marker);
   expect(context.recent.at(-1)).toEqual(marker);
   expect(JSON.stringify(context)).not.toContain("secret contestant");
-  expect(context.recent[0]?.text).toBe("The canonical game link is ready.");
+  expect(context.recent[0]?.text).toBe(fullHistory);
   const impersonated = { ...prior, author: { id: otherMember } };
   expect(roomContext(current, [impersonated], bot).repliedTo?.speaker).toBe("room_member");
   const attachmentOnly = { ...prior, content: "", attachments: [{ flags: 1 << 3 }] };

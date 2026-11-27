@@ -27,12 +27,20 @@ test("the reply keeps its explanation when pasted links fail validation", () => 
   expect(prepareReply(external, origin).render(new Set())).toBe("");
 });
 
-test("a truncated reply never creates a partial resource URL", () => {
+test("authorization keeps a whole replay URL and trailing prose beyond the former reply cutoff", () => {
   const replay = `${origin}/games/copper-fox/replay?audience=mystery&cursor=8`;
-  const lead = "x".repeat(1880);
-  const prep = prepareReply(`${lead} ${replay}`, origin);
-  expect(prep.links).toEqual([]);
-  expect(prep.render(new Set([replay]))).toBe(lead);
+  const text = ` \n${"x".repeat(1980)}\n\n[Watch the replay](${replay})\nThe last sentence follows the link.  \n`;
+  const prep = prepareReply(text, origin);
+  expect(prep.links).toEqual([replay]);
+  expect(prep.render(new Set([replay]))).toBe(text);
+});
+
+test("authorization retains all distinct links for batched checks and preserves their model-authored order", () => {
+  const links = Array.from({ length: 14 }, (_, index) => `${origin}/games/fixture-${index}`);
+  const text = links.map((link, index) => `[Game ${index + 1}](${link})`).join("\n");
+  const prep = prepareReply(text, origin);
+  expect(prep.links).toEqual(links);
+  expect(prep.render(new Set(links.toReversed()))).toBe(text);
 });
 
 test("sentence punctuation stays outside a verified bare link", () => {

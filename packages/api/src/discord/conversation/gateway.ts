@@ -1,7 +1,8 @@
 import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-  activeOffer, availableDmHistory, decideSpoilerTurn, destination, directReplyId, discordMessageTime, discordReplyForm,
+  activeOffer, availableDmHistory, decideSpoilerTurn, destination, directReplyId, discordContentLimit, discordMessageTime,
+  discordReplyContent, discordReplyForm,
   dmContext, prepareReply, readSpoilerTarget, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext,
   subjectKey, subjectsFromRead, validatedConsent, validatedReply, withTurnFeedback,
   type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject, type TurnAuthority,
@@ -93,8 +94,8 @@ async function readRoomContext(m: DiscordMessage) {
   return roomContext(m, messages, botId);
 }
 
-async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }> = [], liveRoomSpoiler = false) {
-  const form = discordReplyForm(m, content, images, liveRoomSpoiler);
+async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }>, liveRoomSpoiler: boolean, part: number) {
+  const form = discordReplyForm(m, content, images, liveRoomSpoiler, part);
   if (!form) return null;
   const response = await discord("/channels/" + m.channel_id + "/messages", { method: "POST", body: form });
   if (!response.ok) {
@@ -105,7 +106,13 @@ async function send(m: DiscordMessage, content: string, images: Array<{ mimeType
     }));
     throw new Error("Discord rejected the reply");
   }
-  return (await response.json() as { id: string }).id;
+  const { id } = await response.json() as { id?: unknown };
+  if (typeof id !== "string" || !snowflake.test(id)) throw new Error("Discord did not confirm the reply");
+  return id;
+}
+
+function noReplyTools(body: Record<string, unknown>) {
+  return Promise.resolve(body.method === "tools/list" ? Response.json({ tools: [] }) : new Response(null, { status: 403 }));
 }
 
 interface Turn extends TurnAuthority { grant: string; publicId: string }
@@ -113,6 +120,9 @@ interface TurnBinding { discordId: string; channelId: string; messageId: string;
 type SpoilerDelivery =
   | { action: "offer" | "settled" | "authorized"; game: string; slug: string }
   | { action: "offer_pending" | "ask_explicitly" };
+function proceduralReply(delivery: SpoilerDelivery | undefined) {
+  return delivery?.action === "offer" || delivery?.action === "offer_pending" || delivery?.action === "ask_explicitly";
+}
 interface TurnProgress {
   stage: "eligibility" | "grant" | "catalog" | "codex" | "reply" | "spoiler" | "attachment" | "revalidate" | "delivery";
 }
@@ -148,7 +158,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   const recent = roomHistory
     ? roomHistory.recent.filter(message => message.speaker === "requesting_member").map(message => message.text).slice(-4)
     : dmHistory?.memberMessages ?? [];
-  const current = m.content.slice(0, 2500);
+  const current = m.content;
   const games = new Set<string>();
   if (spoilerContext?.settledGame) games.add(spoilerContext.settledGame);
   const observedSubjects = new Map<string, Subject>();
@@ -160,18 +170,35 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       ...(dmHistory?.recentSubjects ?? []).map(reference => revalidateDmSubject(reference, turn.grant, api)),
     ]);
     if (!checks.every(Boolean)) return null;
-    const validation = await api("validate", { grant: turn.grant, games: [...games], links });
-    if (!validation.ok) return null;
-    const result = await validation.json() as { valid?: boolean; links?: string[] };
-    if (result.valid !== true || !Array.isArray(result.links)) return null;
-    const allowedLinks = new Set(result.links);
-    return new Set(links.filter(link => allowedLinks.has(link)));
+    const body = { grant: turn.grant, games: [...games], links: [] as string[] };
+    const batches = [body];
+    let batch = body;
+    for (const link of new Set(links)) {
+      const next = { ...body, links: [...batch.links, link] };
+      if (next.links.length > 12 || Buffer.byteLength(JSON.stringify(next)) > 8192) {
+        batch = { ...body, links: [link] };
+        if (Buffer.byteLength(JSON.stringify(batch)) > 8192) return null;
+        batches.push(batch);
+      } else {
+        batch.links.push(link);
+      }
+    }
+    const approved = new Set<string>();
+    for (const batch of batches) {
+      const validation = await api("validate", batch);
+      if (!validation.ok) return null;
+      const result = await validation.json() as { valid?: boolean; links?: string[] };
+      if (result.valid !== true || !Array.isArray(result.links)) return null;
+      const matched = new Set(result.links);
+      for (const link of batch.links) if (matched.has(link)) approved.add(link);
+    }
+    return approved;
   };
 
   const generate = async (spoilerDelivery?: SpoilerDelivery) => {
     observedSubjects.clear();
     inspected.clear();
-    const copyOnly = spoilerDelivery?.action === "offer" || spoilerDelivery?.action === "offer_pending" || spoilerDelivery?.action === "ask_explicitly";
+    const copyOnly = proceduralReply(spoilerDelivery);
     let toolNames: string[] = [];
     if (!copyOnly) {
       progress.stage = "catalog";
@@ -180,7 +207,10 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       const catalog = await tools.json() as { tools: Array<{ name: string }> };
       toolNames = catalog.tools.map(tool => tool.name);
     }
-    const deliveryContext = { conversation: kind, access: turn.lane, spoilerDelivery };
+    const deliveryContext = {
+      conversation: kind, access: turn.lane, spoilerDelivery,
+      discordDelivery: { contentLimit: discordContentLimit, liveRoomSpoiler: spoilerDelivery?.action === "authorized" && kind === "room" },
+    };
     const prompt = JSON.stringify(copyOnly ? deliveryContext : {
       ...deliveryContext, memberPublicId: turn.publicId, houseOrigin: house.origin,
       activeSpoilerOffer: spoilerDelivery ? undefined : spoilerContext?.offer?.game,
@@ -193,7 +223,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     });
     progress.stage = "codex";
     const result = await runCodex(sandbox, "reply", prompt, toolNames, async body => {
-      if (copyOnly) return body.method === "tools/list" ? Response.json({ tools: [] }) : new Response(null, { status: 403 });
+      if (copyOnly) return noReplyTools(body);
       const response = await api("mcp", { ...body, grant: turn.grant });
       if (response.ok && body.method === "tools/call") {
         const args = body.args as Record<string, unknown> | undefined;
@@ -214,7 +244,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     progress.stage = "reply";
     const reply = validatedReply(result);
     if (spoilerDelivery && reply.spoiler.action !== "none") throw new Error("Unexpected spoiler command for delivery");
-    if (copyOnly && (!reply.text.trim() || reply.imageRefs.length)) throw new Error("Expected spoiler response text");
+    if (copyOnly && (reply.messages.length !== 1 || reply.imageRefs.length)) throw new Error("Expected one spoiler response message");
     return reply;
   };
 
@@ -262,6 +292,33 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     }
   }
 
+  const liveRoomSpoiler = spoilerDelivery?.action === "authorized" && kind === "room";
+  const approveMessages = async (messages: string[]) => {
+    const prepared = messages.map(text => prepareReply(text, house.origin));
+    const links = await finish(prepared.flatMap(part => part.links));
+    if (!links) return null;
+    const lengths = prepared.map(part => discordReplyContent(part.render(links), liveRoomSpoiler).length);
+    return { prepared, links, lengths };
+  };
+  let delivery = await approveMessages(reply.messages);
+  if (!delivery) return "authority_changed";
+  if (delivery.lengths.some(length => length > discordContentLimit)) {
+    if (proceduralReply(spoilerDelivery)) return "reply_over_limit";
+    const prompt = JSON.stringify({
+      discordRepartition: { messages: reply.messages, measuredLengths: delivery.lengths },
+      discordDelivery: { contentLimit: discordContentLimit, liveRoomSpoiler },
+    });
+    progress.stage = "codex";
+    const repaired = validatedReply(await runCodex(sandbox, "reply", prompt, [], noReplyTools));
+    progress.stage = "reply";
+    const words = (messages: string[]) => messages.join(" ").trim().replace(/\s+/g, " ");
+    if (repaired.spoiler.action !== "none" || repaired.imageRefs.length || repaired.subject.kind !== "none"
+        || words(repaired.messages) !== words(reply.messages)) return "reply_repartition_rejected";
+    delivery = await approveMessages(repaired.messages);
+    if (!delivery) return "authority_changed";
+    if (delivery.lengths.some(length => length > discordContentLimit)) return "reply_over_limit";
+  }
+
   const images: Array<{ mimeType: string; data: string }> = [];
   progress.stage = "attachment";
   for (const imageRef of new Set(reply.imageRefs)) {
@@ -271,28 +328,39 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     const image = (await response.json() as { content: Array<{ mimeType: string; data: string }> }).content[0];
     if (image?.mimeType === "image/png" && image.data.length <= 4_000_000) images.push(image);
   }
-  const prepared = prepareReply(reply.text, house.origin);
-  const replyLinks = await finish(prepared.links);
+  const replyLinks = await finish([...delivery.links]);
   if (!replyLinks) return "authority_changed";
-  progress.stage = "delivery";
-  const liveRoomSpoiler = spoilerDelivery?.action === "authorized" && kind === "room";
-  const sent = await send(m, prepared.render(replyLinks), images, liveRoomSpoiler);
-  if (!sent) return "empty_reply";
+  const replyIds: string[] = [];
+  try {
+    for (const [partIndex, part] of delivery.prepared.entries()) {
+      const links = partIndex === 0 ? replyLinks : await finish(part.links.filter(link => replyLinks.has(link)));
+      if (!links) return "authority_changed";
+      progress.stage = "delivery";
+      const sent = await send(m, part.render(links), replyIds.length ? [] : images, liveRoomSpoiler, partIndex);
+      if (sent) replyIds.push(sent);
+    }
+    if (!delivery.prepared.length && images.length) {
+      progress.stage = "delivery";
+      const sent = await send(m, "", images, liveRoomSpoiler, 0);
+      if (sent) replyIds.push(sent);
+    }
+  } finally {
+    if (kind === "dm" && replyIds.length && !proceduralReply(spoilerDelivery)) {
+      const subject = reply.subject.kind === "none" ? undefined : observedSubjects.get(subjectKey(reply.subject));
+      history.set(key, {
+        channel: m.channel_id, member: m.author.id, link: turn.link, lane: turn.lane,
+        entries: [...prior, { messageId: m.id, memberText: current, replyIds, subject, expires: Date.now() + 15 * 60_000 }].slice(-4),
+      });
+    }
+  }
+  if (!replyIds.length) return "empty_reply";
   if (spoilerDelivery?.action === "offer") {
-    if (!snowflake.test(sent)) return "spoiler_unavailable";
     offers.set(key, { game: spoilerDelivery.game, member: m.author.id, channel: m.channel_id, link: turn.link, lane: turn.lane,
-      reply: sent, expires: Date.now() + 5 * 60_000 });
+      reply: replyIds[0]!, expires: Date.now() + 5 * 60_000 });
     return "spoiler_offered";
   }
   if (spoilerDelivery?.action === "ask_explicitly" || spoilerDelivery?.action === "offer_pending") return "spoiler_not_authorized";
   if (spoilerDelivery?.action === "authorized" && offers.get(key)?.game === spoilerDelivery.game) offers.delete(key);
-  if (kind === "dm" && snowflake.test(sent)) {
-    const subject = reply.subject.kind === "none" ? undefined : observedSubjects.get(subjectKey(reply.subject));
-    history.set(key, {
-      channel: m.channel_id, member: m.author.id, link: turn.link, lane: turn.lane,
-      entries: [...prior, { messageId: m.id, memberText: current, replyId: sent, subject, expires: Date.now() + 15 * 60_000 }].slice(-4),
-    });
-  }
   return "replied";
 }
 

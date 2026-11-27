@@ -55,7 +55,8 @@ Bun.serve({ unix: "/bridge/turn.sock", async fetch(req) {
     return new Response("missing MCP image input", { status: 400 });
   }
   console.log("MCP IMAGE IN MODEL INPUT");
-  return message({ text: `[Open the replay](${replayUrl})`, imageRefs: [], spoiler: { action: "none", game: "" }, subject: { kind: "game", id: "fixture-game" } });
+  return message({ messages: [`[Open the replay](${replayUrl})`, "The second part keeps its complete wording."],
+    imageRefs: [], spoiler: { action: "none", game: "" }, subject: { kind: "game", id: "fixture-game" } });
 }});
 await chmod("/bridge/turn.sock", 0o666);
 console.log("READY");
