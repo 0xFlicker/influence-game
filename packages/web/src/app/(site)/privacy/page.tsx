@@ -377,10 +377,6 @@ export default function PrivacyPage() {
             you have already entered may still start and finish. We retain
             the character configuration and game records needed for those
             entries, historical replays, security, and dispute resolution.
-            Restricted audit records and backups may remain under our retention
-            practices. Older restricted backups may contain previously stored
-            email addresses until those backups expire. Signing up again does
-            not restore the deleted account or ownership of its agents.
           </P>
           <P>
             If a retained game contains personal information about you,{" "}
