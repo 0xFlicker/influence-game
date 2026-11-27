@@ -216,7 +216,7 @@ export function setAnalyticsIdentity(publicId: string | null, internal: boolean)
   return ready;
 }
 
-export function captureProductEvent(event: string, properties: Properties = {}): void {
+export function captureProductEvent(event: string, properties: Properties = {}, timestamp?: Date): void {
   if (!analyticsActive()) return;
   try {
     posthog.capture(event, {
@@ -224,7 +224,7 @@ export function captureProductEvent(event: string, properties: Properties = {}):
       ...properties,
       channel: "web",
       environment: "production",
-    });
+    }, timestamp ? { timestamp } : undefined);
   } catch { console.warn("[Analytics] Event capture unavailable"); }
 }
 

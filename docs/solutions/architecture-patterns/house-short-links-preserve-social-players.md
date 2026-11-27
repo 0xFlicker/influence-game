@@ -25,4 +25,9 @@ the prepared URL in a small dialog with native-share and copy actions. Creation
 limits belong in shared database admission, while preview/resolution reads remain
 outside that allowance. Do not trust spoofable forwarding headers for abuse keys.
 
+Account ownership deduplicates by sharer and saved route. Keep the analytics UUID
+separate from the navigation code, since an unlisted replay can be link-accessible.
+Only the consented browser navigation records the open. A preview can resolve
+metadata repeatedly without changing any count.
+
 See [House sharing](../../house-sharing.md) for the contract and validation scope.

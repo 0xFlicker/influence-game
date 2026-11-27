@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useRuntimeConfig } from "@/lib/runtime-config";
-import { analyticsExcludedPath, capturePage, initializeAnalytics, recordBrowserSession, setAnalyticsIdentity, suspendAnalytics } from "@/lib/product-analytics";
+import { analyticsExcludedPath, capturePage, captureProductEvent, initializeAnalytics, recordBrowserSession, setAnalyticsIdentity, suspendAnalytics } from "@/lib/product-analytics";
 import { dismissAnalyticsNotice, getAnalyticsConsent, loadAnalyticsConsent, setAccountAnalyticsAllowed, useAnalyticsConsent } from "@/lib/analytics-consent";
 import { bindCampaignAccount, clearCampaignAttribution, retainCampaignTouch } from "@/lib/campaign-attribution";
+import { removeShareOpenTicket } from "@/lib/share-attribution";
 import { AnalyticsPreference } from "./analytics-preference";
 
 export function ProductAnalytics() {
@@ -58,6 +59,11 @@ export function ProductAnalytics() {
         lastChoiceRevision.current = consent.choiceRevision;
         setAccountAnalyticsAllowed(result.analytics, result.advertising);
       }
+      if ((!publicId || token) && !internal && !privateRoute) {
+        await api.recordCurrentShareLinkOpen();
+      } else {
+        removeShareOpenTicket();
+      }
       if (active && (!publicId || token) && !internal && !privateRoute && location.hostname === "thehouse.game" && (getAnalyticsConsent().analytics || getAnalyticsConsent().advertising)) {
         bindCampaignAccount(publicId);
         retainCampaignTouch(location.search);
@@ -74,6 +80,8 @@ export function ProductAnalytics() {
       const initialized = await initializeAnalytics(config.POSTHOG_PROJECT_TOKEN, "https://k.thehouse.game");
       if (!active || api.getAuthToken() !== token || !getAnalyticsConsent().analytics) return;
       if (!initialized || !setAnalyticsIdentity(publicId, false)) { retry(); return; }
+      const shareEvent = api.takeShareLinkOpenEvent();
+      if (shareEvent) captureProductEvent("share_link_opened", shareEvent.properties, shareEvent.timestamp);
       capturePage(pathname);
       if (active && getAnalyticsConsent().recordings) recordBrowserSession(pathname === "/agents/create" || pathname === "/dashboard");
     }).catch(() => {

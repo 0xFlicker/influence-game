@@ -10,6 +10,7 @@ export const ADMIN_TABS = [
   { id: "agents", label: "Agents" },
   { id: "users", label: "Users" },
   { id: "signups", label: "Signups" },
+  { id: "share-attribution", label: "Share attribution" },
   { id: "invites", label: "Invites", permission: "manage_invites" },
 ] as const;
 
@@ -30,12 +31,12 @@ export function adminTabLabel(tab: AdminTab): string {
 
 export type AdminAccess = { permissions: readonly string[]; roles: readonly string[] };
 export type AdminArea = "Games" | "Production" | "Operations" | "People";
-export type AdminEntry = { label: string; href: string; area: AdminArea; access: "championship" | "admin" | "werewolf" | "producer" | "production" | "roles" | "visual" | "operator" | "invites" | "users" };
+export type AdminEntry = { label: string; href: string; area: AdminArea; access: "championship" | "admin" | "werewolf" | "producer" | "production" | "roles" | "view_admin" | "operator" | "invites" | "users" };
 export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Influence", href: "/admin/games", area: "Games", access: "admin" },
   { label: "Werewolf", href: "/admin/werewolf", area: "Games", access: "werewolf" },
   { label: "Championships", href: "/admin/championships", area: "Games", access: "championship" },
-  { label: "Seasons", href: "/admin/seasons", area: "Games", access: "visual" },
+  { label: "Seasons", href: "/admin/seasons", area: "Games", access: "view_admin" },
   { label: "Production", href: "/admin/production", area: "Production", access: "production" },
   { label: "Render jobs", href: "/admin/production/renders", area: "Production", access: "producer" },
   { label: "Inference", href: "/admin/inference", area: "Operations", access: "operator" },
@@ -45,6 +46,7 @@ export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Learning reviews", href: "/admin/reviews", area: "People", access: "admin" },
   { label: "Users", href: "/admin/users", area: "People", access: "users" },
   { label: "Signups", href: "/admin/signups", area: "People", access: "operator" },
+  { label: "Share attribution", href: "/admin/share-attribution", area: "People", access: "view_admin" },
   { label: "Invites", href: "/admin/invites", area: "People", access: "invites" },
 ];
 export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: AdminAccess): boolean {
@@ -59,7 +61,7 @@ export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: Admin
     case "production": return producer || permission("view_admin") || permission("manage_roles");
     case "werewolf": return permission("view_admin") || producer;
     case "roles": return permission("manage_roles");
-    case "visual": return permission("view_admin");
+    case "view_admin": return permission("view_admin");
     default: return permission("view_admin") || permission("manage_roles");
   }
 }

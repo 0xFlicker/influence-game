@@ -8,6 +8,9 @@ import {startTestServers,stopTestServers,type TestServerHandles} from "./test-se
 import {seedFormatAwareGameViewerFixtures} from "./format-aware-game-viewer-fixture.js";
 import {cleanupE2eResources} from "./cleanup.js";
 import {storeFields} from "../services/payload-storage.js";
+import {createSessionToken} from "../middleware/auth.js";
+import {grantTestAuthority} from "../__tests__/rbac-fixtures.js";
+import {recordCurrentLegalAcceptance} from "../services/legal-acceptance.js";
 let database:TestDB, servers:TestServerHandles, browser:Browser;
 beforeAll(async () => {
  database=await createIsolatedTestDb();
@@ -110,6 +113,38 @@ test("Twitterbot and browsers receive matching player metadata, bounded HTML and
  expect(embed.headers.get("content-security-policy")).toContain("https://*.x.com");
  expect(embed.headers.get("x-frame-options")).toBeNull();expect(embed.headers.get("x-robots-tag")).toContain("noindex");
  expect((await embed.text()).length).toBeLessThan(100_000);
+},120_000);
+test("an owned short replay retains frozen settings and appears in the admin link report",async()=>{
+ const secret=process.env.JWT_SECRET;
+ process.env.JWT_SECRET="e2e-test-jwt-secret";
+ const authHeaders=await createSessionToken("share-player").then(token=>({Authorization:`Bearer ${token}`}));
+ if(secret===undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=secret;
+ await grantTestAuthority(database.db,"share-player",["view_admin"],"admin");
+ await recordCurrentLegalAcceptance(database.db,"share-player","existing_account","0123456789abcdef0123456789abcdef01234567");
+ const path="/games/dark-coral-horn/replay?muted=1&speed=2&thinking=0&volume=0.6";
+ const created=await fetch(`${servers.webUrl}/api/share-links`,{method:"POST",headers:{"Content-Type":"application/json",...authHeaders},body:JSON.stringify({path})});
+ expect(created.status).toBe(200);
+ const short=await created.json() as {code:string;path:string};
+ const guest=await browser.newPage();
+ const admin=await browser.newPage({viewport:{width:390,height:844}});
+ try {
+  await rejectOptionalAnalytics(guest);
+  await guest.goto(`${servers.webUrl}${short.path}?t=999`,{waitUntil:"domcontentloaded"});
+  await guest.waitForURL(`${servers.webUrl}${path}`,{timeout:60_000});
+  await guest.getByRole("button",{name:"Player settings"}).waitFor({timeout:60_000});
+  expect(await database.db.select().from(schema.houseShareOpens)).toHaveLength(0);
+  await admin.addInitScript(token=>localStorage.setItem("influence_session",token),authHeaders.Authorization.slice("Bearer ".length));
+  await admin.goto(`${servers.webUrl}/admin/share-attribution`,{waitUntil:"domcontentloaded"});
+  await admin.getByRole("heading",{name:"Share attribution"}).waitFor({timeout:60_000});
+  await admin.getByRole("button",{name:"Share Player"}).click();
+  await admin.getByRole("link",{name:short.path}).waitFor();
+  expect(await admin.getByRole("table",{name:"Share links"}).innerText()).toContain(path);
+  expect(await admin.getByRole("table",{name:"Share links"}).innerText()).toContain("Season entry");
+  await admin.screenshot({path:"/tmp/house-share-attribution-mobile.png",fullPage:true});
+  await admin.setViewportSize({width:1280,height:900});
+  await admin.getByRole("columnheader",{name:"Season entry"}).waitFor();
+  await admin.screenshot({path:"/tmp/house-share-attribution-desktop.png",fullPage:true});
+ } finally {await Promise.all([guest.close(),admin.close()]);}
 },120_000);
 for(const slug of ["dark-coral-horn","player-card-village"]){
  test(`${slug}: sandbox playback without storage, native sharing, exact restoration and backward scrub`,async()=>{
@@ -252,16 +287,16 @@ test("share preparation failure can retry the original playing moment",async()=>
  }finally{await page.close();}
 },120_000);
 
-test("public profile and House Cut icon buttons produce working short links and matching cards",async()=>{
+test("public profile and House Cut share buttons produce working short links and matching cards",async()=>{
  const page=await browser.newPage();await rejectOptionalAnalytics(page);
  try{
   for(const item of [
-   {path:"/profile/share-player",label:"Share Share Player profile",target:"/profile/share-player",preview:"Share Player"},
-   {path:"/games/dark-coral-horn/highlights",label:"Share this Cut: A shared House Cut",target:"/games/dark-coral-horn/highlights?audience=public&scene=share-cut-1",preview:"A shared House Cut"},
+   {path:"/profile/share-player",label:"Share Share Player profile",buttonText:"Share",target:"/profile/share-player",preview:"Share Player"},
+   {path:"/games/dark-coral-horn/highlights",label:"Share this Cut: A shared House Cut",buttonText:"",target:"/games/dark-coral-horn/highlights?audience=public&scene=share-cut-1",preview:"A shared House Cut"},
   ]){
    await page.goto(`${servers.webUrl}${item.path}`,{waitUntil:"domcontentloaded"});
    await page.waitForSelector(`button[aria-label="${item.label}"]`,{timeout:60_000});
-   expect(await page.$eval(`button[aria-label="${item.label}"]`,e=>e.textContent)).toBe("");
+   expect(await page.$eval(`button[aria-label="${item.label}"]`,e=>e.textContent)).toBe(item.buttonText);
    await page.click(`button[aria-label="${item.label}"]`);
    await page.waitForSelector('input[aria-label="House share link"]');
    const short=await page.$eval('input[aria-label="House share link"]',e=>e.value);

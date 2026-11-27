@@ -1,3 +1,5 @@
+import { clearShareAttribution } from "./share-attribution";
+
 /**
  * Campaign attribution for paid acquisition.
  *
@@ -124,6 +126,7 @@ export function getStoredCampaignAttribution(): StoredCampaignAttribution {
 }
 
 export function clearCampaignAttribution(): void {
+  clearShareAttribution();
   try {
     globalThis.localStorage?.removeItem(STORAGE_KEY);
     globalThis.localStorage?.removeItem("house:campaign-account");

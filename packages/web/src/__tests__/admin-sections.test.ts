@@ -15,6 +15,7 @@ describe("admin section routes", () => {
       "/admin/agents",
       "/admin/users",
       "/admin/signups",
+      "/admin/share-attribution",
       "/admin/invites",
     ]);
   });

@@ -109,6 +109,35 @@ consent), anonymous pre-signup creation is stitched in PostHog by `identify`
 but has no server visitor-to-account claim, and cross-device journeys without
 sign-in stay unattributed.
 
+## Share attribution
+
+Admin → People → Share attribution reports totals for each active sharing
+account and its links. `GET /api/admin/share-attribution` requires `view_admin`
+and accepts `account` (the public account UUID) and `page`. Opens count eligible
+browser navigations. Signups count committed new accounts whose first eligible
+touch was a share link. Agent ready and season entry each count unique accounts
+from those signups that reach the outcome. The House report counts each outcome
+independently and shows all retained history.
+
+The visitor's analytics permission governs share measurement. An open receipt
+records the link and visit time. Signup associates the receipt with a new account
+and a receipt can credit one signup. A later campaign retains its usual attribution fields
+when an earlier share owns signup credit in the share report. Analytics
+withdrawal clears the signup's share attribution and later outcomes while
+preserving aggregate opens and permitted campaign fields.
+
+PostHog receives `share_link_opened` from the browser and the existing server
+conversion events with dedicated analytics UUIDs `share_link_id` and
+`sharing_account_id` when applicable. The visitor remains the actor on each
+event. The House admin report maps those UUIDs to links and accounts. Among the
+external analytics destinations, PostHog alone receives the share IDs.
+[By sharing account](https://us.posthog.com/project/671431/insights/ozCR40wm) and
+[by short link](https://us.posthog.com/project/671431/insights/GDdmCrN7) use the
+same breakdown value across the ordered open → signup → agent ready → season
+entry steps. Both default to a 30-day reporting period and conversion window.
+Measurement starts with new account-owned links. Verify a fresh consented journey
+after deployment and compare the event properties with the admin report.
+
 ## Server conversion events
 
 Recorded in `campaign_conversion_events` by
@@ -138,7 +167,7 @@ They are not yet restricted to the signup cohort. Enrollment
 measured by identified `watch_*` events on days after signup together with
 `owner_returned`; no server watch event is claimed.
 
-Privy and managed web signup, Agent Profile submissions, and Daily Free entry
+Privy, managed and Farcaster web signup, Agent Profile submissions, and Daily Free entry
 can pass the current PostHog session ID when browser analytics is active. The
 server validates the UUID, honors DNT/GPC, and checks the account's analytics
 preference under the consent lock. For screened Agent Profiles the submitted
@@ -610,7 +639,9 @@ proof that the application's real outbox delivered successfully.
 
 Account deletion removes account-linked click identifiers, browser user-agent
 data, MCP client identifiers, and the public analytics identity from local
-conversion records. Historical outcome totals and campaign labels remain;
+conversion records. It also removes share attribution from the closed account's
+conversions and detaches the account from its own short links. Historical
+outcome totals and campaign labels remain;
 delivery for the closed account stops. Already-accepted entries may still produce
 local `game_placed` outcomes, with no public identity or advertising delivery.
 This scoped removal prevents continued personal tracking after deletion without

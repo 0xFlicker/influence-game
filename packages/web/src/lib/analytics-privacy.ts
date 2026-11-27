@@ -1,3 +1,5 @@
+import { SHARE_CODE_PATTERN } from "@influence/engine/house-share-target";
+
 /**
  * Scrub analytics properties without discarding legitimate campaign attribution.
  *
@@ -21,6 +23,10 @@ const CLICK_ID_KEYS = new Set(["gclid", "fbclid", "msclkid", "ttclid", "twclid",
 const VARIANT_KEYS = new Set(["landing_variant", "onboarding_variant", "starter_prompt", "starter_skill"]);
 const LABEL_VALUE = /^[a-zA-Z0-9_. -]{1,100}$/;
 const CLICK_ID_VALUE = /^[a-zA-Z0-9_.-]{1,512}$/;
+
+function redactShareCode(path: string) {
+  return path.startsWith("/s/") && SHARE_CODE_PATTERN.test(path.slice(3)) ? "/s/[code]" : path;
+}
 
 function isAttributionKey(key: string): boolean {
   const normalized = key.replace(/^\$initial_/, "").replace(/^initial_/, "");
@@ -65,8 +71,10 @@ export function sanitizeAnalyticsProperties(properties: Record<string, unknown>)
       try {
         const url = new URL(value);
         if (!["https:", "http:"].includes(url.protocol)) { delete properties[key]; continue; }
-        properties[key] = key.includes("referrer") ? url.origin : `${url.origin}${url.pathname.split("/").map(redactEmail).join("/")}`;
+        properties[key] = key.includes("referrer") ? url.origin : `${url.origin}${redactShareCode(url.pathname).split("/").map(redactEmail).join("/")}`;
       } catch { delete properties[key]; }
+    } else if (key === "$pathname" && typeof value === "string") {
+      properties[key] = redactEmail(redactShareCode(value));
     } else if (typeof value === "string") {
       properties[key] = redactEmail(value);
     } else if (Array.isArray(value)) {

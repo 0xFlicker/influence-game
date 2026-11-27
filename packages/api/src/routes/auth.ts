@@ -332,7 +332,8 @@ export function createAuthRoutes(
   // -------------------------------------------------------------------------
 
   app.post("/api/auth/farcaster/login", async (c) => {
-    const request = await readStrictTokenRequest(c, ["token", "inviteCode", "turnstileToken"]);
+    const request = await readStrictTokenRequest(c, ["token", "inviteCode", "turnstileToken",
+      "analytics", "analyticsExplicit", "advertising", "advertisingExplicit", "attribution", "posthogSessionId"]);
     if (!request.ok) return request.response;
     const { body } = request;
 
@@ -405,6 +406,15 @@ export function createAuthRoutes(
         error: "This account needs support before it can sign in",
         code: "ACCOUNT_SUPPORT_REQUIRED",
       }, 409);
+    }
+    if (authentication.created) {
+      await recordAuthenticationTracking(db, {
+        userId: authentication.user.id, publicId: authentication.user.publicId,
+        created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit,
+        advertising: requestedAnalytics(c, body.advertising), advertisingExplicit: body.advertisingExplicit,
+        attribution: body.attribution, userAgent: c.req.header("User-Agent"),
+        posthogSessionId: requestPosthogSessionId(c.req.raw.headers, body.posthogSessionId),
+      });
     }
     return c.json(await issueInfluenceSession(db, authentication.user));
   });

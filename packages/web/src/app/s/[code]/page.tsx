@@ -13,8 +13,8 @@ import { ShareDestination } from "./share-destination";
 const resolve = cache(async (code: string) => {
   if (!SHARE_CODE_PATTERN.test(code)) notFound();
   try {
-    const result = await serverApiFetch<{path: string}>(`/api/share-links/${code}`, {cache: "no-store"});
-    return parseHouseShareTarget(result.path);
+    const result = await serverApiFetch<{path: string; openTicket?: string}>(`/api/share-links/${code}`, {cache: "no-store"});
+    return { target: parseHouseShareTarget(result.path), openTicket: result.openTicket };
   } catch (error) {
     if (error instanceof ServerApiError && error.status === 404) notFound();
     throw error;
@@ -24,7 +24,7 @@ type Props = { params: Promise<{code: string}>; searchParams: Promise<{app?: str
 
 export async function generateMetadata({params}: Props): Promise<Metadata> {
   const {code} = await params;
-  const target = await resolve(code);
+  const { target } = await resolve(code);
   const request = await headers();
   const origin = process.env.WEB_BASE_URL?.trim() || (process.env.NODE_ENV === "production" ? "https://thehouse.game" : `${request.get("x-forwarded-proto") ?? "http"}://${request.get("host") ?? "localhost:3001"}`);
   const url = new URL(target.path, origin);
@@ -62,9 +62,9 @@ export async function generateMetadata({params}: Props): Promise<Metadata> {
 }
 
 export default async function ShortSharePage({params, searchParams}: Props) {
-  const target = await resolve((await params).code);
+  const { target, openTicket } = await resolve((await params).code);
   // Only the Mini App context hint may be added. Saved playback settings are immutable.
   const url = new URL(target.path, "https://thehouse.game");
   if ((await searchParams).app === "mini") url.searchParams.set("app", "mini");
-  return <ShareDestination path={`${url.pathname}${url.search}${url.hash}`} />;
+  return <ShareDestination path={`${url.pathname}${url.search}${url.hash}`} openTicket={openTicket} />;
 }
