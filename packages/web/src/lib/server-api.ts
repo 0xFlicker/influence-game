@@ -1,3 +1,5 @@
+import { operationalError, REQUEST_ID_HEADER, safeMethod, uuid } from "@influence/engine/operational-errors";
+import { diagnosticEndpoint } from "./diagnostic-endpoint";
 import { cache } from "react";
 import { gamePathSegment } from "./game-links";
 import { getPublicRuntimeConfig } from "./server-runtime-config";
@@ -78,8 +80,9 @@ export async function serverApiFetch<T>(
     ...(options?.headers as Record<string, string> | undefined),
   };
   const timeout = timeoutSignal(options?.signal);
+  let response: Response | undefined;
   try {
-    const res = await fetch(resolveServerApiUrl(path), {
+    const res = response = await fetch(resolveServerApiUrl(path), {
       ...options,
       headers,
       signal: timeout.signal,
@@ -89,6 +92,17 @@ export async function serverApiFetch<T>(
       throw new ServerApiError(res.status, apiErrorMessage(res.status, text, res.headers.get("content-type")));
     }
     return await res.json() as T;
+  } catch (error) {
+    const status = response?.status ?? 0;
+    if ((!status || status >= 500 || response?.ok) && !options?.signal?.aborted) {
+      const code = timeout.signal.aborted ? "server_api_timeout"
+        : !status ? "server_api_transport" : response?.ok ? "server_api_decode" : "server_api_http";
+      console.warn("[server-request-error]", operationalError("web-server", code, "The web server could not complete an API read.", error, {
+        route: diagnosticEndpoint(path), status, method: safeMethod(options?.method ?? "GET"),
+        request_id: uuid(response?.headers.get(REQUEST_ID_HEADER)),
+      }));
+    }
+    throw error;
   } finally {
     timeout.cancel();
   }

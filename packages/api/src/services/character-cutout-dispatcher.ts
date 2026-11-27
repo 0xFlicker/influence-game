@@ -1,3 +1,4 @@
+import { operationalError } from "@influence/engine/operational-errors";
 import { BatchClient, SubmitJobCommand } from "@aws-sdk/client-batch";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -38,14 +39,15 @@ export function startCharacterCutoutDispatcher(db: DrizzleDB, canClaimWork: () =
       } catch (error) {
         // Submission may have succeeded. Keep its fence until lease expiry instead
         // of immediately issuing another paid job with a second valid capability.
-        console.error("[character-cutouts] Batch submission unconfirmed", { jobId: row.id, error });
+        console.error("[worker-error]", operationalError("cutout-dispatcher", "batch_submission_unconfirmed",
+          "Batch submission is unconfirmed. The job will wait for claim or expiry.", error, { job_id: row.id }));
         await db.update(schema.characterCutouts).set({ error: "Batch submission unconfirmed; waiting for claim or expiry" })
           .where(and(eq(schema.characterCutouts.id, row.id), eq(schema.characterCutouts.tokenHash, reservation.job.tokenHash!)));
       }
     }
   }
   const launch = () => {
-    if (!running) running = tick().catch(error => console.error("[character-cutouts] Dispatcher failed", error)).finally(() => { running = null; });
+    if (!running) running = tick().catch(error => console.error("[worker-error]", operationalError("cutout-dispatcher", "dispatch_iteration_failed", "The cutout dispatcher iteration failed.", error))).finally(() => { running = null; });
   };
   const timer = setInterval(launch, 15_000);
   launch();

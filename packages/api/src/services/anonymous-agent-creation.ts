@@ -1,3 +1,4 @@
+import { decodeGenerationOutput } from "./generation-output-error.js";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import { describeAgentCreationTraits, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import { resolveAgentCreationLlm } from "../lib/openai-budget-generation-llm.js";
@@ -40,7 +41,9 @@ Never claim you generated an image, saved an Agent, or entered a game. The appli
     response_format: { type: "json_schema", json_schema: { name: "house_preview", strict: true, schema: anonymousCreationSchema } },
   }, { signal, maxRetries: 0 });
   await record(response);
-  const choice = response.choices[0];
-  if (choice?.finish_reason !== "stop" || !choice.message.content) throw new Error("Incomplete House preview");
-  return decodeAnonymousCreationTurn(choice.message.content);
+  return decodeGenerationOutput(() => {
+    const choice = response.choices[0];
+    if (choice?.finish_reason !== "stop" || !choice.message.content) throw new Error("Incomplete House preview");
+    return decodeAnonymousCreationTurn(choice.message.content);
+  });
 }

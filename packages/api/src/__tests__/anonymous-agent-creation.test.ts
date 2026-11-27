@@ -4,6 +4,9 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import { Hono } from "hono";
+import { APIConnectionTimeoutError } from "openai";
+import { FAILURE_HEADER, REQUEST_ID_HEADER, uuid } from "@influence/engine/operational-errors";
+import { requestDiagnostics } from "../middleware/request-diagnostics.js";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { runAnonymousText, readAnonymousAllowance } from "../services/anonymous-text-usage.js";
@@ -100,6 +103,32 @@ describe("Anonymous preview pool", () => {
     for (const path of ["/api/agent-profiles/generate", "/api/agent-profiles/creation-assistant", "/api/agent-profiles/visual-reference", "/api/agent-profiles"]) {
       expect((await app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).status).toBe(401);
     }
+  });
+
+  test("a malformed signed cookie is replaced without leaking it or failing session initialization", async () => {
+    const app = createAnonymousAgentCreationRoutes(db, async () => turn);
+    const status = await app.request("/api/agent-profiles/anonymous", {
+      headers: { Cookie: "house_preview=invalid%ZZ." + "!".repeat(43) + "=" },
+    });
+    expect(status.status).toBe(200);
+    expect(await status.json()).toEqual({ used: false });
+    expect(status.headers.get("Set-Cookie")).toContain("HttpOnly");
+    expect(status.headers.get("Set-Cookie")).not.toContain("invalid");
+  });
+
+  test("the anonymous route returns controlled diagnostics for an observed upstream timeout", async () => {
+    const app = new Hono().use("*", requestDiagnostics).route("/", createAnonymousAgentCreationRoutes(db, async () => {
+      throw new APIConnectionTimeoutError({ message: "private provider detail" });
+    }));
+    const result = await app.request("/api/agent-profiles/anonymous", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": randomUUID() },
+      body: JSON.stringify({ message: "A quiet diplomat", creationTraitIds: [] }),
+    });
+    expect(result.status).toBe(502);
+    expect(result.headers.get(FAILURE_HEADER)).toBe("upstream_timeout");
+    expect(uuid(result.headers.get(REQUEST_ID_HEADER))).toBeDefined();
+    expect(await result.text()).not.toContain("private provider detail");
   });
 
   test("oversized requests and reference/refinement fields cannot enter the pool", async () => {

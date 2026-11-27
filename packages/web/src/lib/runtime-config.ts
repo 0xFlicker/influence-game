@@ -7,6 +7,7 @@ import {
   useState,
   createElement,
 } from "react";
+import { captureProductException } from "./product-analytics";
 import { setApiBase } from "@/lib/api";
 import { setWsBase } from "@/app/games/[slug]/components/use-game-websocket";
 import { PublicMediaDeliveryContext } from "./public-media-delivery-context";
@@ -105,8 +106,9 @@ export function RuntimeConfigProvider({
         applyRuntimeConfig(nextConfig);
       })
       .catch((err) => {
-        // In dev or if the endpoint isn't available, fall back silently
-        console.warn("[RuntimeConfig] Could not fetch /runtime-config:", err);
+        if (cancelled) return;
+        console.warn("[RuntimeConfig] runtime_config_failed");
+        captureProductException(err, "runtime_config");
       });
 
     return () => {

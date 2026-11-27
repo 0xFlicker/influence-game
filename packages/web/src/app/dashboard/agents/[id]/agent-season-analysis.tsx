@@ -1,5 +1,7 @@
 "use client";
 
+import { observeApiResponse } from "@/lib/request-diagnostics";
+
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
@@ -71,16 +73,19 @@ export function AgentSeasonAnalysisView({ agentId, awards }: { agentId: string; 
     const token = getAuthToken();
     if (!token || !selectedSeason) return;
     try {
-      const response = await fetch(agentSeasonExportUrl(selectedSeason, format, agentId), {
-        headers: { Authorization: `Bearer ${token}` },
+      const options = { headers: { Authorization: `Bearer ${token}` } };
+      const url = agentSeasonExportUrl(selectedSeason, format, agentId);
+      const { blob, filename } = await observeApiResponse("/api/seasons/:export", options, () => fetch(url, options), async response => {
+        if (!response.ok) throw new Error("Export request failed");
+        return {
+          blob: await response.blob(),
+          filename: response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1],
+        };
       });
-      if (!response.ok) throw new Error("Export request failed");
-      const blob = await response.blob();
       const href = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = href;
-      anchor.download = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1]
-        ?? `influence-agent-season.${format}`;
+      anchor.download = filename ?? `influence-agent-season.${format}`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(href), 0);
     } catch {

@@ -39,9 +39,12 @@ All events have `channel=web` and `environment=production`.
   no duplicate manual leave event is sent for each route change.
 - `$web_vitals`: controlled by the PostHog project's Web Vitals setting. The SDK
   configuration leaves performance capture unset to honor that setting.
-- `$exception`: browser unhandled errors/rejections and currently displayed
-  React route-boundary errors. Console errors are not captured. Collection starts
-  only after analytics/auth initialization and follows the same privacy controls.
+- `$exception`: browser errors and promise rejections observed by Next's early
+  client entry point, React route and root boundaries, live game transport, and
+  runtime configuration load failures. Reports use the active analytics and account preference gate.
+- `api_request_failed`: browser API failures carry a controlled code and summary,
+  browser release, endpoint template, method, status, duration and first-party
+  coordinates (or their absence reason). Expected request cancellation is excluded.
 - `agent_creation_opened`: entry into public creation, with `flow`.
 - `join_opened`, `join_agent_selected`: saved-agent selector opened/submitted.
   An open selector emits its opening once capture becomes active; selectors
@@ -49,7 +52,8 @@ All events have `channel=web` and `environment=production`.
 - Operations `agent_creation_turn`, `agent_generation`, `agent_portrait`,
   `agent_save`, `influence_join`, `werewolf_join`, `daily_entry` each emit
   `_requested`, `_succeeded`, `_failed`. Attempts share `attempt_id`. Outcomes
-  include `duration_ms`; failures include HTTP status (0 for transport errors).
+  include `duration_ms`, and requests include an endpoint label. Failures
+  include HTTP status (0 when the browser receives no response).
 - `watch_opened`, `watch_started`, `watch_seeked`, `watch_progress`,
   `watch_buffer_end_reached`: shared director engagement. Properties include
   `watch_id`, `game_id` (Influence UUID or Werewolf slug), `game_kind`, `watch_mode`
@@ -326,22 +330,47 @@ repeat coverage, pauses, stalled clocks and browser sleep.
 
 ## Error reports and source maps
 
-An explicit product analytics opt-in includes the browser exception message in
-PostHog. The message scrubber removes URL credentials, queries and fragments,
-email and wallet addresses, recognizable credential and private content fields,
-and known diagnostic payload dumps. Default-on US collection uses redacted
-messages until the visitor explicitly enables product analytics.
+Browser diagnostics use the same safe classifications and controlled summaries
+under an explicit opt-in and default-on US collection. Reports exclude original
+exception messages, rejected values, arbitrary properties, request and response
+bodies, credentials, cookies and user or agent text. The Next.js browser entry
+installs listeners before hydration. It starts regional preference lookup early
+and keeps capture behind the existing regional, storage, account and page gates.
+The browser uses its usual error handling for events before those gates resolve.
+It keeps no early event queue. A mounted React error boundary can report its
+currently displayed failure when the gate activates, if the failure was observed
+under the same preference and had no known denial. A fatal cold start that
+prevents consent or SDK initialization has no browser report.
 
-Reports retain standard error types and `ApiError`, handled/synthetic flags,
-exception relationships and same-origin `/_next/static/*.js` frame coordinates.
-Valid chunk/release IDs are retained for source-map resolution. Reports omit
-function names, locals, source snippets, breadcrumbs and derived raw exception
-values and fingerprints. Frame URLs exclude queries and fragments.
+Reports retain the deployed browser SHA and controlled route labels such as
+`/season-:number/create`. V8 and WebKit/Firefox stack locations and browser event
+coordinates are normalized to first-party production Next.js chunks. PostHog
+associates native debug IDs with these URLs and uses the symbolicated frames
+for issue grouping. Frameless reports include `no_frames_reason` and use their
+controlled category, route and source for grouping. Browser reports of a Next.js
+server-render failure carry its numeric digest when available. Match it against
+`[server-error]` in private web-server logs.
 
-The scope is browser failures, including the app and profile route boundaries.
-This does not instrument API/worker/server exceptions or failures before SDK
-initialization. Production Next.js server-render errors expose only their generic
-browser representation; private server stack traces are not collected here.
+For generation triage, split `api_request_failed` by the exact anonymous and
+authenticated endpoint names and then by `error_origin` and `error_code`. The
+existing generation funnel still shares `attempt_id` with this diagnostic. The
+API issues a fresh `X-House-Request-Id` per HTTP response. Match the browser's
+`request_id` to `[request-error]` in the API logs. The browser's attempt ID stays
+local to browser analytics and generation idempotency keeps its separate key.
+The API marks application failures and confirmed upstream HTTP, transport,
+timeout and output failures. A Cloudflare challenge is explicit proxy evidence.
+A gateway status without those signals is unattributed. Where a Cloudflare Ray
+ID is available, use it to match the edge request.
+
+Private process logs receive API responses with 5xx status, Next.js request
+exceptions and failed server API reads, plus worker job, polling and startup
+errors at the instrumented boundaries. These records include a service,
+controlled code, release, first-party coordinates or an absence reason, and
+available request, render-attempt or job correlation. Durable worker journals
+and their existing ownership rules still apply. The cutout worker also records its
+recipe and the failing phase. The Discord Lambda records its execution version
+and invocation ID when the runtime supplies them. Inspect the edge's operational
+logs for failures that never enter an app process.
 
 Main CI web-image builds use `@posthog/nextjs-config` to generate native Turbopack
 debug IDs, upload maps to US project 671431, and attach release `the-house-web`
@@ -354,7 +383,7 @@ The PostHog integration handles credential and upload failures normally; there
 are no separate secret-presence checks. Upload failure stops the build before image push.
 The compiler hook scopes upload and deletion to `<distDir>/static`, the browser
 bundles. Server and build-tool chunks are excluded: build-tool chunks can lack
-native debug IDs, and this integration does not collect server exceptions.
+native debug IDs, and server exceptions use the private service logs.
 The web package pins and explicitly selects PostHog CLI 0.18.10; the plugin's
 default resolver otherwise selects its webpack dependency's older CLI, which
 does not support these native Turbopack IDs.
@@ -364,11 +393,11 @@ immutable image, so the uploaded maps match the shipped chunks.
 
 Tests exercise the installed plugin's compiler hook with a fake upload transport:
 release IDs and native debug IDs, upload-before-delete, and failing the build on
-upload errors. They do not prove production PostHog permissions or symbolication.
-After deployment, verify that a controlled non-sensitive error from a non-staff
-account with an explicit product analytics opt-in appears with its message and
-an original-source stack frame. Confirm that a browser request for the
-corresponding `.map` receives no source map.
+upload errors. The local browser proof can match a captured chunk ID and coordinate to its
+Turbopack source map without a PostHog upload. Production ingestion and upload
+permissions require release verification. In production, use a naturally occurring
+consented exception to verify its controlled summary, release and source frame.
+Check the packaged image for the absence of public browser source maps.
 
 ## Release verification
 

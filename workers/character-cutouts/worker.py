@@ -5,8 +5,12 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import resource
+import sys
 import time
+import traceback
+import urllib.error
 import urllib.request
 
 RECIPE = "birefnet-general-58f621f0-rembg2.0.86-r1"
@@ -89,20 +93,66 @@ def run_job(session):
                                               "User-Agent": "HouseCharacterCutouts/1.0"})
         with urllib.request.urlopen(req, timeout=120) as response:
             return response.read()
-    claim = json.loads(request("/claim", json.dumps({"recipe": RECIPE}).encode(), "POST"))
-    if not claim["claimed"]:
-        return
-    source = request("/source")
-    if hashlib.sha256(source).hexdigest() != claim["sourceHash"]:
-        raise ValueError("Source digest mismatch")
-    started = time.monotonic()
-    output = process(session, source)
-    request("/result", output, "PUT", "image/png")
+    phase = "claim"
+    try:
+        claim = json.loads(request("/claim", json.dumps({"recipe": RECIPE}).encode(), "POST"))
+        if not claim["claimed"]:
+            return
+        phase = "source"
+        source = request("/source")
+        if hashlib.sha256(source).hexdigest() != claim["sourceHash"]:
+            raise ValueError("Source digest mismatch")
+        phase = "inference"
+        started = time.monotonic()
+        output = process(session, source)
+        phase = "result"
+        request("/result", output, "PUT", "image/png")
+    except Exception as error:
+        raise CutoutFailure(phase) from error
     print(json.dumps({"job": job, "recipe": RECIPE, "seconds": time.monotonic() - started,
                       "source_sha256": claim["sourceHash"], "output_sha256": hashlib.sha256(output).hexdigest(),
                       "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
                       **cgroup_metrics()}), flush=True)
 
 
+class CutoutFailure(Exception):
+    def __init__(self, phase):
+        super().__init__("Cutout job failed")
+        self.phase = phase
+
+
+def failure_diagnostic(error):
+    phase = error.phase if isinstance(error, CutoutFailure) else "startup"
+    cause = error.__cause__ or error
+    release = os.environ.get("GIT_SHA", "")
+    job = os.environ.get("CUTOUT_JOB_ID", "")
+    uuid = r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}"
+    frames = [f"workers/character-cutouts/worker.py:{frame.lineno}"
+              for frame in traceback.extract_tb(cause.__traceback__)
+              if frame.filename == __file__]
+    result = {
+        "component": "character-cutout-worker", "phase": phase, "recipe": RECIPE,
+        "release": release if re.fullmatch(r"[a-f0-9]{40}", release) else "unknown",
+        "code": "cutout_job_failed", "summary": "The cutout worker could not complete the job.",
+        "frames": frames,
+    }
+    if not frames:
+        result["no_frames_reason"] = "no_first_party_coordinates" if cause.__traceback__ else "stack_unavailable"
+    if re.fullmatch(uuid, job):
+        result["job_id"] = job
+    if isinstance(cause, urllib.error.HTTPError):
+        result.update(code="cutout_api_http", status=cause.code, summary="The cutout API returned an HTTP error.")
+        request_id = cause.headers.get("X-House-Request-Id", "") if cause.headers else ""
+        if isinstance(request_id, str) and re.fullmatch(uuid, request_id):
+            result["request_id"] = request_id
+    elif isinstance(cause, urllib.error.URLError):
+        result.update(code="cutout_api_transport", summary="The cutout worker could not reach the API.")
+    return result
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as error:
+        print(json.dumps(failure_diagnostic(error)), file=sys.stderr, flush=True)
+        raise SystemExit(1) from None

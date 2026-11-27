@@ -1,3 +1,5 @@
+import { decodeGenerationOutput } from "../services/generation-output-error.js";
+import { generationFailure } from "../middleware/request-diagnostics.js";
 import { recordAgentCreationStarted } from "../services/campaign-conversions.js";
 import { listAgentGenerations, cancelAgentGeneration } from "../services/agent-generations.js";
 import { AgentDraftImageUnavailable, readAgentDraftImage } from "../services/agent-draft-images.js";
@@ -87,7 +89,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
   const app = new Hono<AuthEnv>();
   app.onError((error,c)=>{
     if(error instanceof GenerationAdmissionError) return c.json({error:error.message,code:error.code,contacts:generationContacts},error.status);
-    console.error('[agent-profiles]',error); return c.json({error:'Agent request failed'},500);
+    generationFailure(c, error); return c.json({error:'Agent request failed'},500);
   });
   for (const method of ["get", "post"] as const) app[method]("/api/agent-profiles/:id/visual-update", requireAuth(db), async c => {
     try {
@@ -167,7 +169,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
         record => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, record)));
     } catch (error) {
       if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts, requestId }, error.status);
-      console.error("[edit-assistant] Turn failed", {requestId,error});
+      generationFailure(c, error);
       if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again.", requestId }, 504);
       return c.json({ error: "The character assistant could not complete this turn. Your draft is unchanged.", requestId }, 502);
     }
@@ -195,7 +197,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       return c.json(turn);
     } catch (error) {
       if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts:generationContacts, requestId }, error.status);
-      console.error("[creation-assistant] Turn failed", {requestId,error});
+      generationFailure(c, error);
       if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again.", requestId }, 504);
       return c.json({ error: "The assistant could not complete this turn. Try again or use Advanced create.", requestId }, 502);
     }
@@ -403,13 +405,11 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       }, { signal: c.req.raw.signal, maxRetries: 0 });
       await record(response);
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error("AI generation returned empty response");
-      }
-
-      if (response.choices[0]?.finish_reason !== "stop") throw new Error("Incomplete character profile");
-      const generated = decodeCharacterProfile(content, allowedPersonaKeys, editFields ?? undefined);
+      const generated = decodeGenerationOutput(() => {
+        const choice = response.choices[0];
+        if (choice?.finish_reason !== "stop" || !choice.message.content) throw new Error("Incomplete character profile");
+        return decodeCharacterProfile(choice.message.content, allowedPersonaKeys, editFields ?? undefined);
+      });
       const existingNames = await db
         .select({ name: schema.agentProfiles.name })
         .from(schema.agentProfiles);
@@ -452,7 +452,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
       return c.json(result);
     } catch (err) {
       if (err instanceof GenerationAdmissionError) return c.json({ error: err.message, code: err.code, contacts:generationContacts, requestId }, err.status);
-      console.error("[agent-profiles] AI generation failed:", {requestId,error:err});
+      generationFailure(c, err);
       if (err instanceof APIConnectionTimeoutError) return c.json({ error: "Character generation took too long. Your draft is unchanged—please try again.", requestId }, 504);
       return c.json({ error: "AI generation failed", requestId }, 502);
     }

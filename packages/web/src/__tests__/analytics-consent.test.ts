@@ -17,7 +17,8 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       const events = [];
       const errors = [];
       const sendException = value => sdkConfig.before_send({ event: "$exception", properties: {
-        $exception_list: [{ type: "Error", value }], $exception_values: [value],
+        $exception_list: [{ type: "Error", value }], $exception_values: ["SECRET"],
+        $current_url: "https://thehouse.game/private-SECRET", cookie: "SECRET",
       } });
       mock.module("posthog-js", () => ({ default: {
         init: (key, config) => { initialized++; sdkConfig = config; }, capture: name => events.push(name),
@@ -46,8 +47,8 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
         assert.equal(values.get("house:analytics-us-notice-shown"), "true");
         analytics.setAnalyticsIdentity(null, false);
         assert.equal(optedIn, 0);
-        const defaultReport = sendException("Default US collection");
-        assert.equal(defaultReport.properties.$exception_list[0].value, "Error details redacted");
+        analytics.captureProductException(new TypeError("Cannot read properties of undefined (reading 'SECRET')"));
+        assert.equal(errors.pop().properties.$exception_list[0].value, "Code tried to read a property from a missing value.");
       }
       consent.saveAnalyticsChoice({ analytics: true, advertising: false });
       await analytics.initializeAnalytics("test", "https://invalid.example");
@@ -56,15 +57,14 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
       assert.deepEqual(events, ["allowed"]);
       assert.equal(sdkConfig.capture_pageleave, true);
       assert.equal(sdkConfig.capture_performance, undefined);
-      assert.deepEqual(sdkConfig.capture_exceptions, {
-        capture_unhandled_errors: true, capture_unhandled_rejections: true, capture_console_errors: false,
-      });
+      assert.equal(sdkConfig.capture_exceptions, false);
+      assert.equal(sdkConfig.opt_out_persistence_by_default, true);
       analytics.captureProductException(new Error("Replay source failed to load"));
       assert.equal(errors.length, 1);
-      assert.equal(errors[0].properties.$exception_list[0].value, "Replay source failed to load");
-      const exception = sendException("ResizeObserver loop completed with undelivered notifications.");
-      assert.equal(exception.properties.$exception_list[0].value, "ResizeObserver loop completed with undelivered notifications.");
-      assert.equal(exception.properties.$exception_values, undefined);
+      assert.equal(errors[0].properties.$exception_list[0].value, "An unexpected error interrupted the web application.");
+      assert.equal(errors[0].properties.no_frames_reason, "no_first_party_coordinates");
+      assert.ok(!JSON.stringify(errors).includes("SECRET"));
+      assert.equal(sendException("Unexpected SDK exception"), null);
       // SDK-originated exit/performance events share our filtering and privacy
       // boundary even though they don't call captureProductEvent.
       const automaticEvent = event => ({ event, properties: {
@@ -137,4 +137,68 @@ test("consent gates SDK, drops earlier activity, and revokes across tabs", () =>
     expect(result.stderr.toString()).toBe("");
     expect(result.exitCode).toBe(0);
   }
+});
+
+test("startup storage and SDK failures are contained, with recovery through the existing gate", () => {
+  const result = Bun.spawnSync([process.execPath, "-e", `
+    import { mock } from "bun:test";
+    import { strict as assert } from "node:assert";
+    const values = new Map([["house:analytics-consent", JSON.stringify({version: 2, analytics: true, advertising: false})]]);
+    globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    globalThis.window = new EventTarget();
+    globalThis.fetch = async () => { throw new Error("SECRET region failure"); };
+    const warnings = [];
+    console.warn = (...args) => warnings.push(args);
+    const events = [];
+    let tries = 0;
+    let config;
+    const client = {
+      init: (_key, options, name) => {
+        if (++tries === 1) throw new Error("SECRET cookie failure");
+        assert.equal(name, "houseAnalyticsRecovery");
+        config = options;
+        return client;
+      },
+      captureException: error => events.push(config.before_send({ event: "$exception", properties: {
+        $exception_list: [{ type: error.name, value: error.message }], token: "SECRET",
+        authorization: "SECRET", "$set": { note: "SECRET" },
+      }, "$set_once": { value: "SECRET" }, "$set": { value: "SECRET" } })),
+      get_property: () => null, opt_in_capturing: () => {}, clear_opt_in_out_capturing: () => {},
+      stopSessionRecording: () => { throw new Error("SECRET recorder failure"); },
+      opt_out_capturing: () => { throw new Error("SECRET persistent opt-out failure"); },
+    };
+    mock.module("posthog-js", () => ({ default: client }));
+    const consent = await import("./src/lib/analytics-consent");
+    const analytics = await import("./src/lib/product-analytics");
+    consent.subscribeAnalyticsConsent(() => { throw new Error("SECRET subscriber failure"); });
+    await consent.loadAnalyticsConsent();
+    assert.equal(consent.getAnalyticsConsent().ready, true);
+    assert.equal(consent.getAnalyticsConsent().country, null);
+    assert.equal(consent.getAnalyticsConsent().analytics, true);
+    assert.equal(await analytics.initializeAnalytics("public-project-key", "https://invalid.example"), false);
+    assert.equal(analytics.analyticsActive(), false);
+    assert.equal(await analytics.initializeAnalytics("public-project-key", "https://invalid.example"), true);
+    assert.equal(analytics.setAnalyticsIdentity(null, false), true);
+    analytics.captureProductException(new Error("SECRET content"));
+    assert.equal(events.length, 1);
+    assert.equal(events[0].properties.token, "public-project-key");
+    assert.equal(events[0].$set, undefined);
+    assert.equal(events[0].$set_once, undefined);
+    assert.equal(consent.saveAnalyticsChoice({analytics: false, advertising: false}), true);
+    assert.equal(analytics.analyticsActive(), false);
+    analytics.captureProductException(new Error("SECRET after withdrawal"));
+    assert.equal(events.length, 1);
+    assert.ok(warnings.some(args => args.includes("sdk_initialization_failed")));
+    assert.ok(warnings.some(args => args.includes("sdk_opt_out_failed")));
+    Object.defineProperty(navigator, "globalPrivacyControl", { get() { throw new Error("SECRET browser preferences"); } });
+    const storageEvent = new Event("storage");
+    Object.defineProperty(storageEvent, "key", { value: "house:analytics-consent" });
+    window.dispatchEvent(storageEvent);
+    consent.saveAnalyticsChoice({analytics: true, advertising: true});
+    assert.equal(consent.getAnalyticsConsent().blocked, true);
+    assert.equal(analytics.analyticsActive(), false);
+    assert.ok(!JSON.stringify({warnings, events}).includes("SECRET"));
+  `], { cwd: resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" });
+  expect({ exit: result.exitCode, stderr: result.stderr.toString() }).toEqual({ exit: 0, stderr: "" });
 });

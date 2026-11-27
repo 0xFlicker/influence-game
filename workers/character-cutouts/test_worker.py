@@ -1,10 +1,12 @@
 import io
+import json
+import urllib.error
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from worker import cgroup_metrics, run_job
+from worker import CutoutFailure, cgroup_metrics, failure_diagnostic, run_job
 
 
 class CgroupMetricsTest(unittest.TestCase):
@@ -42,6 +44,23 @@ class WorkerRequestTest(unittest.TestCase):
         self.assertEqual(req.get_header("User-agent"), "HouseCharacterCutouts/1.0")
         self.assertEqual(req.get_header("Authorization"), "Bearer test-token")
         self.assertEqual(req.full_url, "https://thehouse.game/api/internal/cutouts/test-job/claim")
+
+    def test_failure_diagnostic_keeps_stage_and_request_id_without_private_content(self):
+        request_id = "01234567-89ab-cdef-0123-456789abcdef"
+        failure = urllib.error.HTTPError("https://thehouse.game/private?token=SECRET", 502,
+                                         "SECRET upstream body", {"X-House-Request-Id": request_id}, None)
+        env = {"CUTOUT_API_URL": "https://thehouse.game", "CUTOUT_JOB_ID": request_id,
+               "CUTOUT_JOB_TOKEN": "SECRET capability", "GIT_SHA": "a" * 40}
+        with patch.dict("os.environ", env), patch("worker.urllib.request.urlopen", side_effect=failure):
+            with self.assertRaises(CutoutFailure) as caught:
+                run_job(None)
+            diagnostic = failure_diagnostic(caught.exception)
+        self.assertEqual(diagnostic["request_id"], request_id)
+        self.assertEqual(diagnostic["status"], 502)
+        self.assertEqual(diagnostic["phase"], "claim")
+        self.assertEqual(diagnostic["release"], "a" * 40)
+        self.assertTrue(diagnostic["frames"])
+        self.assertNotIn("SECRET", json.dumps(diagnostic))
 
 
 if __name__ == "__main__":

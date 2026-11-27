@@ -1,3 +1,4 @@
+import { generationFailure } from "../middleware/request-diagnostics.js";
 import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { getSignedCookie, setSignedCookie } from "hono/cookie";
@@ -36,7 +37,7 @@ export function createAnonymousAgentCreationRoutes(db: DrizzleDB, generate = gen
       return c.json({ error: error.message, code: error.code,
         ...(error instanceof AnonymousPoolBusyError ? { retryAfterSeconds: error.retryAfterSeconds } : {}) }, error.status);
     }
-    console.error("[anonymous-creation] Preview failed", error);
+    generationFailure(c, error);
     return c.json({ error: "The House couldn't finish this preview. Your text is still here. Try again later." }, 502);
   });
   app.get("/api/agent-profiles/anonymous", async c => c.json(await readAnonymousAllowance(db, await visitorHash(c))));

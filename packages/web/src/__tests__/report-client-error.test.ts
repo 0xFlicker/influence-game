@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
 
-test("React errors report once when active and never backfill unmounted errors", () => {
+test("React errors report once for their original preference and never backfill unmounted errors", () => {
   const result = Bun.spawnSync([process.execPath, "-e", `
     import { mock } from "bun:test";
     import { strict as assert } from "node:assert";
@@ -11,6 +11,8 @@ test("React errors report once when active and never backfill unmounted errors",
       Object.defineProperty(globalThis, name, { configurable: true, value: name === "window" ? dom : dom[name] });
     }
     let active = false;
+    let consent = { ready: false, analytics: false, choiceRevision: 0 };
+    mock.module("@/lib/analytics-consent", () => ({ getAnalyticsConsent: () => consent }));
     const listeners = new Set(), captured = [];
     mock.module("@/lib/product-analytics", () => ({
       analyticsActive: () => active,
@@ -34,6 +36,12 @@ test("React errors report once when active and never backfill unmounted errors",
     await activity(false);
     await act(async () => { view = render(createElement(ReportClientError, { error: new Error("closed") })); });
     await act(async () => view.unmount());
+    await activity(true);
+    assert.equal(captured.length, 1);
+    await activity(false);
+    consent = { ready: true, analytics: false, choiceRevision: 1 };
+    await act(async () => { view = render(createElement(ReportClientError, { error: new Error("occurred under denial") })); });
+    consent = { ready: true, analytics: true, choiceRevision: 2 };
     await activity(true);
     assert.equal(captured.length, 1);
     cleanup(); dom.close();

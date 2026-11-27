@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useRuntimeConfig } from "@/lib/runtime-config";
-import { capturePage, initializeAnalytics, recordBrowserSession, setAnalyticsIdentity, suspendAnalytics } from "@/lib/product-analytics";
+import { analyticsExcludedPath, capturePage, initializeAnalytics, recordBrowserSession, setAnalyticsIdentity, suspendAnalytics } from "@/lib/product-analytics";
 import { dismissAnalyticsNotice, getAnalyticsConsent, loadAnalyticsConsent, setAccountAnalyticsAllowed, useAnalyticsConsent } from "@/lib/analytics-consent";
 import { bindCampaignAccount, clearCampaignAttribution, retainCampaignTouch } from "@/lib/campaign-attribution";
 import { AnalyticsPreference } from "./analytics-preference";
@@ -15,7 +15,7 @@ export function ProductAnalytics() {
   const consent = useAnalyticsConsent();
   const { ready, account } = useAuth();
   const internal = Boolean(account?.isAdmin || account?.roles.some(role => ["admin", "sysop", "producer"].includes(role)));
-  const privateRoute = /^\/(admin|oauth|discord|sign-in|sign-up|callback)(\/|$)/.test(pathname);
+  const privateRoute = analyticsExcludedPath(pathname);
   useEffect(() => { void loadAnalyticsConsent(); }, []);
   useEffect(() => {
     if (consent.notice.path !== null && consent.notice.path !== pathname) dismissAnalyticsNotice();
@@ -40,6 +40,11 @@ export function ProductAnalytics() {
     const explicitChoice = lastChoiceRevision.current !== consent.choiceRevision;
     let active = true;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const retry = () => {
+      if (!active) return;
+      suspendAnalytics();
+      retryTimer = setTimeout(() => setRetryAttempt(value => value + 1), Math.min(30_000, 1000 * 2 ** Math.min(retryAttempt, 5)));
+    };
     // Serialize preference writes; a slow allow request cannot land after withdrawal.
     work.current = work.current.then(async () => {
       if (!active) return;
@@ -66,17 +71,14 @@ export function ProductAnalytics() {
       if (!active || (publicId && !token) || !config.ready || !config.POSTHOG_PROJECT_TOKEN ||
         location.hostname !== "thehouse.game" || !getAnalyticsConsent().analytics || internal || privateRoute) return;
       bindCampaignAccount(publicId);
-      await initializeAnalytics(config.POSTHOG_PROJECT_TOKEN, "https://k.thehouse.game");
+      const initialized = await initializeAnalytics(config.POSTHOG_PROJECT_TOKEN, "https://k.thehouse.game");
       if (!active || api.getAuthToken() !== token || !getAnalyticsConsent().analytics) return;
-      setAnalyticsIdentity(publicId, false);
+      if (!initialized || !setAnalyticsIdentity(publicId, false)) { retry(); return; }
       capturePage(pathname);
       if (active && getAnalyticsConsent().recordings) recordBrowserSession(pathname === "/agents/create" || pathname === "/dashboard");
     }).catch(() => {
       // A failed preference sync cannot authorize optional tracking.
-      if (active) {
-        suspendAnalytics();
-        retryTimer = setTimeout(() => setRetryAttempt(value => value + 1), Math.min(30_000, 1000 * 2 ** Math.min(retryAttempt, 5)));
-      }
+      retry();
       console.warn("[Analytics] Account preference sync unavailable; tracking remains stopped");
     });
     return () => { active = false; clearTimeout(retryTimer); recordBrowserSession(false); };

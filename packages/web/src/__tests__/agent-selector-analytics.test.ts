@@ -17,7 +17,7 @@ test("join opening follows analytics readiness only while the selector is mounte
     const events = [];
     mock.module("@/lib/product-analytics", () => ({
       analyticsActive: () => active,
-      subscribeAnalyticsActivity: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+      captureRequestFailure: () => {}, markReportedRequest: () => {}, subscribeAnalyticsActivity: listener => { listeners.add(listener); return () => listeners.delete(listener); },
       captureProductEvent: (event, properties) => events.push({ event, properties }),
       analyticsOperation: () => null,
       measureProductRequest: (operation, request) => request(),

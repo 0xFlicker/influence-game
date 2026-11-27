@@ -1,11 +1,25 @@
+import { operationalError, uuid } from "@influence/engine/operational-errors";
 import { createPublicKey, verify } from "node:crypto";
 import { discordWorkerConfig, runDiscordRoleWorker } from "./worker.js";
 
 interface HttpEvent { body?: string; isBase64Encoded?: boolean; headers?: Record<string, string | undefined>; requestContext?: { http?: { method?: string } }; source?: string }
 
 /** One interaction owner; verification is available without waking an AI worker. */
-export async function handler(event: HttpEvent) {
-  if (event.source === "aws.events" && !event.requestContext) return runDiscordRoleWorker(discordWorkerConfig());
+export async function handler(event: HttpEvent, context?: { awsRequestId?: string; functionVersion?: string }) {
+  const roleWorker = event.source === "aws.events" && !event.requestContext;
+  try {
+    return roleWorker ? await runDiscordRoleWorker(discordWorkerConfig()) : await handleInteraction(event);
+  } catch (error) {
+    console.error("[worker-error]", operationalError("house-discord", roleWorker ? "role_worker_failed" : "interaction_failed",
+      roleWorker ? "Discord role synchronization failed." : "The Discord interaction could not be handled.", error, {
+        request_id: uuid(context?.awsRequestId),
+        lambda_version: /^\d+$/.test(context?.functionVersion ?? "") ? context?.functionVersion : undefined,
+      }));
+    throw error;
+  }
+}
+
+async function handleInteraction(event: HttpEvent) {
   const json = (statusCode: number, value: object) => ({ statusCode, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(value) });
   const publicKey = process.env.DISCORD_HOUSE_PUBLIC_KEY ?? "";
   const appId = process.env.DISCORD_APP_ID;

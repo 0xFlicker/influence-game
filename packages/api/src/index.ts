@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { FAILURE_HEADER, REQUEST_ID_HEADER, operationalError } from "@influence/engine/operational-errors";
+import { requestDiagnostics } from "./middleware/request-diagnostics.js";
+import { HTTPException } from "hono/http-exception";
 import { pruneSignupCredentials } from "./services/signup-admission.js";
 import { processAccountDeletionTask } from "./services/account-deletion-worker.js";
 import {
@@ -148,6 +152,11 @@ const apiVersion = (
 // ---------------------------------------------------------------------------
 // Startup env validation — crash immediately if required vars are missing
 // ---------------------------------------------------------------------------
+
+process.on("uncaughtExceptionMonitor", error => {
+  const component = process.env.INFLUENCE_API_ROLE === "game-worker" ? "game-worker" : "api";
+  console.error("[process-error]", operationalError(component, "uncaught_exception", "An uncaught exception interrupted the API process.", error));
+});
 
 const REQUIRED_ENV = [
   "PRIVY_APP_ID",
@@ -529,7 +538,7 @@ async function finishBackgroundRuntimeStartup(
   const executionScanTimer = gameExecutionWorker
     ? setInterval(() => {
       void adoptDurableGames().catch((error) => {
-        if (!context.signal.aborted) console.warn("[game-worker] Durable game scan deferred", error);
+        if (!context.signal.aborted) console.warn("[worker-error]", operationalError("game-worker", "game_scan_failed", "The durable game scan will retry.", error));
       });
     }, 2_000)
     : null;
@@ -543,7 +552,7 @@ async function finishBackgroundRuntimeStartup(
       if (stopping || conversionDeliveryWork || !gameExecutionWorker.canClaimGames()) return;
       conversionDeliveryWork = reconcileSignupConversions(db)
         .then(() => deliverPendingConversions(db, conversionDeliveryEnvFromProcess()))
-        .catch(() => console.warn("[campaign-conversions] Delivery deferred"))
+        .catch(error => console.warn("[worker-error]", operationalError("game-worker", "conversion_delivery_failed", "Conversion delivery will retry.", error)))
         .finally(() => { conversionDeliveryWork = null; });
     }, 60_000)
     : null;
@@ -552,7 +561,7 @@ async function finishBackgroundRuntimeStartup(
   const accountDeletionTimer = gameExecutionWorker && !localEvaluation && process.env.INFLUENCE_API_TEST_MOCK_RUNNER !== "true" ? setInterval(() => {
     if (stopping || accountDeletionWork || !runtimeActivation.canClaimWork()) return;
     accountDeletionWork = Promise.all([processAccountDeletionTask(db), pruneSignupCredentials(db)])
-      .catch(() => console.warn("[account-deletion] Cleanup deferred"))
+      .catch(error => console.warn("[worker-error]", operationalError("game-worker", "account_cleanup_failed", "Account cleanup will retry.", error)))
       .finally(() => { accountDeletionWork = null; });
   }, 10_000) : null;
   accountDeletionTimer?.unref();
@@ -614,6 +623,11 @@ async function finishBackgroundRuntimeStartup(
 // ---------------------------------------------------------------------------
 
 const app = new Hono();
+app.use("*", requestDiagnostics);
+app.onError((error, c) => {
+  if (error instanceof HTTPException) return error.getResponse();
+  return c.json({ error: "The House API could not complete the request." }, 500);
+});
 const allowedCorsOrigins = new Set(getAllowedCorsOrigins());
 
 // CORS — allow frontend origin
@@ -625,6 +639,7 @@ app.use(
       return allowedCorsOrigins.has(origin) ? origin : null;
     },
     credentials: true,
+    exposeHeaders: [REQUEST_ID_HEADER, FAILURE_HEADER, "CF-Ray", "CF-Mitigated"],
   }),
 );
 
@@ -787,7 +802,7 @@ const server = await listenBeforeRuntimeInitialization({
       if (!acceptingRequests) {
         return new Response(unavailableMessage, {
           status: 503,
-          headers: { Connection: "close" },
+          headers: { Connection: "close", [FAILURE_HEADER]: "app_unavailable" },
         });
       }
 
@@ -855,6 +870,14 @@ const server = await listenBeforeRuntimeInitialization({
         allowAudioPreparation: () => server.timeout(req, 90),
       });
     },
+    error(error) {
+      const requestId = randomUUID();
+      console.error("[request-error]", operationalError(apiRuntimeRole, "server_request_failed",
+        "The API listener could not complete the request.", error, { request_id: requestId, status: 500 }));
+      return new Response("The House API could not complete the request.", {
+        status: 500, headers: { [REQUEST_ID_HEADER]: requestId, [FAILURE_HEADER]: "app_error" },
+      });
+    },
     websocket: {
       open(ws) {
         if (ws.data.releaseProbe) {
@@ -903,6 +926,9 @@ const server = await listenBeforeRuntimeInitialization({
   onReady: () => {
     acceptingRequests = true;
   },
+}).catch(error => {
+  console.error("[startup-error]", operationalError(apiRuntimeRole, "startup_failed", "The API process failed to start.", error));
+  process.exit(1);
 });
 
 const shutdown = createServerShutdownController({
