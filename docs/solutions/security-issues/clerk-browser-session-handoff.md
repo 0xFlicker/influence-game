@@ -39,6 +39,9 @@ The page had a `/games` 404, consistent with—but not proof of—that path.
   capacity changes after verification, render the wait in the existing panel
   and retain the verified session. Once a slot becomes available, retry account
   creation so the API can check the invite requirement before showing Turnstile.
+- Give the sign-in and create-account tabs one viewport-capped modal size across
+  the form, loading skeleton, and availability notice states. Keep overflow
+  inside the modal so controls stay reachable on short screens.
 
 ## Verification
 
