@@ -31,6 +31,17 @@ export function analyticsActive() {
     (typeof location === "undefined" || !analyticsExcludedPath(location.pathname));
 }
 
+/** Use the SDK's current browser session under the same gate as pageviews. */
+export function getConversionSessionId(): string | undefined {
+  if (!analyticsActive()) return undefined;
+  try {
+    return uuid(posthog.get_session_id());
+  } catch {
+    warnOnce("sdk_session_id_failed");
+    return undefined;
+  }
+}
+
 let sendingException: ReturnType<typeof browserDiagnostic> | undefined;
 let sendingRequest: Properties | undefined;
 const reported = new WeakSet<object>();

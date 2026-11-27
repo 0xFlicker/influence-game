@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
 test("browser sends explicit-choice metadata separately from regional permission through signup and sync", async () => {
@@ -17,6 +17,15 @@ test("browser sends explicit-choice metadata separately from regional permission
   const keys = ["window", "document", "navigator", "location", "localStorage"] as const;
   for (const key of keys) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : dom[key] });
   const requests: unknown[] = [];
+  const posthogSessionId = "019abb29-2345-7000-a123-123456789abc";
+  mock.module("posthog-js", () => ({ default: {
+    init: () => {},
+    get_property: () => null,
+    get_session_id: () => posthogSessionId,
+    opt_in_capturing: () => {},
+    opt_out_capturing: () => {},
+    stopSessionRecording: () => {},
+  } }));
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(async (url: RequestInfo | URL, init?: RequestInit) => {
     if (String(url) === "/analytics-region") return Response.json({ country: "US" });
@@ -26,10 +35,11 @@ test("browser sends explicit-choice metadata separately from regional permission
   try {
     const consent = await import("../lib/analytics-consent");
     const api = await import("../lib/api");
+    const analytics = await import("../lib/product-analytics");
     await api.loginWithPrivyToken("test", { intent: "sign_in" });
     await api.createManagedAuthentication("test");
     for (const request of requests.splice(0)) {
-      for (const field of ["analytics", "advertising", "analyticsExplicit", "advertisingExplicit"]) {
+      for (const field of ["analytics", "advertising", "analyticsExplicit", "advertisingExplicit", "posthogSessionId"]) {
         expect(request).not.toHaveProperty(field);
       }
     }
@@ -37,8 +47,18 @@ test("browser sends explicit-choice metadata separately from regional permission
     await api.loginWithPrivyToken("test", { intent: "sign_in" });
     expect(requests.pop()).toMatchObject({ analytics: true, analyticsExplicit: false });
     consent.saveAnalyticsChoice({ analytics: true, advertising: true });
+    expect(await analytics.initializeAnalytics("test", "https://invalid.example")).toBe(true);
+    expect(analytics.setAnalyticsIdentity(null, false)).toBe(true);
     await api.createManagedAuthentication("test");
-    expect(requests.pop()).toMatchObject({ analytics: true, analyticsExplicit: true });
+    expect(requests.pop()).toMatchObject({ analytics: true, analyticsExplicit: true, posthogSessionId });
+    await api.loginWithPrivyToken("test", { intent: "create_account", legalAcceptance: api.PRESENTED_LEGAL_ACCEPTANCE });
+    expect(requests.pop()).toMatchObject({ posthogSessionId });
+    await api.createAgent({ name: "Agent", personality: "Patient", gender: "female", creationRequestId: crypto.randomUUID() });
+    expect(requests.pop()).toMatchObject({ posthogSessionId });
+    await api.updateAgent("agent", { personality: "Calm" });
+    expect(requests.pop()).toMatchObject({ posthogSessionId });
+    await api.joinFreeQueue("agent");
+    expect(requests.pop()).toMatchObject({ posthogSessionId });
     await api.retainCampaignAttribution(true, "v1");
     expect(requests.pop()).toMatchObject({ analytics: true, analyticsExplicit: true, explicitChoice: true, expectedVersion: "v1" });
     for (const analytics of [false, true]) for (const advertising of [false, true]) {
@@ -49,6 +69,8 @@ test("browser sends explicit-choice metadata separately from regional permission
       expect(requests.pop()).toMatchObject({ analytics, advertising, analyticsExplicit: analytics, advertisingExplicit: advertising });
     }
     consent.saveAnalyticsChoice({ analytics: false, advertising: false });
+    await api.joinFreeQueue("agent");
+    expect(requests.pop()).not.toHaveProperty("posthogSessionId");
     await api.retainCampaignAttribution(true, "v1");
     expect(requests.pop()).toMatchObject({ analytics: false, analyticsExplicit: false });
   } finally {

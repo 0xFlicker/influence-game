@@ -110,10 +110,10 @@ describe("account deletion", () => {
 
   test("removes advertising identifiers without dropping campaign totals and prevents tracking resurrection", async () => {
     await db.insert(schema.userAnalyticsPreferences).values({ userId: "owner", analytics: true });
-    await db.insert(schema.campaignConversionEvents).values({ id: "conversion", eventName: "signup_completed", userId: "owner", publicId, channel: "web", attribution: { utm_campaign: "launch", gclid: "click", starter_skill: "strategy" }, clientUserAgent: "browser" });
+    await db.insert(schema.campaignConversionEvents).values({ id: "conversion", eventName: "signup_completed", userId: "owner", publicId, channel: "web", attribution: { utm_campaign: "launch", gclid: "click", starter_skill: "strategy" }, clientUserAgent: "browser", posthogSessionId: crypto.randomUUID() });
     await deleteAccount(db, "owner");
     const [conversion] = await db.select().from(schema.campaignConversionEvents);
-    expect(conversion).toMatchObject({ publicId: "", clientUserAgent: null, attribution: { utm_campaign: "launch", starter_skill: "strategy" }, posthogStatus: "suppressed", platformStatus: "suppressed" });
+    expect(conversion).toMatchObject({ publicId: "", clientUserAgent: null, posthogSessionId: null, attribution: { utm_campaign: "launch", starter_skill: "strategy" }, posthogStatus: "suppressed", platformStatus: "suppressed" });
     expect(await syncAnalyticsPreference(db, "owner", true, true)).toBe(false);
     expect(await recordConversion(db, { id: "late", eventName: "game_placed", userId: "owner", publicId, channel: "api", mcpClientId: "stale-client" })).toBe(true);
     expect((await db.select().from(schema.campaignConversionEvents).where(eq(schema.campaignConversionEvents.id, "late")))[0]).toMatchObject({ publicId: "", attribution: null, mcpClientId: null, posthogStatus: "suppressed" });

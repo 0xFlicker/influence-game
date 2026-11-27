@@ -422,6 +422,7 @@ async function joinDailyFreeQueue(
         seasonId: season.id,
         channel: context.channel ?? "web",
         mcpClientId: context.mcpClientId ?? null,
+        posthogSessionId: context.posthogSessionId,
       });
       return { status: "switched" as const, entry: updated };
     }
@@ -438,6 +439,7 @@ async function joinDailyFreeQueue(
       seasonId: season.id,
       channel: context.channel ?? "web",
       mcpClientId: context.mcpClientId ?? null,
+      posthogSessionId: context.posthogSessionId,
     });
     return { status: "queued" as const, entry: inserted };
   });

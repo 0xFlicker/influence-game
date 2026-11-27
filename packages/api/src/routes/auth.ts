@@ -29,6 +29,7 @@ import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
 import { projectAuthenticatedPublicIdentity } from "../services/authenticated-public-identity.js";
 import {
   recordAuthenticationTracking,
+  requestPosthogSessionId,
 } from "../services/campaign-conversions.js";
 import {
   createClerkAuthenticationVerifier,
@@ -214,6 +215,7 @@ export function createAuthRoutes(
       "attribution",
       "analytics",
       "analyticsExplicit",
+      "posthogSessionId",
       "advertising",
       "advertisingExplicit",
     ]);
@@ -320,6 +322,7 @@ export function createAuthRoutes(
     await recordAuthenticationTracking(db, {
       userId: authentication.user.id, publicId: authentication.user.publicId,
       created: authentication.created, analytics: requestedAnalytics(c, body.analytics), analyticsExplicit: body.analyticsExplicit, advertising: requestedAnalytics(c, body.advertising), advertisingExplicit: body.advertisingExplicit, attribution: body.attribution, userAgent: c.req.header("User-Agent"),
+      posthogSessionId: requestPosthogSessionId(c.req.raw.headers, body.posthogSessionId),
     });
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -446,6 +449,7 @@ export function createAuthRoutes(
         "attribution",
         "analytics",
         "analyticsExplicit",
+        "posthogSessionId",
         "advertising",
         "advertisingExplicit",
       ],
@@ -489,6 +493,7 @@ export function createAuthRoutes(
       await recordAuthenticationTracking(db, {
         userId: outcome.user.id, publicId: outcome.user.publicId, created: true,
         analytics: requestedAnalytics(c, request.body.analytics), analyticsExplicit: request.body.analyticsExplicit, advertising: requestedAnalytics(c, request.body.advertising), advertisingExplicit: request.body.advertisingExplicit, attribution: request.body.attribution, userAgent: c.req.header("User-Agent"),
+        posthogSessionId: requestPosthogSessionId(c.req.raw.headers, request.body.posthogSessionId),
       });
     }
     if (outcome.status === "invite_required") {
@@ -750,6 +755,7 @@ type StrictAuthBody = {
   attribution?: unknown;
   analytics?: unknown;
   analyticsExplicit?: unknown;
+  posthogSessionId?: unknown;
   advertising?: unknown;
   advertisingExplicit?: unknown;
 };
@@ -833,6 +839,7 @@ async function readStrictTokenRequest(
       attribution: body.attribution,
       analytics: body.analytics,
       analyticsExplicit: body.analyticsExplicit,
+      posthogSessionId: body.posthogSessionId,
       advertising: body.advertising,
       advertisingExplicit: body.advertisingExplicit,
     },

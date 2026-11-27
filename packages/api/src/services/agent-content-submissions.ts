@@ -14,6 +14,7 @@ import type { AgentProfileMutationRead } from "./agent-profile-management.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
 import { currentPublishedModelPreference } from "./model-lifecycle-settings.js";
+import { replaceAgentReadySession } from "./campaign-conversions.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type Profile = typeof schema.agentProfiles.$inferSelect;
@@ -70,6 +71,7 @@ export async function replayContentSubmission(tx: Tx | DrizzleDB, userId: string
 /** Called under the profile lock, in the same transaction as the accepted update. */
 export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMutationRead, options: {
   id: string; requestHash: string; assets?: ContentAssetEvidence; candidate?: Profile; voiceId?: unknown; sourceReviewId?: unknown; avatarChangeSource?: import("../db/schema.js").AvatarChangeSource;
+  posthogSessionId?: string;
 }): Promise<AgentProfileMutationRead> {
   const profile = options.candidate ?? mutation.profile;
   if (options.voiceId !== undefined && options.voiceId !== null && !isPlayerVoiceId(options.voiceId)) throw new ContentSubmissionConflict("Choose an eligible player voice");
@@ -105,6 +107,9 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
       avatarChangeSource:options.avatarChangeSource??"mcp_update", competitiveRevisionId: profile.currentRevisionId, parentRevisionId: prior?.id ?? null,
       ancestryKnown: prior ? prior.ancestryKnown : true, fingerprint, snapshot: { ...snapshot, assets } }, {"snapshot":"json-gzip"}));
     await tx.insert(schema.agentModerationReviews).values({ id: reviewId, contentRevisionId: revisionId, held: !metadataOnly, status: metadataOnly ? "resolved" : "pending" });
+    if (!metadataOnly) await replaceAgentReadySession(tx, {
+      userId: profile.userId, agentProfileId: profile.id, contentRevisionId: revisionId, posthogSessionId: options.posthogSessionId,
+    });
   }
   // Optional derivative demand shares the captured content bytes. A savepoint
   // prevents an unavailable cutout lane from rejecting ordinary character edits.

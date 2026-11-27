@@ -1110,6 +1110,7 @@ describe("managed authentication routes", () => {
       clerkVerifier: clerkVerifier(async () => verifiedClerk("clerk-tracking", "tracking@example.com")),
     }));
     const userAgent = "House signup integration test";
+    const posthogSessionId = crypto.randomUUID();
     const response = await app.request("/api/auth/managed/create", {
       method: "POST",
       headers: {
@@ -1123,6 +1124,7 @@ describe("managed authentication routes", () => {
         ...CURRENT_LEGAL_CONSENT,
         analytics,
         analyticsExplicit: analytics,
+        posthogSessionId,
         advertising,
         advertisingExplicit: advertising,
         attribution: {
@@ -1155,6 +1157,7 @@ describe("managed authentication routes", () => {
       userId: preferences[0]!.userId,
       channel: "web",
       posthogStatus: analyticsAllowed ? "pending" : "suppressed",
+      posthogSessionId: analyticsAllowed ? posthogSessionId : null,
       platformStatus: advertisingAllowed ? "pending" : "suppressed",
       clientUserAgent: advertisingAllowed ? userAgent : null,
     });
