@@ -146,6 +146,9 @@ are `not_applicable`, not delivered. Google processing has a separate polling
 schedule described below. The worker drains on shutdown.
 
 Signup tracking runs in a separate bounded transaction after account creation.
+The signup request parser passes both tracking choices and campaign attribution
+to this transaction. The server applies privacy overrides, validates campaign
+fields, and snapshots delivery eligibility when it records the signup.
 Failure logs a payload-free warning and does not prevent session issuance. The
 worker reconciles missing signup events from canonical account records older
 than one minute (allowing the signup transaction to finish), keeping
