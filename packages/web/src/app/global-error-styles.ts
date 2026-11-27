@@ -51,7 +51,8 @@ export const globalErrorStyles = `
 
   .house-error-stage {
     display: grid;
-    grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
+    grid-template-areas: "content portrait";
+    grid-template-columns: minmax(0, 54fr) minmax(0, 46fr);
     overflow: hidden;
     border: 1px solid var(--error-border);
     border-radius: 1.15rem;
@@ -60,8 +61,10 @@ export const globalErrorStyles = `
   }
 
   .house-error-portrait {
+    grid-area: portrait;
     position: relative;
     min-height: 26rem;
+    border-inline-start: 1px solid var(--error-border);
     isolation: isolate;
     background:
       radial-gradient(ellipse at 50% 40%, #b68c654a, transparent 60%),
@@ -89,9 +92,9 @@ export const globalErrorStyles = `
   }
 
   .house-error-content {
+    grid-area: content;
     min-width: 0;
     padding: clamp(1.5rem, 4.25vw, 4rem);
-    border-inline-start: 1px solid var(--error-border);
   }
 
   .house-error-content h1 {
@@ -110,22 +113,29 @@ export const globalErrorStyles = `
   }
 
   .house-error-message {
+    --bubble-fill: #2b1e31;
+    --bubble-border: #70535b;
+
     position: relative;
     margin: 1.6rem 0 1.55rem;
-    padding: .9rem 1.1rem 1rem;
-    border: 1px solid #61494d;
-    border-radius: .55rem;
-    background: linear-gradient(110deg, #332239, #211626 82%);
+    padding: 1rem 1.15rem;
+    border: 1px solid var(--bubble-border);
+    border-radius: .85rem;
+    background: var(--bubble-fill);
   }
 
-  .house-error-speaker {
-    display: block;
-    margin-bottom: .27rem;
-    color: var(--error-gold);
-    font-size: .71rem;
-    font-weight: 750;
-    letter-spacing: .16em;
-    text-transform: uppercase;
+  .house-error-message::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: -.45rem;
+    width: .85rem;
+    height: .85rem;
+    border: solid var(--bubble-border);
+    border-width: 1px 1px 0 0;
+    background: var(--bubble-fill);
+    transform: translateY(-50%) rotate(45deg);
+    pointer-events: none;
   }
 
   .house-error-message p { margin: 0; }
@@ -205,21 +215,29 @@ export const globalErrorStyles = `
   }
 
   @media (max-width: 47rem) {
-    .house-error-stage { grid-template-columns: minmax(0, 1fr); }
+    .house-error-stage {
+      grid-template-areas: "portrait" "content";
+      grid-template-columns: minmax(0, 1fr);
+    }
 
     .house-error-portrait {
       min-height: 0;
       height: clamp(13rem, 57vw, 20rem);
+      border-inline-start: 0;
     }
 
-    .house-error-content {
-      border-inline-start: 0;
-      border-top: 1px solid var(--error-border);
-    }
+    .house-error-content { border-top: 1px solid var(--error-border); }
 
     .house-error-content h1 { max-width: none; }
     .house-error-lead { font-size: 1rem; }
     .house-error-message { margin-block: 1.15rem; }
+    .house-error-message::after {
+      inset-block-start: -.45rem;
+      inset-inline: 50% auto;
+      border-width: 1px 0 0 1px;
+      transform: translateX(-50%) rotate(45deg);
+    }
+
     .house-error-help { margin-top: 1.15rem; gap: 0 .85rem; }
   }
 `;

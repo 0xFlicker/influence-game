@@ -37,7 +37,6 @@ export default function GlobalError({ error, reset }: { error: Error; reset: () 
                 <p className="house-error-lead">Something went wrong while loading this page.</p>
               </div>
               <blockquote className="house-error-message">
-                <span className="house-error-speaker">The Host</span>
                 <p>
                   <strong aria-hidden="true">#^$%$!</strong>
                   <span className="house-error-sr-only">Censored exclamation.</span>
