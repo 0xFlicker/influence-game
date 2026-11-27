@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { apiFetch, listAdminUsers, type AdminUser } from "@/lib/api";
+import { formatRoleName } from "@/lib/role-display";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TypedConfirmationDialog } from "@/components/confirm-action-dialog";
-import { UserRolesPanel } from "./user-roles-panel";
+import { AccountRoleEditor } from "./account-role-editor";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 
 const inputStyle = "min-h-11 w-full rounded-lg border border-white/25 bg-black/30 px-3 text-white focus-visible:outline-2 focus-visible:outline-indigo-300";
@@ -16,9 +17,19 @@ const dateLabel = (value: string) => new Date(value).toLocaleDateString(undefine
 const accountPath = (publicId: string) => `/api/admin/accounts/${encodeURIComponent(publicId)}`;
 const message = (error: unknown) => error instanceof Error ? error.message : "The request could not be completed.";
 
+function updateRoles(roles: string[], name: string, assigned: boolean) {
+  return assigned ? [...new Set([...roles, name])] : roles.filter(role => role !== name);
+}
+
+function JoinedDate({ value }: { value: string }) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return <span>Join date unavailable</span>;
+  return <time dateTime={date.toISOString()}>Joined {dateLabel(value)}</time>;
+}
+
 export function UserDirectory() {
   const router = useRouter();
-  const { hasPermission, roles } = usePermissions();
+  const { roles } = usePermissions();
   const operator = roles.includes("admin") || roles.includes("sysop");
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -26,7 +37,8 @@ export function UserDirectory() {
   const [lookupError, setLookupError] = useState("");
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
-  const [showRoles, setShowRoles] = useState(false);
+  const [order, setOrder] = useState<"newest" | "oldest">("newest");
+  const [editingRolesFor, setEditingRolesFor] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
     void listAdminUsers().then(rows => { if (current) setUsers(rows); }, error => { if (current) setLoadError(message(error)); });
@@ -47,7 +59,16 @@ export function UserDirectory() {
   }
 
   const query = search.trim().toLowerCase();
-  const visible = users?.filter(user => [user.displayName, user.handle, user.publicId].some(value => value?.toLowerCase().includes(query)));
+  const visible = users
+    ?.filter(user => [user.displayName, user.handle, user.publicId].some(value => value?.toLowerCase().includes(query)))
+    .sort((a, b) => {
+      const direction = order === "newest" ? -1 : 1;
+      const aDate = Date.parse(a.createdAt);
+      const bDate = Date.parse(b.createdAt);
+      const sortedA = Number.isFinite(aDate) ? aDate * direction : Infinity;
+      const sortedB = Number.isFinite(bDate) ? bDate * direction : Infinity;
+      return sortedA - sortedB || a.publicId.localeCompare(b.publicId);
+    });
   return <div className="space-y-6">
     <h1 className="text-2xl font-semibold">Users</h1>
     {operator && <form className={panelStyle} onSubmit={lookup} data-analytics-private>
@@ -60,34 +81,58 @@ export function UserDirectory() {
       {lookupError && <p role="alert" className="mt-3 text-red-300">{lookupError}</p>}
     </form>}
     <section aria-label="Account directory" className={panelStyle}>
-      <label htmlFor="directory-search" className="block text-sm font-medium">Filter by name, handle, or ID</label>
-      <input id="directory-search" value={search} onChange={event => setSearch(event.target.value)}
-        className={`${inputStyle} mt-2 max-w-md`} />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1 basis-60">
+          <label htmlFor="directory-search" className="block text-sm font-medium">Filter by name, handle, or ID</label>
+          <input id="directory-search" value={search} onChange={event => setSearch(event.target.value)}
+            className={`${inputStyle} mt-2`} />
+        </div>
+        <div className="min-w-0 flex-1 basis-44 sm:max-w-52">
+          <label htmlFor="directory-order" className="block text-sm font-medium">Sort by joined date</label>
+          <select id="directory-order" value={order} onChange={event => setOrder(event.target.value === "oldest" ? "oldest" : "newest")}
+            className={`${inputStyle} mt-2 bg-neutral-950 text-sm`}>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+        </div>
+      </div>
       {loadError ? <p role="alert" className="mt-4 text-red-300">{loadError}</p>
         : !visible ? <p role="status" className="mt-4">Loading users…</p>
         : !visible.length ? <p className="mt-4">No users found.</p>
         : <ul className="mt-4 divide-y divide-white/10">
-          {visible.map(user => <li key={user.publicId} className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <div className="min-w-0">
-              {operator ? <Link className="influence-link break-words font-medium" href={`/admin/users/${user.publicId}`}>
-                {user.displayName || user.handle || user.publicId}
-              </Link> : <span>{user.displayName || user.handle || user.publicId}</span>}
-              {user.handle && <p className="text-sm text-white/60">@{user.handle}</p>}
-            </div>
-            <span className="text-sm text-white/65">{user.deletedAt ? "Closed" : user.roles.join(", ") || "Active"}</span>
-          </li>)}
+          {visible.map(user => {
+            const name = user.displayName || user.handle || user.publicId;
+            const expanded = editingRolesFor === user.publicId;
+            return <li key={user.publicId} className="py-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
+                <div className="min-w-0 flex-1 basis-48 break-words">
+                  {operator ? <Link className="influence-link font-medium" href={`/admin/users/${user.publicId}`}>{name}</Link> : <span>{name}</span>}
+                  {user.handle && <p className="text-sm text-white/60">@{user.handle}</p>}
+                </div>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/65">
+                  <JoinedDate value={user.createdAt} />
+                  <span>{user.deletedAt ? "Closed" : user.roles.map(formatRoleName).join(", ") || "Active"}</span>
+                  {user.canManageRoles && <button type="button" aria-expanded={expanded} aria-label={`Manage roles for ${name}`}
+                    className="influence-button-secondary min-h-11 rounded-lg px-3"
+                    onClick={() => setEditingRolesFor(expanded ? null : user.publicId)}>Manage roles</button>}
+                </div>
+              </div>
+              {expanded && user.canManageRoles && <div className="mt-3 border-l border-white/15 pl-3 sm:max-w-md">
+                <AccountRoleEditor publicId={user.publicId} accountName={name} assigned={user.roles}
+                  onChange={(role, assigned) => setUsers(current => current?.map(candidate =>
+                    candidate.publicId === user.publicId ? { ...candidate, roles: updateRoles(candidate.roles, role, assigned) } : candidate) ?? null)} />
+              </div>}
+            </li>;
+          })}
         </ul>}
     </section>
-    {hasPermission("manage_roles") && <details className={panelStyle} onToggle={event => setShowRoles(event.currentTarget.open)}><summary className="cursor-pointer font-medium">Manage role assignments</summary>
-      {showRoles && <div className="mt-4"><UserRolesPanel /></div>}
-    </details>}
   </div>;
 }
 
 type Account = {
   publicId: string; name: string | null; handle: string | null; createdAt: string; deletedAt: string | null;
   roles: string[]; providers: string[]; agents: { id: string; name: string; archivedAt: string | null }[];
-  canDelete: boolean; confirmationName: string;
+  canDelete: boolean; canManageRoles: boolean; confirmationName: string;
 };
 type Games = { items: HouseParticipation[]; nextCursor: string | null };
 
@@ -130,7 +175,7 @@ export function UserAccountPanel({ publicId }: { publicId: string }) {
     const result = await apiFetch<{ deletedAt: string }>(`${path}/deletion`, {
       method: "POST", body: JSON.stringify({ confirmation }),
     });
-    setAccount(current => current && { ...current, deletedAt: result.deletedAt, canDelete: false, providers: [], roles: [], handle: null, name: null });
+    setAccount(current => current && { ...current, deletedAt: result.deletedAt, canDelete: false, canManageRoles: false, providers: [], roles: [], handle: null, name: null });
     setConfirm(false);
   }
 
@@ -141,11 +186,19 @@ export function UserAccountPanel({ publicId }: { publicId: string }) {
       <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-white/70">
         {account.handle && <span>@{account.handle}</span>}
         <span>{account.deletedAt ? "Closed" : "Active"}</span>
-        <span>Joined {dateLabel(account.createdAt)}</span>
+        <JoinedDate value={account.createdAt} />
       </p>
     </header>
     <div className="grid gap-4 sm:grid-cols-2">
-      <section className={panelStyle}><h2 className="text-lg font-medium">Roles</h2><p className="mt-2 text-white/70">{account.roles.join(", ") || "No roles assigned"}</p></section>
+      <section aria-labelledby="account-roles" className={panelStyle}>
+        <h2 id="account-roles" className="text-lg font-medium">Roles</h2>
+        <p className="mt-2 text-white/70">{account.roles.map(formatRoleName).join(", ") || "No roles assigned"}</p>
+        {account.canManageRoles && <div className="mt-4">
+          <AccountRoleEditor key={publicId} publicId={publicId} accountName={title} assigned={account.roles}
+            onChange={(role, assigned) => setAccount(current => current?.publicId === publicId
+              ? { ...current, roles: updateRoles(current.roles, role, assigned) } : current)} />
+        </div>}
+      </section>
       <section className={panelStyle}><h2 className="text-lg font-medium">Sign-in providers</h2><p className="mt-2 text-white/70">{account.providers.map(provider =>
         ({ clerk: "Clerk", privy: "Privy", farcaster: "Farcaster" }[provider] ?? provider)).join(", ") || "No active sign-in providers"}</p></section>
     </div>

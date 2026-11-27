@@ -60,6 +60,7 @@ interface LayeredAuthHarness {
     walletless: string;
     uiWalletOwner: string;
     accountOperator: string;
+    accountRoleManager: string;
   };
 }
 
@@ -199,10 +200,12 @@ async function seedFixture(db: DrizzleDB): Promise<{
 }> {
   const existingEmail = "e2e-existing-privy-email";
   const accountOperator = "e2e-account-operator";
+  const accountRoleManager = "e2e-account-role-manager";
   await db.insert(schema.users).values([
-    { id: accountOperator, displayName: "Account operator", handle: "fixture-operator" },
+    { id: accountOperator, displayName: "Account operator", handle: "fixture-operator", createdAt: "2026-01-01T00:00:00.000Z" },
+    { id: accountRoleManager, displayName: "Account role manager", handle: "fixture-role-manager", createdAt: "2026-02-01T00:00:00.000Z" },
     { id: "e2e-support-target", displayName: "A Long Profile Name For Mobile Confirmation Proof",
-      handle: "fixture-support-target", legacyEmailHash: hashAccountEmail("support-target@example.test") },
+      handle: "fixture-support-target", createdAt: "2026-03-01T00:00:00.000Z", legacyEmailHash: hashAccountEmail("support-target@example.test") },
   ]);
   await db.insert(schema.verifiedEmailClaims).values({
     emailHash: hashAccountEmail("support-target@example.test"), userId: "e2e-support-target", state: "active",
@@ -211,8 +214,13 @@ async function seedFixture(db: DrizzleDB): Promise<{
     userId: "e2e-support-target", provider: "privy", providerSubject: "did:privy:e2e-support-target",
   });
   const [admin] = await db.select({ id: schema.roles.id }).from(schema.roles).where(eq(schema.roles.name, "admin"));
-  await db.insert(schema.userRoles).values({ userId: accountOperator, roleId: admin!.id });
+  const [sysop] = await db.select({ id: schema.roles.id }).from(schema.roles).where(eq(schema.roles.name, "sysop"));
+  await db.insert(schema.userRoles).values([
+    { userId: accountOperator, roleId: admin!.id },
+    { userId: accountRoleManager, roleId: sysop!.id },
+  ]);
   await recordCurrentLegalAcceptance(db, accountOperator, "existing_account", "0123456789abcdef0123456789abcdef01234567");
+  await recordCurrentLegalAcceptance(db, accountRoleManager, "existing_account", "0123456789abcdef0123456789abcdef01234567");
   const walletOwner = "e2e-existing-wallet-owner";
   const reverseOwner = "e2e-password-reverse-owner";
   const walletless = "e2e-walletless-oauth-owner";
@@ -340,6 +348,7 @@ async function seedFixture(db: DrizzleDB): Promise<{
       walletless: await createSessionToken(walletless),
       uiWalletOwner: await createSessionToken(uiWalletOwner),
       accountOperator: await createSessionToken(accountOperator),
+      accountRoleManager: await createSessionToken(accountRoleManager),
     },
   };
 }

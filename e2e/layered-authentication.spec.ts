@@ -49,6 +49,7 @@ interface LayeredAuthHarness {
     walletless: string;
     uiWalletOwner: string;
     accountOperator: string;
+    accountRoleManager: string;
   };
 }
 
@@ -909,17 +910,56 @@ test.describe("deterministic layered authentication", () => {
     await context.close();
   });
 
+  test("the single Users directory sorts by join date and changes roles for the selected account", async ({ page }, testInfo) => {
+    await page.addInitScript(token => localStorage.setItem("influence_session", token), harness.sessions.accountRoleManager);
+    await page.goto(`${harness.webUrl}/admin/users`);
+    const directory = page.getByRole("region", { name: "Account directory" });
+    const filter = directory.getByLabel("Filter by name, handle, or ID");
+    await filter.fill("fixture-");
+    const targetName = "A Long Profile Name For Mobile Confirmation Proof";
+    const links = directory.getByRole("link");
+    await expect(links).toHaveText([targetName, "Account role manager", "Account operator"]);
+    await expect(directory.getByRole("list")).toHaveCount(1);
+    const sort = directory.getByLabel("Sort by joined date");
+    await expect(sort).toHaveValue("newest");
+    await sort.selectOption("oldest");
+    await expect(links).toHaveText(["Account operator", "Account role manager", targetName]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const manage = directory.getByRole("button", { name: `Manage roles for ${targetName}` });
+    await manage.focus();
+    await page.keyboard.press("Enter");
+    const rolePicker = directory.getByLabel("Role to assign");
+    await expect(rolePicker).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: testInfo.outputPath("users-role-manager-mobile.png"), fullPage: true });
+    await rolePicker.selectOption({ label: "Game Operator" });
+    await directory.getByRole("button", { name: "Assign role", exact: true }).click();
+    await expect(directory.getByRole("status")).toHaveText("Game Operator assigned.");
+    await directory.getByRole("link", { name: targetName }).click();
+    const roles = page.getByRole("region", { name: "Roles", exact: true });
+    await expect(roles.getByText("Game Operator", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.screenshot({ path: testInfo.outputPath("account-role-manager-desktop.png") });
+    await roles.getByRole("button", { name: "Revoke Game Operator" }).click();
+    await expect(roles.getByRole("status")).toHaveText("Game Operator revoked.");
+    await expect(roles.getByText("No roles assigned")).toBeVisible();
+    await page.reload();
+    await expect(roles.getByText("No roles assigned")).toBeVisible();
+  });
+
   test("admin finds an account and confirms deletion by profile name", async ({ page }, testInfo) => {
     await page.addInitScript(token => localStorage.setItem("influence_session", token), harness.sessions.accountOperator);
     await page.goto(`${harness.webUrl}/admin/users`);
     const targetName = "A Long Profile Name For Mobile Confirmation Proof";
     const email = page.getByLabel("Find by email");
     await expect(page.getByRole("link", { name: targetName, exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Manage roles for/ })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath("directory-desktop.png") });
     await email.fill("Support-Target@Example.Test");
     await page.getByRole("button", { name: "Find user" }).click({ timeout: 10000 });
     await expect(page).toHaveURL(/\/admin\/users\/[0-9a-f-]+$/, { timeout: 30000 });
     await expect(page.getByRole("heading", { name: targetName })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("button", { name: "Assign role" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Sign-in providers" })).toBeVisible();
     await expect(page.getByText("Privy", { exact: true })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("account-desktop.png"), fullPage: true });

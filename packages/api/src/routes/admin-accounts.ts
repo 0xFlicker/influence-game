@@ -69,11 +69,13 @@ export function createAdminAccountRoutes(db: DrizzleDB) {
     const privileged = roles.includes("admin") || roles.includes("sysop");
     const sysop = c.get("userRoles").includes("sysop");
     const lastSysop = roles.includes("sysop") && await countSysops(db) <= 1;
+    const activeHuman = !user.deletedAt && !services.length && user.walletAddress?.toLowerCase() !== ZERO_WALLET;
     return c.json({
       publicId, name, handle: user.handle, createdAt: user.createdAt, deletedAt: user.deletedAt,
       roles, providers: providers.map(item => item.provider), agents,
       confirmationName: name ?? user.handle ?? publicId,
-      canDelete: !user.deletedAt && !services.length && user.walletAddress?.toLowerCase() !== ZERO_WALLET && !lastSysop && (!privileged || sysop),
+      canManageRoles: activeHuman && c.get("userPermissions").includes("manage_roles"),
+      canDelete: activeHuman && !lastSysop && (!privileged || sysop),
     });
   });
 

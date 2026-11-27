@@ -2,8 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { AgentsAdminPanel } from "../app/admin/agents-admin-panel";
-import { UserRolesPanel, UsersTable } from "../app/admin/user-roles-panel";
-import { setApiBase, type AdminAgent, type AdminUser } from "../lib/api";
+import { setApiBase, type AdminAgent } from "../lib/api";
 
 const originals = {
   fetch: globalThis.fetch,
@@ -37,31 +36,6 @@ afterEach(async () => {
   dom = null;
 });
 
-function rowNames(table: HTMLElement): string[] {
-  return Array.from(table.querySelectorAll("tbody tr")).map((row) => row.querySelector("td")?.textContent?.trim() ?? "");
-}
-
-test("admin users start newest first, toggle column sort, and link public profiles", () => {
-  setupDom();
-  const users: AdminUser[] = [
-    { id: "older", publicId: "older", handle: null, deletedAt: null, publicProfileId: "public-older", walletAddress: "0x111", displayName: "Zed", roles: [], permissions: [], createdAt: "2026-01-01T00:00:00Z" },
-    { id: "newer", publicId: "newer", handle: null, deletedAt: null, publicProfileId: "public-newer", walletAddress: null, displayName: "Amy", roles: ["admin"], permissions: [], createdAt: "2026-11-01T00:00:00Z" },
-  ];
-  const mounted = render(<UsersTable users={users} onQuickAssign={() => undefined} />);
-  const table = mounted.getByRole("table");
-  expect(Array.from(table.querySelectorAll("tbody tr a")).map((link) => link.getAttribute("href")))
-    .toEqual(["/profile/public-newer", "/profile/public-older"]);
-  expect(rowNames(table)).toEqual(["—", "0x111"]);
-  expect(within(table).getByRole("columnheader", { name: /Joined/ }).getAttribute("aria-sort")).toBe("descending");
-
-  fireEvent.click(within(table).getByRole("button", { name: "Sort by Joined ascending" }));
-  expect(rowNames(table)).toEqual(["0x111", "—"]);
-  fireEvent.click(within(table).getByRole("button", { name: "Sort by Display Name ascending" }));
-  expect(Array.from(table.querySelectorAll("tbody tr a")).map((link) => link.textContent?.trim())).toEqual(["Amy", "Zed"]);
-  fireEvent.click(within(table).getByRole("button", { name: "Sort by Display Name descending" }));
-  expect(Array.from(table.querySelectorAll("tbody tr a")).map((link) => link.textContent?.trim())).toEqual(["Zed", "Amy"]);
-});
-
 test("admin agents link profiles and toggle numeric sort", async () => {
   setupDom();
   const agents: AdminAgent[] = [
@@ -78,28 +52,4 @@ test("admin agents link profiles and toggle numeric sort", async () => {
   expect(Array.from(table.querySelectorAll("tbody tr td:first-child a")).map((link) => link.textContent?.trim())).toEqual(["Zed", "Amy"]);
   fireEvent.click(within(table).getByRole("button", { name: "Sort by Games descending" }));
   expect(Array.from(table.querySelectorAll("tbody tr td:first-child a")).map((link) => link.textContent?.trim())).toEqual(["Amy", "Zed"]);
-});
-
-test("role assignments link accounts and sort by role", async () => {
-  setupDom();
-  globalThis.fetch = (async (request: RequestInfo | URL) => {
-    const path = String(request);
-    const body = path.endsWith("/roles") ? []
-      : path.endsWith("/user-roles") ? [
-        { userId: "u1", roleId: "admin", roleName: "admin", grantedBy: "operator", grantedAt: "2026-01-01" },
-        { userId: "u2", roleId: "gamer", roleName: "gamer", grantedBy: "operator", grantedAt: "2026-01-01" },
-      ] : [
-        { id: "u1", publicId: "u1", handle: null, deletedAt: null, publicProfileId: "public-1", walletAddress: null, displayName: "Zed", roles: ["admin"], permissions: [], createdAt: "2026-01-01" },
-        { id: "u2", publicId: "u2", handle: null, deletedAt: null, publicProfileId: "public-2", walletAddress: null, displayName: "Amy", roles: ["gamer"], permissions: [], createdAt: "2026-11-01" },
-      ];
-    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
-  }) as unknown as typeof fetch;
-  const mounted = render(<UserRolesPanel />);
-  await waitFor(() => expect(mounted.getAllByRole("table")).toHaveLength(2));
-  const assignments = mounted.getAllByRole("table")[0]!;
-  expect(Array.from(assignments.querySelectorAll("tbody tr td:first-child a")).map((link) => link.getAttribute("href")))
-    .toEqual(["/profile/public-2", "/profile/public-1"]);
-  fireEvent.click(within(assignments).getByRole("button", { name: "Sort by Roles ascending" }));
-  expect(Array.from(assignments.querySelectorAll("tbody tr td:first-child a")).map((link) => link.textContent?.trim()))
-    .toEqual(["Zed", "Amy"]);
 });
