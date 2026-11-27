@@ -1,11 +1,10 @@
 import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-  activeOffer, availableDmHistory, destination, directReplyId, discordMessageTime, dmContext, revalidateDmSubject,
+  activeOffer, availableDmHistory, destination, directReplyId, discordMessageTime, dmContext, prepareReply, revalidateDmSubject,
   revalidateSpoilerOffer, roomContext, snowflake, spoilerOfferText, subjectKey, subjectsFromRead, validatedConsent,
   validatedReply, withTurnFeedback, type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject, type TurnAuthority,
 } from "./policy.js";
-import { prepareReply } from "./reply-links.js";
 import { runCodex } from "./sandbox.js";
 
 function env(name: string) {

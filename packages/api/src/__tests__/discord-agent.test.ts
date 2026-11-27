@@ -10,8 +10,7 @@ import { projectWerewolfPresentation } from "@influence/engine/werewolf/presenta
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createDiscordAgentRoutes } from "../routes/discord-agent.js";
-import { activeOffer, destination, roomContext, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage } from "../discord/conversation/policy.js";
-import { prepareReply } from "../discord/conversation/reply-links.js";
+import { activeOffer, destination, prepareReply, roomContext, validatedConsent, validatedReply, withTurnFeedback, type DiscordMessage } from "../discord/conversation/policy.js";
 import { filterInference, mcpBridgeResponse } from "../discord/conversation/sandbox.js";
 import { prepareVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { setupTestDB } from "./test-utils.js";

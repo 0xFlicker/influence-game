@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { prepareReply } from "../../packages/api/src/discord/conversation/reply-links.js";
+import { prepareReply } from "../../packages/api/src/discord/conversation/policy.js";
 
 const origin = "https://thehouse.game";
 
