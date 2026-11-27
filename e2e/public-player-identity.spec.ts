@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type BrowserContextOptions } from "@playwright/test";
+import { ALL_AGENT_CREATION_TRAITS } from "../packages/engine/src/agent-creation-traits";
 import type { GameDetail, GamePlayer, SavedAgent } from "../packages/web/src/lib/api";
 import type { ProductionLibraryGame, ProductionLibraryPage } from "../packages/web/src/lib/production-studio";
 import {
@@ -1114,6 +1115,7 @@ test.describe("local public player identity", () => {
       const sourceUrl = `${servers.webUrl}/creation-fixture.svg`;
       const character = { name: "Mira Vale", gender: "female", personaKey: "diplomat", personality: "A warm diplomat with a long memory and a secret fear of betrayal. She listens carefully, records promises, and tests trust through small favors.", backstory: "An exiled ambassador building a new coalition.", strategyStyle: "Build trust before asking for a decisive vote.", werewolfStrategyStyle: "Compare public claims before choosing a suspect.", performanceInstructions: "Quiet, precise gestures.", visualDesign: "A blue dragon in a gold coat.", introQuips: ["A promise is a beginning.", "I remember our deal.", "Tea before betrayal?"] };
       const imageReady = Promise.withResolvers<void>();
+      const selectedTraitIds = ["gender-non-binary"];
       let generated = 0;
       let imageRequests = 0;
       let imageRequestId = "";
@@ -1127,7 +1129,7 @@ test.describe("local public player identity", () => {
         });
         await page.route("**/api/agent-profiles/generate", route => {
           if (generated === 0) {
-            expect(route.request().postDataJSON().creationTraitIds).toEqual(["gender-non-binary", "streamer", "gamer"]);
+            expect(route.request().postDataJSON().creationTraitIds).toEqual(selectedTraitIds);
           }
           return route.fulfill({ json: { ...character, personality: ++generated >= 2 ? "A suspicious diplomat who verifies every promise." : character.personality } });
         });
@@ -1158,9 +1160,14 @@ test.describe("local public player identity", () => {
         await expect(page.getByText("Background", { exact: true })).toHaveCount(1);
         await page.getByRole("button", { name: "Add Non-binary ingredient", exact: true }).click();
         await expect(page.getByRole("button", { name: "Remove Non-binary ingredient", exact: true })).toBeVisible();
-        await page.getByRole("button", { name: "Add Streamer ingredient", exact: true }).click();
-        await page.getByRole("button", { name: "Add Gamer ingredient", exact: true }).click();
-        await expect(page.getByRole("button", { name: "Remove Streamer ingredient", exact: true })).toBeVisible();
+        const background = page.getByRole("group", { name: "Background suggestions" });
+        for (let index = 0; index < 2; index++) {
+          const button = background.getByRole("button").first();
+          const label = await button.innerText();
+          selectedTraitIds.push(ALL_AGENT_CREATION_TRAITS.find(trait => trait.label === label)!.id);
+          await button.click();
+          await expect(page.getByRole("button", { name: `Remove ${label} ingredient`, exact: true })).toBeVisible();
+        }
         await page.screenshot({ path: `/tmp/agent-starter-pills-${viewport.width}.png` });
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
@@ -1183,8 +1190,9 @@ test.describe("local public player identity", () => {
         await expect(page.getByRole("button", { name: "Revise Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
         await page.getByRole("button", { name: "Continue" }).click();
         await expect(page.getByText(/What do they look like/)).toBeVisible();
-        await expect(page.getByRole("button", { name: "Add Dragon ingredient", exact: true })).toBeVisible();
-        await page.getByRole("button", { name: "Add Dragon ingredient", exact: true }).click();
+        const form = page.getByRole("group", { name: "Character form suggestions" }).getByRole("button").first();
+        const formLabel = await form.innerText();
+        await form.click();
         await composer.fill("A blue dragon in a gold coat");
         await page.screenshot({ path: `/tmp/agent-visual-tags-${viewport.width}.png` });
         const inputBounds = await composer.boundingBox();
@@ -1196,7 +1204,7 @@ test.describe("local public player identity", () => {
         await expect(composer).toBeVisible();
         await expect(composer).toBeDisabled();
         await expect(page.getByText("Visual ingredients", { exact: true })).toBeVisible();
-        await expect(page.getByRole("button", { name: "Remove Dragon ingredient", exact: true })).toBeDisabled();
+        await expect(page.getByRole("button", { name: `Remove ${formLabel} ingredient`, exact: true })).toBeDisabled();
         await expect(page.getByRole("status", { name: "Assistant typing" })).toBeVisible();
         const formation = page.getByRole("status", { name: "Creating character image" });
         await expect(formation).toBeVisible();
