@@ -9,6 +9,28 @@ import {
 import { GenerationAdmissionError } from "./generation-admission-error.js";
 
 type Reader = Pick<DrizzleDB, "select">;
+const unclaimedImageQueueMs = 10 * 60 * 1000;
+const unclaimedStages = ["image", "waiting"];
+
+export function isExpiredCharacterReference(job: { status: string; stage: string; queuedAt: string }) {
+  return job.status === "queued" && unclaimedStages.includes(job.stage) &&
+    Date.now() - Date.parse(job.queuedAt) >= unclaimedImageQueueMs;
+}
+
+export const expiredCharacterReferenceQueue = sql`
+  (${schema.characterReferenceJobs.status} = 'queued'
+  AND ${inArray(schema.characterReferenceJobs.stage, unclaimedStages)}
+  AND ${schema.characterReferenceJobs.queuedAt} <= now() - interval '1 millisecond' * ${unclaimedImageQueueMs})
+`;
+
+export async function expireCharacterReferenceQueue(
+  tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
+  userId: string,
+) {
+  await tx.update(schema.characterReferenceJobs)
+    .set({ status: "failed", errorCode: "artwork_queue_expired", updatedAt: new Date().toISOString() })
+    .where(and(eq(schema.characterReferenceJobs.userId, userId), expiredCharacterReferenceQueue));
+}
 export interface AgentGeneration {
   id: string;
   source: "reference" | "avatar" | "preparation" | "reservation";
@@ -35,6 +57,7 @@ export async function listAgentGenerations(
         status: schema.characterReferenceJobs.status,
         stage: schema.characterReferenceJobs.stage,
         createdAt: schema.characterReferenceJobs.createdAt,
+        queuedAt: schema.characterReferenceJobs.queuedAt,
         leaseUntil: schema.characterReferenceJobs.leaseUntil,
         name: sql<string>`COALESCE(${schema.agentProfiles.name},${schema.agentEditorDrafts.name},'Image request')`,
       })
@@ -172,10 +195,10 @@ export async function listAgentGenerations(
     const reservation = byJob.get(job.id);
     const stopped =
       job.status === "failed" ||
+      isExpiredCharacterReference(job) ||
       (!!reservation && !holds(reservation)) ||
       (job.status === "processing" &&
-        !!job.leaseUntil &&
-        Date.parse(job.leaseUntil) < now);
+        (!job.leaseUntil || Date.parse(job.leaseUntil) < now));
     const status =
       job.status === "ready"
         ? "ready"
@@ -285,6 +308,7 @@ export async function requireImageQueueCapacity(
   userId: string,
 ) {
   const capacity = await imageExecutionCapacity(tx, userId);
+  await expireCharacterReferenceQueue(tx, userId);
   const pending = await listAgentGenerations(tx, userId);
   if (pending.filter((row) => row.blocksGeneration).length >= capacity)
     throw new GenerationAdmissionError(

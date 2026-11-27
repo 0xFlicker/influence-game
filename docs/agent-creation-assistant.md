@@ -92,16 +92,13 @@ same field restores focus and scope. Failed requests preserve both scope and
 message, while successful requests clear them. Selected sections constrain which
 generated fields the client applies.
 
-Authenticated generation and Review wait for account-draft recovery. The footer
-shows “Loading draft…” while the account read is pending; loading alone does not
-show a failure or start an image request. A failed read retains Reload and support.
-Closing an untouched creator does not create an empty recovery draft.
-The footer reserves its geometry from initial loading through draft restoration,
-text updates, image work and validation. It stays fixed on mobile with content
-space reserved underneath. Activity opens a dialog above the footer (a sheet on
-mobile), containing requests, draft choices/conflicts and moderation details.
-Resume remains a direct footer action. No late status adds a row above the form,
-and reveal motion never translates the editor vertically.
+Authenticated generation and Review wait for account-draft recovery. The
+composer stays editable while the account read runs. If sync fails, the editor
+keeps the typed message and shows Retry sync. An untouched editor automatically
+resumes a single compatible draft. Divergent drafts and changed baselines
+show their choices inline, and Save waits for the version decision. Closing
+an untouched creator leaves the draft list unchanged. Activity remains
+available for request history and moderation details.
 
 Active text generation sweeps only its selected fields (including missing fields
 being completed), in Guided fixtures and Advanced inputs. The composer shows
@@ -147,8 +144,10 @@ attention items and image requests.
 The owner profile's Agents link sits above the background panel, aligned with the
 profile heading and separated by a 16px gap on desktop and mobile.
 
-Pending images appear in both the editor and agent management. View reconnects to
-the correct workspace; Cancel keeps character edits while retiring image work.
+Image progress, Cancel image, Check status, and Retry image appear inline as
+appropriate. After a dropped connection, the editor checks the same image
+request. An unclaimed image stops blocking after ten minutes, and the owner
+can retry it from the editor. View in Activity opens the matching workspace.
 See [pending generation and charge recovery](agent-generations.md).
 
 After character text exists, Guided has a direct Gender control. It changes the
@@ -172,9 +171,10 @@ Discord, email and X links, including inside the workspace. Dismissing it leaves
 the draft and unsent message intact; a short inline notice retains support links.
 
 Submitted messages appear on the right and clear the composer immediately, with
-an assistant typing bubble while awaiting a response. The ingredient picker,
-composer, and secondary actions remain in place but are disabled while working.
-Failed requests restore the typed message for retry.
+an assistant typing bubble while awaiting a response. The composer stays
+editable while Send and the ingredient picker wait for the response. Failed
+requests restore the submitted text when the composer is empty. New text
+stays in the composer.
 
 Starter ingredient pills and “Surprise me” use the same curated traits as
 Advanced create. Background (including interests), Strategy, and Gender rows start the

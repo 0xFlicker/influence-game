@@ -94,9 +94,11 @@ In every edit session, Strategy changes are compared with the session baseline. 
 
 ## Image request and execution slot
 
-An owner-scoped image request can be queued, running, stopped or ready for review, including before an Agent Profile exists. The editor footer and agent management expose the same activity and cancellation actions. Status details open over the editor without changing its layout. Agent management keeps creation order stable across moderation updates. Cancelling image work preserves character edits and the saved profile.
+An owner-scoped image request can be queued, running, stopped or ready for review, including before an Agent Profile exists. Editors show active status, cancellation and recovery actions in place. Activity and agent management provide the account-wide request list. Cancelling image work preserves character edits and the saved profile. A browser with a lost connection checks the same request identity for its outcome.
 
 An image execution slot is a renewable lease, separate from the retained inference reservation and provider charge evidence. Cancellation or lease expiry releases capacity; it does not establish an unknown provider outcome or refund a dispatched generation. Late receipts remain auditable, and a cancelled worker cannot publish its output. See [agent generations](docs/agent-generations.md).
+
+A queued image keeps its expiry when the worker defers it because the owner's image slot is occupied. The deferred image yields to other eligible work. An explicit retry starts a new queue window.
 
 ## Owner Learning Loop
 

@@ -3,6 +3,9 @@ import {
   requireImageQueueCapacity,
   recoverAgentGenerationSlots,
   cancelAgentGeneration,
+  expireCharacterReferenceQueue,
+  expiredCharacterReferenceQueue,
+  isExpiredCharacterReference,
 } from "./agent-generations.js";
 import { GenerationAdmissionError } from "./generation-admission-error.js";
 import {
@@ -10,13 +13,16 @@ import {
   VisualRenderRecoveryRequired,
 } from "./visual-render-journal.js";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, not, or, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readJson, storeJson } from "./payload-storage.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { generateVisualProfileReference } from "./visual-profile-generation.js";
 import { CharacterBackgroundPending } from "./transparent-character-image.js";
 const jobs = schema.characterReferenceJobs;
+function referenceLeaseExpired(job: { status: string; leaseUntil: string | null }) {
+  return job.status === "processing" && (!job.leaseUntil || Date.parse(job.leaseUntil) <= Date.now());
+}
 export async function requestCharacterReference(
   db: DrizzleDB,
   userId: string,
@@ -88,10 +94,12 @@ export async function readCharacterReference(
     .from(jobs)
     .where(and(eq(jobs.id, id), eq(jobs.userId, userId)));
   if (!job) return null;
+  const expired = isExpiredCharacterReference(job);
+  const status = expired || referenceLeaseExpired(job) ? "failed" : job.status;
   // Recovery is derived from the actual dispatch journal, including older jobs.
   // Discarding a draft never erases an uncertain attempt or invents a free retry.
   const entries =
-    job.status === "failed"
+    status === "failed"
       ? await db
           .select({
             receipt: schema.visualRenderAttempts.receipt,
@@ -137,18 +145,20 @@ export async function readCharacterReference(
         ? "portrait_failed"
         : "artwork_failed";
   const errorCode =
-    job.status !== "failed"
+    status !== "failed"
       ? null
       : unresolved
         ? "artwork_recovery_required"
-        : !job.errorCode ||
-            ["artwork_recovery_required", "artwork_failed"].includes(
-              job.errorCode,
-            )
-          ? stageCode
-          : job.errorCode;
+        : expired
+          ? "artwork_queue_expired"
+          : !job.errorCode ||
+              ["artwork_recovery_required", "artwork_failed"].includes(
+                job.errorCode,
+              )
+            ? stageCode
+            : job.errorCode;
   const retryable =
-    job.status === "failed" &&
+    status === "failed" &&
     ![
       "artwork_recovery_required",
       "generation_recovery_required",
@@ -157,14 +167,14 @@ export async function readCharacterReference(
     ].includes(errorCode!);
   return {
     id: job.id,
-    status: job.status,
+    status,
     stage: job.stage,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     error:
       errorCode === "artwork_recovery_required"
         ? "Image generation stopped."
-        : job.status === "failed"
+        : status === "failed"
           ? "Image preparation failed."
           : null,
     errorCode,
@@ -184,15 +194,16 @@ export async function processCharacterReference(
         or(
           and(
             eq(jobs.status, "queued"),
-            sql`(${jobs.stage} != 'background' OR ${jobs.updatedAt}::timestamptz < now() - interval '3 seconds')`,
+            not(expiredCharacterReferenceQueue),
+            sql`(${jobs.stage} NOT IN ('background', 'waiting') OR ${jobs.updatedAt}::timestamptz < now() - interval '3 seconds')`,
           ),
           and(
             eq(jobs.status, "processing"),
-            sql`${jobs.leaseUntil}::timestamptz < now()`,
+            sql`(${jobs.leaseUntil} IS NULL OR ${jobs.leaseUntil}::timestamptz < now())`,
           ),
         ),
       )
-      .orderBy(asc(jobs.updatedAt), asc(jobs.id))
+      .orderBy(asc(sql`${jobs.updatedAt}::timestamptz`), asc(jobs.id))
       .limit(1)
       .for("update", { skipLocked: true });
     if (!candidate) return null;
@@ -202,7 +213,6 @@ export async function processCharacterReference(
         status: "processing",
         leaseId: randomUUID(),
         leaseUntil: new Date(Date.now() + 120_000).toISOString(),
-        updatedAt: new Date().toISOString(),
       })
       .where(eq(jobs.id, candidate.id))
       .returning();
@@ -353,12 +363,13 @@ export async function retryCharacterReference(
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
     await recoverExpiredImageExecutions(tx, userId);
+    await expireCharacterReferenceQueue(tx, userId);
     const [job] = await tx
       .select()
       .from(jobs)
       .where(and(eq(jobs.id, id), eq(jobs.userId, userId)))
       .for("update");
-    if (!job || job.status !== "failed")
+    if (!job || (job.status !== "failed" && !referenceLeaseExpired(job)))
       throw new Error("Only a failed image request can be retried");
     const failure = await readCharacterReference(tx, userId, id);
     if (!failure?.retryable)
@@ -401,15 +412,20 @@ export async function retryCharacterReference(
         if (completed?.image) await retryCharacterCutout(tx, completed.image);
       }
     }
+    const queuedAt = new Date().toISOString();
     await tx
       .update(jobs)
       .set({
         status: "queued",
+        stage: job.stage === "waiting" ? "image" : job.stage,
+        leaseId: null,
+        leaseUntil: null,
         error: null,
         errorCode: null,
-        updatedAt: new Date().toISOString(),
+        queuedAt,
+        updatedAt: queuedAt,
       })
-      .where(and(eq(jobs.id, id), eq(jobs.status, "failed")));
+      .where(eq(jobs.id, id));
     return readCharacterReference(tx, userId, id);
   });
 }

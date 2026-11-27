@@ -7,6 +7,7 @@ export async function processMockCharacterReference(
   image: Uint8Array,
   fallback = false,
   detectHead = false,
+  beforeImageResponse?: () => Promise<void>,
 ) {
   const fetchBefore = globalThis.fetch;
   const keys = ["OPENAI_API_KEY", "XAI_API_KEY"] as const;
@@ -19,6 +20,7 @@ export async function processMockCharacterReference(
       const url = String(input);
       if (url.includes("/images/")) {
         images++;
+        await beforeImageResponse?.();
         if (fallback && url.includes("openai.com"))
           return new Response("Unavailable", { status: 503 });
         return Response.json({

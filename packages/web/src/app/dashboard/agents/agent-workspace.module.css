@@ -2328,3 +2328,23 @@
     height: clamp(150px, 27dvh, 240px);
   }
 }
+
+.inlineRecovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-block: 0.75rem;
+  padding-block: 0.5rem;
+  border-block-end: 1px solid var(--rule);
+  font-size: 0.875rem;
+}
+
+.inlineRecovery > p {
+  margin: 0;
+  flex: 1 1 14rem;
+}
+
+.workspace .inlineRecovery > button {
+  min-height: 44px;
+}

@@ -53,6 +53,7 @@ export interface CharacterConversation {
 export function AgentCreationChat({
   onIssue,
   preferences,
+  composerNotice,
   editing = false,
   conversation,
   onConversationChange,
@@ -77,6 +78,7 @@ export function AgentCreationChat({
 }: {
   onIssue?: (cause: unknown) => void;
   preferences?: ReactNode;
+  composerNotice?: ReactNode;
   editing?: boolean;
   conversation?: CharacterConversation;
   onConversationChange?: (value: CharacterConversation) => void;
@@ -335,7 +337,6 @@ export function AgentCreationChat({
       ]);
       onCreationTraitIdsChange?.([]);
       succeeded = true;
-      setInput("");
       setSections([]);
     } catch (cause) {
       setPoolBusy(
@@ -343,7 +344,7 @@ export function AgentCreationChat({
       );
       setError(cause);
     } finally {
-      if (!succeeded) setInput(originalInput);
+      if (!succeeded) setInput((current) => current || originalInput);
       setSubmitted(null);
       inFlight.current = false;
       setPending(false);
@@ -593,7 +594,6 @@ export function AgentCreationChat({
                 }
                 value={input}
                 maxLength={1400}
-                disabled={locked}
                 onInput={(event) => setInput(event.currentTarget.value)}
                 onKeyDown={(event) => {
                   if (
@@ -655,6 +655,7 @@ export function AgentCreationChat({
             </div>
           )}
           {preferences}
+          {composerNotice}
         </div>
       </footer>
     </>
