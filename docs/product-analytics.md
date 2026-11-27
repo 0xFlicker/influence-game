@@ -342,6 +342,12 @@ currently displayed failure when the gate activates, if the failure was observed
 under the same preference and had no known denial. A fatal cold start that
 prevents consent or SDK initialization has no browser report.
 
+The root fallback includes its own styles and serves the House Host portrait
+as a static asset. Retry makes a fresh request for Next.js server-render
+errors and resets client errors in place. The portrait is a transparent
+Blender render of the streaming model's curious beat from
+`house-host/art/blender/house-speaking-v005/house-speaking-v005.blend`, frame 172.
+
 Reports retain the deployed browser SHA and controlled route labels such as
 `/season-:number/create`. V8 and WebKit/Firefox stack locations and browser event
 coordinates are normalized to first-party production Next.js chunks. PostHog
