@@ -89,8 +89,9 @@ FROM account_deletion_tasks WHERE completed_at IS NULL GROUP BY provider;
 SELECT count(*) FROM discord_connections WHERE disconnecting;
 ```
 
-Account-linked click IDs, browser user agent, MCP client IDs and public analytics
-identity are removed from local conversion records. Campaign labels and
+Account-linked click IDs, browser user agent, PostHog session IDs, MCP client IDs
+and public analytics identity are removed from local conversion records. Pending
+links between browser sessions and agent submissions are also removed. Campaign labels and
 authoritative historical outcome totals remain; delivery is suppressed. New
 tracking cannot repopulate the deleted account. Already-delivered advertising
 platform records, restricted audits and backups are subject to the separate

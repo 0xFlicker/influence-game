@@ -138,6 +138,24 @@ They are not yet restricted to the signup cohort. Enrollment
 measured by identified `watch_*` events on days after signup together with
 `owner_returned`; no server watch event is claimed.
 
+Privy and managed web signup, Agent Profile submissions, and Daily Free entry
+can pass the current PostHog session ID when browser analytics is active. The
+server validates the UUID, honors DNT/GPC, and checks the account's analytics
+preference under the consent lock. For screened Agent Profiles the submitted
+revision carries the session through asynchronous publication. The resulting
+`agent_ready` still records the actual publication time and its system
+`channel=api`. The session belongs to the original web submission.
+
+Only the PostHog delivery of these three outcomes receives `$session_id`. The
+outbox clears it after delivery or analytics withdrawal. Withdrawal also clears
+pending revision links, and account deletion removes both. Existing conversions
+have no historical session ID to backfill. Apply migration 0177 and roll out
+the API and conversion workers before serving the updated web client. In Web
+Analytics, select `signup_completed`, `agent_ready`, or `season_entry` via
+**Add conversion goal**.
+Verify a fresh consented journey in both the event stream and Web Analytics,
+including the originating browser session for a screened publication.
+
 Delivery checks the account preference immediately before sending. The account
 row lock serializes withdrawal, event capture, and delivery across workers; no
 new send starts after withdrawal is acknowledged. Requests already sent cannot

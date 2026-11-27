@@ -38,6 +38,13 @@ Character identity and historical gameplay remain; public owner attribution is
 removed. Existing queued entries may start and finish. This is distinct from
 agent archival and recursive game deletion. See [account deletion](docs/account-deletion.md).
 
+## Conversion session
+
+The consented PostHog browser session that initiated a signup, Agent Profile
+submission, or Daily Free entry. It connects the committed outcome to a web visit.
+Screened agent publication uses the session from the matching submitted revision
+and keeps the actual publication time. [Product analytics](docs/product-analytics.md#server-conversion-events)
+
 ## Agent
 
 An AI competitor participating in a game under The House. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.

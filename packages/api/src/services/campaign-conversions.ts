@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { uuid } from "@influence/engine/operational-errors";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { deliverTikTok, deliverX, googleAuthenticated, googleDestination, xAuthenticated,
@@ -29,6 +30,11 @@ export type { ConversionFetch } from "./campaign-ad-delivery.js";
  */
 
 export type CampaignChannel = "web" | "mcp" | "api";
+
+export function requestPosthogSessionId(headers: Headers, value: unknown): string | undefined {
+  if (headers.get("Sec-GPC") === "1" || headers.get("DNT") === "1") return undefined;
+  return uuid(value);
+}
 
 export interface CampaignTouchInput {
   source?: string;
@@ -142,7 +148,9 @@ export async function syncAnalyticsPreference(
         set: { analytics: allowed, analyticsExplicit: affirmative, advertising: adsAllowed, advertisingExplicit: adsAffirmative, updatedAt: permissionChanged ? new Date(Math.max(Date.now(), Date.parse(previous?.updatedAt ?? "") + 1 || 0)).toISOString() : previous.updatedAt } });
   }
   if (!allowed) {
+    await db.delete(schema.campaignAgentReadySessions).where(eq(schema.campaignAgentReadySessions.userId, userId));
     await db.update(schema.campaignConversionEvents).set({
+      posthogSessionId: null,
       posthogStatus: sql`CASE WHEN posthog_status = 'delivered' THEN posthog_status ELSE 'suppressed' END`,
     }).where(eq(schema.campaignConversionEvents.userId, userId));
   }
@@ -236,6 +244,7 @@ export interface ConversionInput {
   seasonId?: string | null;
   channel: CampaignChannel;
   mcpClientId?: string | null;
+  posthogSessionId?: string;
   occurredAt?: string;
   suppressDelivery?: boolean;
 }
@@ -262,6 +271,7 @@ export async function recordConversion(db: DbOrTx, input: ConversionInput): Prom
         channel: input.channel,
         mcpClientId: account.deletedAt ? null : input.mcpClientId ?? null,
         attribution: allowed || adsAllowed ? await retainedAttribution(tx, input.userId) : null,
+        posthogSessionId: allowed && input.channel !== "mcp" ? uuid(input.posthogSessionId) ?? null : null,
         clientUserAgent: adsAllowed && input.channel === "web" ? preference?.webUserAgent ?? null : null,
         occurredAt: input.occurredAt,
         posthogStatus: allowed ? "pending" : "suppressed",
@@ -299,7 +309,7 @@ async function retainedAttribution(db: DbOrTx, userId: string): Promise<Record<s
 /** New-account signup only. Call solely when account creation committed. */
 export async function recordSignupCompleted(
   db: DbOrTx,
-  input: { userId: string; channel: CampaignChannel; attribution?: unknown },
+  input: { userId: string; channel: CampaignChannel; attribution?: unknown; posthogSessionId?: string },
 ): Promise<boolean> {
   if (input.attribution !== undefined) {
     await retainUserAttribution(db, {
@@ -315,13 +325,14 @@ export async function recordSignupCompleted(
     userId: input.userId,
     publicId: await publicIdFor(db, input.userId),
     channel: input.channel,
+    posthogSessionId: input.posthogSessionId,
   });
 }
 
 /** Optional tracking must not turn a committed signup into a failed login. */
 export async function recordAuthenticationTracking(
   db: DrizzleDB,
-  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; analyticsExplicit?: unknown; advertising?: unknown; advertisingExplicit?: unknown; attribution?: unknown; userAgent?: string },
+  input: { userId: string; publicId: string; created: boolean; analytics?: unknown; analyticsExplicit?: unknown; advertising?: unknown; advertisingExplicit?: unknown; attribution?: unknown; userAgent?: string; posthogSessionId?: string },
 ): Promise<void> {
   try {
     await db.transaction(async tx => {
@@ -331,7 +342,12 @@ export async function recordAuthenticationTracking(
       }
       if (input.advertising === true) await retainBrowserUserAgent(tx, input.userId, input.userAgent);
       if (input.created) {
-        await recordSignupCompleted(tx, { userId: input.userId, channel: "web", attribution: input.attribution });
+        await recordSignupCompleted(tx, {
+          userId: input.userId,
+          channel: "web",
+          attribution: input.attribution,
+          posthogSessionId: input.analytics === true ? input.posthogSessionId : undefined,
+        });
       } else {
         await recordConversion(tx, { eventName: "owner_returned",
           id: `owner_returned:${input.userId}:${new Date().toISOString().slice(0, 10)}`,
@@ -385,6 +401,41 @@ export async function recordAgentCreated(
   });
 }
 
+/** Bind to the original revision while consent is active. A newer submission supersedes it. */
+export async function replaceAgentReadySession(
+  tx: Tx,
+  input: { userId: string; agentProfileId: string; contentRevisionId: string; posthogSessionId?: string },
+): Promise<void> {
+  const pending = schema.campaignAgentReadySessions;
+  await lockAccount(tx, input.userId);
+  const sessionId = uuid(input.posthogSessionId);
+  if (sessionId && await accountAnalyticsAllowed(tx, input.userId)) {
+    await tx.insert(pending).values({
+      userId: input.userId, agentProfileId: input.agentProfileId, contentRevisionId: input.contentRevisionId, sessionId,
+    }).onConflictDoUpdate({
+      target: pending.agentProfileId,
+      set: { contentRevisionId: input.contentRevisionId, sessionId },
+    });
+  } else {
+    await tx.delete(pending).where(eq(pending.agentProfileId, input.agentProfileId));
+  }
+}
+
+/** Only the worker publishing the matching revision may consume its browser session. */
+export async function takeAgentReadySession(
+  tx: Tx,
+  input: { userId: string; agentProfileId: string; contentRevisionId: string },
+): Promise<string | undefined> {
+  const pending = schema.campaignAgentReadySessions;
+  await lockAccount(tx, input.userId);
+  const [row] = await tx.delete(pending).where(and(
+    eq(pending.agentProfileId, input.agentProfileId),
+    eq(pending.contentRevisionId, input.contentRevisionId),
+    eq(pending.userId, input.userId),
+  )).returning({ sessionId: pending.sessionId });
+  return row?.sessionId;
+}
+
 export async function recordAgentReady(
   db: DbOrTx,
   input: {
@@ -393,6 +444,7 @@ export async function recordAgentReady(
     contentRevisionId: string;
     channel: CampaignChannel;
     mcpClientId?: string | null;
+    posthogSessionId?: string;
   },
 ): Promise<boolean> {
   return recordConversion(db, {
@@ -403,6 +455,7 @@ export async function recordAgentReady(
     agentProfileId: input.agentProfileId,
     channel: input.channel,
     mcpClientId: input.mcpClientId ?? null,
+    posthogSessionId: input.posthogSessionId,
   });
 }
 
@@ -414,6 +467,7 @@ export async function recordSeasonEntry(
     seasonId: string;
     channel: CampaignChannel;
     mcpClientId?: string | null;
+    posthogSessionId?: string;
   },
 ): Promise<boolean> {
   return recordConversion(db, {
@@ -425,6 +479,7 @@ export async function recordSeasonEntry(
     seasonId: input.seasonId,
     channel: input.channel,
     mcpClientId: input.mcpClientId ?? null,
+    posthogSessionId: input.posthogSessionId,
   });
 }
 
@@ -486,6 +541,7 @@ export interface DeliverySummary {
 function eventProperties(row: ConversionRow): Record<string, unknown> {
   return {
     ...(row.attribution ?? {}),
+    ...(row.posthogSessionId ? { $session_id: row.posthogSessionId } : {}),
     channel: row.channel,
     environment: "production",
     conversion_id: row.id,
@@ -654,6 +710,7 @@ export async function deliverPendingConversions(
         tiktok.tiktokStatus ?? row.tiktokStatus, x.xStatus ?? row.xStatus]
         .every(status => ["delivered", "not_applicable", "suppressed"].includes(status));
       await tx.update(schema.campaignConversionEvents).set({ googleStatus: row.googleStatus, tiktokStatus: row.tiktokStatus, xStatus: row.xStatus, googleNextPollAt: row.googleNextPollAt, ...google, ...tiktok, ...x, posthogStatus, platformStatus,
+        posthogSessionId: posthogStatus === "delivered" || posthogStatus === "suppressed" ? null : undefined,
         posthogAttempts, platformAttempts, lastError,
         deliveredAt: ["delivered", "suppressed"].includes(posthogStatus) && allAdsDone
           ? new Date().toISOString() : null,

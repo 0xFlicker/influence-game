@@ -55,7 +55,7 @@ export async function deleteAccountInTransaction(tx: Transaction, userId: string
   // Keep authoritative conversion totals and campaign labels. Remove the
   // identifiers used for advertising delivery, and stop all future delivery.
   await tx.execute(sql`UPDATE campaign_conversion_events SET
-    public_id = '', client_user_agent = NULL, mcp_client_id = NULL,
+    public_id = '', client_user_agent = NULL, posthog_session_id = NULL, mcp_client_id = NULL,
     attribution = attribution - ARRAY['click_id','click_id_param','gclid','fbclid','msclkid','ttclid','twclid','dclid','gbraid','wbraid'],
     posthog_status = 'suppressed', platform_status = 'suppressed', google_status = 'suppressed',
     tiktok_status = 'suppressed', x_status = 'suppressed', google_ad_user_data_granted = false,

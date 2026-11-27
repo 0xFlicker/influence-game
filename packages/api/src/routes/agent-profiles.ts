@@ -1,6 +1,6 @@
 import { decodeGenerationOutput } from "../services/generation-output-error.js";
 import { generationFailure } from "../middleware/request-diagnostics.js";
-import { recordAgentCreationStarted } from "../services/campaign-conversions.js";
+import { recordAgentCreationStarted, requestPosthogSessionId } from "../services/campaign-conversions.js";
 import { listAgentGenerations, cancelAgentGeneration } from "../services/agent-generations.js";
 import { AgentDraftImageUnavailable, readAgentDraftImage } from "../services/agent-draft-images.js";
 import { requestCharacterReference, readCharacterReference, retryCharacterReference, decideCharacterReference } from "../services/character-reference-jobs.js";
@@ -481,6 +481,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
         userId: user.id,
         publicBaseUrl,
         avatarChangeSource: "web_upload",
+        posthogSessionId: requestPosthogSessionId(c.req.raw.headers, body.posthogSessionId),
         ...(avatarGenerationRequestId && { avatarGenerationRequestId }),
       }, {
         modelPreference: body.modelPreference,
@@ -700,6 +701,7 @@ export function createAgentProfileRoutes(db: DrizzleDB, options: {resumeVisualUp
         userId: user.id,
         publicBaseUrl: new URL(c.req.url).origin,
         avatarChangeSource: "web_manual_update",
+        posthogSessionId: requestPosthogSessionId(c.req.raw.headers, body.posthogSessionId),
         ...(typeof body.avatarGenerationRequestId === "string" && {
           avatarGenerationRequestId: body.avatarGenerationRequestId,
         }),

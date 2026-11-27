@@ -4,7 +4,7 @@ import { requestSignupStep, waitForCampaignRedemption } from "./signup-verificat
 import { getAnalyticsConsent } from "./analytics-consent";
 import type { EmpowerRevoteVersion } from "@influence/engine/empower-revote-rules";
 import type { ModelPreference, GameModelRouting } from "@influence/engine/game-model-routing";
-import { analyticsOperation, measureProductRequest } from "@/lib/product-analytics";
+import { analyticsOperation, getConversionSessionId, measureProductRequest } from "@/lib/product-analytics";
 import { getStoredCampaignAttribution } from "@/lib/campaign-attribution";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
@@ -1892,6 +1892,7 @@ export async function loginWithPrivyToken(
       ? {
         ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
         ...request.legalAcceptance,
+        posthogSessionId: getConversionSessionId(),
         // First-touch campaign attribution (identities only, never prompt
         // text). The server re-validates every field; absent stays unknown.
         ...(permittedCampaignAttribution().firstTouch
@@ -1942,6 +1943,7 @@ export async function createManagedAuthentication(
     token,
     ...(inviteCode ? { inviteCode } : {}),
     ...PRESENTED_LEGAL_ACCEPTANCE,
+    posthogSessionId: getConversionSessionId(),
     analytics: getAnalyticsConsent().ready ? getAnalyticsConsent().analytics : undefined,
     advertising: getAnalyticsConsent().ready ? getAnalyticsConsent().advertising : undefined,
     advertisingExplicit: getAnalyticsConsent().ready ? getAnalyticsConsent().choice?.advertising === true : undefined,
@@ -2638,7 +2640,7 @@ export async function createAgent(
 ): Promise<SavedAgent> {
   const agent = await apiFetch<SavedAgent>("/api/agent-profiles", {
     method: "POST",
-    body: JSON.stringify(params),
+    body: JSON.stringify({ ...params, posthogSessionId: getConversionSessionId() }),
   });
   return agent;
 }
@@ -2649,7 +2651,7 @@ export async function updateAgent(
 ): Promise<SavedAgent> {
   const agent = await apiFetch<SavedAgent>(`/api/agent-profiles/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(params),
+    body: JSON.stringify({ ...params, posthogSessionId: getConversionSessionId() }),
   });
   return agent;
 }
@@ -3941,7 +3943,7 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
 export async function joinFreeQueue(agentProfileId: string, expectedSeasonId?: string): Promise<void> {
   await apiFetch("/api/free-queue/join", {
     method: "POST",
-    body: JSON.stringify({ agentProfileId, expectedSeasonId }),
+    body: JSON.stringify({ agentProfileId, expectedSeasonId, posthogSessionId: getConversionSessionId() }),
   });
 }
 

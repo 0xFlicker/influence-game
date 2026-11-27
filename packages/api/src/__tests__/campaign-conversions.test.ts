@@ -55,6 +55,9 @@ test("tagged journey records deduplicated server conversions and reports by crea
   await db.insert(schema.users).values({ id: userId, displayName: "Campaign fixture" });
   await grantTestAuthority(db, userId, ["join_game"], "player");
   const token = await createSessionToken(userId);
+  const signupSession = randomUUID();
+  const agentSession = randomUUID();
+  const seasonSession = randomUUID();
   const app = new Hono();
   app.route("/", createAgentProfileRoutes(db));
   app.route("/", createFreeQueueRoutes(db));
@@ -65,11 +68,12 @@ test("tagged journey records deduplicated server conversions and reports by crea
   });
 
   await db.transaction(tx => syncAnalyticsPreference(tx, userId, true, false, undefined, false, true));
+  await db.transaction(tx => retainBrowserUserAgent(tx, userId, "Mozilla/5.0 CampaignFixture"));
 
   // Signup conversion is recorded once even if the auth path retries.
   const touch = { source: "meta", medium: "cpc", campaign: "season1", creative: "video-a", clickId: "fb.123", clickIdParam: "fbclid" };
-  expect(await recordSignupCompleted(db, { userId, channel: "web", attribution: touch })).toBe(true);
-  expect(await recordSignupCompleted(db, { userId, channel: "web", attribution: touch })).toBe(false);
+  expect(await recordSignupCompleted(db, { userId, channel: "web", attribution: touch, posthogSessionId: signupSession })).toBe(true);
+  expect(await recordSignupCompleted(db, { userId, channel: "web", attribution: touch, posthogSessionId: randomUUID() })).toBe(false);
 
   // A later direct visit must not replace first acquisition or last non-direct.
   await retainUserAttribution(db, { userId, channel: "web", firstTouch: null, lastTouch: null });
@@ -85,15 +89,15 @@ test("tagged journey records deduplicated server conversions and reports by crea
     personality: "Patient", personaKey: "strategic",
     fullBodyReferenceUrl, headPosition: await headPositionFixture(fullBodyReferenceUrl),
   };
-  const created = await post("/api/agent-profiles", body);
+  const created = await post("/api/agent-profiles", { ...body, posthogSessionId: agentSession });
   expect(created.status).toBe(201);
   const agent = await created.json() as { id: string };
-  const duplicate = await post("/api/agent-profiles", body);
+  const duplicate = await post("/api/agent-profiles", { ...body, posthogSessionId: randomUUID() });
   expect(duplicate.status).toBe(201);
 
   await acceptTestAgent(db, agent.id);
   const entry = { agentProfileId: agent.id, expectedSeasonId: season.id };
-  expect((await post("/api/free-queue/join", entry)).status).toBe(201);
+  expect((await post("/api/free-queue/join", { ...entry, posthogSessionId: seasonSession })).status).toBe(201);
   expect((await post("/api/free-queue/join", entry)).status).toBe(200);
 
   const events = await db.select().from(schema.campaignConversionEvents)
@@ -101,9 +105,13 @@ test("tagged journey records deduplicated server conversions and reports by crea
   const byName = (name: string) => events.filter((event) => event.eventName === name);
   expect(byName("signup_completed")).toHaveLength(1);
   expect(byName("agent_created")).toHaveLength(1);
-  expect(byName("agent_ready").length).toBeGreaterThanOrEqual(1);
+  expect(byName("agent_ready")).toHaveLength(1);
   expect(byName("season_entry")).toHaveLength(1);
+  expect(byName("signup_completed")[0]?.posthogSessionId).toBe(signupSession);
+  expect(byName("agent_ready")[0]).toMatchObject({ channel: "api", posthogSessionId: agentSession });
+  expect(byName("season_entry")[0]?.posthogSessionId).toBe(seasonSession);
   expect(byName("season_entry")[0]?.attribution?.utm_content).toBe("video-a");
+  expect(await db.select().from(schema.campaignAgentReadySessions)).toEqual([]);
   // Enrollment is not placement.
   expect(byName("game_placed")).toHaveLength(0);
 
@@ -114,6 +122,63 @@ test("tagged journey records deduplicated server conversions and reports by crea
   expect(row?.uniqueSeasonEntrants).toBe(1);
   expect(row?.costPerSignup).toBe(100);
   expect(row?.costPerSeasonEntrant).toBe(100);
+
+  const delivered: Record<string, string | undefined> = {};
+  const adPayloads: string[] = [];
+  const fetchFn: ConversionFetch = async (url, init) => {
+    const payload = String(init?.body);
+    if (url.includes("posthog")) {
+      const body = JSON.parse(payload) as { event: string; properties: { $session_id?: string } };
+      delivered[body.event] = body.properties.$session_id;
+    } else adPayloads.push(payload);
+    return Response.json({ events_received: 1 });
+  };
+  await deliverPendingConversions(db, deliveryEnv, fetchFn);
+  expect(delivered).toEqual({
+    signup_completed: signupSession, agent_created: undefined, agent_ready: agentSession, season_entry: seasonSession,
+  });
+  expect(adPayloads).toHaveLength(3);
+  for (const payload of adPayloads) {
+    expect(payload).not.toContain("$session_id");
+    for (const id of [signupSession, agentSession, seasonSession]) expect(payload).not.toContain(id);
+  }
+  expect((await db.select().from(schema.campaignConversionEvents)).every(event => event.posthogSessionId === null)).toBe(true);
+});
+
+test("withdrawal removes a submitted revision's session before publication even if consent is restored", async () => {
+  const { db, user } = await conversionFixture();
+  process.env.JWT_SECRET = "disposable-campaign-test";
+  const token = await createSessionToken(user.id);
+  const app = createAgentProfileRoutes(db);
+  const request = (path: string, method: string, body: Record<string, unknown>, privacy?: "DNT") => app.request(path, {
+    method,
+    headers: {
+      "Content-Type": "application/json", Authorization: `Bearer ${token}`,
+      ...(privacy ? { [privacy]: "1" } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const created = await request("/api/agent-profiles", "POST", {
+    creationRequestId: randomUUID(), name: "Screened Fixture", personality: "Patient", posthogSessionId: randomUUID(),
+  }, "DNT");
+  expect(created.status).toBe(201);
+  const agent = await created.json() as { id: string; latestContentRevisionId: string };
+  expect(await db.select().from(schema.campaignAgentReadySessions)).toEqual([]);
+  const session = randomUUID();
+  const updated = await request(`/api/agent-profiles/${agent.id}`, "PATCH", {
+    personality: "Calm", submissionId: randomUUID(), expectedContentRevisionId: agent.latestContentRevisionId, posthogSessionId: session,
+  });
+  expect(updated.status).toBe(200);
+  expect(await db.select().from(schema.campaignAgentReadySessions)).toMatchObject([{ agentProfileId: agent.id, sessionId: session }]);
+  await recordSignupCompleted(db, { userId: user.id, channel: "web", posthogSessionId: session });
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, false, true, undefined, false, true));
+  expect(await db.select().from(schema.campaignAgentReadySessions)).toEqual([]);
+  const [preference] = await db.select().from(schema.userAnalyticsPreferences);
+  await db.transaction(tx => syncAnalyticsPreference(tx, user.id, true, true, preference!.updatedAt, true, true));
+  await acceptTestAgent(db, agent.id);
+  const rows = await db.select().from(schema.campaignConversionEvents);
+  expect(rows.find(row => row.eventName === "signup_completed")).toMatchObject({ posthogSessionId: null, posthogStatus: "suppressed" });
+  expect(rows.find(row => row.eventName === "agent_ready")).toMatchObject({ posthogSessionId: null, posthogStatus: "pending" });
 });
 
 test("MCP channel conversions keep client identity and delivery deduplicates by event id", async () => {
@@ -130,7 +195,7 @@ test("MCP channel conversions keep client identity and delivery deduplicates by 
     .where(eq(schema.agentProfiles.userId, userId));
 
   expect(await recordSeasonEntry(db, {
-    userId, agentProfileId: agent!.id, seasonId: season.id, channel: "mcp", mcpClientId: "client-1",
+    userId, agentProfileId: agent!.id, seasonId: season.id, channel: "mcp", mcpClientId: "client-1", posthogSessionId: randomUUID(),
   })).toBe(true);
   expect(await recordSeasonEntry(db, {
     userId, agentProfileId: agent!.id, seasonId: season.id, channel: "mcp", mcpClientId: "client-1",
@@ -152,6 +217,7 @@ test("MCP channel conversions keep client identity and delivery deduplicates by 
   const seasonCall = calls.find((call) => call.body.includes("season_entry"));
   expect(seasonCall?.body).toContain(`season_entry:${userId}:${season.id}`);
   expect(seasonCall?.body).toContain('"channel":"mcp"');
+  expect(seasonCall?.body).not.toContain("$session_id");
   expect(user?.publicId).toBeTruthy();
 
   const [row] = await db.select().from(schema.campaignConversionEvents)
