@@ -1506,7 +1506,7 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
   } finally { await page.close(); }
 }, 60_000);
 
-test("a canonical retrospective grows after results without moving a paused replay and survives reconnect",async () => {
+test("a canonical retrospective grows without moving a paused replay and its live moment link survives completion",async () => {
   const id = "browser-retrospective-growth", events = await completedWerewolfResultsFixture("saved",id,1);
   const firstIndex = events.findIndex(event => event.type === "werewolf.retrospective_statement_recorded");
   const prefix = events.slice(0,firstIndex), first = events[firstIndex]!;
@@ -1522,6 +1522,7 @@ test("a canonical retrospective grows after results without moving a paused repl
     if (!claim.ok) throw new Error(claim.error);
   });
   const page = await browser.newPage();
+  await rejectOptionalAnalytics(page);
   try {
     await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery&cursor=${resultCursor}`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector(`[data-werewolf-stage][data-cursor="${resultCursor}"]`);await pauseWerewolf(page);
@@ -1534,14 +1535,30 @@ test("a canonical retrospective grows after results without moving a paused repl
     if (first.type !== "werewolf.retrospective_statement_recorded") throw new Error("Missing first speech");
     await watchText(page,first.payload.speech);
     await pauseWerewolf(page);
+    await page.click('button[aria-label="Share this moment"]');
+    await page.waitForSelector('input[aria-label="House share link"]');
+    const shortUrl = await page.$eval('input[aria-label="House share link"]', input => input.value);
+    expect(new URL(shortUrl).pathname).toMatch(/^\/s\/[1-9A-HJ-NP-Za-km-z]{10}$/);
+
+    const openSharedSpeech = async () => {
+      await page.goto(shortUrl, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`);
+      await pauseWerewolf(page);
+      await watchText(page, first.payload.speech);
+      const target = new URL(page.url());
+      expect(target.searchParams.get("audience")).toBe("mystery");
+      expect(target.searchParams.get("cursor")).toBe(String(firstCursor));
+      expect(target.searchParams.get("cue")).toBeTruthy();
+      return target.href;
+    };
+    const liveTarget = await openSharedSpeech();
     const firstMax = await page.$eval('input[aria-label="Replay position"]',input => Number(input.getAttribute("max")));
     await database.db.insert(schema.werewolfEvents).values(events.slice(firstIndex+1).map(event => ({gameId:id,sequence:event.sequence,event})));
     await database.db.update(schema.games).set({status:"completed",endedAt:new Date().toISOString()}).where(eq(schema.games.id,id));
     await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').max)>${firstMax}`,{timeout:15_000});
     expect(await page.$eval('[data-werewolf-stage]',stage => Number(stage.getAttribute("data-cursor")))).toBe(firstCursor);
     expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
-    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery&cursor=${firstCursor}`,{waitUntil:"domcontentloaded"});
-    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`);
+    expect(await openSharedSpeech()).toBe(liveTarget);
     await page.reload({waitUntil:"domcontentloaded"});await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`);
     await watchText(page,first.payload.speech);
   } catch (error) {

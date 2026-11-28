@@ -20,6 +20,11 @@ iframe. Farcaster launches the short resolver, which accepts only its `app=mini`
 context hint and restores the frozen settings. Use one snapshot from the Share
 click, including across failed creation retries.
 
+Live and completed viewers share the same replay coordinates. Validate a live
+moment at creation and resolution against the same game and audience rules.
+Pass an explicit Influence sequence to the player even when newer events are
+available. Completion requires no update to the saved destination.
+
 Signup campaign links are issued by campaign operators. They forward validated
 acquisition parameters to the chosen landing page. Keep that query handling
 scoped to campaign links so ordinary shares still restore their saved settings.
