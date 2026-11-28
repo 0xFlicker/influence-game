@@ -113,6 +113,11 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     if (request.pathname === `/api/v10/channels/${channelId}/messages`) {
       calls.push({ action: "post-to-discord", body });
       if (scenario === "ambiguous") throw new DOMException("Timeout", "TimeoutError");
+      if (scenario === "rejected") return new Response(null, { status: 403 });
+      if (scenario === "upstream-failure") return new Response(null, { status: 503 });
+      if (scenario === "rate-limited") return new Response(null, { status: 429, headers: { "retry-after": "10" } });
+      if (scenario === "rate-limited-twice") return new Response(null, { status: 429, headers: { "retry-after": "0.001" } });
+      if (scenario === "bad-retry-header") return new Response(null, { status: 429, headers: { "retry-after": "86401" } });
       return Response.json({ id: messageId, channel_id: channelId }, { status: 201 });
     }
   }

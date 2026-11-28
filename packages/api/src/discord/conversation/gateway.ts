@@ -151,7 +151,9 @@ function noReplyTools(body: Record<string, unknown>) {
   return Promise.resolve(body.method === "tools/list" ? Response.json({ tools: [] }) : new Response(null, { status: 403 }));
 }
 
-type AnnouncementReceipt = { outcome: "posted"; messageId: string } | { outcome: "retry" | "failed" | "unconfirmed" };
+type AnnouncementReceipt = { outcome: "posted"; messageId: string }
+  | { outcome: "rate_limited"; retryAfterSeconds?: number }
+  | { outcome: "retry" | "failed" | "unconfirmed" };
 
 function announcementReady(socket: WebSocket | undefined) {
   return !closing && !!botId && socket !== undefined && socket === readySocket && socket.readyState === WebSocket.OPEN;
@@ -212,6 +214,13 @@ async function deliverAnnouncement(job: AnnouncementJob, socket: WebSocket) {
     const response = await discord("/channels/" + job.channelId + "/messages", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
     });
+    if (response.status === 429) {
+      const header = response.headers.get("retry-after")?.trim();
+      const seconds = header ? Number(header) : NaN;
+      const retryAfterSeconds = Number.isFinite(seconds) && seconds >= 0 && seconds <= 86_400 ? seconds : undefined;
+      receipt = { outcome: "rate_limited", retryAfterSeconds };
+      return;
+    }
     if (!response.ok) {
       if (response.status >= 400 && response.status < 500 && response.status !== 408) receipt = { outcome: "failed" };
       return;

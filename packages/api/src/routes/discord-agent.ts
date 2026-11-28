@@ -42,7 +42,7 @@ export function createDiscordAgentRoutes(db: DrizzleDB) {
     if (!plainObject(body)) return c.json({ error: "Invalid request" }, 400);
     const action = c.req.param("action");
     if (action === "announcement-claim" || action === "announcement-begin" || action === "announcement-complete") {
-      const { channelId, id, lease, outcome, messageId } = body;
+      const { channelId, id, lease, outcome, messageId, retryAfterSeconds } = body;
       if (typeof channelId !== "string" || channelId !== configuredDiscordAnnouncementChannel()) return discordUnavailable();
       const fields = Object.keys(body).length;
       if (action === "announcement-claim" && fields === 1) return c.json({ job: await claimDiscordAnnouncement(db, channelId) });
@@ -51,6 +51,14 @@ export function createDiscordAgentRoutes(db: DrizzleDB) {
       }
       if (action === "announcement-begin" && fields === 3) return c.json(await beginDiscordAnnouncement(db, { id, lease, channelId }));
       if (action === "announcement-complete") {
+        const validRetryDelay = typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds)
+          && retryAfterSeconds >= 0 && retryAfterSeconds <= 86_400;
+        if (outcome === "rate_limited" && messageId === undefined
+            && ((fields === 4 && retryAfterSeconds === undefined) || (fields === 5 && validRetryDelay))) {
+          return c.json({ ok: await completeDiscordAnnouncement(db, {
+            id, lease, channelId, outcome, retryAfterSeconds: validRetryDelay ? retryAfterSeconds : undefined,
+          }) });
+        }
         if (fields === 5 && outcome === "posted" && typeof messageId === "string" && discordIdPattern.test(messageId)) {
           return c.json({ ok: await completeDiscordAnnouncement(db, { id, lease, channelId, outcome, messageId }) });
         }

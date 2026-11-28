@@ -127,6 +127,7 @@ test("an expired authoring lease can be reissued but uncertain Discord sends can
   await db.update(jobs).set({ leaseUntil: new Date(0) }).where(eq(jobs.id, adopted.binding.id));
   expect(await claim()).toBeNull();
   expect((await db.select().from(jobs))[0]).toMatchObject({ state: "unconfirmed", messageId: null });
+  expect(await (await request("complete", { ...adopted.binding, outcome: "rate_limited" })).json()).toEqual({ ok: false });
 });
 
 test("pre-send retries apply backoff and stop after the third failure", async () => {
@@ -141,6 +142,44 @@ test("pre-send retries apply backoff and stop after the third failure", async ()
     await db.update(jobs).set({ nextAttemptAt: new Date(0) }).where(eq(jobs.id, binding.id));
   }
   expect(await claim()).toBeNull();
+});
+
+test("only a rate-limited send can be re-leased after the requested delay with the same nonce", async () => {
+  await liveGame();
+  const { binding } = (await claim())!;
+  const rateLimited = { ...binding, outcome: "rate_limited", retryAfterSeconds: 90.5 };
+  expect(await (await request("complete", rateLimited)).json()).toEqual({ ok: false });
+  const firstApproval = await (await request("begin", binding)).json() as { authorized: boolean; nonce: string };
+  expect(firstApproval.authorized).toBe(true);
+  expect(firstApproval.nonce).toMatch(/^a-[A-Za-z0-9_-]{23}$/);
+  for (const retryAfterSeconds of [-1, 86_401, "90", null]) {
+    expect((await request("complete", { ...rateLimited, retryAfterSeconds })).status).toBe(400);
+  }
+
+  const completionStartedAt = Date.now();
+  expect(await (await request("complete", rateLimited)).json()).toEqual({ ok: true });
+  const [delayed] = await db.select().from(jobs);
+  expect(delayed).toMatchObject({ state: "pending", attempts: 1, lease: null, leaseUntil: null, messageId: null });
+  expect(delayed!.nextAttemptAt.valueOf()).toBeGreaterThan(completionStartedAt + 90_000);
+  expect(await claim()).toBeNull();
+
+  await db.update(jobs).set({ nextAttemptAt: new Date(0) }).where(eq(jobs.id, binding.id));
+  const retry = (await claim())!.binding;
+  expect(retry.id).toBe(binding.id);
+  expect(retry.lease).not.toBe(binding.lease);
+  expect(await (await request("complete", rateLimited)).json()).toEqual({ ok: false });
+  expect(await (await request("begin", retry)).json()).toEqual(firstApproval);
+  const fallbackStartedAt = Date.now();
+  expect(await (await request("complete", { ...retry, outcome: "rate_limited" })).json()).toEqual({ ok: true });
+  const [fallback] = await db.select().from(jobs);
+  expect(fallback!.nextAttemptAt.valueOf()).toBeGreaterThan(fallbackStartedAt + 29_500);
+  await db.update(jobs).set({ nextAttemptAt: new Date(0) }).where(eq(jobs.id, binding.id));
+  const finalClaim = (await claim())!.binding;
+  expect(await (await request("begin", finalClaim)).json()).toEqual(firstApproval);
+  expect(await (await request("complete", { ...finalClaim, outcome: "posted", messageId })).json()).toEqual({ ok: true });
+  expect(await (await request("complete", rateLimited)).json()).toEqual({ ok: false });
+  expect(await claim()).toBeNull();
+  expect(await db.select({ state: jobs.state, messageId: jobs.messageId }).from(jobs)).toEqual([{ state: "posted", messageId }]);
 });
 
 test("claim suppresses stale starts and begin rechecks Public visibility", async () => {

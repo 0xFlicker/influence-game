@@ -24,6 +24,7 @@ export type DiscordAnnouncementClaim = DiscordAnnouncementLease & {
 export type DiscordAnnouncementCompletion = DiscordAnnouncementLease & (
   | { outcome: "posted"; messageId: string }
   | { outcome: "retry" | "failed" | "unconfirmed" }
+  | { outcome: "rate_limited"; retryAfterSeconds?: number }
 );
 
 export function configuredDiscordAnnouncementChannel() {
@@ -107,10 +108,12 @@ export async function completeDiscordAnnouncement(db: DrizzleDB, input: DiscordA
     if (!job) return false;
     if (job.state === "posted" && input.outcome === "posted") return job.messageId === input.messageId;
     if (!job.leaseIsActive || (job.state !== "pending" && job.state !== "sending")) return false;
-    if (input.outcome === "retry") {
-      if (job.state !== "pending") return false;
+    if (input.outcome === "retry" || input.outcome === "rate_limited") {
+      // A definite Discord 429 can safely release send intent. Other retries are pre-send only.
+      if (job.state !== (input.outcome === "rate_limited" ? "sending" : "pending")) return false;
       const attempts = job.attempts + 1;
-      const delay = 15 * 2 ** job.attempts;
+      const serverDelay = input.outcome === "rate_limited" ? input.retryAfterSeconds ?? 0 : 0;
+      const delay = Math.max(serverDelay, 15 * 2 ** job.attempts);
       await tx.update(jobs).set({ state: attempts < maxRetryFailures ? "pending" : "failed", attempts, lease: null, leaseUntil: null,
         nextAttemptAt: sql`now() + ${delay} * interval '1 second'` }).where(eq(jobs.id, input.id));
       return true;

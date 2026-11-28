@@ -133,9 +133,10 @@ Discord spoilers. `#ask-the-house` history retains the replay link and a typed
 disclosure marker so later turns keep the spoiler concealed.
 
 The worker claims announcements while its conversation queue is idle. It records
-send intent before contacting Discord and saves the returned message ID. A send
-with an uncertain result is held for operator review. The job record contains
-delivery state and identifiers. Codex prose stays in the delivery process.
+send intent before contacting Discord and saves the returned message ID. An
+explicit Discord rate limit requeues the job after the retry delay. A send with
+an uncertain result is held for operator review. The job record contains delivery
+state and identifiers. Codex prose stays in the delivery process.
 
 ## Local verification
 

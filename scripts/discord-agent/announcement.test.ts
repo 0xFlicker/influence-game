@@ -68,9 +68,25 @@ test("an inbound conversation takes precedence when it arrives during a claim", 
   expect(calls.map(call => call.action)).toEqual(["announcement-claim", "check-discord-channel", "member-turn"]);
 });
 
+test("an explicit Discord 429 requeues only with a bounded Retry-After value", async () => {
+  const calls = await run("rate-limited");
+  expect(calls.filter(call => call.action === "post-to-discord")).toHaveLength(1);
+  expect(calls.at(-1)?.body).toEqual({ id: "job-1", lease: "lease-1", channelId, outcome: "rate_limited", retryAfterSeconds: 10 });
+  const invalidHeader = await run("bad-retry-header");
+  expect(invalidHeader.filter(call => call.action === "post-to-discord")).toHaveLength(1);
+  expect(invalidHeader.at(-1)?.body).toEqual({ id: "job-1", lease: "lease-1", channelId, outcome: "rate_limited" });
+});
+
+test("a second Discord 429 requeues after the bounded transport retry uses the same nonce", async () => {
+  const calls = await run("rate-limited-twice");
+  expect(calls.filter(call => call.action === "post-to-discord").map(call => call.body?.nonce)).toEqual([nonce, nonce]);
+  expect(calls.at(-1)?.body).toEqual({ id: "job-1", lease: "lease-1", channelId, outcome: "rate_limited", retryAfterSeconds: 0.001 });
+});
+
 for (const [scenario, posts, outcome] of [
   ["author-unavailable", 0, "retry"], ["wrong-guild", 0, "failed"],
-  ["lost-begin", 0, "unconfirmed"], ["ambiguous", 1, "unconfirmed"],
+  ["lost-begin", 0, "unconfirmed"], ["ambiguous", 1, "unconfirmed"], ["upstream-failure", 1, "unconfirmed"],
+  ["rejected", 1, "failed"],
 ] as const) {
   test(`the gateway handles ${scenario} with at most one Discord send and the correct receipt`, async () => {
     const calls = await run(scenario);
