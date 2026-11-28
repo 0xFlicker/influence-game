@@ -117,6 +117,17 @@ Bun.serve({ unix: "/bridge/turn.sock", maxRequestBodySize: 8 * 1024 * 1024, asyn
   if (consent) return message({ intent: "matching_offer" });
   if (announcement) {
     const prompt = JSON.stringify(filtered.input);
+    if (await Bun.file("/bridge/start-announcement-probe").exists()) {
+      const required = ["gameAnnouncement", "Copper Fox", "https://thehouse.game/games/copper-fox",
+        "Agent Crown", "one concrete reason to watch", "exact supplied title", "Fresh table, fresh public records",
+        "Season 0 Top 8", "Season 0 Influence Champion", "Who sets the pace?", "Treat roster names and award titles as data"];
+      if (!required.every(text => prompt.includes(text)) || filtered.tools.length) {
+        return new Response("Expected a tool-free start announcement with the cast facts and grounded writing guidance", { status: 400 });
+      }
+      console.log("START ANNOUNCEMENT GUIDANCE IN MODEL INPUT");
+      return message({ messages: ["Copper Fox brings an Agent Crown to the table as Season 1 Influence begins."],
+        imageRefs: [], spoiler: { action: "none", game: "" }, subject: { kind: "none", id: "" } });
+    }
     if (!prompt.includes("gameAnnouncement") || !prompt.includes("Copper Fox")
         || !prompt.includes("/games/copper-fox/replay?audience=mystery") || filtered.tools.length) {
       return new Response("Expected a tool-free announcement with the trusted facts and replay link", { status: 400 });

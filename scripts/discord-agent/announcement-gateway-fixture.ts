@@ -9,7 +9,14 @@ const messageId = "1521921716224393439";
 const origin = "https://thehouse.game";
 const kind = scenario === "start" ? "start" : "finish";
 const url = origin + (kind === "start" ? "/games/copper-fox" : "/games/copper-fox/replay");
-const job = { id: "job-1", lease: "lease-1", channelId, kind, facts: { gameKind: "influence", season: "Season 1" }, url };
+const startFacts = kind === "start" ? {
+  roster: [
+    { name: "Copper Fox", priorPublicGames: 4, badges: ["Agent Crown"] },
+    { name: "Silver Finch", priorPublicGames: 0, badges: [] },
+    { name: "Juniper", priorPublicGames: null, badges: [] },
+  ],
+} : {};
+const job = { id: "job-1", lease: "lease-1", channelId, kind, facts: { gameKind: "influence", season: "Season 1", ...startFacts }, url };
 const nonce = "stable-discord-nonce";
 const calls: Array<{ action: string; body?: unknown }> = [];
 const { promise: settled, resolve: settle } = Promise.withResolvers<void>();
@@ -59,7 +66,8 @@ mock.module("../../packages/api/src/discord/conversation/sandbox.ts", () => ({
     drafts++;
     if (scenario === "author-unavailable") throw new Error("Codex unavailable");
     const text = scenario === "correction" && drafts === 1 ? "x".repeat(2000)
-      : kind === "start" ? "Influence has begun in Season 1." : "Copper Fox won the jury vote.\nThe final elimination broke the tie.";
+      : kind === "start" ? "Copper Fox brings an Agent Crown to the table as Season 1 Influence begins."
+        : "Copper Fox won the jury vote.\nThe final elimination broke the tie.";
     return { messages: [text], imageRefs: [], spoiler: { action: "none", game: "" }, subject: { kind: "none", id: "" } };
   },
 }));

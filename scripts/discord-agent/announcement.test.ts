@@ -44,7 +44,12 @@ test("House room history preserves a recap's Mystery link and masks the prose ev
 test("the gateway sends one start with exact authored copy and a confirmed receipt", async () => {
   const calls = await run("start");
   expect(calls.map(call => call.action)).toEqual(["announcement-claim", "codex", "check-discord-channel", "announcement-begin", "post-to-discord", "announcement-complete"]);
-  expect(calls[4]?.body).toEqual({ content: `${origin}/games/copper-fox\n\nInfluence has begun in Season 1.`, flags: 4,
+  expect(calls[1]?.body?.facts).toEqual({ gameKind: "influence", season: "Season 1", roster: [
+    { name: "Copper Fox", priorPublicGames: 4, badges: ["Agent Crown"] },
+    { name: "Silver Finch", priorPublicGames: 0, badges: [] },
+    { name: "Juniper", priorPublicGames: null, badges: [] },
+  ] });
+  expect(calls[4]?.body).toEqual({ content: `${origin}/games/copper-fox\n\nCopper Fox brings an Agent Crown to the table as Season 1 Influence begins.`, flags: 4,
     nonce, enforce_nonce: true, allowed_mentions: { parse: [] } });
   expect(calls.at(-1)?.body).toEqual({ id: "job-1", lease: "lease-1", channelId, outcome: "posted", messageId: "1521921716224393439" });
 });
@@ -52,6 +57,7 @@ test("the gateway sends one start with exact authored copy and a confirmed recei
 test("the gateway corrects an oversized draft once then posts a replay link with every recap line hidden", async () => {
   const calls = await run("correction");
   expect(calls.filter(call => call.action === "codex")).toHaveLength(2);
+  expect(calls[1]?.body?.facts).toEqual({ gameKind: "influence", season: "Season 1" });
   expect(calls[2]?.body).toHaveProperty("correction", "message");
   expect(calls.filter(call => call.action === "post-to-discord").map(call => call.body?.content)).toEqual([
     `${origin}/games/copper-fox/replay\n\n||Copper Fox won the jury vote.||\n||The final elimination broke the tie.||`,
