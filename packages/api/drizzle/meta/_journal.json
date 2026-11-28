@@ -1261,6 +1261,13 @@
       "when": 1795219200005,
       "tag": "0179_character_reference_queue_age",
       "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1795219200006,
+      "tag": "0180_discord_announcement_jobs",
+      "breakpoints": true
     }
   ]
 }

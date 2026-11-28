@@ -1,11 +1,12 @@
 import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-  activeOffer, availableDmHistory, decideSpoilerTurn, destination, directReplyId, discordContentLimit, discordMessageTime,
+  activeOffer, availableDmHistory, decideSpoilerTurn, destination, directReplyId, discordAnnouncementContent, discordAnnouncementPayload,
+  discordContentLimit, discordMessageTime,
   discordReplyAttachmentByteLimit, discordReplyAttachmentLimit, discordReplyContent, discordReplyForm, discordReplyMultipartByteLimit,
-  dmContext, prepareReply, readSpoilerTarget, ReplyValidationError, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext,
+  dmContext, prepareReply, readAnnouncementJob, readSpoilerTarget, ReplyValidationError, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext,
   subjectKey, subjectsFromRead, validatedConsent, validatedReply, withTurnFeedback,
-  type DiscordMessage, type DmHistory, type ReplyValidationReason, type SpoilerOffer, type Subject, type TurnAuthority,
+  type AnnouncementJob, type DiscordMessage, type DmHistory, type ReplyValidationReason, type SpoilerOffer, type Subject, type TurnAuthority,
 } from "./policy.js";
 import { runCodex } from "./sandbox.js";
 
@@ -17,7 +18,10 @@ function env(name: string) {
 const guild = env("DISCORD_HOUSE_GUILD_ID");
 const room = env("DISCORD_AGENT_ROOM_ID");
 const memberRole = env("DISCORD_ROLE_USER_ID");
-if (![guild, room, memberRole].every(id => snowflake.test(id))) throw new Error("Invalid Discord configuration");
+const announcementChannel = process.env.DISCORD_ANNOUNCEMENT_CHANNEL_ID || undefined;
+if (![guild, room, memberRole].every(id => snowflake.test(id)) || (announcementChannel && !snowflake.test(announcementChannel))) {
+  throw new Error("Invalid Discord configuration");
+}
 const bot = env("DISCORD_BOT_TOKEN");
 const controller = env("DISCORD_CONTROLLER_TOKEN");
 const house = new URL(env("HOUSE_API_URL"));
@@ -33,8 +37,10 @@ const offers = new Map<string, SpoilerOffer>();
 const history = new Map<string, DmHistory>();
 const queue: DiscordMessage[] = [];
 let draining = false;
+let checkingAnnouncements = false;
 let closing = false;
 let activeSocket: WebSocket | undefined;
+let readySocket: WebSocket | undefined;
 let botId: string | undefined;
 
 async function discord(path: string, init: RequestInit = {}) {
@@ -101,7 +107,7 @@ async function readRoomContext(m: DiscordMessage) {
   ]);
   const messages = Array.isArray(page) ? page : [];
   if (parent && typeof parent === "object" && "id" in parent && parent.id === reference) messages.push(parent);
-  return roomContext(m, messages, botId);
+  return roomContext(m, messages, botId, house.origin);
 }
 
 class TurnAccessDenied extends Error {}
@@ -143,6 +149,115 @@ async function send(m: DiscordMessage, content: string, images: Array<{ mimeType
 
 function noReplyTools(body: Record<string, unknown>) {
   return Promise.resolve(body.method === "tools/list" ? Response.json({ tools: [] }) : new Response(null, { status: 403 }));
+}
+
+type AnnouncementReceipt = { outcome: "posted"; messageId: string } | { outcome: "retry" | "failed" | "unconfirmed" };
+
+function announcementReady(socket: WebSocket | undefined) {
+  return !closing && !!botId && socket !== undefined && socket === readySocket && socket.readyState === WebSocket.OPEN;
+}
+
+async function writeAnnouncement(job: AnnouncementJob) {
+  const draft = async (correction?: ReplyValidationReason) => {
+    const prompt = JSON.stringify({ gameAnnouncement: { kind: job.kind, facts: job.facts, canonicalLink: job.url, correction } });
+    const authored = await runCodex(sandbox, "reply", prompt, [], noReplyTools, 40_000);
+    return discordAnnouncementContent(authored, job.kind, job.url);
+  };
+  try {
+    return await draft();
+  } catch (error) {
+    const correction = error instanceof ReplyValidationError ? error.reason : error instanceof SyntaxError ? "shape" : undefined;
+    if (!correction) throw error;
+    return draft(correction);
+  }
+}
+
+async function deliverAnnouncement(job: AnnouncementJob, socket: WebSocket) {
+  const binding = { id: job.id, lease: job.lease, channelId: job.channelId };
+  let receipt: AnnouncementReceipt | undefined = { outcome: "retry" };
+  let stage = "author";
+  try {
+    const content = await writeAnnouncement(job);
+    if (!announcementReady(socket)) return;
+    stage = "channel";
+    const channel = await discord("/channels/" + job.channelId);
+    if (!channel.ok) {
+      if (accessDenied(channel.status)) receipt = { outcome: "failed" };
+      return;
+    }
+    const destination = await channel.json() as { id?: unknown; type?: unknown; guild_id?: unknown };
+    if (destination.id !== job.channelId || destination.guild_id !== guild || (destination.type !== 0 && destination.type !== 5)) {
+      receipt = { outcome: "failed" };
+      return;
+    }
+    if (!announcementReady(socket)) return;
+
+    // A lost begin response can leave a durable send intent. Only a positive response permits the Discord write.
+    stage = "begin";
+    receipt = { outcome: "unconfirmed" };
+    const begin = await api("announcement-begin", binding);
+    if (!begin.ok) return;
+    const approval = await begin.json() as { authorized?: unknown; nonce?: unknown };
+    if (approval.authorized === false) {
+      receipt = undefined;
+      return;
+    }
+    if (approval.authorized !== true) return;
+    const payload = discordAnnouncementPayload(content, approval.nonce);
+    if (!payload) {
+      receipt = { outcome: "failed" };
+      return;
+    }
+    stage = "delivery";
+    const response = await discord("/channels/" + job.channelId + "/messages", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      if (response.status >= 400 && response.status < 500 && response.status !== 408) receipt = { outcome: "failed" };
+      return;
+    }
+    const posted = await response.json() as { id?: unknown; channel_id?: unknown };
+    if (posted.channel_id === job.channelId && typeof posted.id === "string" && snowflake.test(posted.id)) {
+      receipt = { outcome: "posted", messageId: posted.id };
+    }
+  } catch (error) {
+    if (stage === "author" && (error instanceof ReplyValidationError || error instanceof SyntaxError)) receipt = { outcome: "failed" };
+  } finally {
+    let acknowledged = false;
+    if (receipt) {
+      try {
+        const completed = await api("announcement-complete", { ...binding, ...receipt });
+        acknowledged = completed.ok && (await completed.json() as { ok?: unknown }).ok === true;
+      } catch {
+        // The durable send intent still fences a post when the acknowledgement is lost.
+      }
+    }
+    console.log(JSON.stringify({ event: "discord_announcement", id: job.id, kind: job.kind, stage, outcome: receipt?.outcome ?? "suppressed", acknowledged }));
+  }
+}
+
+async function checkAnnouncements(channelId: string) {
+  const socket = readySocket;
+  if (!socket || !announcementReady(socket) || draining || queue.length || checkingAnnouncements) return;
+  checkingAnnouncements = true;
+  try {
+    const response = await api("announcement-claim", { channelId });
+    if (!response.ok) {
+      console.log(JSON.stringify({ event: "discord_announcement_claim_failed", status: response.status }));
+      return;
+    }
+    const { job: value } = await response.json() as { job?: unknown };
+    if (value === null) return;
+    const job = readAnnouncementJob(value, channelId, house.origin);
+    if (!job) throw new Error("Invalid Discord announcement job");
+    // An inbound turn can start while the claim request is in flight. Release this unsent claim by lease expiry.
+    if (draining || queue.length || !announcementReady(socket)) return;
+    await drain({ job, socket });
+  } catch {
+    console.log(JSON.stringify({ event: "discord_announcement_claim_failed" }));
+  } finally {
+    checkingAnnouncements = false;
+  }
 }
 
 interface Turn extends TurnAuthority { grant: string; publicId: string }
@@ -487,8 +602,9 @@ function accept(m: DiscordMessage) {
   if (!draining) void drain();
 }
 
-async function drain() {
+async function drain(announcement?: { job: AnnouncementJob; socket: WebSocket }) {
   draining = true;
+  if (announcement) await deliverAnnouncement(announcement.job, announcement.socket);
   while (queue.length && !closing) {
     const m = queue.shift()!;
     const started = Date.now();
@@ -541,17 +657,23 @@ function connect() {
         reconnectDelay = 5000;
         socket.close(4000, "Invalid session");
       } else if (packet.op === 0 && packet.t === "READY") {
-        if (typeof packet.d.user?.id === "string" && snowflake.test(packet.d.user.id)) botId = packet.d.user.id;
+        botId = typeof packet.d.user?.id === "string" && snowflake.test(packet.d.user.id) ? packet.d.user.id : undefined;
+        readySocket = botId ? socket : undefined;
         session = packet.d.session_id;
         const url = new URL(packet.d.resume_gateway_url);
         if (url.protocol === "wss:" && url.hostname === "gateway.discord.gg") resumeOrigin = url.origin;
         console.log(JSON.stringify({ event: "discord_gateway_ready" }));
+        if (announcementChannel) void checkAnnouncements(announcementChannel);
+      } else if (packet.op === 0 && packet.t === "RESUMED") {
+        readySocket = botId ? socket : undefined;
+        if (announcementChannel) void checkAnnouncements(announcementChannel);
       } else if (packet.op === 0 && packet.t === "MESSAGE_CREATE") accept(packet.d);
     } catch {
       socket.close(4000, "Invalid Gateway payload");
     }
   });
   socket.addEventListener("close", e => {
+    if (readySocket === socket) readySocket = undefined;
     clearInterval(heartbeat);
     clearTimeout(firstBeat);
     if ([4004, 4010, 4011, 4012, 4013, 4014].includes(e.code)) {
@@ -568,6 +690,8 @@ setInterval(() => {
   for (const [key, value] of offers) if (value.expires <= now) offers.delete(key);
   for (const [key, value] of history) if (value.entries.every(entry => entry.expires <= now)) history.delete(key);
 }, 60_000).unref();
+
+if (announcementChannel) setInterval(() => void checkAnnouncements(announcementChannel), 5_000).unref();
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => {
   closing = true;

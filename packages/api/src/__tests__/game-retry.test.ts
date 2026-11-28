@@ -14,6 +14,7 @@ import { grantTestAuthority } from "./rbac-fixtures.js";
 import { launchExactGameLocally } from "../services/game-launch.js";
 import { abortAllGames, isGameRunning } from "../services/game-lifecycle.js";
 import { reconcileChampionshipResults, championshipStandings } from "../services/championship-results.js";
+import { withTestDiscordAnnouncementChannel } from "./test-utils.js";
 
 beforeAll(() => { process.env.JWT_SECRET = "game-retry-fixture-only"; });
 afterEach(async () => { await abortAllGames(); delete process.env.INFLUENCE_API_TEST_MOCK_RUNNER; });
@@ -28,13 +29,15 @@ async function fixture(ordinal = 1) {
 }
 
 test("concurrent retry fences/hides one attempt and preserves frozen roles, artwork and history", async () => {
-  const { db, event, actorId, gameId } = await fixture();
+  const { db, event, actorId, gameId } = await withTestDiscordAnnouncementChannel(() => fixture());
   const before = await readWerewolfEvents(db, gameId);
   const roster = (await championshipGameRoster(db, gameId))!;
   const ownerEpoch = randomUUID();
   await db.insert(schema.gameRunOwners).values({ id: randomUUID(), gameId, ownerEpoch, expiresAt: "2099-01-01" });
   await db.update(schema.agentProfiles).set({ personality: "Edited after freeze" }).where(eq(schema.agentProfiles.userId, actorId));
-  const replies = await Promise.all([retryFailedGame(db, gameId, actorId), retryFailedGame(db, gameId, actorId)]);
+  const replies = await withTestDiscordAnnouncementChannel(() => Promise.all([
+    retryFailedGame(db, gameId, actorId), retryFailedGame(db, gameId, actorId),
+  ]));
   expect(replies[0]).toEqual(replies[1]);
   const next = replies[0]!.gameId;
   expect(next).not.toBe(gameId);
@@ -51,6 +54,10 @@ test("concurrent retry fences/hides one attempt and preserves frozen roles, artw
   expect(nextRoster.cast.map(row => opening.payload.roles[row.seatId])).toEqual(roster.cast.map(row => original.payload.roles[row.seatId]));
   expect((await championshipStandings(db, event.id))!.series.every(row => row.played === 0)).toBe(true);
   expect(await retryFailedGame(db, gameId, actorId)).toEqual(replies[0]);
+  const jobs = await db.select({ gameId: schema.discordAnnouncementJobs.gameId, kind: schema.discordAnnouncementJobs.kind })
+    .from(schema.discordAnnouncementJobs);
+  expect(jobs).toHaveLength(2);
+  expect(jobs).toEqual(expect.arrayContaining([{ gameId, kind: "start" }, { gameId: next, kind: "start" }]));
 });
 
 test("recorded result rejects replay without hiding or cancelling suspended game", async () => {
@@ -114,8 +121,10 @@ test.each([0, 4, 8])("ordinary Werewolf retry preserves admitted identities and 
   for (const seat of oldLobby.filter(seat => seat.houseCharacter)) {
     await db.update(schema.werewolfLobbySeats).set({ houseCharacter: { ...seat.houseCharacter!, name: "Changed admission metadata" } }).where(eq(schema.werewolfLobbySeats.id, seat.id));
   }
-  const next = await retryFailedGame(db, gameId, actorId);
+  const next = await withTestDiscordAnnouncementChannel(() => retryFailedGame(db, gameId, actorId));
   const after = (await readWerewolfEvents(db, next.gameId))[0]!;
+  expect(await db.select({ kind: schema.discordAnnouncementJobs.kind }).from(schema.discordAnnouncementJobs)
+    .where(eq(schema.discordAnnouncementJobs.gameId, next.gameId))).toEqual([{ kind: "start" }]);
   if (before.type !== "werewolf.started" || after.type !== "werewolf.started") throw new Error("Missing opening");
   expect(after.payload.players.map(({ id: _id, ...p }) => p)).toEqual(before.payload.players.map(({ id: _id, ...p }) => p));
   expect(after.payload.players.map(p => after.payload.roles[p.id])).toEqual(before.payload.players.map(p => before.payload.roles[p.id]));

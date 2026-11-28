@@ -10,6 +10,7 @@ import { checkGameStartAdmissionInTransaction } from "./deployment-admission.js"
 import { requestGameStart } from "./game-ownership.js";
 import { currentCaptureVersionFields, initialGameTranscriptStateValues } from "./transcript-capture.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
+import { enqueueDiscordAnnouncement } from "./discord-announcement-jobs.js";
 
 export async function activateChampionship(db: DrizzleDB, eventId: string, actorId: string, requestId: string) {
   if (!requestId.trim()) throw new ChampionshipError("Idempotency key required");
@@ -107,6 +108,7 @@ export async function prepareChampionshipMatch(tx: ChampionshipTx, eventId: stri
       await tx.insert(schema.werewolfEvents).values({ gameId, sequence: 1, event: initial });
       await tx.update(schema.games).set({ status: "in_progress", startedAt: now, config: JSON.stringify({ ...recipe.werewolf,
         modelRouting: roster.modelRouting, serviceTier: "flex", visibility: "public", audioMode: false, visualMode: false, visualFailurePolicy: "best_effort" }) }).where(eq(schema.games.id, gameId));
+      await enqueueDiscordAnnouncement(tx, gameId, "start");
       await queueEpisodeCopy(tx, gameId);
       await tx.update(schema.championshipMatches).set({ status: "running" }).where(eq(schema.championshipMatches.id, match.id));
     }

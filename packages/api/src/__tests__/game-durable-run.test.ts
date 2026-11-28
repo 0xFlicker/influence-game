@@ -37,7 +37,7 @@ import {
   type WsConnectionData,
 } from "../services/ws-manager.js";
 import type { ServerWebSocket } from "bun";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, TEST_DISCORD_ANNOUNCEMENT_CHANNEL_ID, withTestDiscordAnnouncementChannel } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
   createCheckpointCapsule,
@@ -386,13 +386,13 @@ describe("durable run inspection read model", () => {
     }
   });
 
-  test("adopts the same in-progress game after an ordinary runner reload", async () => {
+  test.each(["public", "unlisted"] as const)("adopts the same %s game after an ordinary runner reload", visibility => withTestDiscordAnnouncementChannel(async () => {
     const gameId = await insertGame(db, {
       status: "waiting",
       config: {
         maxRounds: 1,
         modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-        visibility: "unlisted",
+        visibility,
       },
     });
     await db.update(schema.games).set({ maxPlayers: 5, startedAt: null })
@@ -420,6 +420,10 @@ describe("durable run inspection read model", () => {
     expect((await db.select({ status: schema.games.status })
       .from(schema.games)
       .where(eq(schema.games.id, gameId)))[0]?.status).toBe("in_progress");
+    const jobs = () => db.select({ kind: schema.discordAnnouncementJobs.kind, channelId: schema.discordAnnouncementJobs.channelId })
+      .from(schema.discordAnnouncementJobs).where(eq(schema.discordAnnouncementJobs.gameId, gameId))
+      .orderBy(asc(schema.discordAnnouncementJobs.kind));
+    expect(await jobs()).toEqual(visibility === "public" ? [{ kind: "start", channelId: TEST_DISCORD_ANNOUNCEMENT_CHANNEL_ID }] : []);
 
     const adoption = await adoptInProgressDurableGamesOnStartup(db, {
       isAlreadyRunning: isGameRunning,
@@ -445,7 +449,11 @@ describe("durable run inspection read model", () => {
       turns.map((_, index) => index + 1),
     );
     expect(turns.every((turn) => turn.status === "committed")).toBeTrue();
-  });
+    expect(await jobs()).toEqual(visibility === "public" ? [
+      { kind: "finish", channelId: TEST_DISCORD_ANNOUNCEMENT_CHANNEL_ID },
+      { kind: "start", channelId: TEST_DISCORD_ANNOUNCEMENT_CHANNEL_ID },
+    ] : []);
+  }));
 
   test("summarizes API kernel events, checkpoints, and private trace manifests without exposing raw content", async () => {
     const gameId = await insertGame(db, { slug: "durable-slug" });

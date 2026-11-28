@@ -633,6 +633,27 @@ export const games = pgTable("games", {
   ),
 ]);
 
+export const discordAnnouncementJobs = pgTable("discord_announcement_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().$type<"start" | "finish">(),
+  channelId: text("channel_id").notNull(),
+  state: text("state").notNull().$type<"pending" | "sending" | "posted" | "suppressed" | "failed" | "unconfirmed">().default("pending"),
+  lease: uuid("lease"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  messageId: text("message_id"),
+}, table => [
+  unique("discord_announcement_job_transition_unique").on(table.gameId, table.kind),
+  check("discord_announcement_job_kind_check", sql`${table.kind} IN ('start', 'finish')`),
+  check("discord_announcement_job_state_check", sql`${table.state} IN ('pending', 'sending', 'posted', 'suppressed', 'failed', 'unconfirmed')`),
+  check("discord_announcement_job_receipt_check", sql`(${table.state} = 'posted') = (${table.messageId} IS NOT NULL)`),
+  index("discord_announcement_job_pending_idx").on(table.channelId, table.nextAttemptAt, table.createdAt).where(sql`${table.state} = 'pending'`),
+  index("discord_announcement_job_sending_idx").on(table.channelId, table.leaseUntil).where(sql`${table.state} = 'sending'`),
+]);
+
 /** Editorial packaging is independent of canonical game state. */
 export const gameEpisodePresentations = pgTable("game_episode_presentations", {
   gameId: text("game_id").primaryKey().references(() => games.id, { onDelete: "cascade" }),

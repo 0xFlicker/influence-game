@@ -8,6 +8,7 @@ import { checkGameStartAdmissionInTransaction } from "./deployment-admission.js"
 import { getPersistedGameEvents } from "./game-event-read-model.js";
 import { getPersistedGameProjection } from "./game-projection-read-model.js";
 import { readWerewolfEvents } from "./werewolf-games.js";
+import { enqueueDiscordAnnouncement } from "./discord-announcement-jobs.js";
 import { currentCaptureVersionFields, initialGameTranscriptStateValues } from "./transcript-capture.js";
 import { requestGameStart } from "./game-ownership.js";
 import { queueEpisodeCopy } from "./episode-presentation.js";
@@ -96,6 +97,7 @@ export async function retryFailedGame(db: DrizzleDB, originalGameId: string, act
         const initial = startWerewolf(replacementGameId, opening.payload.players.map(player => ({ ...player, id: ids.get(player.id)! })), opening.payload.config, opening.payload.seed);
         if (initial.type !== "werewolf.started" || opening.payload.players.some(player => opening.payload.roles[player.id] !== initial.payload.roles[ids.get(player.id)!])) throw new ChampionshipError("Could not preserve the frozen roles", 409);
         await tx.insert(schema.werewolfEvents).values({ gameId: replacementGameId, sequence: 1, event: initial });
+        await enqueueDiscordAnnouncement(tx, replacementGameId, "start");
         const originalSeats = await tx.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, old.id));
         await tx.insert(schema.werewolfLobbySeats).values(initial.payload.players.map((player, index) => {
           const originalPlayer = opening.payload.players[index]!;

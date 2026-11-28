@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { HOUSE_VOICE, assignPlayerVoice } from "@influence/engine/voice-catalog";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, withTestDiscordAnnouncementChannel } from "./test-utils.js";
 import { storeJson, readPayload } from "../services/payload-storage.js";
 import { audioRecipe, audioSourceHash, type AudioSourceManifest } from "../services/audio-source.js";
 import { sha256StableJson } from "../services/stable-hash.js";
@@ -181,9 +181,11 @@ test("live final audio failure holds the accepted game, retries missing clips an
   const claimed=await claimWerewolfGame(db,gameId,"recovery-test");
   expect(claimed.ok).toBe(true);if(!claimed.ok) throw new Error(claimed.error);
   await ensureLiveAudio(db,gameId,claimed.claim.ownerEpoch);
-  await completeWerewolfAudioGame(db,gameId,claimed.claim.ownerEpoch);
+  await withTestDiscordAnnouncementChannel(() => completeWerewolfAudioGame(db, gameId, claimed.claim.ownerEpoch));
   expect((await db.select().from(schema.games).where(eq(schema.games.id,gameId)))[0]!.status).toBe("completed");
   expect((await db.select().from(schema.gameAudioTracks))).toHaveLength(1);
+  expect(await db.select({ kind: schema.discordAnnouncementJobs.kind }).from(schema.discordAnnouncementJobs)
+    .where(eq(schema.discordAnnouncementJobs.gameId, gameId))).toEqual([{ kind: "finish" }]);
 }, 30_000);
 
 test("cancellation stops a claimed track before another paid dispatch",async()=>{

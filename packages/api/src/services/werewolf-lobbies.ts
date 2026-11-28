@@ -1,6 +1,7 @@
 import {freezeLiveVoices} from "./audio-voices.js";
 import { authorizedModelPreference, sealRosterModelRouting, creationModelRouting } from "./game-model-routing.js";
 import { queueEpisodeCopy, readEpisodePresentations } from "./episode-presentation.js";
+import { enqueueDiscordAnnouncement } from "./discord-announcement-jobs.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { isViewerGame, storedGameVisibility } from "./game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -111,6 +112,7 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     const event = startWerewolf(game.id, players, rules, randomUUID());
     await tx.insert(schema.werewolfEvents).values({ gameId: game.id, sequence: event.sequence, event });
     await tx.update(schema.games).set({ status: "in_progress", startedAt: new Date().toISOString(), config: JSON.stringify({ ...sealedConfig, rulesVersion: rules.rulesVersion }) }).where(eq(schema.games.id, game.id));
+    await enqueueDiscordAnnouncement(tx, game.id, "start");
     if (config.audioMode === true) await freezeLiveVoices(tx,game.id);
     await queueEpisodeCopy(tx, game.id);
     return { id: game.id, slug: game.slug };

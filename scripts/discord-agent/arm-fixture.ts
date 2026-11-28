@@ -77,11 +77,14 @@ function sse(item: object, model: string) {
 }
 await rm("/bridge/turn.sock", { force: true });
 Bun.serve({ unix: "/bridge/turn.sock", maxRequestBodySize: 8 * 1024 * 1024, async fetch(req) {
+  const announcement = await Bun.file("/bridge/announcement-probe").exists();
   const incoming = await req.json() as {
     method?: string; name?: string; args?: { url?: string; imageRef?: string };
     tools: { name: string }[]; input: Array<Record<string, unknown>>;
     text?: { format?: { schema?: { properties?: { imageRefs?: { maxItems?: number } } } } };
   };
+  if (announcement && incoming.method === "tools/list") return Response.json({ tools: [] });
+  if (announcement && incoming.method === "tools/call") return new Response(null, { status: 403 });
   if (incoming.method === "tools/list") return Response.json({ tools: [
     { name: "inspect_image", description: "Inspect the test image", inputSchema: { ...schema, properties: { imageRef: { type: "string" } }, required: ["imageRef"] }, annotations: { readOnlyHint: true } },
     { name: "resolve_house_link", description: "Resolve the test replay", inputSchema: { ...schema, properties: { url: { type: "string" } }, required: ["url"] }, annotations: { readOnlyHint: true } },
@@ -98,7 +101,7 @@ Bun.serve({ unix: "/bridge/turn.sock", maxRequestBodySize: 8 * 1024 * 1024, asyn
   }
   const consent = JSON.stringify(incoming.input).includes("synthetic consent");
   const model = consent ? consentModel : "gpt-6.1-terra";
-  const filtered = filterInference(incoming, model, new Set(consent ? [] : ["inspect_image", "resolve_house_link"]));
+  const filtered = filterInference(incoming, model, new Set(consent || announcement ? [] : ["inspect_image", "resolve_house_link"]));
   if (!filtered) return new Response("Unexpected tool catalog", { status: 403 });
   const hasHouseIdentity = JSON.stringify(filtered.input).includes("https://thehouse.game/profile/thehouse");
   if (hasHouseIdentity === consent) return new Response("Unexpected House identity instructions", { status: 400 });
@@ -112,6 +115,15 @@ Bun.serve({ unix: "/bridge/turn.sock", maxRequestBodySize: 8 * 1024 * 1024, asyn
   const message = (content: object) => sse({ id: "msg1", type: "message", role: "assistant", status: "completed",
     content: [{ type: "output_text", annotations: [], text: JSON.stringify(content) }] }, model);
   if (consent) return message({ intent: "matching_offer" });
+  if (announcement) {
+    const prompt = JSON.stringify(filtered.input);
+    if (!prompt.includes("gameAnnouncement") || !prompt.includes("Copper Fox")
+        || !prompt.includes("/games/copper-fox/replay?audience=mystery") || filtered.tools.length) {
+      return new Response("Expected a tool-free announcement with the trusted facts and replay link", { status: 400 });
+    }
+    console.log("ANNOUNCEMENT PROVIDER TOOLS []");
+    return message({ messages: ["Copper Fox won."], imageRefs: [], spoiler: { action: "none", game: "" }, subject: { kind: "none", id: "" } });
+  }
   if (++calls === 1) return sse({ id: "item1", type: "function_call", namespace: "mcp__house", name: "resolve_house_link",
     call_id: "call1", arguments: '{"url":"https://thehouse.game/s/Lk3WEcewWi"}', status: "completed" }, model);
   if (calls === 2) {

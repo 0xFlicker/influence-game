@@ -6,7 +6,7 @@ import { replayWerewolf, werewolfConfig } from "@influence/engine/werewolf";
 import { DEFAULT_MODEL_CATALOG_ID, getHousePortraitGender, HOUSE_CAST } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
-import { setupTestDB } from "./test-utils.js";
+import { setupTestDB, withTestDiscordAnnouncementChannel } from "./test-utils.js";
 import { claimWerewolfGame, readWerewolfEvents } from "../services/werewolf-games.js";
 import { createWerewolfLobby, fillWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
 import { createAcceptedTestProfile as createOwnedAgentProfile, submitAcceptedTestProfile as updateOwnedAgentProfile } from "./test-utils.js";
@@ -319,7 +319,10 @@ test("Fill AI persists a complete cast without starting, is idempotent, and Star
   await expect(startWerewolfLobby(db, game.id)).rejects.toThrow("Fill all seats");
   await fillWerewolfLobby(db, game.id);
   const final = await readWerewolfLobby(db, game.id);
-  await startWerewolfLobby(db, game.id);
+  expect(await db.select().from(schema.discordAnnouncementJobs)).toHaveLength(0);
+  await withTestDiscordAnnouncementChannel(() => startWerewolfLobby(db, game.id));
+  expect(await db.select({ kind: schema.discordAnnouncementJobs.kind }).from(schema.discordAnnouncementJobs)
+    .where(eq(schema.discordAnnouncementJobs.gameId, game.id))).toEqual([{ kind: "start" }]);
   const state = replayWerewolf(await readWerewolfEvents(db, game.id));
   expect(state.players.map(player => ({ id: player.id, name: player.name }))).toEqual(final.players.map(player => ({ id: player.id, name: player.name })));
   await expect(fillWerewolfLobby(db, game.id)).rejects.toThrow("no longer");
