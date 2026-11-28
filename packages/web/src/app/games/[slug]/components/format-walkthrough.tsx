@@ -26,7 +26,9 @@ export function FormatWalkthrough({formatId, elapsedMs, controlsInset}: {formatI
                   {Array.from({length: Math.floor(tile.value / 2)}, (_, pair) => <span className={styles.pair} key={pair}><i /><i /></span>)}
                   {tile.value % 2 === 1 && <i />}
                 </span>}
-                {tile.label && <span className={styles.label}>{tile.label}</span>}
+                {tile.label === "Vulnerable"
+                  ? <span className={`${styles.label} ${styles.hyphenatedLabel}`}>{"Vulner\u00adable"}</span>
+                  : tile.label && <span className={styles.label}>{tile.label}</span>}
                 {shot.chain && position <= (shot.pointer ?? -1) && <span className={styles.arrow} aria-hidden="true">→</span>}
               </li>
             ))}

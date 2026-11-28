@@ -59,6 +59,14 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
             throw new Error(`Format text leaves the picture: ${text.textContent} ${JSON.stringify({rect,stage})}`);
         }
         if (walkthrough) {
+          for (const status of walkthrough.querySelectorAll("li > span")) {
+            const copy = status.textContent ?? "";
+            if (copy.replace("\u00ad", "") !== "Vulnerable") continue;
+            const {hyphens, overflowWrap, lineHeight} = getComputedStyle(status);
+            if (copy !== "Vulner\u00adable" || hyphens !== "manual" || overflowWrap !== "normal"
+              || status.getBoundingClientRect().height > 2 * parseFloat(lineHeight) + 1)
+              throw new Error("Vulnerable status must fit or wrap at its hyphenation point");
+          }
           const header = walkthrough.querySelector("header")!.getBoundingClientRect();
           const board = walkthrough.querySelector("[data-walkthrough-picture]")!.getBoundingClientRect();
           const note = walkthrough.querySelector("[data-walkthrough-note]")!;
