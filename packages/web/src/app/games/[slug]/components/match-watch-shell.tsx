@@ -219,7 +219,7 @@ export function MatchWatchShell({
     header={<ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} gameKind="influence" />}
     cast={<CastRail model={castModel} onSelectPlayer={setSelectedPlayerId} showPhase={false} />}
     mobileCast={<MobileContextPanel model={castModel} onSelectPlayer={setSelectedPlayerId} />}
-    theater={<TheaterPanel game={game} messages={displayMessages} replayFrames={replayFrames} live={live} connStatus={connStatus} presentationHydrationStatus={presentationHydrationStatus} startSequence={live ? undefined : startSequence} model={model} onPlaybackStateChange={handlePlaybackStateChange} />}
+    theater={<TheaterPanel game={game} messages={displayMessages} replayFrames={replayFrames} live={live} connStatus={connStatus} presentationHydrationStatus={presentationHydrationStatus} startSequence={startSequence} model={model} onPlaybackStateChange={handlePlaybackStateChange} />}
     inspector={<InspectorPanel model={model} intelligence={intelligenceModel} allianceModel={allianceModel} messages={inspectorMessages} />}
     footer={<ReplayDock model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />}
   />;

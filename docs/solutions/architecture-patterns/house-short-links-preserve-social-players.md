@@ -22,7 +22,8 @@ click, including across failed creation retries.
 
 Live and completed viewers share the same replay coordinates. Validate a live
 moment at creation and resolution against the same game and audience rules.
-Completion requires no update to the saved destination.
+Pass an explicit Influence sequence to the player even when newer events are
+available. Completion requires no update to the saved destination.
 
 Signup campaign links are issued by campaign operators. They forward validated
 acquisition parameters to the chosen landing page. Keep that query handling
