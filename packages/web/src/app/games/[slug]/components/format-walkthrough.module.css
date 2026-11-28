@@ -8,6 +8,7 @@
 .board {display:flex;justify-content:center;gap:clamp(4px,1.4cqw,18px);margin:0;padding:0;list-style:none}
 .tile {position:relative;min-width:0;flex:1 1 0;max-width:460px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:clamp(2px,1cqh,10px);border:1px solid #f7d79d61;border-radius:12px;background:#211926;color:#fff6e4;padding:clamp(4px,2cqh,25px) clamp(3px,1cqw,14px);font-size:clamp(14px,min(3cqw,5.5cqh),34px);line-height:1.13;overflow-wrap:anywhere}
 .tile strong {font-weight:700}
+.hyphenatedLabel {hyphens:manual;overflow-wrap:normal}
 .value {font-size:clamp(19px,min(6cqw,11cqh),78px);font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 .ballots,.pair {display:flex;align-items:center;justify-content:center;gap:clamp(2px,.6cqw,8px)}
 .ballots {height:clamp(10px,2.9cqh,19px)}

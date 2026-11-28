@@ -189,6 +189,11 @@ previews, and the export renderer. The 640×360 pass also compares decoded H.264
 frames for Safety Bounce, Even Votes, Two Names, and the repeat announcement.
 Use `FORMAT_CONTEXT_NARROW=1` for the 360×240 pass.
 
+The Safety Bounce walkthrough keeps “Vulnerable” on one line when it fits
+and permits a hyphenated break after “Vulner” on tighter cards. The walkthrough
+proof checks that both parts stay intact. Rebuild from the existing selection
+and frozen source, then re-encode to apply the change to an existing movie.
+
 Run the required repository baselines (`bun run test`, `bun run test:postgres`,
 `bun run check`) and affected browser/render checks. Report failures and proof
 limits accurately. Do not substitute source inspection or existing green tests
