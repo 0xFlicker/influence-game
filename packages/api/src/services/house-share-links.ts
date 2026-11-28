@@ -34,8 +34,14 @@ export async function validateShareTarget(db: DrizzleDB, target: HouseShareTarge
   if (target.kind !== "game") return true;
   const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, target.identifier!), eq(schema.games.slug, target.identifier!)));
   if (!game || !isViewerGame(game)) return false;
-  if (target.mode && game.status !== "completed") return false;
   const query = new URL(target.path, "https://thehouse.game").searchParams;
+  if (target.mode && game.status !== "completed") {
+    if (game.status !== "in_progress" || target.mode !== "replay") return false;
+    const hasMoment = game.gameKind === "werewolf"
+      ? query.has("audience") && (query.has("cursor") || query.has("cue"))
+      : target.sequence !== undefined || query.has("cue");
+    if (!hasMoment) return false;
+  }
   if (game.gameKind === "werewolf" && target.sequence !== undefined) return false;
   if (game.gameKind === "influence" && target.mode === "replay" && (query.has("audience") || query.has("cursor"))) return false;
   if (target.mode === "highlights") {

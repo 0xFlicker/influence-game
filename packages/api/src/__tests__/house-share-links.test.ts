@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { createSessionToken } from "../middleware/auth.js";
@@ -32,7 +32,63 @@ test("anonymous creation deduplicates immutable replay coordinates across instan
   expect((await db.select().from(schema.houseShareLinks))).toHaveLength(1);
 });
 
-test("unknown, hidden, incomplete and mismatched targets cannot become share links", async () => {
+test("live moment codes keep their exact replay destination after completion", async () => {
+  const app = createHouseShareRoutes(db);
+  await db.update(schema.games).set({ status: "in_progress" }).where(eq(schema.games.id, "share-game"));
+  await db.insert(schema.games).values({
+    id: "share-influence", slug: "blue-fox", gameKind: "influence", status: "in_progress",
+    config: JSON.stringify({ visibility: "public" }),
+  });
+  const paths = [
+    "/games/blue-fox/replay/16?cue=format%3A16&muted=1&speed=2&t=1.25&thinking=1&volume=0.6",
+    "/games/blue-fox/replay/16",
+    "/games/blue-fox/replay?cue=opening%3Atitle&t=0.5",
+    "/games/red-fox/replay?audience=mystery&cursor=12",
+    "/games/red-fox/replay?audience=omniscient&cue=share-game%3Aomniscient%3A12&cursor=12&t=3.25",
+    "/games/red-fox/replay?audience=mystery&cue=share-game%3Aopening%3Atitle%3A&t=0.5",
+  ];
+  const links = [];
+  for (const path of paths) {
+    const response = await post(app, path);
+    expect(response.status).toBe(200);
+    const { code } = await response.json() as { code: string };
+    const resolver = `/api/share-links/${code}`;
+    expect(await (await app.request(resolver)).json()).toEqual({ code, path });
+    links.push({ code, path, resolver });
+  }
+
+  await db.update(schema.games).set({ status: "completed" })
+    .where(inArray(schema.games.id, ["share-game", "share-influence"]));
+  for (const { code, path, resolver } of links) {
+    expect(await (await app.request(resolver)).json()).toEqual({ code, path });
+    expect(await (await post(app, path)).json()).toMatchObject({ code });
+  }
+});
+
+test("live sharing requires a moment for the right game and audience", async () => {
+  const app = createHouseShareRoutes(db);
+  const game = eq(schema.games.id, "share-game");
+  await db.update(schema.games).set({ status: "in_progress" }).where(game);
+  const moment = "/games/red-fox/replay?audience=mystery&cursor=3";
+  for (const path of [
+    "/games/red-fox/replay?audience=mystery&speed=2", "/games/red-fox/replay?cue=opening",
+    "/games/red-fox/replay/3", "/games/red-fox/results", "/games/red-fox/highlights",
+  ]) expect((await post(app, path)).status).toBe(404);
+  const created = await post(app, moment);
+  expect(created.status).toBe(200);
+  const { code } = await created.json() as { code: string };
+  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(game);
+  expect((await post(app, moment)).status).toBe(404);
+  expect((await app.request(`/api/share-links/${code}`)).status).toBe(404);
+  await db.update(schema.games).set({ hiddenAt: null, gameKind: "influence" }).where(game);
+  expect((await post(app, moment)).status).toBe(404);
+  for (const status of ["waiting", "suspended", "cancelled"] as const) {
+    await db.update(schema.games).set({ status }).where(game);
+    expect((await post(app, "/games/red-fox/replay/3")).status).toBe(404);
+  }
+});
+
+test("share links respect game visibility, status and game-specific coordinates", async () => {
   const app = createHouseShareRoutes(db);
   for (const path of ["https://thehouse.game/rules", "//evil.test", "/admin", "/games/red-fox/replay?token=secret"]) expect((await post(app, path)).status).toBe(400);
   for (const path of ["/games/missing", "/profile/missing", "/games/red-fox/replay/3"]) expect((await post(app, path)).status).toBe(404);

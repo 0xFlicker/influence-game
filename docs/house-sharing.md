@@ -26,6 +26,12 @@ creation and resolution check game visibility/status and public profile identity
 Unlisted games retain their existing link-access semantics; hidden games do not
 become accessible through a saved link. Missing codes return 404.
 
+**Share this moment** works during a live game. Influence saves the event sequence,
+and Werewolf saves the cursor for the selected audience. Opening shots can use
+their cue key alone, with the audience retained for Werewolf. The same short code
+opens the saved cue, time and settings during play and in the completed replay.
+Results and highlights links become available after completion.
+
 People → Invites uses the same short-link resolver for signup campaigns.
 Operators with `manage_invites` can choose from the existing campaign landing
 pages. The saved target identifies the campaign and landing page. The campaign

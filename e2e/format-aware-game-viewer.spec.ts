@@ -575,7 +575,7 @@ test.describe("format-aware game viewer", () => {
         return page.getByRole("button", { name: "Pause replay", exact: true }).isVisible();
       }).toBe(true);
     };
-    await installDeterministicFormatGame(page, { slug, scenarioId: "save_or_eliminate_clear", status });
+    const game = await installDeterministicFormatGame(page, { slug, scenarioId: "save_or_eliminate_clear", status });
     // This viewer uses a synthetic game. Model the short-link boundary here;
     // player-card.e2e.test.ts exercises persistence and resolution through the API.
     const links = new Map<string, string>();
@@ -622,14 +622,21 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
     expect((await copyMoment()).target.href).toBe(target.href);
     expect(Number(await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue())).toBeGreaterThan(1);
-    await openMoment(href);
-    await expect(page.getByRole("button", {name:"Pause replay", exact:true})).toBeVisible();
-    await pauseAutoplay(page, "Pause replay");
-    await page.clock.resume();
-    await expect(page.getByRole("button", {name:"Play replay", exact:true})).toBeVisible();
-    const restored = (await copyMoment()).target;
-    expect(restored.pathname).toBe(target.pathname);
-    expect(restored.searchParams.get("cue")).toBe(target.searchParams.get("cue"));
+    const reopenStatuses = status === "in_progress" ? [status, "completed"] as const : [status];
+    for (const reopenStatus of reopenStatuses) {
+      game.setStatus(reopenStatus);
+      await openMoment(href);
+      await expect(page.getByRole("button", {name:"Pause replay", exact:true})).toBeVisible();
+      await pauseAutoplay(page, "Pause replay");
+      await page.clock.resume();
+      await expect(page.getByRole("button", {name:"Play replay", exact:true})).toBeVisible();
+      const restored = (await copyMoment()).target;
+      expect(restored.pathname).toBe(target.pathname);
+      for (const key of ["cue", "speed", "thinking", "muted", "volume"]) {
+        expect(restored.searchParams.get(key)).toBe(target.searchParams.get(key));
+      }
+      expect(Math.abs(Number(restored.searchParams.get("t")) - Number(target.searchParams.get("t")))).toBeLessThan(1.5);
+    }
     await expect(page.getByRole("button", {name:"Play replay", exact:true})).toBeVisible();
     await page.getByRole("button", { name: "Play replay", exact: true }).click();
     await copyMoment();

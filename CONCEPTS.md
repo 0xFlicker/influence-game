@@ -676,6 +676,8 @@ A compact persisted viewer-safe summary of `GameWatchState` for game list reads.
 
 The default web watch surface for live in-progress games and completed replays. It consumes GameWatchState for authoritative shell-level match facts and a sequenced durable publication feed for presentation choreography. Richer audience-omniscient context, relationship edges, and thought/strategy summaries belong to separate data-load lanes.
 
+A shared live moment uses the same short link to open its saved position and playback settings after the game finishes. [House sharing](docs/house-sharing.md)
+
 ## Completed game results review
 
 House `/games/:slug/results` dispatches by game kind through one results endpoint. Werewolf results deliberately reveal the completed cast and resolved night facts, including Doctor protection and Seer investigations. Victory belongs to every original faction teammate, even eliminated players; survival is separate. Day-limit draws have no winners. Stopped, suspended and inconsistent games have no synthetic result. Recap evidence pairs canonical event sequence with an Omniscient audience-local replay cursor, counted by the same traversal as watch windows. These facts do not include private strategy, thinking, provider traces or seed, and do not seed Mystery replay caches.
