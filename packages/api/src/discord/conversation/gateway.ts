@@ -2,10 +2,10 @@ import { Database } from "bun:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   activeOffer, availableDmHistory, decideSpoilerTurn, destination, directReplyId, discordContentLimit, discordMessageTime,
-  discordReplyContent, discordReplyForm,
-  dmContext, prepareReply, readSpoilerTarget, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext,
+  discordReplyAttachmentByteLimit, discordReplyAttachmentLimit, discordReplyContent, discordReplyForm, discordReplyMultipartByteLimit,
+  dmContext, prepareReply, readSpoilerTarget, ReplyValidationError, revalidateDmSubject, roomContext, snowflake, spoilerOfferContext,
   subjectKey, subjectsFromRead, validatedConsent, validatedReply, withTurnFeedback,
-  type DiscordMessage, type DmHistory, type SpoilerOffer, type Subject, type TurnAuthority,
+  type DiscordMessage, type DmHistory, type ReplyValidationReason, type SpoilerOffer, type Subject, type TurnAuthority,
 } from "./policy.js";
 import { runCodex } from "./sandbox.js";
 
@@ -56,14 +56,24 @@ async function discord(path: string, init: RequestInit = {}) {
 
 async function allowed(m: DiscordMessage, kind: "room" | "dm") {
   const channel = await discord("/channels/" + m.channel_id);
-  if (!channel.ok) return false;
+  if (!channel.ok) {
+    if (accessDenied(channel.status)) return false;
+    throw new Error("Discord could not check the conversation");
+  }
   const data = await channel.json() as { id: string; type: number; guild_id?: string; recipients?: Array<{ id: string }> };
   if (data.id !== m.channel_id || (kind === "room" ? data.type !== 0 || data.guild_id !== guild
     : data.type !== 1 || data.recipients?.length !== 1 || data.recipients[0]?.id !== m.author.id)) return false;
   const member = await discord("/guilds/" + guild + "/members/" + m.author.id);
-  if (!member.ok) return false;
+  if (!member.ok) {
+    if (accessDenied(member.status)) return false;
+    throw new Error("Discord could not check membership");
+  }
   const roles = await member.json() as { pending?: boolean; roles?: string[]; user?: { id: string } };
   return roles.user?.id === m.author.id && roles.pending !== true && roles.roles?.includes(memberRole) === true;
+}
+
+function accessDenied(status: number) {
+  return status === 401 || status === 403 || status === 404;
 }
 
 async function api(action: string, body: object) {
@@ -94,16 +104,36 @@ async function readRoomContext(m: DiscordMessage) {
   return roomContext(m, messages, botId);
 }
 
-async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }>, liveRoomSpoiler: boolean, part: number) {
+class TurnAccessDenied extends Error {}
+class DiscordAttachmentLimitError extends Error {}
+
+async function send(m: DiscordMessage, content: string, images: Array<{ mimeType: string; data: string }>, liveRoomSpoiler: boolean, part: number | "error") {
   const form = discordReplyForm(m, content, images, liveRoomSpoiler, part);
   if (!form) return null;
-  const response = await discord("/channels/" + m.channel_id + "/messages", { method: "POST", body: form });
+  const request: RequestInit = { method: "POST", body: form };
+  if (images.length) {
+    for (const id of images.keys()) {
+      const file: unknown = form.get(`files[${id}]`);
+      if (!(file instanceof Blob) || !file.size || file.size > discordReplyAttachmentByteLimit) {
+        throw new DiscordAttachmentLimitError();
+      }
+    }
+    const multipart = new Response(form);
+    const contentType = multipart.headers.get("content-type");
+    if (!contentType) throw new Error("Discord upload encoding unavailable");
+    const body = await multipart.blob();
+    if (body.size > discordReplyMultipartByteLimit) throw new DiscordAttachmentLimitError();
+    request.body = body;
+    request.headers = { "content-type": contentType };
+  }
+  const response = await discord("/channels/" + m.channel_id + "/messages", request);
   if (!response.ok) {
     const rejection = await response.json().catch(() => null) as { code?: unknown } | null;
     console.log(JSON.stringify({
       event: "discord_delivery_rejected", status: response.status,
       code: typeof rejection?.code === "number" ? rejection.code : null,
     }));
+    if (accessDenied(response.status)) throw new TurnAccessDenied();
     throw new Error("Discord rejected the reply");
   }
   const { id } = await response.json() as { id?: unknown };
@@ -126,6 +156,9 @@ function proceduralReply(delivery: SpoilerDelivery | undefined) {
 interface TurnProgress {
   stage: "eligibility" | "grant" | "catalog" | "codex" | "reply" | "spoiler" | "attachment" | "revalidate" | "delivery";
 }
+type ReplyOutcome = "replied" | "spoiler_offered" | "spoiler_not_authorized" | "authority_changed"
+  | "spoiler_unavailable" | "reply_over_limit" | "reply_repartition_rejected" | "attachment_unavailable" | "empty_reply";
+
 async function handle(m: DiscordMessage, progress: TurnProgress) {
   const kind = destination(m, guild, room);
   if (!kind) return "ineligible";
@@ -139,12 +172,58 @@ async function handle(m: DiscordMessage, progress: TurnProgress) {
   const params: TurnBinding = { discordId: m.author.id, channelId: m.channel_id, messageId: m.id, kind };
   progress.stage = "grant";
   const start = await api("turn", params);
-  if (!start.ok) return start.status === 403 ? forget("unavailable") : "unavailable";
+  if (!start.ok) return accessDenied(start.status) ? forget("unavailable") : "unavailable";
   const turn = await start.json() as Turn;
-  return withTurnFeedback(discord, m, () => answer(m, progress, params, turn, key));
+  return withTurnFeedback(discord, m, async () => {
+    let result: ReplyOutcome | "reply_validation_failed" | "turn_failed";
+    try {
+      result = await answer(m, progress, params, turn, key);
+    } catch (error) {
+      if (error instanceof TurnAccessDenied) {
+        result = "authority_changed";
+      } else if (error instanceof DiscordAttachmentLimitError) {
+        result = "attachment_unavailable";
+      } else if (error instanceof ReplyValidationError) {
+        console.log(JSON.stringify({ event: "discord_reply_validation", reason: error.reason, outcome: "terminal" }));
+        result = "reply_validation_failed";
+      } else {
+        result = "turn_failed";
+      }
+    }
+    if (result === "replied" || result === "spoiler_offered" || result === "spoiler_not_authorized") return result;
+    console.log(JSON.stringify({ event: "discord_turn_failure", stage: progress.stage, reason: result }));
+    if (result === "authority_changed") return result;
+    return await sendFailureNotice(m, progress, params, turn);
+  });
 }
 
-async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBinding, turn: Turn, key: string) {
+async function sendFailureNotice(m: DiscordMessage, progress: TurnProgress, params: TurnBinding, previous: Turn) {
+  const unavailable = (reason: "eligibility" | "grant" | "transport") => {
+    console.log(JSON.stringify({ event: "discord_failure_notice_unavailable", stage: progress.stage, reason }));
+    return "failure_notice_unavailable";
+  };
+  try {
+    progress.stage = "revalidate";
+    if (!(await allowed(m, params.kind))) return unavailable("eligibility");
+    const fresh = await api("turn", params);
+    if (!fresh.ok) return unavailable("grant");
+    const current = await fresh.json() as Turn;
+    const validLane = params.kind === "room" ? current.lane === "room" : current.lane === "owner" || current.lane === "staff";
+    if (typeof current.grant !== "string" || !current.grant || !current.link || !current.publicId || !validLane
+        || current.link !== previous.link || current.lane !== previous.lane || current.publicId !== previous.publicId) {
+      return unavailable("grant");
+    }
+    const validation = await api("validate", { grant: current.grant, games: [] });
+    if (!validation.ok || (await validation.json() as { valid?: boolean }).valid !== true) return unavailable("grant");
+    progress.stage = "delivery";
+    await send(m, "The House couldn’t complete this reply.", [], false, "error");
+    return "failure_notice";
+  } catch {
+    return unavailable("transport");
+  }
+}
+
+async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBinding, turn: Turn, key: string): Promise<ReplyOutcome> {
   const { kind } = params;
   const prior = availableDmHistory(history.get(key), m, turn);
   if (!prior.length) history.delete(key);
@@ -163,6 +242,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   if (spoilerContext?.settledGame) games.add(spoilerContext.settledGame);
   const observedSubjects = new Map<string, Subject>();
   const inspected = new Set<string>();
+  let recoveryUsed = false;
   const finish = async (links: string[] = []) => {
     progress.stage = "revalidate";
     const checks = await Promise.all([
@@ -177,7 +257,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       const next = { ...body, links: [...batch.links, link] };
       if (next.links.length > 12 || Buffer.byteLength(JSON.stringify(next)) > 8192) {
         batch = { ...body, links: [link] };
-        if (Buffer.byteLength(JSON.stringify(batch)) > 8192) return null;
+        if (Buffer.byteLength(JSON.stringify(batch)) > 8192) throw new Error("House validation request too large");
         batches.push(batch);
       } else {
         batch.links.push(link);
@@ -186,9 +266,11 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
     const approved = new Set<string>();
     for (const batch of batches) {
       const validation = await api("validate", batch);
-      if (!validation.ok) return null;
+      if (accessDenied(validation.status)) return null;
+      if (!validation.ok) throw new Error("House validation unavailable");
       const result = await validation.json() as { valid?: boolean; links?: string[] };
-      if (result.valid !== true || !Array.isArray(result.links)) return null;
+      if (result.valid === false) return null;
+      if (result.valid !== true || !Array.isArray(result.links)) throw new Error("Invalid House validation response");
       const matched = new Set(result.links);
       for (const link of batch.links) if (matched.has(link)) approved.add(link);
     }
@@ -196,13 +278,12 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   };
 
   const generate = async (spoilerDelivery?: SpoilerDelivery) => {
-    observedSubjects.clear();
-    inspected.clear();
     const copyOnly = proceduralReply(spoilerDelivery);
     let toolNames: string[] = [];
     if (!copyOnly) {
       progress.stage = "catalog";
       const tools = await api("mcp", { grant: turn.grant, method: "tools/list" });
+      if (accessDenied(tools.status)) throw new TurnAccessDenied();
       if (!tools.ok) throw new Error("House catalog unavailable");
       const catalog = await tools.json() as { tools: Array<{ name: string }> };
       toolNames = catalog.tools.map(tool => tool.name);
@@ -211,7 +292,7 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       conversation: kind, access: turn.lane, spoilerDelivery,
       discordDelivery: { contentLimit: discordContentLimit, liveRoomSpoiler: spoilerDelivery?.action === "authorized" && kind === "room" },
     };
-    const prompt = JSON.stringify(copyOnly ? deliveryContext : {
+    const conversationContext = copyOnly ? deliveryContext : {
       ...deliveryContext, memberPublicId: turn.publicId, houseOrigin: house.origin,
       activeSpoilerOffer: spoilerDelivery ? undefined : spoilerContext?.offer?.game,
       settledSpoilerGame: spoilerDelivery ? undefined : spoilerContext?.settledGame,
@@ -220,32 +301,54 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       recentDmSubjects: dmHistory?.recentSubjects, repliedToDmMessage: dmHistory?.repliedTo,
       hasExplicitDmReply: kind === "dm" ? Boolean(m.message_reference) : undefined,
       currentMemberMessage: current,
-    });
-    progress.stage = "codex";
-    const result = await runCodex(sandbox, "reply", prompt, toolNames, async body => {
-      if (copyOnly) return noReplyTools(body);
-      const response = await api("mcp", { ...body, grant: turn.grant });
-      if (response.ok && body.method === "tools/call") {
-        const args = body.args as Record<string, unknown> | undefined;
-        if (typeof args?.game === "string") games.add(args.game);
-        if (body.name === "inspect_image" && typeof args?.imageRef === "string") inspected.add(args.imageRef);
-        if (kind === "dm" || body.name === "resolve_house_link") {
-          for (const reference of await subjectsFromRead(body.name, args, response)) {
-            if (body.name === "resolve_house_link" && reference.kind === "game") games.add(reference.id);
-            if (kind === "dm") {
-              const key = subjectKey(reference);
-              if (reference.replayUrl || !observedSubjects.has(key)) observedSubjects.set(key, reference);
+    };
+    const maxImageAttachments = copyOnly ? 0 : discordReplyAttachmentLimit;
+    const draft = async (reason?: ReplyValidationReason) => {
+      observedSubjects.clear();
+      inspected.clear();
+      const replyCorrection = reason ? { reason, maxImageAttachments } : undefined;
+      const prompt = JSON.stringify({ ...conversationContext, replyCorrection });
+      progress.stage = "codex";
+      const result = await runCodex(sandbox, "reply", prompt, toolNames, async body => {
+        if (copyOnly) return noReplyTools(body);
+        const response = await api("mcp", { ...body, grant: turn.grant });
+        if (response.ok && body.method === "tools/call") {
+          const args = body.args as Record<string, unknown> | undefined;
+          if (typeof args?.game === "string") games.add(args.game);
+          if (body.name === "inspect_image" && typeof args?.imageRef === "string") inspected.add(args.imageRef);
+          if (kind === "dm" || body.name === "resolve_house_link") {
+            for (const reference of await subjectsFromRead(body.name, args, response)) {
+              if (body.name === "resolve_house_link" && reference.kind === "game") games.add(reference.id);
+              if (kind === "dm") {
+                const key = subjectKey(reference);
+                if (reference.replayUrl || !observedSubjects.has(key)) observedSubjects.set(key, reference);
+              }
             }
           }
         }
+        return response;
+      });
+      progress.stage = "reply";
+      const reply = validatedReply(result);
+      if (spoilerDelivery && reply.spoiler.action !== "none") throw new ReplyValidationError("spoiler");
+      if (copyOnly && reply.messages.length !== 1) throw new ReplyValidationError("message");
+      if (reply.imageRefs.length > maxImageAttachments) throw new ReplyValidationError("attachment_count");
+      if (reply.imageRefs.some(reference => !inspected.has(reference))) throw new ReplyValidationError("attachment_ref");
+      return reply;
+    };
+    try {
+      return await draft();
+    } catch (error) {
+      if (!(error instanceof ReplyValidationError) || recoveryUsed) throw error;
+      recoveryUsed = true;
+      console.log(JSON.stringify({ event: "discord_reply_validation", reason: error.reason, outcome: "retry", maxImageAttachments }));
+      try {
+        if (await finish()) return await draft(error.reason);
+      } catch (retryError) {
+        if (retryError instanceof ReplyValidationError) throw retryError;
       }
-      return response;
-    });
-    progress.stage = "reply";
-    const reply = validatedReply(result);
-    if (spoilerDelivery && reply.spoiler.action !== "none") throw new Error("Unexpected spoiler command for delivery");
-    if (copyOnly && (reply.messages.length !== 1 || reply.imageRefs.length)) throw new Error("Expected one spoiler response message");
-    return reply;
+      throw error;
+    }
   };
 
   let reply = await generate();
@@ -270,7 +373,8 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
       if (!(await finish())) return "authority_changed";
       progress.stage = "spoiler";
       const grant = await api("turn", { ...params, spoilerGame: decision.target.gameId });
-      if (!grant.ok) return "authority_changed";
+      if (accessDenied(grant.status)) return "authority_changed";
+      if (!grant.ok) return "spoiler_unavailable";
       const elevated = await grant.json() as Turn;
       if (elevated.link !== turn.link || elevated.lane !== turn.lane) return "authority_changed";
       turn = elevated;
@@ -304,6 +408,8 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
   if (!delivery) return "authority_changed";
   if (delivery.lengths.some(length => length > discordContentLimit)) {
     if (proceduralReply(spoilerDelivery)) return "reply_over_limit";
+    if (recoveryUsed) throw new ReplyValidationError("message");
+    recoveryUsed = true;
     const prompt = JSON.stringify({
       discordRepartition: { messages: reply.messages, measuredLengths: delivery.lengths },
       discordDelivery: { contentLimit: discordContentLimit, liveRoomSpoiler },
@@ -321,12 +427,20 @@ async function answer(m: DiscordMessage, progress: TurnProgress, params: TurnBin
 
   const images: Array<{ mimeType: string; data: string }> = [];
   progress.stage = "attachment";
-  for (const imageRef of new Set(reply.imageRefs)) {
-    if (!inspected.has(imageRef)) continue;
-    const response = await api("mcp", { grant: turn.grant, method: "tools/call", name: "inspect_image", args: { imageRef } });
-    if (!response.ok) return "authority_changed";
-    const image = (await response.json() as { content: Array<{ mimeType: string; data: string }> }).content[0];
-    if (image?.mimeType === "image/png" && image.data.length <= 4_000_000) images.push(image);
+  const imageRefs = [...new Set(reply.imageRefs)];
+  const concurrentMediaReads = 2;
+  for (let offset = 0; offset < imageRefs.length; offset += concurrentMediaReads) {
+    const media = await Promise.allSettled(imageRefs.slice(offset, offset + concurrentMediaReads).map(async imageRef => {
+      const response = await api("mcp", { grant: turn.grant, method: "tools/call", name: "inspect_image", args: { imageRef } });
+      const image = response.ok ? (await response.json() as { content: Array<{ mimeType: string; data: string }> }).content[0] : undefined;
+      return { status: response.status, image };
+    }));
+    if (media.some(read => read.status === "fulfilled" && accessDenied(read.value.status))) return "authority_changed";
+    for (const read of media) {
+      const image = read.status === "fulfilled" ? read.value.image : undefined;
+      if (image?.mimeType !== "image/png" || typeof image.data !== "string" || !image.data) return "attachment_unavailable";
+      images.push(image);
+    }
   }
   const replyLinks = await finish([...delivery.links]);
   if (!replyLinks) return "authority_changed";

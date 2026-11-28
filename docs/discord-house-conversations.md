@@ -68,10 +68,18 @@ User role and screening status. The House service issues a three-minute
 conversation grant. Every MCP read and final delivery recheck authority. Image
 references are opaque, scoped to the turn and revalidated when opened. House
 services resolve publication and visibility against existing object storage
-before returning bytes. The gateway can attach up to two inspected images.
+before returning bytes. The gateway can use Discord's full limit of ten
+inspected images in a post within its upload size limits.
 Codex authors all conversation text, including spoiler offers and follow-up
-explanations. It chooses where to split a long reply into ordered Discord
-messages. Each message must fit Discord's 2,000-character limit after link and
+explanations. For replay visuals, Codex looks up published scene images and
+chooses which authorized images to inspect and attach. It explains what
+visuals are available if it cannot include one. The gateway can give Codex
+one corrective attempt when a structured reply fails validation. If a turn
+fails after typing starts, the gateway tries to post a brief error after a
+fresh eligibility and grant check.
+
+Codex chooses where to split a long reply into ordered Discord messages. Each
+message must fit Discord's 2,000-character limit after link and
 spoiler formatting. The gateway checks that every part fits before it starts
 delivery and rechecks authority as it posts the parts in order. If a part of
 a conversational answer is too long, Codex gets one chance to split it again
@@ -97,7 +105,9 @@ tool results, images and spoiler grants stay out of DM history.
 Codex runs as UID 10004 in a networkless, read-only container. A per-turn Unix
 socket carries the scoped House MCP bridge and a fixed OpenAI inference
 transport. The transport filters the actual model-facing catalog to approved
-House functions. Replies default to GPT-6.1 Terra. The consent turn uses
+House functions. The sandbox uses compact image previews for model input.
+The gateway rechecks and fetches each selected PNG for delivery. Replies
+default to GPT-6.1 Terra. The consent turn uses
 GPT-6 Luna with reasoning effort set to `none` and an empty tool catalog. Credentials belong to
 the gateway, inference relay and House API. The `SOUL.md` file defines the House
 voice and its typed-command rule for intent.

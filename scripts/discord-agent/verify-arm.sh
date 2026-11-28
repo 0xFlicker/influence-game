@@ -35,17 +35,22 @@ for mode in reply consent; do
   printf '%s\n' "$output"
   if [[ "$mode" == reply ]]; then
     printf '%s\n' "$output" | bun -e '
-      const { messages } = JSON.parse(await Bun.stdin.text());
+      const { messages, imageRefs } = JSON.parse(await Bun.stdin.text());
       if (!Array.isArray(messages) || messages.length !== 2
         || messages[0] !== "[Open the replay](https://thehouse.game/games/copper-fox/replay?audience=mystery&cursor=8)"
         || messages[1] !== "The second part keeps its complete wording.") {
         throw new Error("ARM probe lost or reordered a model-authored reply part");
       }
+      if (JSON.stringify(imageRefs) !== JSON.stringify(Array.from({ length: 10 }, (_, index) => `fixture-image-${index + 1}`))) {
+        throw new Error("ARM probe lost or reordered the ten selected image references");
+      }
     '
   fi
 done
 docker logs "$probe" | grep -Fx 'MCP IMAGE IN MODEL INPUT'
+docker logs "$probe" | grep -Fx 'MCP BOUNDED JPEG PREVIEWS IN MODEL INPUT 10'
 docker logs "$probe" | grep -Fx 'MCP REPLAY URL IN MODEL INPUT'
+docker logs "$probe" | grep -Fx 'MCP IMAGE ATTACHMENT LIMIT IN MODEL SCHEMA'
 docker logs "$probe" | grep -Fx 'PROVIDER TOOLS []'
 docker run --rm --network none --read-only --cap-drop=ALL --security-opt=no-new-privileges --user=10004:10004 \
   --entrypoint /usr/local/bin/bun "$image" -e '
