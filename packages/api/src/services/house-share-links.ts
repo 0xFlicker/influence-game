@@ -1,6 +1,6 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
-import { parseHouseShareTarget, SHARE_CODE_PATTERN, type HouseShareTarget } from "@influence/engine/house-share-target";
+import { isSignupCampaignLanding, parseHouseShareTarget, SHARE_CODE_PATTERN, type HouseShareTarget, type SignupCampaignLanding } from "@influence/engine/house-share-target";
 import { uuid } from "@influence/engine/operational-errors";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { isViewerGame } from "./game-visibility.js";
@@ -8,6 +8,7 @@ import { readPublicAgentIdentity } from "./public-agent-profile.js";
 import { resolvePublicPlayer } from "./public-player-identity.js";
 
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const CAMPAIGN_PATH_PREFIX = "/_signup-campaign/";
 export class ShareRateLimitError extends Error {}
 
 /** Row locks make admission atomic across all API instances. No daily quota. */
@@ -47,33 +48,52 @@ export async function validateShareTarget(db: DrizzleDB, target: HouseShareTarge
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
 export async function saveShareLink(db: DrizzleDB, target: HouseShareTarget, ownerId?: string) {
-  if (!ownerId) return insertShareLink(db, target);
+  if (!ownerId) return insertShareLink(db, target.path);
   return db.transaction(async tx => {
     const [owner] = await tx.select({ id: schema.users.id }).from(schema.users)
       .where(and(eq(schema.users.id, ownerId), isNull(schema.users.deletedAt))).for("share");
     if (owner) await tx.insert(schema.houseShareAccounts).values({ userId: owner.id }).onConflictDoNothing();
-    return insertShareLink(tx, target, owner?.id);
+    return insertShareLink(tx, target.path, owner?.id);
   });
 }
 
-async function insertShareLink(db: DrizzleDB | Tx, target: HouseShareTarget, ownerId?: string) {
+async function insertShareLink(db: DrizzleDB | Tx, path: string, ownerId?: string) {
   const scope = ownerId ? eq(schema.houseShareLinks.ownerId, ownerId) : isNull(schema.houseShareLinks.analyticsId);
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = Array.from({ length: 10 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
     // Concurrent identical shares converge; rare code collisions retry, never overwrite.
     const [created] = await db.insert(schema.houseShareLinks)
-      .values({ code, path: target.path, ownerId, analyticsId: ownerId ? randomUUID() : null })
+      .values({ code, path, ownerId, analyticsId: ownerId ? randomUUID() : null })
       .onConflictDoNothing().returning();
     if (created) return created;
-    const [existing] = await db.select().from(schema.houseShareLinks).where(and(scope, eq(schema.houseShareLinks.path, target.path)));
+    const [existing] = await db.select().from(schema.houseShareLinks).where(and(scope, eq(schema.houseShareLinks.path, path)));
     if (existing) return existing;
   }
   throw new Error("Unable to allocate a House share link.");
 }
 
+// Only the campaign admin can create this internal target. Public sharing still
+// accepts exclusively the regular House destinations.
+export function readSignupCampaignSharePath(path: string) {
+  if (!path.startsWith(CAMPAIGN_PATH_PREFIX)) return null;
+  const destination = path.slice(CAMPAIGN_PATH_PREFIX.length);
+  const separator = destination.indexOf("/");
+  if (separator < 0) return null;
+  const campaignId = destination.slice(0, separator);
+  const landing = destination.slice(separator);
+  return uuid(campaignId) && isSignupCampaignLanding(landing) ? { campaignId, landing } : null;
+}
+
+export async function saveSignupCampaignShareLink(db: DrizzleDB, campaignId: string, landing: SignupCampaignLanding) {
+  return insertShareLink(db, `${CAMPAIGN_PATH_PREFIX}${campaignId}${landing}`);
+}
+
 export async function resolveShareLink(db: DrizzleDB, code: string, issueOpenTicket = false) {
   const [link] = await db.select().from(schema.houseShareLinks).where(eq(schema.houseShareLinks.code, code));
-  if (!link || !await validateShareTarget(db, parseHouseShareTarget(link.path))) return null;
+  if (!link) return null;
+  const campaign = readSignupCampaignSharePath(link.path);
+  if (campaign) return { code: link.code, path: campaign.landing, signupCampaign: true as const };
+  if (!await validateShareTarget(db, parseHouseShareTarget(link.path))) return null;
   return {
     code: link.code,
     path: link.path,

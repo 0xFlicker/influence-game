@@ -16,10 +16,16 @@ different Privy account. The signup availability check begins after they choose
 Create account. Existing linked Privy accounts sign in directly even when the
 bucket is empty.
 
-People → Invites issues campaign links. Keep the link fragment when adding
-campaign query parameters. Links work during their scheduled window. A browser
+People → Invites issues campaign links. On a campaign row, open **Short link**,
+select a landing page, and choose **Generate short link**. Generating again
+for the same campaign and landing page returns the same /s/ link. Validated ad
+query parameters carry through to the landing page. On a long link, put ad
+parameters before the campaign fragment.
+
+Both forms issue sessions during the campaign’s scheduled window. A browser
 session issued during that window can bypass the bucket once in the following
-24 hours. Closing the campaign stops new issuance. Campaign attribution and
+24 hours. Closing the campaign stops new issuance. A published short link
+still opens its landing page after the campaign ends. Campaign attribution and
 its consent rules are independent of signup admission.
 
 All new accounts require Cloudflare Turnstile. Configure a Managed widget per

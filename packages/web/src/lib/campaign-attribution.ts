@@ -44,6 +44,23 @@ const STORAGE_KEY = "house:campaign-attribution";
 const LABEL_VALUE = /^[a-zA-Z0-9_. -]{1,100}$/;
 const CLICK_ID_VALUE = /^[a-zA-Z0-9_.-]{1,512}$/;
 const CLICK_ID_PARAMS = ["gclid", "fbclid", "msclkid", "ttclid", "twclid", "dclid", "gbraid", "wbraid"] as const;
+const LABEL_PARAMS = [
+  "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+  "landing_variant", "onboarding_variant", "starter_prompt", "starter_skill",
+] as const;
+
+/** Carry supported ad parameters to the campaign landing page without recording them here. */
+export function copyCampaignQuery(
+  query: Record<string, string | string[] | undefined>,
+  destination: URLSearchParams,
+): void {
+  for (const [keys, pattern] of [[LABEL_PARAMS, LABEL_VALUE], [CLICK_ID_PARAMS, CLICK_ID_VALUE]] as const) {
+    for (const key of keys) {
+      const value = query[key];
+      if (typeof value === "string" && pattern.test(value)) destination.set(key, value);
+    }
+  }
+}
 
 /** Attribution window used for acquisition reporting: 90 days before signup. */
 export const ATTRIBUTION_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;

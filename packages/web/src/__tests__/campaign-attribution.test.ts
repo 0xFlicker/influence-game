@@ -3,6 +3,7 @@ import {
   campaignAttributionProperties,
   bindCampaignAccount,
   clearCampaignAttribution,
+  copyCampaignQuery,
   getStoredCampaignAttribution,
   isWithinAttributionWindow,
   parseCampaignTouch,
@@ -49,6 +50,19 @@ test("direct and invalid touches stay explicitly unknown", () => {
   expect(parseCampaignTouch("")).toBeNull();
   expect(parseCampaignTouch("?utm_source=not%20valid%21")).toBeNull();
   expect(parseCampaignTouch("?gclid=bad%20click")).toBeNull();
+});
+
+test("campaign short links forward validated attribution without copying unrelated parameters", () => {
+  const destination = new URLSearchParams("app=mini");
+  copyCampaignQuery({
+    utm_source: "meta", utm_campaign: "season-1", utm_term: ["first", "second"],
+    fbclid: "fb.123", gclid: "g.456", landing_variant: "hero-b", starter_skill: "bluffing",
+    utm_content: "private@example.test", redirect: "https://example.com", touch_at: "fake",
+  }, destination);
+  expect(Object.fromEntries(destination)).toEqual({
+    app: "mini", utm_source: "meta", utm_campaign: "season-1", fbclid: "fb.123",
+    gclid: "g.456", landing_variant: "hero-b", starter_skill: "bluffing",
+  });
 });
 
 test("first touch is retained and direct visits never overwrite last non-direct", () => {

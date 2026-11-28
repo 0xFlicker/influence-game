@@ -20,6 +20,10 @@ iframe. Farcaster launches the short resolver, which accepts only its `app=mini`
 context hint and restores the frozen settings. Use one snapshot from the Share
 click, including across failed creation retries.
 
+Signup campaign links are issued by campaign operators. They forward validated
+acquisition parameters to the chosen landing page. Keep that query handling
+scoped to campaign links so ordinary shares still restore their saved settings.
+
 Native sharing needs a fresh user gesture after asynchronous link creation. Keep
 the prepared URL in a small dialog with native-share and copy actions. Creation
 limits belong in shared database admission, while preview/resolution reads remain
