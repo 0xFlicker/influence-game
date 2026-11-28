@@ -41,3 +41,10 @@ the current grant. Codex writes the offer and any follow-up explanation from
 the typed decision. Keep shared live spoiler text and attachments concealed in
 Discord. Carry only a typed spoiler marker from those bot messages into later
 room context.
+
+## Proactive recaps
+
+Authorize game announcements from committed Public lifecycle transitions and
+recheck visibility before posting. Keep the replay link outside the spoiler so
+members can open it first. In room history, carry the checked replay link and a
+typed recap marker while keeping the recap prose concealed.

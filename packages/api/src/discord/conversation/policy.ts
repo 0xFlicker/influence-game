@@ -20,7 +20,12 @@ export interface DiscordMessage {
 type RoomMessage = { id: string } & (
   | { speaker: "house" | "requesting_member" | "room_member"; text: string; disclosure?: never }
   | { speaker: "house"; disclosure: "live_werewolf_spoiler"; text?: never }
+  | { speaker: "house"; disclosure: "game_recap"; replayUrl: string; text?: never }
 );
+
+function spoilerLine(line: string) {
+  return line.length > 4 && line.startsWith("||") && line.endsWith("||");
+}
 
 function containsHouseDisclosure(message: DiscordMessage) {
   if (Array.isArray(message.attachments) && message.attachments.some(attachment =>
@@ -28,10 +33,29 @@ function containsHouseDisclosure(message: DiscordMessage) {
   const lines = message.content.split(newline).filter(line => line.trim());
   // The old heading is recognized only when reading historical House messages.
   return lines[0] === legacyRoomSpoilerHeading || lines.length > 0
-    && lines.every(line => line.length > 4 && line.startsWith("||") && line.endsWith("||"));
+    && lines.every(spoilerLine);
 }
 
-export function roomContext(current: DiscordMessage, messages: DiscordMessage[], botId: string | undefined) {
+function announcementLink(value: unknown, origin: string) {
+  if (typeof value !== "string" || value.length > 2048 || !URL.canParse(value)) return;
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.origin !== origin || url.username || url.password || url.hash || url.href !== value) return;
+  const [, section, slug, view, ...rest] = url.pathname.split("/");
+  if (section !== "games" || !slug || !gameReference.test(slug) || rest.length) return;
+  if (view === undefined && !url.search) return { url: value, view: "watch" as const, mystery: false };
+  if (view === "replay" && (!url.search || url.search === "?audience=mystery")) {
+    return { url: value, view: "replay" as const, mystery: Boolean(url.search) };
+  }
+}
+
+function recapHistoryLink(message: DiscordMessage, origin: string) {
+  if (message.message_reference) return;
+  const [first, ...rest] = message.content.split(newline);
+  const link = announcementLink(first, origin);
+  return link?.view === "replay" && rest.some(spoilerLine) ? link.url : undefined;
+}
+
+export function roomContext(current: DiscordMessage, messages: DiscordMessage[], botId: string | undefined, origin?: string) {
   const cutoff = discordMessageTime(current.id) - 30 * 60_000;
   const seen = new Set<string>();
   const context = messages.flatMap<RoomMessage>(message => {
@@ -42,9 +66,11 @@ export function roomContext(current: DiscordMessage, messages: DiscordMessage[],
       || typeof message.content !== "string") return [];
     const house = message.author.id === botId;
     if (message.author.bot && !house) return [];
+    const replayUrl = house && origin ? recapHistoryLink(message, origin) : undefined;
     const liveReveal = house && containsHouseDisclosure(message);
     if (!liveReveal && !message.content.trim()) return [];
     seen.add(message.id);
+    if (replayUrl) return [{ id: message.id, speaker: "house", disclosure: "game_recap", replayUrl }];
     if (liveReveal) return [{ id: message.id, speaker: "house", disclosure: "live_werewolf_spoiler" }];
     return [{ id: message.id,
       speaker: house ? "house" : message.author.id === current.author.id ? "requesting_member" : "room_member",
@@ -286,6 +312,46 @@ export function discordReplyContent(text: string, liveRoomSpoiler: boolean) {
     const safe = line.replaceAll("|", "¦").replaceAll("`", "′").replaceAll("\\", "＼");
     return `||${safe}||`;
   }).join("\n");
+}
+
+export interface AnnouncementJob {
+  id: string;
+  lease: string;
+  channelId: string;
+  kind: "start" | "finish";
+  facts: Record<string, unknown>;
+  url: string;
+}
+
+export function readAnnouncementJob(value: unknown, channelId: string, origin: string): AnnouncementJob | null {
+  const { id, lease, channelId: destination, kind, facts: snapshot, url } = record(value);
+  const facts = record(snapshot);
+  const link = announcementLink(url, origin);
+  const { gameKind } = facts;
+  if (typeof id !== "string" || !gameReference.test(id) || typeof lease !== "string" || !gameReference.test(lease)
+      || destination !== channelId || (kind !== "start" && kind !== "finish")
+      || (gameKind !== "influence" && gameKind !== "werewolf") || !link
+      || Buffer.byteLength(JSON.stringify(facts)) > 8192) return null;
+  const needsReplay = kind === "finish" || gameKind === "werewolf";
+  if (link.view !== (needsReplay ? "replay" : "watch") || link.mystery !== (gameKind === "werewolf")) return null;
+  return { id, lease, channelId, kind, facts, url: link.url };
+}
+
+export function discordAnnouncementContent(value: unknown, kind: "start" | "finish", link: string) {
+  const reply = validatedReply(value);
+  const [text] = reply.messages;
+  if (reply.messages.length !== 1 || !text || text.includes("://") || text.includes("](")) throw new ReplyValidationError("message");
+  if (reply.imageRefs.length) throw new ReplyValidationError("attachment_count");
+  if (reply.spoiler.action !== "none" || reply.spoiler.game) throw new ReplyValidationError("spoiler");
+  if (reply.subject.kind !== "none") throw new ReplyValidationError("subject");
+  const content = link + "\n\n" + discordReplyContent(text.trim(), kind === "finish");
+  if (content.length > discordContentLimit) throw new ReplyValidationError("message");
+  return content;
+}
+
+export function discordAnnouncementPayload(content: string, nonce: unknown) {
+  if (typeof nonce !== "string" || !nonce || nonce.length > 25) return null;
+  return { content, flags: 4, nonce, enforce_nonce: true, allowed_mentions: { parse: [] } };
 }
 
 export function discordReplyForm(

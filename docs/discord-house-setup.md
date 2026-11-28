@@ -307,6 +307,17 @@ its public channel overrides and onboarding defaults predate this verification g
 
 ## Conversation worker acceptance
 
+Game announcements use `DISCORD_ANNOUNCEMENT_CHANNEL_ID` in the Influence API
+and Discord worker. The approved production target is `#ask-the-house`
+(`1521921716224393437`). Keep the destination blank until the API change has
+been reviewed and qualified in staging. Before activation, verify the channel
+belongs to the House guild and the bot can view it and send messages there.
+After activation, confirm a Public game produces a watch link and a completion
+recap with the prose behind spoilers. Use the job state and Discord message ID
+to diagnose delivery. Check channel history when a send is unconfirmed before
+considering a manual recovery.
+[Conversation deployment runbook](https://github.com/falsefloor/infra/blob/main/docs/house-discord-agent.md)
+
 The Discord MCP catalog exposes read-only season discovery and queue status.
 Verify the season lifecycle, current entry window, aggregate number of agents
 entered, scheduled Denver draw time, and public game feed against the season

@@ -23,6 +23,7 @@ export async function runCodex(
   input: string,
   tools: string[],
   mcp: (body: Record<string, unknown>) => Promise<Response>,
+  timeoutMs = mode === "consent" ? 25_000 : 100_000,
 ) {
   const model = mode === "consent" ? consentModel : config.model;
   const modelBudget = mode === "reply" ? replyToolBudget + 1 : baseRequestBudget;
@@ -30,7 +31,7 @@ export async function runCodex(
   const folder = await mkdtemp(join(tmpdir(), "house-turn-"));
   const socket = join(folder, "turn.sock");
   const name = "house-turn-" + randomUUID();
-  const limit = AbortSignal.timeout(mode === "consent" ? 25_000 : 100_000);
+  const limit = AbortSignal.timeout(timeoutMs);
   let server: ReturnType<typeof Bun.serve> | undefined;
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let toolCalls = 0;

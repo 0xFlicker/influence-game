@@ -119,6 +119,20 @@ async function truncateAll(db: DrizzleDB): Promise<void> {
   await db.execute(sql.raw(`TRUNCATE TABLE ${tableList} CASCADE`));
 }
 
+export const TEST_DISCORD_ANNOUNCEMENT_CHANNEL_ID = "1555555555555555555";
+
+export async function withTestDiscordAnnouncementChannel<T>(run: () => Promise<T>): Promise<T> {
+  const key = "DISCORD_ANNOUNCEMENT_CHANNEL_ID";
+  const previous = process.env[key];
+  process.env[key] = TEST_DISCORD_ANNOUNCEMENT_CHANNEL_ID;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  }
+}
+
 /** Pin a generated Werewolf fixture to its intended historical reducer. */
 export async function pinWerewolfRulesVersion(db: DrizzleDB, gameId: string, version: import("@influence/engine/werewolf").WerewolfConfig["rulesVersion"]) {
   const [row] = await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, gameId));

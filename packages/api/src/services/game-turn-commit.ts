@@ -1,4 +1,5 @@
 import { storeFields, loadPayloads } from "./payload-storage.js";
+import { enqueueDiscordAnnouncement } from "./discord-announcement-jobs.js";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   assertCanonicalGameEvent,
@@ -604,6 +605,9 @@ export async function commitGameTurn(
         sourcePointers: committed.event.sourcePointers as unknown as ReadonlyArray<Record<string, unknown>>,
         envelope: committed.event as unknown as Record<string, unknown>,
       });
+    }
+    if (canonicalEvents.some(({ event }) => event.type === "game.roster_initialized")) {
+      await enqueueDiscordAnnouncement(tx, params.draft.gameId, "start");
     }
 
     let nextPrefixDigest = transcriptState.prefixDigest;

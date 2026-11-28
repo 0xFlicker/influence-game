@@ -118,6 +118,26 @@ replacement and rollback. The signed `/verify` Lambda and role worker have an
 independent lifecycle.
 [Conversation deployment runbook](https://github.com/falsefloor/infra/blob/main/docs/house-discord-agent.md)
 
+## Game announcements
+
+The worker can post one watch announcement and one spoiler-tagged recap for a
+Public game. Influence queues the start with the committed roster event. Werewolf
+queues it with its first started event. Official completion queues the finish,
+including Werewolf games that wait for their final audio boundary. The job is
+recorded in the same transaction as the transition.
+
+Codex writes the post from a small snapshot of public facts. The worker checks
+the Public and non-hidden game scope again before it posts. The watch link opens
+Werewolf in Mystery. Recaps keep the replay link visible and wrap the prose in
+Discord spoilers. `#ask-the-house` history retains the replay link and a typed
+disclosure marker so later turns keep the spoiler concealed.
+
+The worker claims announcements while its conversation queue is idle. It records
+send intent before contacting Discord and saves the returned message ID. An
+explicit Discord rate limit requeues the job after the retry delay. A send with
+an uncertain result is held for operator review. The job record contains delivery
+state and identifiers. Codex prose stays in the delivery process.
+
 ## Local verification
 
 Run `bun run test`, `bun run test:postgres` and `bun run check`. The PostgreSQL

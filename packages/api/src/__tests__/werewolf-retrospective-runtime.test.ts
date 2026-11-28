@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { createProviderAdapter, modelCatalogEntryById, fixtureRetrospectiveCapacity, fixtureWerewolfRetrospective, RetrospectiveExecutionError, type LlmProviderRuntime } from "@influence/engine";
 import { advanceWerewolf, replayWerewolf, runWerewolf, WerewolfModelAgent, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { pinWerewolfRulesVersion, setupTestDB } from "./test-utils.js";
+import { pinWerewolfRulesVersion, setupTestDB, withTestDiscordAnnouncementChannel } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, releaseWerewolfOwner } from "../services/werewolf-games.js";
 import { createApiProviderExecutionHooks } from "../services/provider-call-journal.js";
 import { getAdminGameCostDetail } from "../services/admin-game-cost-detail.js";
@@ -22,7 +22,12 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   const db = await setupTestDB();
   await db.insert(schema.users).values({ id: "rt05-owner" });
   await grantTestAuthority(db, "rt05-owner", [], "admin");
-  const game = await createWerewolfGame(db, "rt05-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1, providerManifest: [{ catalogId: "openai:gpt-5.6-luna" }] });
+  const game = await withTestDiscordAnnouncementChannel(() => createWerewolfGame(db, "rt05-owner", {
+    preset: "one_wolf", agentProfileIds: [], maxDays: 1, visibility: "public",
+    providerManifest: [{ catalogId: "openai:gpt-5.6-luna" }],
+  }));
+  const jobKinds = async () => (await db.select({ kind: schema.discordAnnouncementJobs.kind })
+    .from(schema.discordAnnouncementJobs).where(eq(schema.discordAnnouncementJobs.gameId, game.id))).map(row => row.kind).sort();
   await pinWerewolfRulesVersion(db, game.id, 8);
   const claim = await claimWerewolfGame(db, game.id);
   if (!claim.ok) throw new Error(claim.error);
@@ -30,6 +35,7 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   let state = replayWerewolf(await store.read());
   while (!state.outcome) state = await advanceWerewolf(store, scripted);
   const outcome = structuredClone(state.outcome);
+  expect(await jobKinds()).toEqual(["start"]);
   expect((await db.select().from(schema.games))[0]!.status).toBe("in_progress");
   expect((await db.select().from(schema.gameRunOwners))[0]!.status).toBe("active");
   expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(0);
@@ -85,9 +91,10 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   if (!cost.ok) throw new Error(cost.error);
   expect(cost.detail.breakdowns.action).toMatchObject({ "retrospective-statement": { callCount: 1, totalTokens: 140 } });
   expect((await db.select().from(schema.games))[0]!.status).toBe("in_progress");
-  const final = await runWerewolf(nextStore, scripted);
+  const final = await withTestDiscordAnnouncementChannel(() => runWerewolf(nextStore, scripted));
   expect(final.outcome).toEqual(outcome); expect(final.retrospective!.statements).toHaveLength(final.players.length);
   expect((await db.select().from(schema.games))[0]!.status).toBe("completed");
+  expect(await jobKinds()).toEqual(["finish", "start"]);
   expect((await db.select().from(schema.gameRunOwners)).filter(owner => owner.status === "closed")).toHaveLength(1);
   expect(await loadPayloads(db.select().from(schema.gameRetrospectiveInputs))).toHaveLength(1);
 }, 30_000);

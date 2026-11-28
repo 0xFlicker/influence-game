@@ -3,10 +3,12 @@ import Ajv from "ajv";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DrizzleDB } from "../db/index.js";
+import { claimDiscordAnnouncement } from "../services/discord-announcement-context.js";
+import { beginDiscordAnnouncement, completeDiscordAnnouncement, configuredDiscordAnnouncementChannel } from "../services/discord-announcement-jobs.js";
 import { HouseInspectionError } from "../services/house-game-access.js";
 import { discordGame, discordImage, discordRead, discordReadTools, resolveDiscordHouseLink } from "../game-mcp/discord-reads.js";
 import {
-  assertDiscordGrant, discordUnavailable, issueDiscordGrant, parseDiscordTurn, referencePattern,
+  assertDiscordGrant, discordIdPattern, discordUnavailable, issueDiscordGrant, parseDiscordTurn, referencePattern,
   signDiscordRef, verifyDiscordRef, type DiscordGrant,
 } from "../game-mcp/discord-turn.js";
 
@@ -14,6 +16,7 @@ const prefix = "/api/internal/discord/agent";
 const ajv = new Ajv();
 const tools = new Map(discordReadTools.map(tool => [tool.name, { tool, validate: ajv.compile(tool.inputSchema) }]));
 const staffOnly = new Set(["list_game_reasoning", "read_game_reasoning", "read_account"]);
+const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
 export function createDiscordAgentRoutes(db: DrizzleDB) {
   const app = new Hono();
@@ -38,6 +41,33 @@ export function createDiscordAgentRoutes(db: DrizzleDB) {
     const body: unknown = await c.req.json().catch(() => null);
     if (!plainObject(body)) return c.json({ error: "Invalid request" }, 400);
     const action = c.req.param("action");
+    if (action === "announcement-claim" || action === "announcement-begin" || action === "announcement-complete") {
+      const { channelId, id, lease, outcome, messageId, retryAfterSeconds } = body;
+      if (typeof channelId !== "string" || channelId !== configuredDiscordAnnouncementChannel()) return discordUnavailable();
+      const fields = Object.keys(body).length;
+      if (action === "announcement-claim" && fields === 1) return c.json({ job: await claimDiscordAnnouncement(db, channelId) });
+      if (typeof id !== "string" || !uuidPattern.test(id) || typeof lease !== "string" || !uuidPattern.test(lease)) {
+        return c.json({ error: "Invalid announcement job claim" }, 400);
+      }
+      if (action === "announcement-begin" && fields === 3) return c.json(await beginDiscordAnnouncement(db, { id, lease, channelId }));
+      if (action === "announcement-complete") {
+        const validRetryDelay = typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds)
+          && retryAfterSeconds >= 0 && retryAfterSeconds <= 86_400;
+        if (outcome === "rate_limited" && messageId === undefined
+            && ((fields === 4 && retryAfterSeconds === undefined) || (fields === 5 && validRetryDelay))) {
+          return c.json({ ok: await completeDiscordAnnouncement(db, {
+            id, lease, channelId, outcome, retryAfterSeconds: validRetryDelay ? retryAfterSeconds : undefined,
+          }) });
+        }
+        if (fields === 5 && outcome === "posted" && typeof messageId === "string" && discordIdPattern.test(messageId)) {
+          return c.json({ ok: await completeDiscordAnnouncement(db, { id, lease, channelId, outcome, messageId }) });
+        }
+        if (fields === 4 && messageId === undefined && (outcome === "failed" || outcome === "retry" || outcome === "unconfirmed")) {
+          return c.json({ ok: await completeDiscordAnnouncement(db, { id, lease, channelId, outcome }) });
+        }
+      }
+      return c.json({ error: "Invalid announcement request" }, 400);
+    }
     if (action === "turn") {
       const turn = parseDiscordTurn(body, process.env.DISCORD_HOUSE_GUILD_ID ?? "", process.env.DISCORD_AGENT_ROOM_ID ?? "");
       const grant = await issueDiscordGrant(db, turn);

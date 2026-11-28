@@ -10,6 +10,7 @@ import { queueEpisodeCopy } from "./episode-presentation.js";
 import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
 import { queueHouseCuts } from "./house-cut-queue.js";
+import { enqueueDiscordAnnouncement } from "./discord-announcement-jobs.js";
 import { insertRetrospectiveInput } from "./game-retrospective-inputs.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -173,6 +174,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
       houseCharacter: agentProfileId ? null : houseCharacter,
     })));
     await tx.insert(schema.werewolfEvents).values({ gameId, sequence: initial.sequence, event: initial });
+    await enqueueDiscordAnnouncement(tx, gameId, "start");
     if (input.audioMode === true) await freezeLiveVoices(tx,gameId);
     await queueEpisodeCopy(tx, gameId);
   });
@@ -280,6 +282,7 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
         ...(werewolfExecutionFinished(next) && !deferCompletion ? { status: "closed" as const, closedAt: new Date().toISOString() } : {}) }).where(eq(schema.gameRunOwners.id, owner.id));
       if (werewolfExecutionFinished(next) && !deferCompletion) {
         await tx.update(schema.games).set({ status: "completed", endedAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));
+        await enqueueDiscordAnnouncement(tx, gameId, "finish");
         await queueHouseCuts(tx, gameId);
         await ensureWaitingPostgameMediaRow(tx, gameId);
       }
@@ -297,6 +300,7 @@ export async function completeWerewolfAudioGame(db:DrizzleDB,gameId:string,owner
     const now = new Date().toISOString();
     await tx.update(schema.gameRunOwners).set({status:"closed",closedAt:now}).where(eq(schema.gameRunOwners.id,owner.id));
     await tx.update(schema.games).set({status:"completed",endedAt:now}).where(eq(schema.games.id,gameId));
+    await enqueueDiscordAnnouncement(tx, gameId, "finish");
     await queueHouseCuts(tx,gameId);
     await ensureWaitingPostgameMediaRow(tx,gameId);
   });

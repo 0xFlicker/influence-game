@@ -1,4 +1,5 @@
 import { queueHouseCuts } from "./house-cut-queue.js";
+import { enqueueDiscordAnnouncement } from "./discord-announcement-jobs.js";
 import { assertInfluenceRetrospectiveCompletion } from "./game-retrospective-completion.js";
 import { randomUUID } from "crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -1176,6 +1177,7 @@ export async function settleCapturedGameCompletion(
         );
       }
 
+      await enqueueDiscordAnnouncement(tx, gameId, "finish");
       await queueHouseCuts(tx, gameId);
       await releaseHeldTerminalPublications(tx, {
         gameId,

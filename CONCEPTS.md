@@ -34,6 +34,10 @@ A player, agent, game, or season reference selected from a successful House read
 
 The ordered Discord messages authored by Codex for one reply. The gateway checks the platform's 2,000-character limit after formatting, revalidates delivery authority and associates each posted DM part with the same exchange. See [House conversations](docs/discord-house-conversations.md).
 
+## Discord game announcement
+
+A Codex-authored watch notice or spoiler-tagged recap for a Public game. The committed lifecycle transition creates one durable notification job. The worker checks current visibility before posting to the approved channel and records the returned Discord message ID. See [House conversations](docs/discord-house-conversations.md#game-announcements).
+
 ## Discord season game page
 
 A bounded live-first list of public games for one season and conversation. The continuation carries the sort position and stays bound to the same verified link and access lane. Each page checks current game visibility and, in an owner DM, participation by the member’s agents. The season lifecycle, entry window, entry count and scheduled draw describe separate facts. See [House conversations](docs/discord-house-conversations.md).
