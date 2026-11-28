@@ -95,6 +95,10 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
         return { input: await sharp(image).resize(next - left, height, { fit: "contain", background: "#e5ded0" }).png().toBuffer(), left, top: 0 };
       }));
       const assembly = await sharp({ create: { width, height, channels: 3, background: "#e5ded0" } }).composite(ordered).png().toBuffer();
+      const joins = ordered.slice(1).map(({ left }) => left).join(", ");
+      const panelOrder = sourcePanels.map(panel => panel.participantIds.map(id => ({
+        id, name: plan.cast.find(member => member.id === id)?.name,
+      })));
       try {
         await options.onStep?.("harmonizing");
         const rendered = await renderImage({
@@ -102,7 +106,12 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
           operationKey: `${renderKey}:harmonization:v2`, reuseOperationKey: reuse("harmonization:v2"),
           allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
           request: { operation: "edit", background: "opaque", width, height, references: [assembly, ...panels],
-            prompt: `${common}\nStitch these views into one continuous wide room. The FIRST reference is their ordered assembly; the remaining references are the original views in left-to-right order. Preserve EVERY original person, face, clothing, pose, and left-to-right position from the assembly. Unify architecture, lighting and perspective at the seams without deleting, merging, replacing or duplicating anyone. The final image must contain exactly ${ids.length} distinct contestants, each once. Source-view cast counts and identities: ${JSON.stringify(sourcePanels.map(panel => panel.visibleParticipantIds.map(id => ({ id, name: plan.cast.find(member => member.id === id)?.name })) ))}. Keep all heads visible and preserve natural head orientations. No panel borders or collage seams.` },
+            prompt: [
+              common,
+              "Create one uninterrupted wide photograph from a single camera. The first reference is the panel assembly. The remaining references show each panel in left-to-right order.",
+              `Rebuild the room across the joins at x = ${joins} pixels in the ${width}-pixel-wide assembly. Carry ceiling lines, floor lines, windows, and furniture continuously through each join in one perspective and consistent lighting. Resolve repeated parts of the same furniture into a single object.`,
+              `Required contestant order from image left to right, grouped by panel: ${JSON.stringify(panelOrder)}. Keep that order of head centers across the full image and show exactly ${ids.length} distinct contestants, each once. Preserve recognizable faces, hair, and clothing. Keep heads fully visible and poses natural. Adjust limbs, seating, and nearby furniture as needed to make the joins disappear.`,
+            ].join("\n") },
         });
         await options.onImage?.(await storeVisualArtifact(db, gameId, rendered.image));
         await options.onStep?.("verifying harmonization");
@@ -145,12 +154,15 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
         const crop = backgrounds[index];
         const backdrop = crop ? await readVisualArtifact(db, gameId, await storeVisualArtifact(db, gameId, crop.image)) : roomImage;
         await options.onStep?.(`section:${index + 1}`);
+        const framing = crop
+          ? `This is view ${index + 1} of ${groups.length}: the first image is ONLY this distinct region cropped from a wide room. Keep its camera, crop framing, architecture, and furniture fixed, especially where lines and objects meet neighboring views at the crop edges. Do not reconstruct the entire room or add furniture from other regions. Stage contestants naturally with headroom and keep them clear of the joins where possible. Place their head centers from image left to right in the exact order of the contestant list below.`
+          : "Show the whole conversation in one wide view.";
         const rendered = await renderImage({ gameId, sceneId: scene.id, repairJobId: options.jobId,
           operationKey: `${renderKey}:room-crop:v1:${index}`, reuseOperationKey: reuse(`room-crop:v1:${index}`), signal, beforeDispatch,
           allowFallback: options.jobId ? true : scene.renderRevision === 0,
           request: { operation: "create", background: "opaque", width: crop?.width ?? 1536, height: crop?.height ?? 864,
             references: [...(backdrop ? [backdrop] : []), ...members.map(r => r.image)],
-            prompt: `${common}\n${backdrop ? "" : direction?.roomDirection ?? room.direction}\n${crop ? `This is view ${index + 1} of ${groups.length}: the first image is ONLY this distinct region cropped from a wide room. Preserve this region's camera, architecture and furniture. Do not reconstruct the entire room or add furniture from other regions. Place the characters naturally within THIS view, with every head visible and headroom.` : "Show the whole conversation in one wide view."} ${backdrop ? "The remaining references" : "The references"} identify IN ORDER: ${JSON.stringify(members.map(({ member, placement }) => ({ id: member.id, name: member.name, role: placement.role, ...(plan.direction ? { position: placement.position } : {}), performance: member.performanceInstructions })))}. Exactly ${members.length} people, each character exactly once. No additional conversation partners. Observable performance notes: ${JSON.stringify(plan.cues.filter(cue => members.some(r => r.member.id === cue.playerId)))}.` },
+            prompt: `${common}\n${backdrop ? "" : direction?.roomDirection ?? room.direction}\n${framing} ${backdrop ? "The remaining references" : "The references"} identify IN ORDER: ${JSON.stringify(members.map(({ member, placement }) => ({ id: member.id, name: member.name, role: placement.role, ...(plan.direction ? { position: placement.position } : {}), performance: member.performanceInstructions })))}. Exactly ${members.length} people, each character exactly once. No additional conversation partners. Observable performance notes: ${JSON.stringify(plan.cues.filter(cue => members.some(r => r.member.id === cue.playerId)))}.` },
         });
         const candidateId = await storeVisualArtifact(db, gameId, rendered.image);
         await options.onImage?.(candidateId);

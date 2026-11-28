@@ -117,10 +117,11 @@ test.each([false, true])("resumes an earlier template reservation without replac
 test.each([8, 9, 10, 12, 14])("renders %i contestants into distinct room regions and harmonizes a continuous scene", async size => {
   const bands = await sharp({ create: { width: 3072, height: 1536, channels: 3, background: "red" } }).composite([{ input: await sharp({ create: { width: 1536, height: 1536, channels: 3, background: "blue" } }).png().toBuffer(), left: 1536, top: 0 }]).png().toBuffer();
   artifactId = await storeVisualArtifact(db, "game", bands);
-  const mock = globalThis.fetch, backdrops: string[] = [];
+  const mock = globalThis.fetch, backdrops: string[] = [], prompts: string[] = [];
   globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url).includes("/v1/images/")) {
       const prompt = String((init?.body as FormData).get("prompt"));
+      prompts.push(prompt);
       expect(prompt).toContain("Allow natural head turns, side profiles, leaning and gestures");
       expect(prompt).toContain("Keep every entire head visible, separated, in frame and recognizable");
       expect(prompt).not.toContain("Every face must be visible from the front");
@@ -138,6 +139,19 @@ test.each([8, 9, 10, 12, 14])("renders %i contestants into distinct room regions
   expect(ready.shots?.groups.flatMap(s => s.visibleParticipantIds).sort()).toEqual(planned.plan.cast.map(m => m.id).sort());
   expect(ready.shots?.groups).toHaveLength(count);
   expect(new Set(backdrops).size).toBeGreaterThan(1);
+  const castById = new Map(planned.plan.cast.map(member => [member.id, member]));
+  const order = visualRoomCropGroups(planned.plan).map(group => group.map(({ playerId }) => ({
+    id: playerId, name: castById.get(playerId)!.name,
+  })));
+  for (const [index, panel] of order.entries()) {
+    const prompt = prompts[index]!;
+    expect(prompt).toContain("Keep its camera, crop framing, architecture, and furniture fixed");
+    expect(prompt).toContain("Place their head centers from image left to right in the exact order of the contestant list below.");
+    expect(prompt).toContain(`identify IN ORDER: ${JSON.stringify(panel.map(member => ({ ...member, role: "participant", performance: "Calm" })))}`);
+  }
+  const joinCoordinates = count === 2 ? "1536" : count === 3 ? "1024, 2048" : "768, 1536, 2304";
+  expect(prompts[count]).toContain(`Rebuild the room across the joins at x = ${joinCoordinates} pixels`);
+  expect(prompts[count]).toContain(`Required contestant order from image left to right, grouped by panel: ${JSON.stringify(order)}`);
   expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 2]);
   await renderPlannedVisualScene(db, planned);
   expect([imageCalls, visionCalls]).toEqual([count + 1, (count + 1) * 2]);
