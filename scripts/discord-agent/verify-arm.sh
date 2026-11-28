@@ -25,7 +25,7 @@ for _ in {1..30}; do
   sleep 1
 done
 docker logs "$probe" 2>&1 | grep -Fxq READY
-for scenario in reply consent announcement; do
+for scenario in reply consent announcement announcement-start; do
   mode="$scenario"
   model=gpt-6.1-terra
   input="synthetic $scenario"
@@ -34,6 +34,11 @@ for scenario in reply consent announcement; do
     docker exec "$probe" touch /bridge/announcement-probe
     mode=reply
     input='{"gameAnnouncement":{"kind":"finish","facts":{"gameKind":"werewolf","outcome":{"winner":"Copper Fox"},"turningPoints":[]},"canonicalLink":"https://thehouse.game/games/copper-fox/replay?audience=mystery"}}'
+  fi
+  if [[ "$scenario" == announcement-start ]]; then
+    docker exec "$probe" touch /bridge/announcement-probe /bridge/start-announcement-probe
+    mode=reply
+    input='{"gameAnnouncement":{"kind":"start","facts":{"gameKind":"influence","season":"Season 1","roster":[{"name":"Copper Fox","priorPublicGames":4,"badges":["Agent Crown"]}]},"canonicalLink":"https://thehouse.game/games/copper-fox"}}'
   fi
   output="$(printf '%s\n' "$input" | docker run --rm -i --pull never --network none --read-only \
     --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=96 --memory=768m --memory-swap=768m --cpus=1 \
@@ -61,6 +66,16 @@ for scenario in reply consent announcement; do
       if (content !== link + "\n\n||Copper Fox won.||") throw new Error("ARM announcement did not preserve the safe replay link and spoiler markup");
     '
   fi
+  if [[ "$scenario" == announcement-start ]]; then
+    printf '%s\n' "$output" | bun -e '
+      const { discordAnnouncementContent } = await import("./packages/api/src/discord/conversation/policy.ts");
+      const link = "https://thehouse.game/games/copper-fox";
+      const content = discordAnnouncementContent(JSON.parse(await Bun.stdin.text()), "start", link);
+      if (content !== link + "\n\nCopper Fox brings an Agent Crown to the table as Season 1 Influence begins.") {
+        throw new Error("ARM start announcement did not preserve the authored watch hook");
+      }
+    '
+  fi
 done
 docker logs "$probe" | grep -Fx 'MCP IMAGE IN MODEL INPUT'
 docker logs "$probe" | grep -Fx 'MCP BOUNDED JPEG PREVIEWS IN MODEL INPUT 10'
@@ -68,6 +83,7 @@ docker logs "$probe" | grep -Fx 'MCP REPLAY URL IN MODEL INPUT'
 docker logs "$probe" | grep -Fx 'MCP IMAGE ATTACHMENT LIMIT IN MODEL SCHEMA'
 docker logs "$probe" | grep -Fx 'PROVIDER TOOLS []'
 docker logs "$probe" | grep -Fx 'ANNOUNCEMENT PROVIDER TOOLS []'
+docker logs "$probe" | grep -Fx 'START ANNOUNCEMENT GUIDANCE IN MODEL INPUT'
 docker run --rm --network none --read-only --cap-drop=ALL --security-opt=no-new-privileges --user=10004:10004 \
   --entrypoint /usr/local/bin/bun "$image" -e '
     const blocked = await fetch("https://example.com", { signal: AbortSignal.timeout(1500) }).then(() => false, () => true);

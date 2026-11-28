@@ -5,6 +5,7 @@ import {
   claimDiscordAnnouncementLease, completeDiscordAnnouncement, readEligibleDiscordAnnouncementGame,
   suppressDiscordAnnouncementClaim, type DiscordAnnouncementClaim,
 } from "./discord-announcement-jobs.js";
+import { boundStartAnnouncementLabel, readDiscordAnnouncementRoster } from "./discord-announcement-roster.js";
 import { readHouseGameResultsInTransaction } from "./house-game-results.js";
 
 const publicOrigin = "https://thehouse.game";
@@ -25,8 +26,13 @@ async function readAnnouncementContext(db: DrizzleDB, claim: DiscordAnnouncement
     const url = publicOrigin + basePath;
     const [season] = game.seasonId ? await tx.select({ name: schema.seasons.name }).from(schema.seasons)
       .where(eq(schema.seasons.id, game.seasonId)) : [];
+    if (claim.kind === "start") {
+      const roster = await readDiscordAnnouncementRoster(tx, game);
+      return { status: "ready", url, facts: { gameKind: game.gameKind,
+        season: season ? boundStartAnnouncementLabel(season.name) : null, ...(roster && { roster }),
+      } } as const;
+    }
     const facts = { gameKind: game.gameKind, season: season ? label(season.name) : null };
-    if (claim.kind === "start") return { status: "ready", url, facts } as const;
 
     const result = await readHouseGameResultsInTransaction(tx, game.id);
     if (!result.ok) return { status: "unavailable" } as const;

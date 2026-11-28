@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { GameState } from "@influence/engine";
 import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { startWerewolf, werewolfConfig } from "@influence/engine/werewolf";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createDiscordAgentRoutes } from "../routes/discord-agent.js";
+import { grantAward, revokeAward } from "../services/awards.js";
 import {
   enqueueDiscordAnnouncement, type DiscordAnnouncementKind, type DiscordAnnouncementLease,
 } from "../services/discord-announcement-jobs.js";
@@ -193,6 +196,99 @@ test("claim suppresses stale starts and begin rechecks Public visibility", async
   expect(await db.select({ state: jobs.state }).from(jobs)).toEqual([{ state: "suppressed" }, { state: "suppressed" }]);
 });
 
+test("start claims give Codex frozen cast names, public appearances, and active badge titles only", async () => {
+  const ownerId = "private-roster-owner";
+  await db.insert(schema.users).values({ id: ownerId });
+  await db.insert(schema.agentProfiles).values([
+    { id: "veteran-profile", name: "Renamed Veteran", userId: ownerId, personality: "Private notes" },
+    { id: "new-profile", name: "New Profile", userId: ownerId, personality: "Private notes" },
+    { id: "archived-profile", name: "Archived Profile", userId: ownerId, personality: "Private notes", archivedAt: "2026-11-20" },
+  ]);
+  const award = (recipientId: string, definitionCode: string) => grantAward(db, {
+    definitionCode, recipient: { type: "agent", id: recipientId }, sourceKey: definitionCode,
+    evidence: { note: "Private award evidence" }, actorId: ownerId, reason: "Private grant reason", requestId: randomUUID(),
+  });
+  await award("veteran-profile", "season-0-influence-champion");
+  await award("veteran-profile", "season-0-top-eight");
+  await award("archived-profile", "season-0-top-eight");
+  const revoked = await award("new-profile", "season-0-top-eight");
+  await revokeAward(db, { grantId: revoked.id, actorId: ownerId, reason: "Private revocation", requestId: randomUUID() });
+
+  const earlier = "2026-11-25T00:00:00.000Z";
+  const later = "2026-11-26T00:00:00.000Z";
+  const player = (gameId: string, seat: string, name: string, agentProfileId?: string) => ({
+    id: `${gameId}-${seat}`, gameId, name, agentProfileId,
+    persona: JSON.stringify({ name: "Stale seat name", strategyHints: "Private strategy notes" }), agentConfig: "{}",
+  });
+  const opening = async (gameId: string, time: string, seats: ReturnType<typeof player>[]) => {
+    await db.insert(schema.gamePlayers).values(seats.map(({ name: _name, ...seat }) => seat));
+    const state = new GameState(seats.map(({ id, name }) => ({ id, name })), { gameId, now: () => Date.parse(time) });
+    const roster = state.getCanonicalEvents().find(event => event.type === "game.roster_initialized")!;
+    await insertCanonicalEventRows(db, gameId, await insertOwner(db, gameId), [roster]);
+    await db.update(schema.gameEvents).set({ createdAt: time }).where(eq(schema.gameEvents.gameId, gameId));
+  };
+  await db.insert(schema.games).values([
+    { id: "prior-public", slug: "prior-public", status: "completed", config: "{}", startedAt: earlier, endedAt: earlier },
+    { id: "prior-unlisted", slug: "prior-unlisted", status: "completed", config: '{"visibility":"unlisted"}', startedAt: earlier, endedAt: earlier },
+    { id: "prior-hidden", slug: "prior-hidden", status: "completed", config: "{}", startedAt: earlier, endedAt: earlier, hiddenAt: earlier },
+    { id: "late-finish", slug: "late-finish", status: "completed", config: "{}", startedAt: earlier, endedAt: "2026-11-27T00:00:00.000Z" },
+    { id: "waiting", slug: "waiting", status: "waiting", config: "{}" },
+    { id: "cast", slug: "cast", status: "in_progress", config: "{}", startedAt: later },
+  ]);
+  const pastSeats = [["prior-public", "veteran-profile"], ["prior-unlisted", "new-profile"], ["prior-hidden", "new-profile"], ["late-finish", "new-profile"]] as const;
+  for (const [gameId, profile] of pastSeats) {
+    await opening(gameId, earlier, [player(gameId, "one", "Former Name", profile), player(gameId, "two", "Another Seat")]);
+  }
+  const { name: _waitingName, ...waitingSeat } = player("waiting", "one", "Waiting Seat", "new-profile");
+  await db.insert(schema.gamePlayers).values(waitingSeat);
+  await opening("cast", later, [
+    player("cast", "one", "Alice", "veteran-profile"), player("cast", "two", "Bob", "new-profile"),
+    player("cast", "three", "Casey", "archived-profile"), player("cast", "four", "Dana"),
+  ]);
+  await db.transaction(tx => enqueueDiscordAnnouncement(tx, "cast", "start"));
+
+  const job = (await claim())!;
+  expect(job.facts).toMatchObject({ roster: [
+    { name: "Alice", priorPublicGames: 1, badges: expect.arrayContaining(["Season 0 Influence Champion", "Season 0 Top 8"]) },
+    { name: "Bob", priorPublicGames: 0, badges: [] },
+    { name: "Casey", priorPublicGames: null, badges: [] },
+    { name: "Dana", priorPublicGames: null, badges: [] },
+  ] });
+  expect(JSON.stringify(job.facts)).not.toMatch(/private|profile|Stale seat name|Former Name|Renamed Veteran/i);
+});
+
+test("direct Werewolf openings identify returning players without sending Mystery spoilers", async () => {
+  const ownerId = "wolf-owner";
+  const agentProfileId = "wolf-profile";
+  await db.insert(schema.users).values({ id: ownerId });
+  await db.insert(schema.agentProfiles).values({ id: agentProfileId, name: "Current Profile Name", userId: ownerId, personality: "Private profile" });
+  const prior = "2026-11-25T00:00:00.000Z";
+  const upcoming = "2026-11-26T00:00:00.000Z";
+  await db.insert(schema.games).values([
+    { id: "previous-wolf", slug: "previous-wolf", gameKind: "werewolf", status: "completed", config: "{}", startedAt: prior, endedAt: prior },
+    { id: "unlisted-wolf", slug: "unlisted-wolf", gameKind: "werewolf", status: "completed", config: '{"visibility":"unlisted"}', startedAt: prior, endedAt: prior },
+    { id: "live-wolf", slug: "live-wolf", gameKind: "werewolf", status: "in_progress", config: "{}", startedAt: upcoming },
+  ]);
+  for (const gameId of ["previous-wolf", "unlisted-wolf", "live-wolf"]) {
+    const cast = Array.from({ length: 6 }, (_, index) => ({
+      id: `${gameId}-${index}`, name: index === 0 ? "Frozen Wolf Name" : `Cast Member ${index}`,
+      agentProfileId: index === 0 ? agentProfileId : undefined, avatarUrl: null,
+      backstory: "Private backstory", personality: "Private personality", strategy: "Private strategy",
+    }));
+    const event = startWerewolf(gameId, cast, werewolfConfig("one_wolf"), "private-seed");
+    await db.insert(schema.werewolfEvents).values({ gameId, sequence: event.sequence, event });
+  }
+  await db.transaction(tx => enqueueDiscordAnnouncement(tx, "live-wolf", "start"));
+
+  const job = (await claim())!;
+  expect(job.url).toBe("https://thehouse.game/games/live-wolf/replay?audience=mystery");
+  expect(job.facts).toMatchObject({ roster: expect.arrayContaining([
+    { name: "Frozen Wolf Name", priorPublicGames: 1, badges: [] },
+    { name: "Cast Member 1", priorPublicGames: null, badges: [] },
+  ]) });
+  expect(JSON.stringify(job.facts)).not.toMatch(/private|profile|roles|seed|strategy/i);
+});
+
 test("recap claims expose only canonical bounded results and a safe replay URL for each game", async () => {
   const influence = await insertGame(db, { slug: "influence-finish", status: "completed", config: { visibility: "public" } });
   const owner = await insertOwner(db, influence);
@@ -211,7 +307,10 @@ test("recap claims expose only canonical bounded results and a safe replay URL f
   await db.transaction(tx => enqueueDiscordAnnouncement(tx, wolf, "start"));
   const opening = (await claim())!;
   expect(opening).toMatchObject({ kind: "start", url: "https://thehouse.game/games/werewolf-finish/replay?audience=mystery",
-    facts: { gameKind: "werewolf", season: null } });
+    facts: { gameKind: "werewolf", season: null, roster: expect.arrayContaining([
+      { name: "Player 0 With a Very Long Match Frozen Name", priorPublicGames: null, badges: [] },
+    ]) } });
+  expect(JSON.stringify(opening.facts)).not.toMatch(/SECRET_|backstory|roles|strategy/);
   await db.transaction(async tx => {
     await tx.update(schema.games).set({ status: "completed" }).where(eq(schema.games.id, wolf));
     await enqueueDiscordAnnouncement(tx, wolf, "finish");

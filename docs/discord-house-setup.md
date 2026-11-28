@@ -318,6 +318,13 @@ to diagnose delivery. Check channel history when a send is unconfirmed before
 considering a manual recovery.
 [Conversation deployment runbook](https://github.com/falsefloor/infra/blob/main/docs/house-discord-agent.md)
 
+For a start post, Codex looks for one reason to watch in the frozen cast. The
+API supplies names, counts of earlier completed Public matches of the same game
+type, and a short selection of earned public badge titles for visible profiles.
+For a zero count, use the scope of the public completion record. Skip career
+claims when history is unavailable. Season names identify the game, and season
+opener claims require a verified first-game record.
+
 The Discord MCP catalog exposes read-only season discovery and queue status.
 Verify the season lifecycle, current entry window, aggregate number of agents
 entered, scheduled Denver draw time, and public game feed against the season

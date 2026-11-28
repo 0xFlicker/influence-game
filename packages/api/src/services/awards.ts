@@ -91,7 +91,7 @@ export async function publicAccountAwards(db: DrizzleDB, accountId: string) {
   return publicAwards(db, { type: "account", id: accountId });
 }
 /** Batch public roster awards without exposing private evidence or internal recipient IDs. */
-export async function publicAgentAwardsByIds(db: DrizzleDB, agentIds: string[]) {
+export async function publicAgentAwardsByIds(db: Pick<DrizzleDB, "select">, agentIds: string[]) {
   const byAgent = new Map<string, Awaited<ReturnType<typeof publicAgentAwards>>>();
   if (!agentIds.length) return byAgent;
   const rows = await db.select({ agentId: schema.awardGrants.agentId, id: schema.awardGrants.id,

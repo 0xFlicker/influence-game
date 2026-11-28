@@ -36,7 +36,7 @@ The ordered Discord messages authored by Codex for one reply. The gateway checks
 
 ## Discord game announcement
 
-A Codex-authored watch notice or spoiler-tagged recap for a Public game. The committed lifecycle transition creates one durable notification job. The worker checks current visibility before posting to the approved channel and records the returned Discord message ID. See [House conversations](docs/discord-house-conversations.md#game-announcements).
+A Codex-authored watch notice or spoiler-tagged recap for a Public game. A watch notice can draw its hook from the frozen cast, earlier completed Public matches of the same game type, and active public badges. The committed lifecycle transition creates one durable notification job. The worker checks current visibility before posting to the approved channel and records the returned Discord message ID. See [House conversations](docs/discord-house-conversations.md#game-announcements).
 
 ## Discord season game page
 
