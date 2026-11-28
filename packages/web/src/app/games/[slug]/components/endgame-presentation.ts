@@ -79,6 +79,7 @@ export function compileRevealedWinnerCues(cues: readonly PresentationCue[]): (En
   return cues.map(cue => {
     if (cue.phase === "RETROSPECTIVE") winner = null;
     if (cue.source === "endgame" && cue.kind === "endgame_winner") winner = cue;
+    if (cue.source === "classic" && cue.joinsPreviousResult && cue.houseResultCue?.kind === "endgame_winner") winner = cue.houseResultCue;
     return winner;
   });
 }

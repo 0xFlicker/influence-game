@@ -221,6 +221,30 @@ code; an old bundle can retain stale layouts or omit newly required framing.
 An MP4 must be rendered again. Never silently unpin media or regenerate accepted
 history. See [refreshing an existing export](local-replay-export.md#refresh-an-existing-export-after-presentation-updates).
 
+## Influence result and House summary proof
+
+Run the proof from `packages/web`.
+
+```sh
+RESULT_PARITY=1 FORMAT_CONTEXT_STUDIO=1 \
+  FORMAT_CONTEXT_CASE=format-result-tie,format-result-runoff,format-result-only,format-result-summary-recorded \
+  bun run src/scripts/verify-presentation-parity.ts ../../.renders/result-stage
+```
+
+The frozen fixture retains both source identities and the exact accepted summary
+for the Empower tie and runoff. The paired cuts move directly from the preceding
+ballot beat to the result and its caption. A result-only cut keeps the full board
+hold, and the recording case verifies one announcement and one audio clip.
+The proof samples the transition, direct and reverse seeks, and compares the
+viewer, both Studio preview modes and newly encoded H.264 frames. The Chromium
+format viewer tests separately exercise a twelve-player cast and the historical
+format menu at narrow, short and fullscreen sizes.
+
+Rebuild prepared bundles from the existing selection and frozen v6-or-newer
+source when it has the exact result association. For a source frozen before
+result composition, refresh the Studio source explicitly and check the cut
+before exporting. Re-encode existing MP4s to update them.
+
 ## Hunter item proof
 
 Run `HUNTER_PARITY=1 FORMAT_CONTEXT_STUDIO=1 bun run src/scripts/verify-presentation-parity.ts ../../.renders/hunter-parity` from `packages/web`.

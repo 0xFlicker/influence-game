@@ -234,6 +234,9 @@ export function formatSnapshotForPresentationCursor(
     if (cue.source === "format") {
       return cue.after;
     }
+    if (cue.source === "classic" && cue.joinsPreviousResult && cue.houseResultCue?.source === "format") {
+      return cue.houseResultCue.after;
+    }
   }
   return null;
 }

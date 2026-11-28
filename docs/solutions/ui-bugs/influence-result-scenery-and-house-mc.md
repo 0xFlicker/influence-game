@@ -8,7 +8,7 @@ tags: [replay, house-narration, results, studio, backwards-compatibility]
 
 House summary text used to replace the result with a separate dark stage. Hiding that text when a recording supplied captions could remove the entire visual segment.
 
-Keep scenery independent of caption visibility. The new result composition attaches the exact resolved result to the summary's existing cue, retaining transcript/audio identity. Only an adjacent newly authored MC announcement shortens its preceding result to an entrance; historical speech stays at its accepted position. Active live cues retain their duration when metadata arrives. A result selected alone in Studio regains its reading minimum.
+Keep scenery independent of caption visibility. Result composition attaches the exact resolved result to the summary's existing cue, retaining transcript/audio identity. When the board and its announcement are adjacent, show them together from the first frame. A full format walkthrough retains its own beat, and unbound or nonadjacent historical speech keeps its source order. An already-visible live result keeps its reading time if the announcement arrives later. A standalone Studio result keeps its full hold and carries no omitted speech.
 
 The House receives canonical `resultFocus`, including the format's scoring rule, at the existing summary boundary. The prompt requests decisive facts plus one grounded sentence, with natural variation. The existing strict response schema, null outcome, provider policy, and private notebook are unchanged. Do not infer facts from prose or add a second commentary call.
 
@@ -51,7 +51,7 @@ The 160px cell-height threshold leaves at least 100px for uncropped art on wide 
 
 ## Format menu and House speech share one stage
 
-`format_menu` now maps to canonical `format.menu_offered` facts, including read-only historical recovery from the exact accepted boundary and committing turn. Current composition retains that offer during its associated House speech. An adjacent menu cue is a 500ms entrance into the narrated offer, including existing games; source keys, accepted words, recordings and canonical events remain intact. Unlinked or ambiguous speech is never matched by prose or round proximity. Pinned noncompact compositions keep their original layout and timing.
+`format_menu` maps to canonical `format.menu_offered` facts, including read-only historical recovery from the exact accepted boundary and committing turn. An adjacent menu and its associated House speech share one shot, including existing games. Source keys, accepted words, recordings and canonical events remain intact. Unlinked or ambiguous speech is never matched by prose or round proximity.
 
 The menu gives the Empowered player a dedicated column: full-body art on sufficiently roomy stages, a larger portrait in compact layouts, and an explicit Empowered label. Both offered format names remain on screen with paginated House speech. Current viewer, Studio and exports share this component. Browser previews cover seven sizes in inline/theater modes, with and without full-body art (28 combinations), including 320×568 and 1280×400.
 
@@ -66,3 +66,5 @@ Standalone House captions reserve a 90px row, including logo clearance, padding,
 ## Single-backdrop ownership for result and format stages (follow-up)
 
 The same duplicate appeared on Format Selection: the live stage painted its fallback room across the whole stage while the result stage painted the same room inside its own section, so the hall appeared twice with an inset seam. Ownership is now explicit. `formatPresentationOwnsBackdrop` and `presentationBeatOwnsBackdrop` mark the beats that paint their own stage background (result stages, Two Names results, portrait/scene/safety stages, self-painted House beats); the live viewer, the Remotion frame and the alliance proof frame suppress their fallback room for those beats, and the viewer treats self-painting content as full-stage room presentation so the sole backdrop bounds equal the stage. Transparent offer cards, labels, tally cards and anonymous speech still keep the root room. Browser coverage requires exactly one `[data-room-backdrop]` with stage-equal bounds for the format-selection rules reveal across inline/theater sizes, mirroring the standalone House scenery case.
+
+Joined Empower shots use one room behind the result and its summary. Full-body art and portrait fallbacks sit on the room, with translucent plates sized to the player names and vote totals. Studio retains both source identities and seeks either one to the joined shot when both are selected. Reprepare from an existing selection and its frozen source, then encode a new MP4.

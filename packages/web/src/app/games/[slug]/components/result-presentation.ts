@@ -32,11 +32,17 @@ export function withResultPresentation(cues: readonly PresentationCue[], scenes:
     if (candidates.length !== 1) continue;
     const target = candidates[0]!;
     if (target.source !== "format" && target.source !== "endgame") continue;
-    result[index] = {...cue, houseResultCue: target, minimumDurationMs:resultReadingMs(target) ?? 6000, baseDurationMs: Math.max(resultReadingMs(target) ?? 6000, cue.baseDurationMs)};
-    // Preserve source keys; an adjacent menu becomes the entrance to its narrated offer.
-    if (!(target.kind === "format_selected" && target.stage === "rules_reveal")
-      && (association.authoringRevision === "results-mc-v1" || compactEmpower && target.kind === "format_menu")
-      && result[index-1]?.key === target.key) result[index-1] = {...target, baseDurationMs:500};
+    // Keep both source identities. Playback can use the narrated shot for both
+    // moments when the result is directly followed by its House announcement.
+    const joinsPreviousResult = !(target.kind === "format_selected" && target.stage === "rules_reveal")
+      && result[index-1]?.key === target.key;
+    const minimumDurationMs = resultReadingMs(target) ?? 6000;
+    result[index] = {...cue, houseResultCue: target, ...(joinsPreviousResult && {joinsPreviousResult:true}),
+      minimumDurationMs, baseDurationMs: Math.max(minimumDurationMs, cue.baseDurationMs)};
   }
   return result;
+}
+
+export function joinsHouseResult(result: PresentationCue, next: PresentationCue | undefined): boolean {
+  return next?.source === "classic" && next.joinsPreviousResult === true && next.houseResultCue?.key === result.key;
 }

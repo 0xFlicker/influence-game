@@ -207,7 +207,29 @@ function FormatAudit({expectedFormat, expectedPaged, expectedItemPlayers, contro
           if(rect.left<next.right-1 && rect.right>next.left+1 && rect.top<next.bottom-1 && rect.bottom>next.top+1)throw new Error("Participant names overlap");
         }
       }
+      const houseResult = document.querySelector<HTMLElement>("[data-house-result]:has([data-compact-empower])");
+      const resultPlayers = document.querySelectorAll<HTMLElement>("[data-compact-empower] [data-empower-total]");
+      const resultCopy = houseResult?.querySelector<HTMLElement>("[data-house-message] [data-speech-page-copy]");
+      if (houseResult) {
+        const room = houseResult.querySelector<HTMLElement>("[data-room-backdrop]");
+        if (!room || houseResult.querySelectorAll("[data-room-backdrop]").length !== 1 || room.clientHeight !== houseResult.clientHeight || room.clientWidth !== houseResult.clientWidth)
+          throw new Error("Empower result and House summary do not share one backdrop");
+        if (!resultCopy || resultCopy.getBoundingClientRect().bottom > resultCopy.parentElement!.getBoundingClientRect().bottom + 1)
+          throw new Error("House result caption leaves its reading area");
+      }
+      for (const player of resultPlayers) {
+        const bounds = player.getBoundingClientRect();
+        const scene = player.closest("[data-result-stage]")!.getBoundingClientRect();
+        if (getComputedStyle(player).backgroundColor !== "rgba(0, 0, 0, 0)" || bounds.top < scene.top || bounds.bottom > scene.bottom + 1)
+          throw new Error("Empower player has a panel or leaves the result stage");
+        for (const label of player.querySelectorAll("p")) {
+          const rect = label.getBoundingClientRect();
+          if (rect.left < bounds.left || rect.right > bounds.right + 1 || rect.top < bounds.top || rect.bottom > bounds.bottom + 1)
+            throw new Error(`Empower label leaves the player's space at frame ${frame}: ${label.textContent} ${JSON.stringify({rect,bounds})}`);
+        }
+      }
       setResult(JSON.stringify({geometry:Array.from(document.querySelectorAll<HTMLElement>("[data-solo-image], [data-solo-portrait], [data-night-hunt], [data-doctor-save]")).map(node=>({tag:node.tagName,rect:node.getBoundingClientRect().toJSON()})),frame,formatOverlay:!!pill,roomLabel:!!label,castPage:room?.dataset.castPage,
+        houseResult: houseResult ? {copy:resultCopy?.textContent ?? "",players:resultPlayers.length} : undefined,
         walkthrough:walkthrough ? Number(walkthrough.dataset.walkthroughShot) : undefined,announcement:announcement?.dataset.formatAnnouncement,
         itemPlayers,
         castNames:nameNodes.filter(node=>{const r=node.getBoundingClientRect();return r.left>=0 && r.top>=0 && r.right<=window.innerWidth+1 && r.bottom<=window.innerHeight+1;}).map(node=>{const copy=node.querySelector<HTMLElement>("[data-speech-page-copy]");return {id:node.dataset.roomPlayerName,page:Number(copy?.dataset.speechPage ?? 0),text:copy?.textContent ?? ""};}),
@@ -306,7 +328,9 @@ function StudioFrame({manifest,view}:ParityProps & {view:"source"|"cut"}) {
     void (async()=>{
       for(let attempt=0;attempt<360;attempt++) {
         const content=document.querySelector<HTMLElement>(`[data-composition-frame="${frame}"]`);
-        if(content && Array.from(content.querySelectorAll("img")).every(image=>image.complete && image.naturalWidth>0)) {
+        // Hidden portrait fallbacks are lazy in the browser and have no pixels
+        // to contribute while the full-body art is visible.
+        if(content && Array.from(content.querySelectorAll("img")).filter(image=>image.getClientRects().length).every(image=>image.complete && image.naturalWidth>0)) {
           await document.fonts.ready;
           await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
           if(document.body.textContent?.includes("OMITTED NEIGHBOR MUST NOT APPEAR")) throw new Error("Studio exposed an omitted neighboring speech");

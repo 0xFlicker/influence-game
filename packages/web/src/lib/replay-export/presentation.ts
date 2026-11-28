@@ -6,6 +6,7 @@ import {compileAudio, type AudioSchedule} from "./audio";
 import type {CachedAsset} from "./assets";
 import {SOLO_READ_START_MS} from "../../app/games/[slug]/components/solo-presentation-timing";
 import {exportContinuedActor} from "./room-continuity";
+import {joinsHouseResult} from "../../app/games/[slug]/components/result-presentation";
 
 export interface PresentationMoment {
   id: string;
@@ -15,6 +16,7 @@ export interface PresentationMoment {
 export interface CompiledPresentation {
   momentIds: string[];
   moments: {id: string; startFrame: number; contentFrame: number; endFrame: number; sourceOrder: number}[];
+  joinedResults?: Record<string, string>;
   cues: ExportCue[];
   timeline: CompiledTiming[];
   audio: AudioSchedule;
@@ -85,11 +87,21 @@ export function compilePresentation(input: {
   const selected = new Set(input.selectedIds);
   if (selected.size !== input.selectedIds.length) throw new Error("Duplicate selected moment");
   for (const id of selected) if (!byId.has(id)) throw new Error(`Unknown selected moment: ${id}`);
-  const ordered = input.source.filter(moment => selected.has(moment.id));
-  if (ordered.some((moment,index) => moment.id !== input.selectedIds[index]))
+  const ordered = [...byId.values()].filter(({moment}) => selected.has(moment.id));
+  if (ordered.some(({moment},index) => moment.id !== input.selectedIds[index]))
     throw new Error("Selection must preserve source order");
   if (!ordered.length) return {momentIds:[],moments:[],cues:[],timeline:[],audio:{clips:[],durationMs:0}};
-  const cues = ordered.flatMap(moment => {
+  const joinedResults: Record<string, string> = Object.create(null);
+  const playable = ordered.filter(({moment,sourceOrder}, index) => {
+    const next = ordered[index + 1];
+    if (!next || next.sourceOrder !== sourceOrder + 1 || moment.segments.length !== 1 || next.moment.segments.length !== 1) return true;
+    const result = moment.segments[0]!.picture, summary = next.moment.segments[0]!.picture;
+    if (result.kind !== "influence" || summary.kind !== "influence" || summary.beat?.kind !== "house-result"
+      || !joinsHouseResult(result.cue, summary.cue)) return true;
+    joinedResults[moment.id] = next.moment.id;
+    return false;
+  });
+  const cues = playable.flatMap(({moment}) => {
     if (!moment.segments.length) throw new Error(`Moment has no presentation: ${moment.id}`);
     return moment.segments.map((cue,index): ExportCue => ({...cue,momentId:moment.id,
       timing:{...cue.timing,key:moment.segments.length === 1 ? moment.id : `${moment.id}:segment:${index}`}}));
@@ -107,16 +119,6 @@ export function compilePresentation(input: {
     else if (cue.picture.kind === "werewolf" && cue.picture.cue.transformation && establishedWolfCursors.has(cue.source.cursor))
       cues[index] = {...cue,timing:{...cue.timing,speechEstablished:true}};
   }
-  // A selected result must remain readable when its following announcement was omitted.
-  for (let index = 0; index < cues.length; index++) {
-    const cue = cues[index]!;
-    if (cue.picture.kind !== "influence" || !cue.picture.cue.resultsPresentation || cue.timing.baseDurationMs !== 500) continue;
-    const next = cues[index+1]?.picture;
-    if (next?.kind !== "influence" || next.cue.source !== "classic" || next.cue.houseResultCue?.key !== cue.picture.cue.key) {
-      const duration = cue.picture.cue.kind === "format_selected" && cue.picture.cue.repeatPick ? 2500 : 6000;
-      cues[index] = {...cue, timing:{...cue.timing,baseDurationMs:duration},picture:{...cue.picture,cue:{...cue.picture.cue,baseDurationMs:duration}}};
-    }
-  }
   const segmentKeys = new Set(cues.map(cue => cue.timing.key));
   const sourceIds = new Set(input.source.map(moment => moment.id));
   const keysByMoment = new Map<string,string[]>();
@@ -132,7 +134,7 @@ export function compilePresentation(input: {
   const timeline = compileTiming(cues.map(cue => cue.timing),profile,input.fps);
   const audio = compileAudio(cues,timeline,input.assets,profile,input.music,input.volume);
   let segmentOffset = 0;
-  const moments = ordered.map(moment => {
+  const moments = playable.map(({moment,sourceOrder}) => {
     const first = segmentOffset;
     segmentOffset += moment.segments.length;
     const timing = timeline[first]!;
@@ -143,17 +145,19 @@ export function compilePresentation(input: {
       : (timing.endMs - timing.startMs) * (cues[first]!.timing.kind === "ballot" ? SOLO_READ_START_MS / cues[first]!.timing.baseDurationMs : .5);
     const contentFrame = Math.max(timing.startFrame, Math.min(timing.endFrame - 1, Math.ceil((timing.startMs + contentMs) * input.fps / 1000)));
     return {id:moment.id,startFrame:timing.startFrame,contentFrame,endFrame:timeline[segmentOffset-1]!.endFrame,
-      sourceOrder:byId.get(moment.id)!.sourceOrder};
+      sourceOrder};
   });
-  return {momentIds:ordered.map(moment => moment.id),moments,cues,timeline,audio};
+  return {momentIds:ordered.map(({moment}) => moment.id),moments,cues,timeline,audio,
+    ...(Object.keys(joinedResults).length > 0 && {joinedResults})};
 }
 
 /** Navigation survives an edit without storing a mutable array position. */
 export function retainPresentationAnchor(source: readonly PresentationMoment[], compiled: CompiledPresentation,
   anchor: {momentId: string; offsetFrames: number} | {momentId: string; at: "content"} | null): number | null {
   if (!compiled.moments.length) return null;
-  const surviving = anchor && compiled.moments.find(moment => moment.id === anchor.momentId);
-  if (surviving) return "at" in anchor ? surviving.contentFrame : surviving.startFrame + Math.max(0,Math.min(anchor.offsetFrames,surviving.endFrame-surviving.startFrame-1));
+  const joined = anchor && compiled.joinedResults?.[anchor.momentId];
+  const surviving = anchor && compiled.moments.find(moment => moment.id === (joined ?? anchor.momentId));
+  if (surviving) return "at" in anchor ? surviving.contentFrame : surviving.startFrame + (joined ? 0 : Math.max(0,Math.min(anchor.offsetFrames,surviving.endFrame-surviving.startFrame-1)));
   const oldOrder = anchor ? source.findIndex(moment => moment.id === anchor.momentId) : -1;
   return (compiled.moments.find(moment => moment.sourceOrder > oldOrder) ?? compiled.moments.at(-1))!.startFrame;
 }

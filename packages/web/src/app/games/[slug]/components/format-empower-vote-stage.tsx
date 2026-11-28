@@ -38,13 +38,15 @@ export function FormatEmpowerVoteStage({
     const featuredIds = empoweredId ? [empoweredId] : tiedPlayerIds;
     const featured = roster.filter(player => featuredIds.includes(player.id));
     const otherVotes = Object.entries(counts).reduce((total, [id, count]) => total + (featuredIds.includes(id) ? 0 : count), 0);
-    const sharedCount = !empoweredId && featured.every(player => counts[player.id] === counts[featured[0]?.id ?? ""]);
+    const sharedCount = !empoweredId && featured.length > 0 && featured.every(player => counts[player.id] === counts[featured[0]!.id]);
+    const resolutionLabel = resolutionMethod === "wheel" ? "Wheel decision" : resolutionMethod === "revote" ? "Runoff result" : resolutionMethod === "manual" ? "Manual decision" : null;
+    const detail = [otherVotes > 0 ? `Other votes: ${otherVotes}` : null, resolutionLabel].filter(Boolean).join(" · ");
     return <section data-format-cue={empoweredId ? "empowered_tally" : "empowered_tie"} data-compact-empower aria-label="Empower result" className="flex min-h-0 flex-1 flex-col text-center">
-      <h2 className="mb-2 shrink-0 text-sm font-semibold sm:text-base">{empoweredId ? `${playerName(empoweredId, names)} is Empowered` : `${featured.length}-way tie for Empower`}{sharedCount && <span className="font-normal text-amber-200"> · {counts[featured[0]!.id]} vote{counts[featured[0]!.id] === 1 ? "" : "s"} each</span>}</h2>
-      <div aria-label="Result players" className="grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:`repeat(auto-fit, minmax(min(100%, 80px), 1fr))`,gridAutoRows:"minmax(28px, 1fr)"}}>
+      <h2 className="mb-1 shrink-0 text-sm font-semibold leading-tight [overflow-wrap:anywhere] [text-shadow:0_1px_12px_black] sm:text-base">{empoweredId ? `${playerName(empoweredId, names)} is Empowered` : `${featured.length}-way tie for Empower`}{sharedCount && <span className="font-normal text-amber-200"> · {counts[featured[0]!.id]} vote{counts[featured[0]!.id] === 1 ? "" : "s"} each</span>}</h2>
+      <div aria-label="Result players" className="grid min-h-0 flex-1 gap-1" style={{gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 80px), 1fr))",gridAutoRows:sharedCount ? "minmax(28px, 1fr)" : "minmax(36px, 1fr)"}}>
         {featured.map(player => <EmpowerResultPlayer key={player.id} player={player} votes={counts[player.id] ?? 0} sharedCount={sharedCount} />)}
       </div>
-      {(otherVotes > 0 || resolutionMethod) && <p className="mt-1 shrink-0 text-xs text-white/60">{otherVotes > 0 ? `Other votes: ${otherVotes}` : ""}{resolutionMethod === "wheel" ? " · Wheel decision" : resolutionMethod === "revote" ? " · Runoff result" : resolutionMethod === "manual" ? " · Manual decision" : ""}</p>}
+      {detail && <p className="mt-1 shrink-0 text-xs text-white/80 [text-shadow:0_1px_12px_black]">{detail}</p>}
     </section>;
   }
 
@@ -118,7 +120,7 @@ function playerName(
 function EmpowerResultPlayer({player, votes, sharedCount}: {player:FormatPresentationRosterPlayer; votes:number; sharedCount:boolean}) {
   const [missingBody, setMissingBody] = useState<string | null>(null);
   const body = player.fullBodyReferenceUrl && player.fullBodyReferenceUrl !== missingBody ? player.fullBodyReferenceUrl : null;
-  return <div data-empower-total={player.id} title={`${player.name}: ${votes} vote${votes === 1 ? "" : "s"}`} className={styles.cell}>
+  return <div data-empower-total={player.id} className={styles.cell}>
     <div className={`${styles.content} ${body ? styles.withBody : ""}`}>
       {body && <div className={styles.art} data-empower-fullbody>
         {/* eslint-disable-next-line @next/next/no-img-element -- frozen character art, displayed without cropping */}
@@ -126,7 +128,7 @@ function EmpowerResultPlayer({player, votes, sharedCount}: {player:FormatPresent
       </div>}
       <div className={styles.identity}>
         <div className={`shrink-0 ${styles.avatar}`}><AgentAvatar name={player.name} persona={player.persona ?? ""} personaKey={player.personaKey} avatarUrl={player.avatarUrl} size="6" /></div>
-        <div className="min-w-0"><p className={styles.name}>{player.name}</p>{!sharedCount && <p className={styles.count}>{votes} vote{votes === 1 ? "" : "s"}</p>}</div>
+        <div className={styles.label}><p className={styles.name}>{player.name}</p>{!sharedCount && <p className={styles.count}>{votes} vote{votes === 1 ? "" : "s"}</p>}</div>
       </div>
     </div>
   </div>;

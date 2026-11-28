@@ -7,12 +7,12 @@ import {HouseMessage} from "@/components/watch/house-message";
 
 import { useMemo, useCallback, useEffect, useLayoutEffect, useState, type ComponentProps } from "react";
 import {useSceneThinking} from "@/components/watch/watch-thinking";
-import {FormatPresentation, formatPresentationOwnsBackdrop} from "./format-presentation";
+import {FormatPresentation, formatPresentationOwnsBackdrop, isCompactEmpowerResult} from "./format-presentation";
 import type {FormatPresentationCue} from "./types";
 import {sampleWatch} from "@/components/watch/watch-sampling";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import {NomineeSelection, type NomineeSelectionBeat} from "./nominee-selection";
-import { influenceRoomBackground, INFLUENCE_ROOMS } from "./influence-rooms";
+import { influenceRoomBackground, INFLUENCE_ROOMS, resultRoom } from "./influence-rooms";
 import { SoloPresentation } from "./solo-presentation";
 import type { PresentationDirector } from "./influence-presentation-director";
 import { TimedSpeech } from "./timed-speech";
@@ -150,8 +150,12 @@ export function VisualPresentationFrame({ beat: sourceBeat, rooms: sourceRooms, 
   if (beat.kind === "alliance-introduction") {
     content = <AllianceIntroductionStage {...beat} logoUrl={houseLogoUrl} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} paused={paused} reducedMotion={reducedMotion} controlsInset={controlsInset} />;
   } else if (beat.kind === "house-result") {
-    const result = <VisualPresentationFrame beat={beat.result} naturalHouseMessages={naturalHouseMessages} houseLogoUrl={houseLogoUrl} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={0} roster={roster} />;
-    content = naturalHouseMessages ? <HouseResultLayout text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} controlsInset={fullscreen ? controlsInset : 0}>{result}</HouseResultLayout>
+    const empower = naturalHouseMessages && beat.result.kind === "format-result" && isCompactEmpowerResult(beat.result.cue) ? beat.result : null;
+    const result = empower
+      ? <FormatPresentation cue={empower.cue} roster={empower.roster} currentStateEntry sharedBackdrop />
+      : <VisualPresentationFrame beat={beat.result} naturalHouseMessages={naturalHouseMessages} houseLogoUrl={houseLogoUrl} rooms={rooms} elapsedMs={0} currentStateEntry paused reducedMotion={reducedMotion} fullscreen={fullscreen} controlsInset={0} roster={roster} />;
+    content = naturalHouseMessages ? <HouseResultLayout text={beat.text} elapsedMs={readingElapsedMs} logoUrl={houseLogoUrl} controlsInset={fullscreen ? controlsInset : 0}
+      backdrop={empower && <RoomBackdrop source={resultRoom(empower.cue.phase)} resilient />}>{result}</HouseResultLayout>
       : <div className="flex min-h-0 flex-1 flex-col gap-3" style={{paddingBottom:fullscreen ? controlsInset : 0}} data-house-result>
         {result}
         {hideHouseNarration ? <div className="shrink-0" style={{height:"clamp(56px, 20vh, 120px)"}} aria-hidden="true" />

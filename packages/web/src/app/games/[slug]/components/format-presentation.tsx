@@ -32,7 +32,11 @@ export function formatPresentationOwnsBackdrop(cue: FormatPresentationCue, curre
   return Boolean(cue.resultsPresentation && !specialized);
 }
 
-export function FormatPresentation(sourceProps: Parameters<typeof FormatPresentationContent>[0]) {
+export function isCompactEmpowerResult(cue: FormatPresentationCue): boolean {
+  return Boolean(cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie"));
+}
+
+export function FormatPresentation(sourceProps: Parameters<typeof FormatPresentationContent>[0] & {sharedBackdrop?: boolean}) {
   const publicDelivery = usePublicMediaDelivery();
   const delivery = useMemo(() => publicMediaDeliveryView({cue:sourceProps.cue, roster:sourceProps.roster}, publicDelivery), [sourceProps.cue, sourceProps.roster, publicDelivery]);
   const props = {...sourceProps, ...delivery};
@@ -50,10 +54,10 @@ export function FormatPresentation(sourceProps: Parameters<typeof FormatPresenta
   const specialized = cue.kind.startsWith("two_names_") || cue.kind.startsWith("safety_bounce_")
     || cue.after.activeFormatId === "two_names";
   const content = <FormatPresentationContent {...props} />;
-  const packed = Boolean(cue.compactEmpower && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie")
-    || cue.kind === "format_selected" && cue.repeatPick);
+  const open = isCompactEmpowerResult(cue);
+  const packed = open || Boolean(cue.kind === "format_selected" && cue.repeatPick);
   return cue.resultsPresentation && !specialized
-    ? <ResultStage compactCast={cue.compactEmpower} packed={packed} players={packed ? [] : formatResultPlayers(cue, roster)} background={resultRoom(cue.phase)}>{content}</ResultStage>
+    ? <ResultStage compactCast={cue.compactEmpower} packed={packed} open={open} players={packed ? [] : formatResultPlayers(cue, roster)} background={props.sharedBackdrop ? null : resultRoom(cue.phase)}>{content}</ResultStage>
     : content;
 }
 
