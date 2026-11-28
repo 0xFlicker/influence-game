@@ -143,7 +143,7 @@ export const ProductionPreview = forwardRef<ProductionPreviewHandle, {
   function canControl() {return !!manifest && !!player.current && !drag.current;}
   function seekMoment(id: string, at: "start" | "content" = "start") {
     if (!canControl()) return;
-    const moment = indexes.moments.get(id);
+    const moment = indexes.moments.get(compiled.joinedResults?.[id] ?? id);
     if (!moment) {setNotice("This moment is omitted from the selected cut. Switch to Source to seek it."); return;}
     const target = at === "content" ? moment.contentFrame : moment.startFrame;
     player.current?.pause(); seek(target); scrollToFrame(target, true); setNotice(null);

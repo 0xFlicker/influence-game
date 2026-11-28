@@ -73,6 +73,7 @@ import { ActiveFormatOverlay } from "./active-format-label";
 import { FormatRulesDialog } from "./format-rules-dialog";
 import { findPresentationCueIndexForSequence } from "./presentation-sequence";
 import {composeInfluencePresentation, influenceCastArt} from "./influence-presentation";
+import {joinsHouseResult} from "./result-presentation";
 import {InfluenceOpeningFrame} from "./influence-opening-frame";
 import {influenceMusic, influenceOpeningAudio} from "./influence-music";
 import {speechMusicVolume} from "@/components/watch/watch-music";
@@ -197,7 +198,16 @@ function DramaticReplayTheater({
       replayFrames,
     ],
   );
-  const presentationCues = useMemo(() => composeInfluencePresentation(game.id, canonicalPresentationCues, players, scenes, game.gameSchemaVersion, {speechPrefixComplete: isFormatGame || !live || game.status === "completed" || game.status === "cancelled"}), [canonicalPresentationCues, game.id, players, scenes, game.gameSchemaVersion, isFormatGame, live, game.status]);
+  // Live-tail waiting follows the game lifecycle, including after navigation.
+  const {director, snapshot: directorSnapshot, scope: animationScope, reducedMotion} = usePresentationDirector({followTail:live});
+  const sourceCues = useMemo(() => composeInfluencePresentation(game.id, canonicalPresentationCues, players, scenes, game.gameSchemaVersion, {speechPrefixComplete: isFormatGame || !live || game.status === "completed" || game.status === "cancelled"}), [canonicalPresentationCues, game.id, players, scenes, game.gameSchemaVersion, isFormatGame, live, game.status]);
+  // A summary arriving while a result is already on air cannot interrupt it.
+  const activeKey = directorSnapshot.cueKeys[directorSnapshot.cursor];
+  const activeSourceIndex = activeKey ? sourceCues.findIndex(cue => cue.key === activeKey) : -1;
+  const onAirResult = activeSourceIndex >= 0 && joinsHouseResult(sourceCues[activeSourceIndex]!, sourceCues[activeSourceIndex + 1]) ? activeKey : undefined;
+  const presentationCues = useMemo(() => sourceCues.filter((cue, index) => cue.key === onAirResult || !joinsHouseResult(cue, sourceCues[index + 1])), [sourceCues, onAirResult]);
+  const sharedCueIndex = shared?.cue ? presentationCues.findIndex(cue => cue.key === shared.cue ||
+    cue.source === "classic" && cue.joinsPreviousResult && cue.houseResultCue?.key === shared.cue) : -1;
   const latestFrame = replayFrames.at(-1);
   const latestPhaseStart = replayFrames.findLast(frame => frame.eventType === "game.phase_entered")?.sequence
     ?? replayFrames.find(frame => frame.round === latestFrame?.round && frame.phase === latestFrame.phase)?.sequence ?? 0;
@@ -207,14 +217,6 @@ function DramaticReplayTheater({
   const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
   const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
   const followed=useIsFollowPlayer();
-  // Live-tail waiting belongs to the game lifecycle. Navigation changes position
-  // and play intent, but must still buffer when playback catches up again.
-  const {
-    director,
-    snapshot: directorSnapshot,
-    scope: animationScope,
-    reducedMotion,
-  } = usePresentationDirector({ followTail: live });
   useWatchAnalytics(director, game.id, "influence", anonymous ? null : live ? "live" : "replay");
   const { fullscreen: nativeFullscreen, theater, theaterButton, toggleTheater, expanded, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope,followed);
   const {thinking:showThinking, setThinking:setShowThinking} = preferences;
@@ -437,12 +439,12 @@ function DramaticReplayTheater({
       return;
     }
     if (shared && !initialSequenceSeekAppliedRef.current && director.getSnapshot().cueKeys.length === 0) {
-      const index = shared.cue ? presentationCues.findIndex(cue => cue.key === shared.cue) : startSequence === undefined ? 0 : findPresentationCueIndexForSequence(presentationCues, startSequence);
+      const index = shared.cue ? sharedCueIndex : startSequence === undefined ? 0 : findPresentationCueIndexForSequence(presentationCues, startSequence);
       if (index < 0) return;
       director.setSpeed(shared.speed);
       director.setThinkingEnabled(shared.thinking);
       director.load(presentationCues, index);
-      director.seekTimeline(index, shared.time * 1000, shared.thinking);
+      director.seekTimeline(index, presentationCues[index]?.key === shared.cue || !shared.cue ? shared.time * 1000 : 0, shared.thinking);
       initialSequenceSeekAppliedRef.current = true;
       if (!followed) director.play();
       return;
@@ -491,6 +493,7 @@ function DramaticReplayTheater({
     presentationHydrationStatus,
     startSequence,
     shared,
+    sharedCueIndex,
   ]);
 
   useEffect(() => {
@@ -863,7 +866,7 @@ function DramaticReplayTheater({
           controlsVisible || !isPlaying && !expanded ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        {shared?.cue && presentationCues.length > 0 && !presentationCues.some(cue => cue.key === shared.cue) && <p role="alert">This replay moment is no longer available.</p>}
+        {shared?.cue && presentationCues.length > 0 && sharedCueIndex < 0 && <p role="alert">This replay moment is no longer available.</p>}
         {voice.error && <div role="alert">{voice.error}<button type="button" className="ml-3 underline" onClick={() => {voice.resume();setPlayRequested(true);director.play();}}>Retry voice</button><button type="button" className="ml-3 underline" onClick={() => {voice.continueWithText();setPlayRequested(true);director.play();}}>Continue with text</button></div>}
 
         <WatchTransport getShareHref={() => {

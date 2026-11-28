@@ -235,7 +235,14 @@ function MomentWorkspace({game, audience, thinking, review, readScopeGeneration,
   const contextSceneId = contextPicture?.kind === "werewolf" || contextPicture?.kind === "thinking" ? contextPicture.scene?.id : contextPicture?.kind === "influence" && contextPicture.beat?.kind === "scene" ? contextPicture.beat.sceneId : null;
   const visiblePresentation = useMemo(() => {const visible = new Set(visibleMoments.filter(moment => view !== "source" || thinking || moment.kind !== "thinking").map(moment => moment.id)); return attachedPresentation?.filter(moment => visible.has(moment.id));}, [attachedPresentation, visibleMoments, view, thinking]);
   const sourceTimings = useMemo(() => all && attachedPresentation && assets && view === "source" && !thinking ? compilePresentation({source: attachedPresentation, selectedIds: visibleMoments.map(moment => moment.id), profile: settings.profile, fps: settings.fps, assets, music:false, volume:0}) : all, [all, attachedPresentation, assets, view, thinking, visibleMoments, settings.profile, settings.fps]);
-  const timingById = useMemo(() => new Map(sourceTimings?.moments.map(moment => [moment.id, moment])), [sourceTimings]);
+  const timingById = useMemo(() => {
+    const timings = new Map(sourceTimings?.moments.map(moment => [moment.id, moment]));
+    for (const [resultId, summaryId] of Object.entries(sourceTimings?.joinedResults ?? {})) {
+      const summary = timings.get(summaryId);
+      if (summary) timings.set(resultId, summary);
+    }
+    return timings;
+  }, [sourceTimings]);
   const cutTiming = useMemo(() => attachedPresentation && assets ? view === "cut" ? all : compilePresentation({source: attachedPresentation,selectedIds:stableSelectedIds,profile:settings.profile,fps:settings.fps,assets,music:settings.music,volume:settings.volume}) : null, [view,all,attachedPresentation,stableSelectedIds,settings.profile,settings.fps,settings.music,settings.volume,assets]);
   const cutDuration = Math.ceil((cutTiming?.audio.durationMs ?? 0) * settings.fps / 1000);
   const browsable = visibleMoments.filter(moment => view === "source" || stableSelectedIds.includes(moment.id));

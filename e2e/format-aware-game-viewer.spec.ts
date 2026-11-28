@@ -1886,7 +1886,10 @@ test.describe("format-aware game viewer", () => {
       { ...meta, sequence: 10, type: "vote.empowered_set", payload: { empowered: "lyra", method: "revote" } },
     ];
     await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions, empowerRevoteVersion: 2 });
-    setFormatTranscript(page,slug,[{id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",fromPlayerId:null,text:"Atlas and Lyra are tied on two votes. Echo and Rex will decide the runoff.",timestamp:Date.now(),firstDurableEventSequence:7,houseResult:{eventSequence:5,authoringRevision:"results-mc-v1"}}]);
+    setFormatTranscript(page,slug,[
+      {id:900,entrySequence:900,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",fromPlayerId:null,text:"Atlas and Lyra are tied on two votes. Echo and Rex will decide the runoff.",timestamp:Date.now(),firstDurableEventSequence:7,houseResult:{eventSequence:5,authoringRevision:"results-mc-v1"}},
+      {id:901,entrySequence:901,round:1,phase:"VOTE",scope:"system",dialogueKind:"house_summary",fromPlayerId:null,text:"Lyra wins the revote with both runoff ballots.",timestamp:Date.now(),firstDurableEventSequence:10,houseResult:{eventSequence:10,authoringRevision:"results-mc-v1"}},
+    ]);
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await skipOpening(page);
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
@@ -1912,7 +1915,6 @@ test.describe("format-aware game viewer", () => {
     await expect(tie).not.toContainText("is Empowered");
     await expect(tie).toContainText("2 votes each");
     await page.screenshot({ path: testInfo.outputPath("empower-tie.png") });
-    await next();
     const combined = page.locator("[data-house-result]");
     await expect(combined).toContainText("Echo and Rex will decide");
     const desktop = page.viewportSize()!;
@@ -1948,11 +1950,15 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(2);
     await next();
     const result = page.locator('[data-format-cue="empowered_tally"]');
+    await expect(combined.getByLabel("House summary")).toContainText("Lyra wins the revote");
     await expect(result).toContainText("Runoff result");
     await expect(result).toContainText("Lyra is Empowered");
     await expect(result.locator('[data-empower-total="atlas"]')).toHaveCount(0);
     await expect(result.locator('[data-empower-total="lyra"]')).toContainText("2 votes");
     await expect(result.locator('[data-empower-receipt]')).toHaveCount(0);
+    await expect(result.locator('[data-empower-total="lyra"]')).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(result.getByText("2 votes", {exact:true}).locator("..")).toHaveCSS("background-color", "rgba(0, 0, 0, 0.45)");
+    await expect(combined.locator("[data-room-backdrop]")).toHaveCount(1);
     await page.screenshot({ path: testInfo.outputPath("empower-revote-result.png") });
   });
 

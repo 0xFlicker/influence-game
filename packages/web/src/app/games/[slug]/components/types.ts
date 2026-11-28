@@ -280,6 +280,7 @@ export type FormatPresentationCue =
 
 export interface ClassicPresentationCue extends SpeechCue {
   houseResultCue?: FormatPresentationCue | EndgamePresentationCue;
+  joinsPreviousResult?: true;
   /** Historical dialogue is navigable but must not resume live playback. */
   liveCatchUp?: boolean;
   source: "classic";

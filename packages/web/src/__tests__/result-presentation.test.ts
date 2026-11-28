@@ -13,13 +13,17 @@ function scenes(revision:"historical"|"results-mc-v1",eventSequence=10) {
 test("new adjacent MC speech shares the exact resolved event and preserves source identities",()=>{
   const cues=withResultPresentation([result,house],scenes("results-mc-v1"));
   expect(cues.map(c=>c.key)).toEqual(["exit","speech"]);
-  expect(cues[0]!.baseDurationMs).toBe(500);
-  expect(cues[1]).toMatchObject({houseResultCue:{key:"exit"},minimumDurationMs:6000,baseDurationMs:9000});
+  expect(cues[0]!.baseDurationMs).toBe(6000);
+  expect(cues[1]).toMatchObject({houseResultCue:{key:"exit"},joinsPreviousResult:true,minimumDurationMs:6000,baseDurationMs:9000});
 });
-test("historical speech retains its accepted position and full reading time",()=>{
+test("exact historical associations share the adjacent shot, with full standalone result timing",()=>{
   const cues=withResultPresentation([result,house],scenes("historical"));
   expect(cues[0]!.baseDurationMs).toBe(6000);
-  expect(cues[1]).toMatchObject({houseResultCue:{key:"exit"},baseDurationMs:9000});
+  expect(cues[1]).toMatchObject({houseResultCue:{key:"exit"},joinsPreviousResult:true,baseDurationMs:9000});
+  const intervening = {...house,key:"other",houseSummary:false};
+  const separated = withResultPresentation([result,intervening,house],scenes("historical"));
+  expect(separated[2]).toMatchObject({houseResultCue:{key:"exit"},baseDurationMs:9000});
+  expect(separated[2]).not.toHaveProperty("joinsPreviousResult");
 });
 test("accepted format narration preserves the full walkthrough and links to later announcements", async () => {
   const {compileFormatPresentationPrefix} = await import("../app/games/[slug]/components/format-presentation-model");
@@ -31,8 +35,9 @@ test("accepted format narration preserves the full walkthrough and links to late
   for (const pick of [walkthrough, announcement]) {
     const speech = {...house,phase:pick.phase,round:pick.round};
     const cues = withResultPresentation([pick,speech], scenes("results-mc-v1",pick.canonicalSequence));
-    expect(cues[0]!.baseDurationMs).toBe(pick === walkthrough ? walkthrough.baseDurationMs : 500);
+    expect(cues[0]!.baseDurationMs).toBe(pick === walkthrough ? walkthrough.baseDurationMs : 2500);
     expect(cues[1]).toMatchObject({houseResultCue:{key:pick.key},baseDurationMs:9000});
+    expect("joinsPreviousResult" in cues[1]!).toBe(pick === announcement);
   }
 });
 test("missing, future, or ambiguous associations never borrow a result",()=>{
@@ -96,7 +101,8 @@ test("ballot shots sharing the tally event do not make its House association amb
   const speech={...house,phase:menu.phase,round:menu.round};
   const linked=withResultPresentation([menu,speech],scenes("historical",menu.canonicalSequence));
   expect(linked[1]).toMatchObject({houseResultCue:{key:menu.key,kind:"format_menu"}});
-  expect(linked[0]!.baseDurationMs).toBe(500);
+  expect(linked[0]!.baseDurationMs).toBe(6000);
+  expect(linked[1]).toHaveProperty("joinsPreviousResult",true);
   expect(linked[1]!.baseDurationMs).toBeGreaterThanOrEqual(6000);
   expect(withResultPresentation([menu,speech],scenes("historical",menu.canonicalSequence),false)[1]).not.toHaveProperty("houseResultCue");
   expect(withResultPresentation([menu,{...menu,key:"ambiguous"},speech],scenes("historical",menu.canonicalSequence)).at(-1)).not.toHaveProperty("houseResultCue");
